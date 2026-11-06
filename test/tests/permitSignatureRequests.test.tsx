@@ -10,7 +10,7 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { checksummedAddress, stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
-import { VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
+import { parsePermit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
 import { getMessageAndDomainHash } from '../../app/ts/utils/eip712.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
@@ -381,8 +381,10 @@ describe('Permit2 signature requests', () => {
 		for (const { typedData, ...expected } of expectedKinds) {
 			const visualized = await visualizeTypedData(typedData)
 			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(visualized.permit2TransferWithoutWitness)
-			assert.deepEqual({ primaryType: visualized.permit2TransferWithoutWitness.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
+			const transfer = parsePermit2SignatureTransfer(visualized.message)
+			if (transfer === undefined) throw new Error('Expected message to parse as a Permit2 transfer')
+			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(transfer)
+			assert.deepEqual({ primaryType: transfer.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
 			assert.deepEqual(visualized.permitted.map(({ token, amount }) => ({ token: token.address, amount })), permitted)
 			assert.equal(visualized.witness !== undefined, hasWitness)
 			assert.equal(identifySignature(visualized).title === 'Permit2 batch transfer', isBatch)
@@ -401,24 +403,43 @@ describe('Permit2 signature requests', () => {
 			assert.deepEqual(getMessageAndDomainHash({ method: visualized.method, params: [signer, visualized.message] }), { messageHash: visualized.messageHash, domainHash: visualized.domainHash })
 			// Storage and popup messaging go through the codec, which must not strip the payload either.
 			const storedRequest = JSON.parse(JSON.stringify(VisualizedPersonalSignRequestPermit2SignatureTransfer.serialize(visualized)))
-			assert.deepEqual(VisualizedPersonalSignRequestPermit2SignatureTransfer.parse(storedRequest).message, signedPayload)
+			const receivedRequest = VisualizedPersonalSignRequestPermit2SignatureTransfer.parse(storedRequest)
+			assert.deepEqual(receivedRequest.message, signedPayload)
+			assertIncludesAll(await renderSignatureCardText(receivedRequest), ['Allow', 'To Spend', 'Nonce: ', 'Signature expires in: '])
 		}
 	})
 
-	test('separates the signed witness in message from the witness-stripped Permit2 fields', async () => {
+	test('keeps the witness in message and leaves it out of the Permit2 fields parsed from it', async () => {
 		const visualized = await visualizeTypedData(permit2UniswapXWitnessTransferFromMessage)
 		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
 		assert.equal(Object.keys(visualized.message.message).includes('witness'), true)
 		assert.equal(Object.keys(visualized.message.types).includes('ExclusiveDutchOrder'), true)
-		assert.equal(Object.keys(visualized.permit2TransferWithoutWitness.message).includes('witness'), false)
-		assert.equal(Object.keys(visualized.permit2TransferWithoutWitness.types).includes('ExclusiveDutchOrder'), false)
+		const transfer = parsePermit2SignatureTransfer(visualized.message)
+		if (transfer === undefined) throw new Error('Expected message to parse as a Permit2 transfer')
+		assert.equal(Object.keys(transfer.message).includes('witness'), false)
+		assert.equal(Object.keys(transfer.types).includes('ExclusiveDutchOrder'), false)
 	})
 
-	test('rejects a stored request that holds the witness-stripped value in message', async () => {
+	test('shows an error and no transfer details when message cannot be read as a Permit2 transfer', async () => {
 		const visualized = await visualizeTypedData(permit2UniswapXWitnessTransferFromMessage)
 		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-		const { message: _signedPayload, permit2TransferWithoutWitness, ...otherFields } = JSON.parse(JSON.stringify(VisualizedPersonalSignRequestPermit2SignatureTransfer.serialize(visualized)))
-		assert.equal(VisualizedPersonalSignRequestPermit2SignatureTransfer.safeParse({ ...otherFields, message: permit2TransferWithoutWitness }).success, false)
+		const malformed = { ...visualized, message: EIP712Message.parse(permit2Message) }
+		assert.deepEqual(identifySignature(malformed), {
+			title: 'Malformed Permit2 transfer',
+			signingAction: 'Sign malformed Permit2 transfer',
+			simulationAction: 'Simulate malformed Permit2 transfer',
+			rejectAction: 'Reject malformed Permit2 transfer',
+		})
+
+		const text = await renderSignatureCardText(malformed)
+		assertIncludesAll(text, ['Malformed Permit2 transfer request.', `Domain Hash: ${ malformed.domainHash }`, `Message Hash: ${ malformed.messageHash }`])
+		for (const transferDetail of ['Allow', 'To Spend', 'witness data', 'Verifying contract:', 'Nonce:', 'Signature expires in:']) assert.equal(text.includes(transferDetail), false, transferDetail)
+	})
+
+	test('shows no gas fee on signatures, which do not spend gas', async () => {
+		for (const typedData of [permit2TransferFromMessage, permit2PermitBatchMessage, permit2Message]) {
+			assert.equal((await renderSignatureCardText(await visualizeTypedData(typedData))).includes('Gas fee'), false)
+		}
 	})
 
 	test('finds the Permit2 witness field by name wherever it is declared and never takes a Permit2 field instead', () => {

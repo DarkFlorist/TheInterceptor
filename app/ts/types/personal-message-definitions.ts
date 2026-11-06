@@ -244,6 +244,12 @@ export function getPermit2SignatureTransferKind(permit: Permit2SignatureTransfer
 	}
 }
 
+// Parses the fields Permit2 defines out of the full signed typed data. Returns undefined when they cannot be read, so callers show an error instead of a card that may not match what is signed.
+export function parsePermit2SignatureTransfer(signedTypedData: EIP712Message) {
+	const parsed = Permit2SignatureTransfer.safeParse(signedTypedData)
+	return parsed.success ? parsed.value : undefined
+}
+
 // Permit2 itself defines these SignatureTransfer fields, while the integrator names the witness field, for example `witness` in UniswapX.
 const permit2SignatureTransferFieldNames: readonly string[] = ['permitted', 'spender', 'nonce', 'deadline']
 
@@ -602,10 +608,8 @@ export const VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.In
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('Permit2SignatureTransfer'),
-		// The full signed typed data, including any witness and its struct types, like `message` in the other variants.
+		// The full signed typed data, including any witness and its struct types. Read the fields Permit2 defines with `parsePermit2SignatureTransfer`.
 		message: EIP712Message,
-		// Only the fields Permit2 defines, parsed from `message`. It has no witness value or witness struct types, so it is not the signed payload.
-		permit2TransferWithoutWitness: Permit2SignatureTransfer,
 		// Single token transfers are listed as a one element array so single and batch transfers render the same way.
 		permitted: funtypes.ReadonlyArray(Permit2TokenPermissionsWithAddressBookEntry),
 		spender: AddressBookEntry,
