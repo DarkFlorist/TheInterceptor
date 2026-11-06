@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import type { UnionToIntersection } from '../utils/typescript.js'
-import type { CodecDescription } from '../utils/funtypesFailureExplanation.js'
+import type { CodecDescription } from '../background/funtypesFailureExplanation.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 

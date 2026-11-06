@@ -2,7 +2,7 @@ import * as funtypes from 'funtypes'
 import { JSONEncodeableObject, isJSON, jsonParserWithNumbersAsStringsConverter } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
 import { EthereumQuantity, NonHexBigInt, serialize } from './wire-types.js'
-import type { CodecDescription } from '../utils/funtypesFailureExplanation.js'
+import type { CodecDescription } from '../background/funtypesFailureExplanation.js'
 
 export type EIP712Types = funtypes.Static<typeof EIP712Types>
 export const EIP712Types = funtypes.Record(funtypes.String, funtypes.ReadonlyArray(

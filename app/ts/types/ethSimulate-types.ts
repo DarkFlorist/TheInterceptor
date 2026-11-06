@@ -1,6 +1,6 @@
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { EthereumAccessList, EthereumAddress, EthereumBlockHeaderTransaction, EthereumBlockTagDescription, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumQuantitySmall, EthereumSignatureParity, EthereumTimestamp, LiteralConverterParserFactory } from './wire-types.js'
-import type { CodecDescription } from '../utils/funtypesFailureExplanation.js'
+import type { CodecDescription } from '../background/funtypesFailureExplanation.js'
 import * as funtypes from 'funtypes'
 
 type AccountOverride = funtypes.Static<typeof AccountOverride>

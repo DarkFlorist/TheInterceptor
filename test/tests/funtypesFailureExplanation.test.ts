@@ -3,7 +3,7 @@ import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
 import { CODEC_DESCRIPTIONS } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumJsonRpcRequest, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
-import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isReflectedCodec, type ReflectedCodec, type ValueProblem } from '../../app/ts/utils/funtypesFailureExplanation.js'
+import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isReflectedCodec, type ReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
 
@@ -287,6 +287,7 @@ describe('funtypes failure explanation', () => {
 		assert.deepEqual(explain(DiscriminatedObject, value), wrongTopLevelValue('an object', value))
 	})
 
+	// Living under background/ does not enforce this on its own, because extension pages import other background modules such as backgroundUtils.ts at runtime.
 	test('is only loaded at runtime by the invalid-params reply, so extension pages sharing the type modules do not load it', async () => {
 		const sourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
 		const runtimeImporters: string[] = []
