@@ -49,7 +49,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, type TransactionNetworkError, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
+import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, reevaluateStoredNetworkRefusals, type TransactionNetworkError, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -212,6 +212,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const settingsPromise = getSettings()
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
+		await reevaluateStoredNetworkRefusals(ethereum)
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const settings = await settingsPromise

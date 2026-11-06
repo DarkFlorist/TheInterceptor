@@ -94,6 +94,12 @@ export function createBrowserMock() {
 				async remove(keys: string | string[]) { removeItems(keys) },
 			},
 		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
+		},
 		tabs: {
 			async sendMessage(tabId: number, message: unknown) {
 				if (tabMessageHandler === undefined) throw new Error('Could not establish connection. Receiving end does not exist.')

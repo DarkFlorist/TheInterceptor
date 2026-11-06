@@ -1,8 +1,9 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../utils/constants.js'
+import { modifyObject } from '../utils/typescript.js'
 import { readActiveNetworkSnapshot } from './activeNetworkStorage.js'
-import { updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, updateInterceptorTransactionStack, updatePendingTransactionOrMessage, updateTransactionState } from './storageVariables.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
 export const isEthereumClientOnTransactionChain = (ethereum: EthereumClientService, pendingTransaction: PendingTransaction) => ethereum.getChainId() === pendingTransaction.requestedChainId
@@ -15,13 +16,15 @@ function isTransactionPreviewOnRequestedChain(pendingTransaction: Extract<Simula
 	return popupVisualisation.statusCode !== 'success' || popupVisualisation.data.simulationState.rpcNetwork.chainId === requestedChainId
 }
 
-const transactionApprovalInvalidated = (reason: string) => ({ status: 'SignerError' as const, code: METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN, message: `${ reason } Reject this transaction and send the request again.` })
+const transactionApprovalInvalidated = (reason: string) => ({ status: 'SignerError' as const, code: METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN, message: `${ reason } Reject this transaction and send the request again.`, networkRefusal: true as const })
 
 export type TransactionNetworkError = ReturnType<typeof transactionApprovalInvalidated>
 
 // A transaction is never signed, added to a stack or stored on another network than it was requested and previewed on. Synchronous, so the final check can run with nothing awaited before the request is committed.
 function getTransactionNetworkError(activeChainId: bigint, ethereum: EthereumClientService, pendingTransaction: PendingTransaction): TransactionNetworkError | undefined {
 	const { requestedChainId } = pendingTransaction
+	// Without a requested network no network can match, so this refusal never lifts.
+	if (requestedChainId === 'unknown') return transactionApprovalInvalidated('This transaction was requested with an older version of The Interceptor.')
 	if (activeChainId !== requestedChainId || ethereum.getChainId() !== requestedChainId) return transactionApprovalInvalidated('The active network changed after this transaction was requested.')
 	// A Gnosis Safe proposal is signed as EIP-712 data whose domain names the network of the Safe.
 	if (pendingTransaction.safeTransaction !== undefined && pendingTransaction.safeTransaction.safeTx.domain.chainId !== requestedChainId) return transactionApprovalInvalidated('The Gnosis Safe transaction was prepared for another network than the transaction was requested for.')
@@ -56,6 +59,25 @@ export async function proceedOnRequestedNetwork<T>(ethereum: EthereumClientServi
 export async function getTransactionNetworkApprovalError(ethereum: EthereumClientService, pendingTransaction: PendingTransaction) {
 	const approval = await proceedOnRequestedNetwork(ethereum, pendingTransaction, () => undefined)
 	return approval.committed ? undefined : approval.refusal
+}
+
+const getStoredNetworkRefusalMessage = ({ approvalStatus }: PendingTransactionOrSignableMessage) => approvalStatus.status === 'SignerError' && approvalStatus.networkRefusal === true ? approvalStatus.message : undefined
+
+// A refusal describes the network at the moment of the approval, so a stored one is replaced by what the same check says now, which lifts it once approving would work again. Only what the user is told changes: every approval runs the check itself whatever is stored, and a request that holds no refusal is never given one here. It reads only storage and the client's chain id, never an RPC, and tells whether any stored refusal changed.
+export async function reevaluateStoredNetworkRefusals(ethereum: EthereumClientService) {
+	let refusalChanged = false
+	for (const pending of await getPendingTransactionsAndMessages()) {
+		const storedMessage = getStoredNetworkRefusalMessage(pending)
+		if (pending.type !== 'Transaction' || storedMessage === undefined) continue
+		const refusal = await getTransactionNetworkApprovalError(ethereum, pending)
+		if (refusal?.message === storedMessage) continue
+		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+			if (getStoredNetworkRefusalMessage(current) === undefined) return undefined
+			refusalChanged = true
+			return modifyObject(current, { approvalStatus: refusal ?? { status: 'WaitingForUser' as const } })
+		})
+	}
+	return refusalChanged
 }
 
 // Queues the update on the transaction state lock in the same synchronous step as the passed check, so the stack reset of a later network switch, which takes the same lock, is applied after it. The update itself runs later, under the lock, and is synchronous.

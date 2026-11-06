@@ -15,6 +15,9 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { reevaluateStoredNetworkRefusals } from './transactionNetwork.js'
+import { updateConfirmTransactionView } from './windows/confirmTransaction.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -77,6 +80,7 @@ async function runActiveSettingsChange(
 ): Promise<void> {
 	const { change } = transition
 	let accessUpdate: WebsiteAccessUpdate | undefined
+	let chainChanged = false
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
@@ -132,6 +136,7 @@ async function runActiveSettingsChange(
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 			if (rpcChainChanged) {
+				chainChanged = true
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
@@ -146,6 +151,11 @@ async function runActiveSettingsChange(
 		if (accessUpdate !== undefined) {
 			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
 		}
+	}
+	// A chain change can decide whether a refused transaction may be approved again, so its stored refusal is updated before the change is acknowledged. The window update reads the new network's RPC, so a wallet's network switch is acknowledged without waiting for it.
+	if (chainChanged) {
+		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+		if (await reevaluateStoredNetworkRefusals(ethereum)) silenceChromeUnCaughtPromise(updateConfirmTransactionView(ethereum, tokenPriceService, true))
 	}
 }
 
