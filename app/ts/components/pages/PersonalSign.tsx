@@ -5,11 +5,11 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
-import { SimpleTokenApprovalVisualisation, TokenApprovalsVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
+import { TokenApprovalsVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TokenSymbol } from '../subcomponents/coins.js'
-import type { Permit2Witness, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestPermit2Batch, VisualizedPersonalSignRequestPermit2SignatureTransfer, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
+import { type Permit2Witness, type VisualizedPersonalSignRequest, type VisualizedPersonalSignRequestPermit, type VisualizedPersonalSignRequestPermit2, type VisualizedPersonalSignRequestPermit2Batch, type VisualizedPersonalSignRequestPermit2SignatureTransfer, type VisualizedPersonalSignRequestSafeTx, parsePermit2SignatureTransfer } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -28,7 +28,6 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import type { ReadonlySignal } from '@preact/signals'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
-import type { RpcNetwork } from '../../types/rpc.js'
 
 type SignatureCardParams = {
 	visualizedPersonalSignRequest: VisualizedPersonalSignRequest
@@ -112,10 +111,8 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 type PermitTokenAmount = { token: AddressBookEntry, amount: bigint }
 
 type PermitTokenApprovalsParams = {
-	owner: AddressBookEntry
 	spender: AddressBookEntry
 	tokenAmounts: readonly PermitTokenAmount[]
-	rpcNetwork: RpcNetwork
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -146,15 +143,13 @@ function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddress
 }
 
 // Identified ERC20 tokens keep their decimal adjusted approval display even when other tokens of the same batch are unidentified.
-function PermitTokenApprovals({ owner, spender, tokenAmounts, rpcNetwork, renameAddressCallBack }: PermitTokenApprovalsParams) {
-	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount, from: owner, to: spender, isApproval: true, logObject: undefined }] : [])
+function PermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: PermitTokenApprovalsParams) {
+	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount }] : [])
 	const unidentifiedTokenAmounts = tokenAmounts.filter(({ token }) => token.type !== 'ERC20')
 	return <>
 		{ approvals.length === 0 ? <></> : <TokenApprovalsVisualisation
 			spender = { spender }
 			approvals = { approvals }
-			transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-			rpcNetwork = { rpcNetwork }
 			renameAddressCallBack = { renameAddressCallBack }
 		/> }
 		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
@@ -210,46 +205,34 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 		}
 		case 'Permit': {
 			if (visualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit1 request. The tokentype is not ERC20' }/>
-			return <SimpleTokenApprovalVisualisation
-				approval = { {
-					type: 'ERC20',
-					from: visualizedPersonalSignRequest.account,
-					to: visualizedPersonalSignRequest.spender,
-					token: visualizedPersonalSignRequest.verifyingContract,
-					amount: visualizedPersonalSignRequest.message.message.value,
-					isApproval: true,
-					logObject: undefined,
-				} }
-				transactionGasses = { { gasSpent: 0n, realizedGasPrice: 0n } }
-				rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
+			return <TokenApprovalsVisualisation
+				spender = { visualizedPersonalSignRequest.spender }
+				approvals = { [{ type: 'ERC20', token: visualizedPersonalSignRequest.verifyingContract, amount: visualizedPersonalSignRequest.message.message.value }] }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
 		// Permit2 signatures authorize transfers of whatever token address they name, so a token that isn't an identified ERC20 still gets its spender and raw amount shown, under an explicit warning (UnidentifiedPermitTokenApprovals), rather than only an error; tokens identified as ERC721 or ERC1155 are rejected in the background. The EIP-2612 branch above keeps its existing requirement that the token be identified as an ERC20, which is outside this change; a failed metadata lookup can also trip it.
 		case 'Permit2': return <PermitTokenApprovals
-			owner = { visualizedPersonalSignRequest.account }
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.token, amount: visualizedPersonalSignRequest.message.message.details.amount }] }
-			rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2Batch': return <PermitTokenApprovals
-			owner = { visualizedPersonalSignRequest.account }
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { visualizedPersonalSignRequest.details }
-			rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
-		case 'Permit2SignatureTransfer': return <>
-			<PermitTokenApprovals
-				owner = { visualizedPersonalSignRequest.account }
-				spender = { visualizedPersonalSignRequest.spender }
-				tokenAmounts = { visualizedPersonalSignRequest.permitted }
-				rpcNetwork = { visualizedPersonalSignRequest.rpcNetwork }
-				renameAddressCallBack = { renameAddressCallBack }
-			/>
-			{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }
-		</>
+		case 'Permit2SignatureTransfer': {
+			if (parsePermit2SignatureTransfer(visualizedPersonalSignRequest.message) === undefined) return <ErrorComponent text = { 'Malformed Permit2 transfer request. The signed message could not be read as a Permit2 transfer, so only its raw message is shown.' }/>
+			return <>
+				<PermitTokenApprovals
+					spender = { visualizedPersonalSignRequest.spender }
+					tokenAmounts = { visualizedPersonalSignRequest.permitted }
+					renameAddressCallBack = { renameAddressCallBack }
+				/>
+				{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }
+			</>
+		}
 		default: assertNever(visualizedPersonalSignRequest)
 	}
 }
@@ -385,7 +368,9 @@ function Permit2BatchExtraDetails({ permit2Batch, renameAddressCallBack }: { per
 }
 
 function Permit2SignatureTransferExtraDetails({ permit2SignatureTransfer, renameAddressCallBack }: { permit2SignatureTransfer: VisualizedPersonalSignRequestPermit2SignatureTransfer, renameAddressCallBack: RenameAddressCallBack }) {
-	const { domain, message } = permit2SignatureTransfer.permit2TransferWithoutWitness
+	const transfer = parsePermit2SignatureTransfer(permit2SignatureTransfer.message)
+	if (transfer === undefined) return <SignatureHashes domainHash = { permit2SignatureTransfer.domainHash } messageHash = { permit2SignatureTransfer.messageHash }/>
+	const { domain, message } = transfer
 	return <>
 		<Permit2DomainDetails chainId = { domain.chainId } verifyingContract = { permit2SignatureTransfer.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
 		<CellElement text = 'Nonce: '/>

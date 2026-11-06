@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { BigAddress } from '../../subcomponents/address.js'
 import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins.js'
@@ -5,7 +6,7 @@ import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
-import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
+import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../../types/addressBookTypes.js'
 
 const approvalTextColor = 'var(--danger-color)'
 
@@ -16,15 +17,21 @@ type SimpleTokenApprovalVisualisation = {
 	rpcNetwork: RpcNetwork
 }
 
+// Only what the approval box renders, so a signature request can show an approval without any simulation data. Simulated token events fit this type as they are.
+export type TokenApprovalDisplay =
+	| { type: 'ERC20', token: Erc20TokenEntry, amount: bigint }
+	| { type: 'ERC721', token: Erc721Entry, tokenId: bigint }
+	| { type: 'ERC1155', token: Erc1155Entry, tokenId: bigint, tokenIdName: string | undefined, amount: bigint }
+	| { type: 'NFT All approval', token: Erc721Entry | Erc1155Entry, allApprovalAdded: boolean }
+
 type TokenApprovalsVisualisationParams = {
 	spender: AddressBookEntry
-	approvals: readonly TokenVisualizerResultWithMetadata[]
+	approvals: readonly TokenApprovalDisplay[]
 	renameAddressCallBack: RenameAddressCallBack
-	transactionGasses: TransactionGasses
-	rpcNetwork: RpcNetwork
+	children?: ComponentChildren
 }
 
-function ApprovedTokenAmount({ approval, renameAddressCallBack }: { approval: TokenVisualizerResultWithMetadata, renameAddressCallBack: RenameAddressCallBack }) {
+function ApprovedTokenAmount({ approval, renameAddressCallBack }: { approval: TokenApprovalDisplay, renameAddressCallBack: RenameAddressCallBack }) {
 	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
 		<div class = 'log-cell' style = 'justify-content: right;'>
 			{ approval.type === 'NFT All approval' ?
@@ -76,9 +83,7 @@ export function TokenApprovalsVisualisation(param: TokenApprovalsVisualisationPa
 		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
 			{ param.approvals.map((approval, index) => <ApprovedTokenAmount key = { index } approval = { approval } renameAddressCallBack = { param.renameAddressCallBack }/>) }
 		</div>
-		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
-			<GasFee tx = { param.transactionGasses } rpcNetwork = { param.rpcNetwork } />
-		</span>
+		{ param.children }
 	</div>
 }
 
@@ -87,7 +92,9 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 		spender = { param.approval.to }
 		approvals = { [param.approval] }
 		renameAddressCallBack = { param.renameAddressCallBack }
-		transactionGasses = { param.transactionGasses }
-		rpcNetwork = { param.rpcNetwork }
-	/>
+	>
+		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
+			<GasFee tx = { param.transactionGasses } rpcNetwork = { param.rpcNetwork } />
+		</span>
+	</TokenApprovalsVisualisation>
 }
