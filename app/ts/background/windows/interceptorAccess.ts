@@ -498,10 +498,7 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 
 	if (pendingRequests.current.length > 0) {
 		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current) } })
-		return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
-	}
-
-	if (openedDialog) {
+	} else if (openedDialog) {
 		removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 		await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
