@@ -262,6 +262,7 @@ describe('Permit2 signature requests', () => {
 		if (visualized.type !== 'Permit2Batch') throw new Error(`Expected a Permit2 batch, got ${ visualized.type }`)
 		// The raw message shows the request as the dapp sent it, not re-encoded hex values.
 		assertIncludesAll(visualized.rawMessage, ['"amount":"5000000"', '"sigDeadline":"1700000000"'])
+		// craftPersonalSignPopupMessage serializes namedParams.param for this request, so the raw message keeps the values the dapp sent instead of the parsed bigints re-encoded as hex.
 		assert.equal(visualized.rawMessage.includes('0x4c4b40'), false)
 		assert.equal(visualized.stringifiedMessage, stringifyJSONWithBigInts(EIP712Message.parse(permit2PermitBatchMessage), 4))
 		assert.deepEqual(getTokenSymbols(visualized), ['USDC', 'USDT'])
@@ -309,6 +310,7 @@ describe('Permit2 signature requests', () => {
 		assert.equal(identifySignature(visualized).title, 'USDT Permit')
 		// The raw message shows the request as the dapp sent it, not re-encoded hex values.
 		assertIncludesAll(visualized.rawMessage, ['"expiration":"281474976710655"', '"sigDeadline":"1674745207"'])
+		// craftPersonalSignPopupMessage serializes namedParams.param for this request, so the raw message keeps the values the dapp sent instead of the parsed bigints re-encoded as hex.
 		assert.equal(visualized.rawMessage.includes('0x63d29577'), false)
 		assert.equal(visualized.stringifiedMessage, stringifyJSONWithBigInts(EIP712Message.parse(JSON.stringify(maxExpirationPermit)), 4))
 
