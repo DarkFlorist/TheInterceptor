@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { withStorageTransactionLock } from './storageTransactionLock.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -280,41 +281,43 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
 }
 
-export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
+// Reads the address book without writing: a repairable or corrupt stored value is returned repaired or as the defaults, with repairNeeded telling the caller to store the returned entries.
+export async function readUserAddressBookEntriesWithoutRepairWrite(): Promise<{ readonly entries: AddressBookEntries, readonly repairNeeded: boolean }> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
-	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
-	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
+	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return { entries: parsedEntries.userAddressBookEntriesV3, repairNeeded: false }
+	if (rawEntries === undefined) return { entries: DEFAULT_ACTIVE_ADDRESSES, repairNeeded: false }
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
-	if (repairedEntries !== undefined) {
-		await browserStorageLocalSet({ userAddressBookEntriesV3: repairedEntries })
-		return repairedEntries
-	}
+	if (repairedEntries !== undefined) return { entries: repairedEntries, repairNeeded: true }
 	console.warn('userAddressBookEntriesV3 was corrupt:')
 	console.warn(rawEntries)
-	await browserStorageLocalSet({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
-	return DEFAULT_ACTIVE_ADDRESSES
+	return { entries: DEFAULT_ACTIVE_ADDRESSES, repairNeeded: true }
+}
+
+export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
+	const { entries, repairNeeded } = await readUserAddressBookEntriesWithoutRepairWrite()
+	if (repairNeeded) await browserStorageLocalSet({ userAddressBookEntriesV3: entries })
+	return entries
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await withStorageTransactionLock(async () => {
 		const entries = await getUserAddressBookEntries()
 		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
 	})
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await withStorageTransactionLock(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
 	})
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await withStorageTransactionLock(async () => {
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		if (existingEntry !== undefined) return

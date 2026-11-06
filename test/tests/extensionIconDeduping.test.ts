@@ -76,6 +76,10 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
+		scripting: {
+			getRegisteredContentScripts: async () => [],
+			registerContentScripts: async () => undefined,
+		},
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
 			async getSessionRules() { return [] },
