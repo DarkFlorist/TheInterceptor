@@ -6,7 +6,7 @@ import { act } from 'preact/test-utils'
 import { type GovernanceVoteInputParameters, MessageToPopup, PopupMessage, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
-import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { ModifyAddressWindowState, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
@@ -782,6 +782,77 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
+	test.each(['missing', 'rejected', 'wrong chain'] as const)('surfaces optional metadata %s replies once while keeping valid saves enabled', async failure => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		let requests = 0
+		runtimeSendMessage = async message => {
+			if (getRuntimeMethod(message) !== 'popup_requestIdentifyAddress') return undefined
+			requests++
+			if (failure === 'rejected') throw new Error('Token lookup transport failed')
+			if (failure === 'wrong chain') return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({ method: 'popup_requestIdentifyAddress', data: { chainId: 2n, addressBookEntry: undefined } })
+			return undefined
+		}
+		const state = signal<ModifyAddressWindowState>({ windowStateId: 'failed-metadata', errorState: undefined, incompleteAddressBookEntry: {
+			addingAddress: true, type: 'ERC20', address: '0x0000000000000000000000000000000000000001', chainId: 1n,
+			name: 'My token', decimals: 6n, symbol: 'TEST', entrySource: 'User', askForAddressAccess: true,
+			logoUri: undefined, abi: undefined, useAsActiveAddress: undefined, declarativeNetRequestBlockMode: undefined,
+		} })
+		try {
+			await act(async () => { render(h(modules.AddNewAddress, { close: () => undefined, modifyAddressWindowState: state, rpcEntries: signal([]), activeAddress: undefined, setActiveAddressAndInformAboutIt: undefined }), dom.document.body); await settleAsyncUpdates() })
+			await act(async () => { await settleAsyncUpdates() })
+			assert.equal(requests, 1, 'Failed lookups must not retry automatically')
+			assert.equal(dom.document.body.textContent?.includes('Looking up address metadata'), true)
+			const save = collectElements(dom.document.body, 'button').find(button => button.textContent?.includes('Create address'))
+			assert.ok(save)
+			assert.equal(isDisabled(save), false)
+			await act(async () => {
+				state.value = { ...state.value, incompleteAddressBookEntry: { ...state.value.incompleteAddressBookEntry, name: 'Edited token' } }
+				await settleAsyncUpdates()
+			})
+			assert.equal(requests, 1)
+		} finally {
+			await act(async () => { render(undefined, dom.document.body); await settleAsyncUpdates() })
+			dom.restore()
+		}
+	})
+
+	test('keeps form edits and saving responsive while optional metadata is pending', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferred = createDeferred<ReturnType<typeof createIdentifyAddressReply>>()
+		let requests = 0
+		runtimeSendMessage = async message => {
+			if (getRuntimeMethod(message) !== 'popup_requestIdentifyAddress') return undefined
+			requests++
+			return await deferred.promise
+		}
+		const state = signal<ModifyAddressWindowState>({ windowStateId: 'optional-metadata', errorState: undefined, incompleteAddressBookEntry: {
+			addingAddress: true, type: 'ERC20', address: '0x0000000000000000000000000000000000000001', chainId: 1n,
+			name: undefined, decimals: undefined, symbol: 'TEST', entrySource: 'User', askForAddressAccess: true,
+			logoUri: undefined, abi: undefined, useAsActiveAddress: undefined, declarativeNetRequestBlockMode: undefined,
+		} })
+		try {
+			await act(async () => { render(h(modules.AddNewAddress, { close: () => undefined, modifyAddressWindowState: state, rpcEntries: signal([]), activeAddress: undefined, setActiveAddressAndInformAboutIt: undefined }), dom.document.body); await settleAsyncUpdates() })
+			assert.equal(requests, 1)
+			await act(async () => {
+				state.value = { ...state.value, incompleteAddressBookEntry: { ...state.value.incompleteAddressBookEntry, name: 'My token', decimals: 6n } }
+				await settleAsyncUpdates()
+			})
+			const save = collectElements(dom.document.body, 'button').find(button => button.textContent?.includes('Create address'))
+			assert.ok(save)
+			assert.equal(isDisabled(save), false, 'Optional metadata must not block saving valid input')
+			assert.equal(requests, 1, 'Name/decimal edits must not request metadata again')
+			await act(async () => { deferred.resolve(createIdentifyAddressReply(1n, 'Remote token')); await deferred.promise; await settleAsyncUpdates() })
+			assert.equal(state.value.incompleteAddressBookEntry.name, 'My token')
+			assert.equal(state.value.incompleteAddressBookEntry.decimals, 6n)
+		} finally {
+			deferred.resolve(createIdentifyAddressReply(1n, 'Remote token'))
+			await act(async () => { render(undefined, dom.document.body); await settleAsyncUpdates() })
+			dom.restore()
+		}
+	})
+
 	test('retries address identification after returning to a state whose earlier reply became stale', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
@@ -866,18 +937,25 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	test('shows cached Safe owners but blocks saving when automatic owner retrieval fails', async () => {
+	test.each(['missing', 'rejected'] as const)('keeps failed Safe lookup stable and supports explicit retry (%s)', async failure => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const safeAddress = '0x3000000000000000000000000000000000000003'
 		const signerAddress = '0x1111111111111111111111111111111111111111'
 		let saveMessage: unknown
+		let ownerRequests = 0
 		runtimeSendMessage = async (message) => {
 			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') {
 				return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({
 					method: 'popup_requestIdentifyAddress',
 					data: { chainId: 1n, addressBookEntry: undefined },
 				})
+			}
+			if (getRuntimeMethod(message) === 'popup_requestSafeContractState') {
+				ownerRequests++
+				if (ownerRequests > 1) return createSafeContractStateReply([BigInt(signerAddress)])
+				if (failure === 'rejected') throw new Error('Safe lookup transport failed')
+				return undefined
 			}
 			if (getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry') {
 				saveMessage = message
@@ -924,6 +1002,16 @@ describe('popup async action UI', () => {
 		assert.equal(isDisabled(modifyButton), true)
 		await act(async () => { await clickElement(modifyButton) })
 		assert.equal(saveMessage, undefined)
+		await act(async () => { await settleAsyncUpdates() })
+		assert.equal(ownerRequests, 1)
+		assert.equal(dom.document.body.textContent?.includes('Interceptor did not return the current Gnosis Safe signers.'), true, JSON.stringify(modifyAddressWindowState.value.errorState) + ' / ' + dom.document.body.textContent)
+		const retry = collectElements(dom.document.body, 'button').find(button => button.textContent?.includes('Refresh owners'))
+		assert.ok(retry)
+		await act(async () => { await clickElement(retry); await settleAsyncUpdates() })
+		assert.equal(ownerRequests, 2)
+		const enabledSave = collectElements(dom.document.body, 'button').find(button => button.textContent?.trim() === 'Save changes')
+		assert.ok(enabledSave)
+		assert.equal(isDisabled(enabledSave), false)
 		render(null, dom.document.body)
 		dom.restore()
 	})
@@ -937,8 +1025,9 @@ describe('popup async action UI', () => {
 		const firstReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
 		const refreshReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
 		let requestCount = 0
+		let tokenLookupCount = 0
 		runtimeSendMessage = async (message) => {
-			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe')
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') { tokenLookupCount++; return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe') }
 			if (getRuntimeMethod(message) !== 'popup_requestSafeContractState') return undefined
 			requestCount += 1
 			return requestCount === 1 ? await firstReply.promise : await refreshReply.promise
@@ -988,6 +1077,10 @@ describe('popup async action UI', () => {
 		if (retrieveButton === undefined) throw new Error('Expected pending Safe signer retrieval button')
 		assert.equal(isDisabled(retrieveButton), true)
 		assert.equal(requestCount, 1)
+		assert.equal(tokenLookupCount, 0, 'Safe lookup must not wait on redundant token identification')
+		const nameInput = collectElements(dom.document.body, 'input').find(input => input.getAttribute('aria-label') === 'Name')
+		assert.ok(nameInput)
+		assert.equal(isDisabled(nameInput), false, 'Unrelated fields stay editable during owner lookup')
 		await act(async () => {
 			firstReply.resolve(createSafeContractStateReply([firstOwner, alternateOwner]))
 			await firstReply.promise
