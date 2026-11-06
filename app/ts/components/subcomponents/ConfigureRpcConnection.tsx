@@ -10,7 +10,7 @@ import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
-import { type EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { ETH_SIMULATE_SUPPORT_PROBE, ethSimulateSupportProbeReturnedEthLog } from '../../simulation/ethSimulateSupportProbe.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
@@ -55,42 +55,13 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const validateEthSimulateSupport = async (url: string) => {
 		// test eth_simulate request
 		const requestHandler = new EthereumJSONRpcRequestHandler(url)
-		const ethSimulateV1ParamObject: EthSimulateV1Params['params'][0] = {
-			blockStateCalls: [{
-				blockOverrides: {
-					baseFeePerGas: 0x9n
-				},
-				stateOverrides: {
-					'0xc000000000000000000000000000000000000000': {
-						balance: 0x1312d0000n,
-					}
-				},
-				calls: [
-					{
-						from: 0xc000000000000000000000000000000000000000n,
-						to: 0xc000000000000000000000000000000000000000n,
-						value: 0x1n,
-						maxFeePerGas: 0xfn,
-					}
-				]
-			}],
-			validation: true,
-			traceTransfers: true
-		}
-
 		try {
 			const serializedResult = await requestHandler.jsonRpcRequest({
 				method: 'eth_simulateV1',
-				params: [ethSimulateV1ParamObject, 'latest']
+				params: [ETH_SIMULATE_SUPPORT_PROBE, 'latest']
 			})
 
-			function resultContainsLog(result: ReturnType<typeof EthSimulateV1Result.safeParse>) {
-				return Boolean(result.success && result.value && result.value[0] && result.value[0].calls[0] && result.value[0].calls[0].status === 'success' && result.value[0].calls[0].logs.length === 1)
-			}
-
-			const parsedResult = EthSimulateV1Result.safeParse(serializedResult)
-
-			if (!resultContainsLog(parsedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
+			if (!ethSimulateSupportProbeReturnedEthLog(serializedResult)) throw new Error(`The RPC server does not have a support for eth_simulateV1 (it doesn't return ETH logs). The Interceptor requires this feature to function.`)
 		} catch (error: unknown) {
 			if (error instanceof JsonRpcResponseError) throw new Error(`The RPC server does not have a support for eth_simulateV1 ("${ error.message }"). The Interceptor requires this feature to function.`)
 			return throwImprovedError(error, url, 'The RPC server does not have a support for eth_simulateV1. The Interceptor requires this feature to function.')

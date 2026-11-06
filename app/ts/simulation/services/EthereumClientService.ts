@@ -1,11 +1,12 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { EIP7708_SYSTEM_ADDRESS, MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { recogniseProtocolEthTransferLogs } from './protocolEthTransferLogs.js'
 import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -128,6 +129,7 @@ export type PreparedEthSimulateV1InputBlock = {
 }
 export type PreparedEthSimulateV1Input = {
 	readonly request: EthSimulateV1Params
+	readonly simulationParentBlockNumber: bigint
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
@@ -334,6 +336,11 @@ export class EthereumClientService {
 		return await this.ethSimulateV1Request(call, requestAbortController)
 	}
 
+	// For results whose logs get read. Other callers, such as balance queries and a website's own eth_simulateV1, keep the node's reply and so never depend on this code read.
+	public readonly recogniseEthTransfers = async (result: EthSimulateV1Result, blockStateCalls: readonly BlockCalls[], simulationParentBlockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		return await recogniseProtocolEthTransferLogs(result, blockStateCalls, async () => await this.getCode(EIP7708_SYSTEM_ADDRESS, simulationParentBlockNumber, requestAbortController))
+	}
+
 	public readonly ethSimulateV1Request = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
@@ -453,7 +460,9 @@ export class EthereumClientService {
 			return await getBlockStateCall(block, blockOverrideForBlock)
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
+		const simulationParentBlockNumber = blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber
 		return {
+			simulationParentBlockNumber,
 			inputBlocks: preparedBlocks,
 			rpcBlocks,
 			blockOverrides,
@@ -463,7 +472,7 @@ export class EthereumClientService {
 					blockStateCalls,
 					traceTransfers: true,
 					validation: false,
-				}, blockNumber === parentBlock.number + 1n ? blockNumber - 1n : blockNumber] as const,
+				}, simulationParentBlockNumber] as const,
 			},
 		}
 	}
@@ -476,7 +485,7 @@ export class EthereumClientService {
 		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
 		return {
 			prepared,
-			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
+			result: await this.recogniseEthTransfers(EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)), prepared.request.params[0].blockStateCalls, prepared.simulationParentBlockNumber, requestAbortController),
 		}
 	}
 
