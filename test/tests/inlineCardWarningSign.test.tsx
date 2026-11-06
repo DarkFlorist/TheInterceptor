@@ -10,7 +10,7 @@ type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly dispatchEvent?: (event: Event) => boolean
 	readonly focus?: () => void
-	readonly focusWithPointer?: () => void
+	readonly clickWithPointer?: () => void
 	readonly blur?: () => void
 	readonly getAttribute?: (name: string) => unknown
 	readonly parentNode?: TestNode | null
@@ -94,10 +94,25 @@ for (const isInsidePageHint of [false, true]) {
 				const { leadingSign } = await renderWarningSigns(dom, isInsidePageHint)
 				await act(() => { leadingSign.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
 				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+				await act(() => { leadingSign.clickWithPointer?.() })
+				assert.deepEqual(findDisplayedHintTexts(dom), [warningMessage])
+				await act(() => { leadingSign.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+				assert.deepEqual(findDisplayedHintTexts(dom), [])
+			} finally {
+				render(null, dom.document.body)
+				dom.restore()
+			}
+		})
+
+		test('ends the explanation of a warning sign with keyboard focus when the pointer clicks it and leaves', async () => {
+			const dom = installDomMock()
+			try {
+				const { leadingSign } = await renderWarningSigns(dom, isInsidePageHint)
 				await act(() => {
-					leadingSign.focusWithPointer?.()
+					leadingSign.focus?.()
 					leadingSign.dispatchEvent?.(new Event('focusin', { bubbles: true }))
 				})
+				await act(() => { leadingSign.clickWithPointer?.() })
 				assert.deepEqual(findDisplayedHintTexts(dom), [warningMessage])
 				await act(() => { leadingSign.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
 				assert.deepEqual(findDisplayedHintTexts(dom), [])

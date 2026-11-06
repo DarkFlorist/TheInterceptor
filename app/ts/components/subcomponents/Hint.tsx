@@ -101,11 +101,14 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			displayHint(targetElement.getAttribute(toolTipAttribute) || '', { x: targetBounds.left + targetBounds.width / 2, top: targetBounds.top, bottom: targetBounds.bottom }, targetElement)
 		}
 
+		// The tooltip element last pressed with the pointer, until focus next leaves an element. :focus-visible alone cannot tell that a pointer took over: an element that already has keyboard focus keeps it through a click.
+		let pointerPressedElement: Element | undefined
+
 		// Read from the document when needed rather than remembered, so it can never point at an element that lost focus or was removed: a removed element is no longer the active element or inside the container. Only keyboard focus counts, which :focus-visible tells apart: a click also focuses a focusable element, but the pointer already opened its tooltip by hovering, and that tooltip must end when the pointer leaves.
 		const getKeyboardFocusedTooltipElement = () => {
 			// An element's ownerDocument is never null (only a Document's own is), and the DOM typings declare Element.ownerDocument as Document.
 			const focusedElement = containerElement.ownerDocument.activeElement
-			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !focusedElement.matches(':focus-visible') || !containerElement.contains(focusedElement)) return undefined
+			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !focusedElement.matches(':focus-visible') || focusedElement === pointerPressedElement || !containerElement.contains(focusedElement)) return undefined
 			return focusedElement
 		}
 
@@ -131,7 +134,13 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 		}
 		const focusout = (event: FocusEvent) => {
 			dismissAbandonedTooltip()
+			pointerPressedElement = undefined
 			leaveTooltip(event, undefined)
+		}
+
+		const mousedown = (event: MouseEvent) => {
+			dismissAbandonedTooltip()
+			pointerPressedElement = getHintElement(event.target, toolTipAttribute)
 		}
 
 		const click = (event: MouseEvent) => {
@@ -203,6 +212,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 		}
 
 		containerElement.addEventListener('click', click)
+		containerElement.addEventListener('mousedown', mousedown)
 		containerElement.addEventListener('mouseover', mouseover)
 		containerElement.addEventListener('mouseout', mouseout)
 		containerElement.addEventListener('focusin', focusin)
@@ -215,6 +225,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 		return () => {
 			cancelPendingHintTimeouts()
 			containerElement.removeEventListener('click', click)
+			containerElement.removeEventListener('mousedown', mousedown)
 			containerElement.removeEventListener('mouseover', mouseover)
 			containerElement.removeEventListener('mouseout', mouseout)
 			containerElement.removeEventListener('focusin', focusin)

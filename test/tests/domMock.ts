@@ -146,14 +146,20 @@ class TestElement extends TestNode {
 		if (event.bubbles && !event.cancelBubble && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
 		return !event.defaultPrevented
 	}
-	// focus stands for keyboard focus and focusWithPointer for the focus a click gives, the difference :focus-visible reports.
+	// focus stands for keyboard focus, which :focus-visible reports.
 	focus() {
 		this.ownerDocument.activeElement = this
 		this.isFocusedByPointer = false
 	}
-	focusWithPointer() {
-		this.ownerDocument.activeElement = this
-		this.isFocusedByPointer = true
+	// The events of a real click. As in a browser, focus only changes when the element did not have it, so an element with keyboard focus keeps :focus-visible through the click.
+	clickWithPointer() {
+		this.dispatchEvent(new Event('mousedown', { bubbles: true }))
+		if (this.ownerDocument.activeElement !== this) {
+			this.ownerDocument.activeElement = this
+			this.isFocusedByPointer = true
+			this.dispatchEvent(new Event('focusin', { bubbles: true }))
+		}
+		this.dispatchEvent(new Event('click', { bubbles: true }))
 	}
 	blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null }
 	matches(selector: string) {

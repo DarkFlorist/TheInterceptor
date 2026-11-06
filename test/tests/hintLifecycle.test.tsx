@@ -9,7 +9,7 @@ type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly dispatchEvent?: (event: Event) => boolean
 	readonly focus?: () => void
-	readonly focusWithPointer?: () => void
+	readonly clickWithPointer?: () => void
 	readonly blur?: () => void
 	readonly getAttribute?: (name: string) => unknown
 	readonly style?: Record<string, unknown>
@@ -227,7 +227,7 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
-	for (const eventType of ['focusin', 'focusout', 'mouseover', 'mouseout', 'click']) {
+	for (const eventType of ['focusin', 'focusout', 'mouseover', 'mouseout', 'mousedown', 'click']) {
 		test(`dismisses the tooltip of a removed focused element on the next ${ eventType } in the container`, async () => {
 			const dom = installDomMock()
 			try {
@@ -367,14 +367,42 @@ describe('Hint lifecycle', () => {
 			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
 			assert.equal(findDisplayedHintText(dom), 'Hovered explanation')
 
-			await act(() => {
-				clickedTooltip.focusWithPointer?.()
-				clickedTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true }))
-			})
+			await act(() => { clickedTooltip.clickWithPointer?.() })
 			assert.equal(findDisplayedHintText(dom), 'Hovered explanation')
 
 			await act(() => { clickedTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
 			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('ends the tooltip of a keyboard-focused element when the pointer clicks it and leaves, until keyboard focus returns', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(() => { focusableTooltip.clickWithPointer?.() })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
+
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+
+			// Tabbing away and back is keyboard focus again.
+			await act(() => {
+				focusableTooltip.blur?.()
+				focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true }))
+			})
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
+			await act(() => { focusableTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -387,11 +415,7 @@ describe('Hint lifecycle', () => {
 			await act(() => {
 				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
 			})
-			const clickedTooltip = findElement(dom.document.body, 'span')
-			await act(() => {
-				clickedTooltip?.focusWithPointer?.()
-				clickedTooltip?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
-			})
+			await act(() => { findElement(dom.document.body, 'span')?.clickWithPointer?.() })
 			assert.equal(findDisplayedHintText(dom), undefined)
 		} finally {
 			render(null, dom.document.body)
