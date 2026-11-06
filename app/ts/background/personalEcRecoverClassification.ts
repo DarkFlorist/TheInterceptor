@@ -1,5 +1,6 @@
 // @noble/curves is pinned exactly to the version micro-eth-signer resolves to, so this classification and recoverAddress run on one copy of the library. tryRecoverAddress.test.ts fails if an upgrade splits them into two copies, so a split cannot be silent and an upgrade has to bump both together.
 // secp256k1.Point's BASE, Fn and Fp are public @noble/curves API: they are declared on its exported point constructor type and shown in its README.
+// This is not part of recoverAddress because micro-eth-signer has no recovery that reports "no address" without throwing, and its error text is not a contract to classify from, so the decision needs the curve math itself. Only personal_ecRecover needs that decision, so the curve dependency stays out of the signing module that every other caller shares.
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { bytesToNumberBE } from '@noble/curves/utils.js'
 import { concatBytes } from '@noble/hashes/utils'
