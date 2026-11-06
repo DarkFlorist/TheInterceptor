@@ -4,6 +4,7 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, Optio
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
+import { RichAccountBalances, RichToken } from './richMode.js'
 import { SigningAddressPreferences } from './signerTypes.js'
 
 export type Page = funtypes.Static<typeof Page>
@@ -52,6 +53,46 @@ const compatibilityExportedSettingsFields = {
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
+const currentExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
+const ExportedRichListElement = funtypes.ReadonlyObject({
+	address: EthereumAddress,
+	makingRich: funtypes.Boolean,
+	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
+})
+
+const independentAddressExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
+	signingAddressPreferences: SigningAddressPreferences,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
+const richExportedSettingsFields = {
+	makeCurrentAddressRich: funtypes.Boolean,
+	richNativeAmount: EthereumQuantity,
+	fixedAddressRichList: funtypes.ReadonlyArray(ExportedRichListElement),
+	richTokens: funtypes.ReadonlyArray(RichToken),
+	richAccountBalances: RichAccountBalances,
+}
+
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -87,50 +128,38 @@ export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.4'),
+		settings: funtypes.ReadonlyObject(currentExportedSettingsFields)
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.5'),
+		// Rich-mode and independent-address branches both produced 1.5 backups before merging; accept each field set.
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
+			...currentExportedSettingsFields,
+			...richExportedSettingsFields,
 		})
 	}),
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.5'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
+			...independentAddressExportedSettingsFields,
 		})
 	}),
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.6'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
+			...independentAddressExportedSettingsFields,
+			safeAppsCompatibilityMode: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.7'),
+		settings: funtypes.ReadonlyObject({
+			...independentAddressExportedSettingsFields,
+			...richExportedSettingsFields,
 			safeAppsCompatibilityMode: funtypes.Boolean,
 		})
 	}),

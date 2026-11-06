@@ -5,7 +5,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Home } from '../../app/ts/components/pages/Home.js'
 import { installDomMock } from './domMock.js'
-import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { ICON_SIGNING, ICON_SIMULATING, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -261,6 +261,9 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		setRichState: async () => undefined,
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
+		richNativeAmount: new Signal(MAKE_YOU_RICH_TRANSACTION.transaction.value),
+		richTokenOptions: new Signal([]),
+		richAccountBalances: new Signal([]),
 		activeAddresses: new Signal([activeAddressEntry]),
 		walletSelectedAddressBookEntry: new Signal(undefined),
 		tabState: new Signal<TabState | undefined>(undefined),

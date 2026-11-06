@@ -556,7 +556,7 @@ describe('popup async action UI', () => {
 		if (changeButton === undefined) throw new Error('Expected the change-address button to render')
 		await act(async () => { await clickElement(changeButton) })
 
-		const selectedAddressCard = collectElements(dom.document.body, 'div').find((element) =>
+		const selectedAddressCard = collectElements(dom.document.body, 'button').find((element) =>
 			element.attributes?.class?.split(/\s+/).includes('card') === true
 			&& element.textContent?.includes('Selected address') === true
 		)

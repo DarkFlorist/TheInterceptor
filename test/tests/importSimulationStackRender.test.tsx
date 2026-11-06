@@ -43,7 +43,7 @@ describe('ImportSimulationStack', () => {
 		if (textarea === undefined) throw new Error('Expected simulation stack textarea to render')
 		assert.equal(getClassNames(textarea).includes('simulation-stack-import-input'), true)
 		assert.equal(findElementsByTagName(dom.document.body, 'INPUT').length, 0)
-		assert.equal(dom.document.body.textContent?.includes('Interceptor Simulation Stack:'), true)
+		assert.equal(dom.document.body.textContent?.includes('Interceptor simulation stack'), true)
 
 		dom.restore()
 	})
