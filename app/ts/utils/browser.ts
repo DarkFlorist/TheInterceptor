@@ -18,11 +18,14 @@ async function reportPopupMessageListenerError(error: unknown) {
 	}
 }
 
+// Returns the function that removes the listener, because the registered listener is this wrapper rather than the callback.
 export const noReplyExpectingBrowserRuntimeOnMessageListener = (callback: (msg: unknown) => false | Promise<false>) => {
-	return browser.runtime.onMessage.addListener((message: unknown) => {
+	const listener = (message: unknown) => {
 		void Promise.resolve(callback(message)).catch((error: unknown) => {
 			void reportPopupMessageListenerError(error)
 		})
 		return undefined
-	})
+	}
+	browser.runtime.onMessage.addListener(listener)
+	return () => browser.runtime.onMessage.removeListener(listener)
 }

@@ -18,7 +18,7 @@ export const SAFE_EXECUTION_ABI = [{
 	outputs: [{ name: 'success', type: 'bool' }],
 }] as const
 
-function prevalidatedSafeSignature(signer: bigint): Hex {
+export function prevalidatedSafeSignature(signer: bigint): Hex {
 	return `0x${ signer.toString(16).padStart(64, '0') }${ '0'.repeat(64) }01`
 }
 
