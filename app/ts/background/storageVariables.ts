@@ -2,7 +2,7 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, browserStorageLocalSetAtomically, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -10,7 +10,6 @@ import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from 
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -38,7 +37,7 @@ const idsOfOpenedTabsRepository = createStoredValueRepository({
 export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
-// The innermost lock: its holder only reads the pending requests, applies a synchronous function and makes one storage write, so it never waits on another lock and nothing run under it can reach back into pending requests. Every update below takes a synchronous function to keep it so; what must be stored together with a pending request is passed in as data, not as a callback. The lock order is terminalReplySemaphore, pendingTerminalRepliesSemaphore, then this lock.
+// The innermost lock: its holder only reads the pending requests, applies a synchronous function and makes one storage write, so it never waits on another lock and nothing run under it can reach back into pending requests. Every update below takes a synchronous function to keep it so; the only caller code run under it is the write that pendingTerminalReplies.ts passes to applyPendingRequestInstanceDecision. The lock order is terminalReplySemaphore, pendingTerminalRepliesSemaphore, then this lock.
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
 	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
@@ -61,11 +60,14 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
+const writePendingRequests = async (pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[]) => {
+	await browserStorageLocalSet2({ pendingTransactionsAndMessages })
+}
+
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(() => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[]) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactionsAndMessages = update(await readPendingTransactionsAndMessagesWithRecovery())
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
+		await writePendingRequests(update(await readPendingTransactionsAndMessagesWithRecovery()))
 	})
 }
 
@@ -78,8 +80,8 @@ export const isSamePendingRequestInstance = (first: PendingRequestInstance, seco
 // Decides what happens to a pending request instance from how it is stored now; undefined leaves it alone. Synchronous, as it runs under the pending-request lock.
 export type DecidePendingRequestInstance = (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => { type: 'store', pending: PendingTransactionOrSignableMessage } | { type: 'remove' } | undefined
 
-// Applies a decision to the pending request instance that was read earlier, so work that awaited in between never touches a different request the page sent under the same request id. Reports what happened to the instance: nothing is written when it is 'unchanged', because the instance is gone or the decision left it alone. pendingTerminalReplies is the outbox to store in that same storage write; only appendPendingTerminalReplyWithPendingRequestDecision passes it, while holding the outbox lock.
-export async function applyPendingRequestInstanceDecision(instance: PendingRequestInstance, decide: DecidePendingRequestInstance, pendingTerminalReplies?: readonly InterceptedRequestForward[]) {
+// Applies a decision to the pending request instance that was read earlier, so work that awaited in between never touches a different request the page sent under the same request id. Reports what happened to the instance: nothing is written when it is 'unchanged', because the instance is gone or the decision left it alone. write stores the new pending requests in one storage write. It is a parameter only so pendingTerminalReplies.ts, the owner of the reply outbox, can store its outbox in that same write; every other caller passes writePendingRequests, and an architecture test holds that.
+export async function applyPendingRequestInstanceDecision(instance: PendingRequestInstance, decide: DecidePendingRequestInstance, write: (pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<void>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
 		const pendingTransactionsOrMessages = await readPendingTransactionsAndMessagesWithRecovery()
 		const match = pendingTransactionsOrMessages.findIndex((pending) => isSamePendingRequestInstance(pending, instance))
@@ -89,7 +91,7 @@ export async function applyPendingRequestInstanceDecision(instance: PendingReque
 		const pendingTransactionsAndMessages = decision.type === 'remove'
 			? pendingTransactionsOrMessages.filter((_pending, index) => index !== match)
 			: replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, decision.pending)
-		await browserStorageLocalSetAtomically(pendingTerminalReplies === undefined ? {} : { pendingTerminalReplies }, { pendingTransactionsAndMessages })
+		await write(pendingTransactionsAndMessages)
 		return decision.type === 'remove' ? 'removed' as const : 'stored' as const
 	})
 }
@@ -99,13 +101,13 @@ export async function updatePendingTransactionOrMessageInstance(instance: Pendin
 	const outcome = await applyPendingRequestInstanceDecision(instance, (current) => {
 		const pending = update(current)
 		return pending === undefined ? undefined : { type: 'store', pending }
-	})
+	}, writePendingRequests)
 	return outcome === 'stored'
 }
 
 // Removes only the pending request instance that was read earlier, while isRemovable accepts it as stored now. Returns whether it was removed. A removal that answers the website goes through queueTerminalReplyWithPendingRequestDecision instead, which stores the reply in the same write.
 export async function removePendingTransactionOrMessageInstance(instance: PendingRequestInstance, isRemovable: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => boolean) {
-	return await applyPendingRequestInstanceDecision(instance, (current) => isRemovable(current) ? { type: 'remove' } : undefined) === 'removed'
+	return await applyPendingRequestInstanceDecision(instance, (current) => isRemovable(current) ? { type: 'remove' } : undefined, writePendingRequests) === 'removed'
 }
 
 // The one write by request id, for signer replies, which name only the id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a request the user has not approved, such as a newer request under a reused id. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.

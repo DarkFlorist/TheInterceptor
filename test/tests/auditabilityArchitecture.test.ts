@@ -1,5 +1,6 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
+import ts from 'typescript'
 import * as simulationFacade from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import * as simulationTransactionSigning from '../../app/ts/simulation/services/simulationTransactionSigning.js'
@@ -123,6 +124,38 @@ test('historical popup wire spellings are explicit protocol exceptions', () => {
 test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('toString'), false)
 	assert.equal(isPopupMessageMethod('__proto__'), false)
+})
+
+// Every identifier or string in the extension source with one of these exact names, mapped to the files using it. Comments do not count.
+async function findFilesUsingNames(names: ReadonlySet<string>) {
+	const filesByName = new Map([...names].map((name) => [name, new Set<string>()]))
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) {
+		const scriptKind = path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+		const sourceFile = ts.createSourceFile(path, await Bun.file(`${ appSourceDirectory }${ path }`).text(), ts.ScriptTarget.Latest, false, scriptKind)
+		const visit = (node: ts.Node) => {
+			if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) filesByName.get(node.text)?.add(path)
+			ts.forEachChild(node, visit)
+		}
+		visit(sourceFile)
+	}
+	return filesByName
+}
+
+test('only the outbox module writes the terminal reply outbox, under its own lock', async () => {
+	const outboxOwner = 'background/pendingTerminalReplies.ts'
+	const allowedFilesByName = new Map([
+		// The key itself, however a write would name it: only its schema in storageUtils and its owner.
+		['pendingTerminalReplies', [outboxOwner, 'utils/storageUtils.ts']],
+		// The one write able to store the outbox together with the pending requests.
+		['browserStorageLocalSetAtomically', [outboxOwner, 'utils/storageUtils.ts']],
+		// The only way to run a write under the pending-request lock, which must stay the outbox's single write.
+		['applyPendingRequestInstanceDecision', [outboxOwner, 'background/storageVariables.ts']],
+	])
+	const filesByName = await findFilesUsingNames(new Set(allowedFilesByName.keys()))
+	for (const [name, allowedFiles] of allowedFilesByName) {
+		assert.deepEqual([...(filesByName.get(name) ?? [])].sort(), [...allowedFiles].sort(), name)
+	}
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
