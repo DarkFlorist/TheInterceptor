@@ -8,7 +8,7 @@ import { ViewSelector } from '../../app/ts/components/subcomponents/ViewSelector
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { clickRenderedElement, findRenderedElement, installDomMock, type RenderedTreeNode } from './domMock.js'
+import { clickRenderedElement, installDomMock, type RenderedTreeNode } from './domMock.js'
 
 const signerEntry: AddressBookEntry = { type: 'contact', name: 'Signer', address: 0x1111111111111111111111111111111111111111n, entrySource: 'User', chainId: 1n }
 const rpcNetwork: RpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
