@@ -1,5 +1,5 @@
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -44,7 +44,7 @@ async function clearSimulationStateFromConfig() {
 	})
 }
 
-export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
+export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesReader) {
 	await clearSimulationStateFromConfig()
 	const { services, simulation } = await readNetworkSnapshot(simulationServicesOwner)
 	await queuePopupSimulationRefresh({ ...services, invalidateOldState: true }, simulation)

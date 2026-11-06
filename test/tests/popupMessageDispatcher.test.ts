@@ -142,7 +142,6 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 	return {
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
-		settings,
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),

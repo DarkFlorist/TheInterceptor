@@ -28,7 +28,7 @@ import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
-import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
+import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -187,7 +187,7 @@ export const requireSimulationSnapshot = (simulation: SimulationRead) => {
 	return simulation
 }
 
-// Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState, a maintainer decision that keeps their signatures. Callers take both from one readNetworkSnapshot call under the network transition lock; if a pair still mismatches, getSimulationProviderForSnapshot refuses it, so getUpdatedSimulationState cannot simulate it. Code that hands the client to the simulation directly, such as an RPC request's overlay or a confirmation's simulation, has only the single read.
+// Settings with the simulation state built from them, captured together so a request simulates the stack of its own network. Handlers take the services as separate (ethereum, tokenPriceService) arguments next to NetworkState, a maintainer decision that keeps their signatures. Callers take both from one locked read, so they match, except for readNetworkSnapshotForPendingRequest, whose simulation is unavailable when they do not; if a pair still mismatches, getSimulationProviderForSnapshot refuses it, so getUpdatedSimulationState cannot simulate it. Code that hands the client to the simulation directly, such as an RPC request's overlay or a confirmation's simulation, has only the single read.
 export type NetworkState = {
 	readonly settings: Settings
 	readonly simulation: SimulationRead
@@ -196,7 +196,7 @@ export type NetworkState = {
 // A NetworkState together with the services that were installed when it was read.
 export type NetworkSnapshot = NetworkState & { readonly services: SimulationServices }
 
-// Whether the client and the snapshot describe the same network. A caller that holds a client and reads a snapshot later can end up with two networks, because that read waits for a network change in progress. Signer-only networks are not simulated, so they keep the previous network's services. Both values are immutable, so the answer stays true for as long as the caller holds them.
+// Whether the client and the snapshot describe the same network. A caller that holds a client and reads a snapshot later can end up with two networks, because that read waits for a network change in progress. Signer-only networks are not simulated, so they keep the previous network's services. Neither the snapshot nor the client's endpoint ever changes, so the answer stays true for as long as the caller holds them. A mismatch skips the work rather than throwing because a caller holding a client meets it on ordinary network switches, and that change queues the refresh of its own network; a throw would report each such switch as an unexpected error. It cannot tell that race from two values wrongly paired from different reads, so such a pairing also passes silently.
 export const servesSnapshotNetwork = (ethereum: EthereumClientService, snapshot: SimulationReadIdentity) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) || !getRpcNetworkChange(snapshot.activeRpcNetwork, ethereum.getRpcEntry()).endpointChanged
 )
@@ -479,7 +479,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 
 // Adds metadata to the stored visualisation with the client of the refresh's snapshot. Returning undefined from the storage callback writes nothing, so a refresh whose network was replaced, or whose client does not serve the stored visualisation, leaves storage as it is; the storage update checks the generation again immediately before it starts the write. The checks are synchronous and need no transition lock.
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot, requestAbortController: AbortController | undefined) => {
-	const networkIsActive = () => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()
+	const networkIsActive = () => snapshotNetworkIsActive(snapshot)
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (!networkIsActive()) return undefined
 		if (prevState.simulationState.kind === 'passthrough') return undefined

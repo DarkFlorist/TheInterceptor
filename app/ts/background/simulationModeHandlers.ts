@@ -17,7 +17,7 @@ import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { addressString } from '../utils/bigint.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
@@ -39,7 +39,7 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 }
 
 export async function sendTransaction(
-	simulationServicesOwner: SimulationServicesOwner,
+	simulationServicesOwner: SimulationServicesReader,
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	network: NetworkState,
@@ -125,7 +125,7 @@ export async function maxPriorityFeePerGas(ethereumClientService: EthereumClient
 }
 
 export async function personalSign(
-	simulationServicesOwner: SimulationServicesOwner,
+	simulationServicesOwner: SimulationServicesReader,
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	network: NetworkState,

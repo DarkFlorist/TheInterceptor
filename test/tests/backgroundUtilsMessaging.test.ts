@@ -210,23 +210,6 @@ describe('backgroundUtils messaging', () => {
 			new Map(),
 			simulationServicesOwner,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			{
-				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-				openedPage: { page: 'Home' },
-				useSignersAddressAsActiveAddress: false,
-				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
-				simulationMode: true,
-			},
 			async () => undefined,
 		)
 
@@ -247,23 +230,6 @@ describe('backgroundUtils messaging', () => {
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
 			{ method: 'not_a_popup_method' },
-			{
-				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-				openedPage: { page: 'Home' },
-				useSignersAddressAsActiveAddress: false,
-				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
-				simulationMode: true,
-			},
 			async () => undefined,
 		))
 		assert.equal(reply.error.code, -32700)

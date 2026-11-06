@@ -1,4 +1,4 @@
-import { PopupMessage, type Settings } from '../types/interceptor-messages.js'
+import { PopupMessage } from '../types/interceptor-messages.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
@@ -15,7 +15,6 @@ export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationServicesOwner: SimulationServicesOwner,
 	request: unknown,
-	settings: Settings,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
@@ -33,7 +32,6 @@ export async function popupMessageHandler(
 		const requestReply = await dispatchPopupMessage({
 			websiteTabConnections,
 			simulationServicesOwner,
-			settings,
 			publishRpcConnectionStatus,
 			simulationAbortController,
 			confirmTransactionAbortController: getConfirmTransactionAbortController(),

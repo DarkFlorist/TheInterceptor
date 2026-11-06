@@ -3,7 +3,7 @@ import { getErrorMessage } from '../utils/errors.js'
 import { getActiveStackContext } from '../utils/activeStackContext.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
@@ -115,12 +115,12 @@ export async function runStackIndependentNetworkTask<T>(task: (reads: LockedNetw
 }
 
 // The read of the active network: its settings, the stack built on them and the services installed for them, all read under the lock so they describe one network. It reads storage only, so RPC work stays outside the lock. Settings and services always come back together; a stack that cannot be read, or that a network change could not clear, comes back as an unavailable simulation.
-export async function readNetworkSnapshot(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
+export async function readNetworkSnapshot(simulationServicesOwner: SimulationServicesReader): Promise<NetworkSnapshot> {
 	return await runStackIndependentNetworkTask(async (reads) => ({ ...await reads.captureNetworkState(), services: simulationServicesOwner.getCurrent() }))
 }
 
 // For a request that is already pending, whose dialog and known outcome must keep working even while the committed network's services cannot be installed. In that state these services still serve the previous network, so the simulation is unavailable and nothing simulates; they serve only the reply and the dialog.
-export async function readNetworkSnapshotForPendingRequest(simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>): Promise<NetworkSnapshot> {
+export async function readNetworkSnapshotForPendingRequest(simulationServicesOwner: SimulationServicesReader): Promise<NetworkSnapshot> {
 	return await networkTransitionSemaphore.execute(async () => {
 		await retryUnfinishedNetworkChange()
 		return { ...await captureNetworkState(), services: simulationServicesOwner.getCurrent() }

@@ -68,6 +68,9 @@ export type SimulationServicesOwner = {
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 }
 
+// For code that cannot start a network change. Only code on a path to runSettingsTransition holds the owner itself, and only installServicesForCommittedNetwork calls reset.
+export type SimulationServicesReader = Pick<SimulationServicesOwner, 'getCurrent'>
+
 // One owner publishes installed services. Reset only inside runNetworkTransition; work that simulates with settings (dapp requests, popup snapshot handlers, confirmation resolution) reads settings, stack and services together through readNetworkSnapshot, other handlers read getCurrent() when their work starts.
 export function createSimulationServicesOwner(
 	rpcNetwork: RpcEntry,

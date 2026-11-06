@@ -10,7 +10,6 @@ import type { SimulationRead } from './simulationUpdating.js'
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
 	simulationServicesOwner: SimulationServicesOwner
-	settings: Settings
 	publishRpcConnectionStatus: PublishRpcConnectionStatus
 	simulationAbortController: AbortController
 	confirmTransactionAbortController: AbortController
@@ -23,6 +22,7 @@ export const popupMessageHandler = createMethodHandlerFor<PopupMessage, PopupMes
 
 // One fixed-provider operation: settings, stack and services are read together under the transition lock, and the context exposes neither reset nor the live owner.
 export type PopupSnapshotContext = Omit<PopupMessageDispatcherContext, 'simulationServicesOwner' | 'resetSimulationState'> & {
+	readonly settings: Settings
 	readonly services: SimulationServices
 	readonly simulation: SimulationRead
 }

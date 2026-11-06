@@ -46,7 +46,6 @@ const dispatchPopup = async (modules: Awaited<ReturnType<typeof loadModules>>, {
 	return await dispatchPopupMessage({
 		websiteTabConnections,
 		simulationServicesOwner,
-		settings: await modules.getSettings(),
 		publishRpcConnectionStatus: noopPublishRpcConnectionStatus,
 		simulationAbortController: undefined,
 		confirmTransactionAbortController: new AbortController(),

@@ -43,7 +43,7 @@ import { rejectFetchSimulationStackRequest, resolveFetchSimulationStackRequest }
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -115,7 +115,7 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 	}
 }
 
-export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function confirmDialog(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -810,7 +810,7 @@ export const openNewTab = async (tabName: ExtensionTabName, targetHash = '') => 
 }
 
 export async function requestNewHomeData(
-	simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>,
+	simulationServicesOwner: SimulationServicesReader,
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
 	includeWebsiteAccessAddressMetadata: boolean,
@@ -868,7 +868,7 @@ async function sendHomePageIfNetworkStillActive(snapshot: NetworkSnapshot, websi
 }
 
 export async function refreshHomeData(
-	simulationServicesOwner: Pick<SimulationServicesOwner, 'getCurrent'>,
+	simulationServicesOwner: SimulationServicesReader,
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
 	popupRefreshGeneration: number,
@@ -899,7 +899,7 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function changeSettings(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+export async function changeSettings(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
@@ -1028,7 +1028,7 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function forceSetGasLimitForTransaction(simulationServicesOwner: SimulationServicesOwner, parsedRequest: ForceSetGasLimitForTransaction) {
+export async function forceSetGasLimitForTransaction(simulationServicesOwner: SimulationServicesReader, parsedRequest: ForceSetGasLimitForTransaction) {
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
 	// The gas limit may belong to a stacked transaction, so read the stack after the write; the shared visualisation reads it again when its refresh runs.
 	const network = await readNetworkSnapshot(simulationServicesOwner)
@@ -1209,7 +1209,7 @@ async function buildHomePageUpdate(
 }
 
 // An accepted reply describes the stack at confirmation time, read together with the settings and services of that moment. A rejection sends no stack, so it reads and simulates nothing.
-export async function fetchSimulationStackRequestConfirmation(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+export async function fetchSimulationStackRequestConfirmation(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	const pendingRequest = await getFetchSimulationStackRequestPromise()
 	if (pendingRequest === undefined) throw new Error('The pending simulation stack request is unavailable.')
 	if (!confirmation.data.accept) return await rejectFetchSimulationStackRequest(websiteTabConnections, confirmation)

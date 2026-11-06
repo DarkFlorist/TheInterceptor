@@ -1,6 +1,6 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { getRpcEntryIdentityKey, getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -91,7 +91,7 @@ const isSameStackOperation = (stacked: InterceptorStackOperation, operation: Int
 }
 
 // A confirmed simulation operation joins the stack only while the chain it was simulated on is still active in simulation mode. Returns the stacked operation with the settings, stack snapshot and services read under the same lock, or undefined if that network went away.
-export async function appendToActiveSimulationStack(simulationServicesOwner: SimulationServicesOwner, operation: InterceptorStackOperation, simulatedChainId: bigint | undefined): Promise<(NetworkSnapshot & { readonly stackedOperation: InterceptorStackOperation }) | undefined> {
+export async function appendToActiveSimulationStack(simulationServicesOwner: SimulationServicesReader, operation: InterceptorStackOperation, simulatedChainId: bigint | undefined): Promise<(NetworkSnapshot & { readonly stackedOperation: InterceptorStackOperation }) | undefined> {
 	return await runNetworkTransition(async (reads) => {
 		const settings = await getSettings()
 		if (!settings.simulationMode) return undefined

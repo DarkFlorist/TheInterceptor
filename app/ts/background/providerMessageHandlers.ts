@@ -17,7 +17,7 @@ import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMes
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
@@ -209,7 +209,7 @@ export async function walletSwitchEthereumChainReply(simulationServicesOwner: Si
 	return returnValue
 }
 
-export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+export async function connectedToSigner(_simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
@@ -278,7 +278,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	return result
 }
 
-export async function signerReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function signerReply(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const signerReply = SignerReply.parse(request)
 	const params = signerReply.params[0]
 	const doNotReply = { type: 'doNotReply' as const }

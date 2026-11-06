@@ -530,7 +530,6 @@ test('a confirmation dialog initialised while services cannot be installed shows
 			const reply = await dispatchPopupMessage({
 				websiteTabConnections,
 				simulationServicesOwner: owner,
-				settings: await (await import('../../app/ts/background/settings.js')).getSettings(),
 				publishRpcConnectionStatus: async () => undefined,
 				simulationAbortController: undefined,
 				confirmTransactionAbortController: new AbortController(),

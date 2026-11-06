@@ -14,7 +14,7 @@ import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycl
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 import { alwaysWrite } from '../utils/largeStateStore.js'
-import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
+import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import { readNetworkState } from './networkTransitionLock.js'
 
 let abortController = new AbortController()
@@ -59,9 +59,6 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 
 // What a caller with its own snapshot shows when that snapshot has no visualisation; the stored result is shared by every refresh and may describe another network or stack.
 export const createUnavailableVisualisation = (): CompleteVisualizedSimulation => ({ ...createPassthroughCompleteVisualizedSimulation(0, 'invalid'), simulationUpdatingState: 'failed' })
-
-// The shared visualisation follows the active network, so a refresh whose snapshot was read before a later committed network change, including a return to the same endpoint, neither cancels, simulates, stores nor broadcasts; the change queues the refresh of its own network. The check is synchronous, so nothing commits between it and the start of the step it guards; a change that commits while a write is in flight has its refresh serialized after that write.
-const snapshotNetworkIsActive = (snapshot: SimulationRead) => snapshot.networkChangeGeneration === getCommittedNetworkChangeGeneration()
 
 // A refresh without a snapshot of its own reads one under the network transition lock, so its settings and stack describe one network. It reads it before waiting for the visualisation semaphore, which a transition takes while holding its lock to publish a failed provider installation.
 const readSharedRefreshSnapshot = async (snapshot: SimulationSnapshot | undefined) => snapshot ?? requireSimulationSnapshot((await readNetworkState()).simulation)
