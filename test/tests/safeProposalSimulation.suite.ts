@@ -4,6 +4,7 @@ import { activeAddress, addressString, browserMock, created, createSafeAddressBo
 import { createTestSimulationServicesOwner, fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../../app/ts/utils/constants.js'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
 const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
@@ -558,7 +559,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 		operations: [{ type: 'Transaction', preSimulationTransaction }],
 	}))
 	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
-	assert.equal((await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput())[0]?.transactions.length, 1)
+	assert.equal((await readActiveSimulationInput())[0]?.transactions.length, 1)
 	await modules.setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		popupOrTabId: { type: 'popup', id: 41 },

@@ -1466,7 +1466,7 @@ describe('network transition snapshot', () => {
 		let deadline: ReturnType<typeof setTimeout> | undefined
 		try {
 			const messagesBefore = runtimeMessages.length
-			const refresh = refreshHomeData(owner, websiteTabConnections, false, 1, noopPublishRpcConnectionStatus)
+			const refresh = refreshHomeData(owner, websiteTabConnections, false, noopPublishRpcConnectionStatus)
 			await Promise.race([
 				requestOnAStarted.promise,
 				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The refresh sent no request to network A')), 1000) }),
@@ -1522,7 +1522,7 @@ describe('network transition snapshot', () => {
 		try {
 			// The refresh reads its snapshot of the one-transaction stack, then pauses in its metadata update while it looks up the stored visualisation's addresses.
 			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
-			const refresh = refreshHomeData(owner, websiteTabConnections, false, 1, noopPublishRpcConnectionStatus)
+			const refresh = refreshHomeData(owner, websiteTabConnections, false, noopPublishRpcConnectionStatus)
 			await Promise.race([
 				addressBookRead.started,
 				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The metadata update read no address book entries')), 1000) }),
@@ -1730,7 +1730,7 @@ describe('network transition snapshot', () => {
 		}
 		try {
 			const messagesBefore = runtimeMessages.length
-			await refreshHomeData(owner, websiteTabConnections, false, 1, publishRpcConnectionStatus)
+			await refreshHomeData(owner, websiteTabConnections, false, publishRpcConnectionStatus)
 
 			assert.equal(switchedToB, true)
 			assert.equal(installed.length, 1)

@@ -9,6 +9,7 @@ import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -497,7 +498,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack: { operations: [] },
 		})
 		const modules = await modulesPromise
-		const currentSimulationInput = await modules.getCurrentSimulationInput()
+		const currentSimulationInput = await readActiveSimulationInput()
 		const matchingPopupVisualisation = {
 			...stalePopupVisualisation,
 			simulationState: {
@@ -621,7 +622,7 @@ describe('popup clear reset', () => {
 		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
 		const { simulation: snapshot } = await readNetworkState()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
-		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
+		assert.notDeepEqual(await readActiveSimulationInput(), snapshot.simulationStateInput)
 		const result = await updatePopupVisualisationForSnapshot(fakeEthereum, fakeTokenPriceService, snapshot)
 		assert.equal(result.numberOfAddressesMadeRich, 0)
 		assert.equal(result.simulationState.kind, 'simulated')
@@ -653,7 +654,7 @@ describe('popup clear reset', () => {
 			},
 		} as never)
 		const modules = await modulesPromise
-		const currentSimulationInput = await modules.getCurrentSimulationInput()
+		const currentSimulationInput = await readActiveSimulationInput()
 		const matchingPopupVisualisation = {
 			...stalePopupVisualisation,
 			simulationState: {
@@ -664,7 +665,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData({ getCurrent: () => ({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }) }, new Map(), true, 1, async () => undefined, false)
+		await refreshHomeData({ getCurrent: () => ({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }) }, new Map(), true, async () => undefined, false)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)

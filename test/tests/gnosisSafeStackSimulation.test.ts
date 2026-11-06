@@ -8,6 +8,7 @@ import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -379,7 +380,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		})
 
-		const simulationInput = await modules.getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		const executionTimestamp = new Date('2024-01-02T00:00:00.000Z')
 		const executionStateOverrides = {
 			'0x0000000000000000000000000000000000000001': { code: new Uint8Array([1, 2, 3]) },

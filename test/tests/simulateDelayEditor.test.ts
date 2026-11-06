@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 type StorageState = Record<string, unknown>
 
@@ -58,7 +59,6 @@ const mockBrowser = makeMockBrowser()
 Object.defineProperty(globalThis, 'browser', { value: mockBrowser, configurable: true, writable: true })
 Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 
-const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
 const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
@@ -145,7 +145,7 @@ describe('simulate delay editor', () => {
 		assert.deepStrictEqual({ ...stack.operations[1].blockTimeManipulation }, newDelay)
 	})
 
-	test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
+	test('the simulation input has one block transition per remaining delay', async () => {
 		await resetStack()
 
 		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
@@ -156,7 +156,7 @@ describe('simulate delay editor', () => {
 			},
 		})
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.equal(simulationInput.length, 2)
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [
 			{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
@@ -179,7 +179,7 @@ describe('simulate delay editor', () => {
 			},
 		})
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepStrictEqual(simulationInput, [])
 	})
 
@@ -198,7 +198,7 @@ describe('simulate delay editor', () => {
 			}],
 		}))
 
-		assert.deepEqual(await getCurrentSimulationInput(), [])
+		assert.deepEqual(await readActiveSimulationInput(), [])
 	})
 })
 

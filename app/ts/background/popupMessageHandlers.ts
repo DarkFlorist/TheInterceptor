@@ -815,12 +815,11 @@ export async function requestNewHomeData(
 	shouldRefreshSignerAccounts: boolean,
 	includeWebsiteAccessAddressMetadata: boolean,
 	requestAbortController: AbortController | undefined,
-	popupRefreshGeneration: number,
 ) {
 	// Like refreshHomeData, a network change that commits while the page is built starts it over on the new network.
 	for (;;) {
 		const snapshot = await readNetworkSnapshot(simulationServicesOwner)
-		if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata, popupRefreshGeneration })) return
+		if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata })) return
 	}
 }
 
@@ -858,9 +857,9 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 // A refresh's services and settings serve one network only while no network change commits after its snapshot was read. The generation tells the networks apart even when a change keeps the client, as a signer-only network does, or returns to the same endpoint; reading it waits for a transition in progress, so settings the refresh read meanwhile are covered.
 const snapshotNetworkIsStillActive = async (snapshot: NetworkSnapshot) => await readCommittedNetworkChangeGeneration() === snapshot.simulation.networkChangeGeneration
 
-// The home page reads settings when it is built, so it is built with the snapshot's client and sent only if no network change committed since the snapshot was read. Returns whether it was sent, so the caller can start over on the new network.
-async function sendHomePageIfNetworkStillActive(snapshot: NetworkSnapshot, websiteTabConnections: WebsiteTabConnections, options: HomePageUpdateOptions) {
-	const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, options)
+// The home page reads settings when it is built, so it is built with the snapshot's client and sent only if no network change committed since the snapshot was read. Returns whether it was sent, so the caller can start over on the new network. Each attempt takes its generation just before it reads what it shows: a network change broadcasts a newer generation than the attempt it interrupts, which the popup would then drop, and generations keep the order of the reads, so an older page cannot replace a newer one.
+async function sendHomePageIfNetworkStillActive(snapshot: NetworkSnapshot, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>) {
+	const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() })
 	// Nothing is awaited between this check and the broadcast, so no network change commits in between.
 	if (!await snapshotNetworkIsStillActive(snapshot)) return false
 	await sendPopupMessageToOpenWindows(updatedPage)
@@ -871,7 +870,6 @@ export async function refreshHomeData(
 	simulationServicesOwner: SimulationServicesReader,
 	websiteTabConnections: WebsiteTabConnections,
 	shouldRefreshSignerAccounts: boolean,
-	popupRefreshGeneration: number,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 	refreshSimulation = true,
 	requestAbortController: AbortController | undefined = undefined,
@@ -888,7 +886,7 @@ export async function refreshHomeData(
 			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
 			if (!await snapshotNetworkIsStillActive(snapshot)) continue
 			if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
-			if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata: true, popupRefreshGeneration })) return
+			if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata: true })) return
 		}
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
@@ -905,7 +903,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
-	return await requestNewHomeData(simulationServicesOwner, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
+	return await requestNewHomeData(simulationServicesOwner, websiteTabConnections, false, true, requestAbortController)
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationRead, request: SimulateGovernanceContractExecution) {
