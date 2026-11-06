@@ -142,7 +142,7 @@ async function findFilesUsingNames(names: ReadonlySet<string>) {
 	return filesByName
 }
 
-test('only their owning modules can write the terminal reply outbox and the pending requests', async () => {
+test('the terminal reply outbox, the pending requests and their named writers appear only in their allowed files', async () => {
 	const outboxOwner = 'background/pendingTerminalReplies.ts'
 	const pendingRequestsOwner = 'background/storageVariables.ts'
 	const allowedFilesByName = new Map([
@@ -152,7 +152,7 @@ test('only their owning modules can write the terminal reply outbox and the pend
 		['browserStorageLocalSetTerminalRepliesWithPendingRequests', [outboxOwner, 'utils/storageUtils.ts']],
 		// The only way to run a write under the pending-request lock, which must stay the outbox's single write.
 		['applyPendingRequestInstanceDecision', [outboxOwner, pendingRequestsOwner]],
-		// The pending-requests key: its schema, its owner, the combined write, and a read in the confirmation page, which cannot write it because the writer below is out of its reach.
+		// The pending-requests key: its schema, its owner, the combined write, and a read in the confirmation page. This limits where the exact name appears; a direct browser.storage.local.set of it in an allowed file would still pass.
 		['pendingTransactionsAndMessages', [outboxOwner, pendingRequestsOwner, 'utils/storageUtils.ts', 'components/pages/ConfirmTransaction.tsx']],
 		// The only other write of the pending-requests schema group, which holds no other key.
 		['browserStorageLocalSet2', [pendingRequestsOwner, 'utils/storageUtils.ts']],
