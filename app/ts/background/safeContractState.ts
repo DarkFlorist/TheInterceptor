@@ -3,7 +3,8 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { createEthereumClientService } from '../simulation/serviceLifecycle.js'
 import type { RequestSafeContractState } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, reportUnexpectedError, shouldSuppressUnexpectedErrorReport } from '../utils/errors.js'
-import { getPrimaryRpcForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getPrimaryRpcForChain } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import type { RpcEntry } from '../types/rpc.js'
 
 type SafeContractStateDependencies = {

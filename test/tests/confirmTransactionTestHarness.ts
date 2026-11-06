@@ -262,7 +262,7 @@ export async function loadModules() {
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
-		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
+		getUserAddressBookEntries: (await import('../../app/ts/background/addressBookStore.js')).getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
@@ -276,7 +276,7 @@ export async function loadModules() {
 			return updated.safeTransactionStacks
 		},
 		updateTabState: storageVariables.updateTabState,
-		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
+		updateAddressBookAndSigningWalletBindings: (await import('../../app/ts/background/signingAddressBookCoordinator.js')).updateAddressBookAndSigningWalletBindings,
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
@@ -495,7 +495,8 @@ export const signedTransaction = modules.mockSignTransaction(unsignedTransaction
 export const created = new Date('2024-01-01T00:00:00.000Z')
 export const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
 export const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
-export const safeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+export const safeTestOwnerPrivateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+export const safeTestOwnerAccount = privateKeyToAccount(safeTestOwnerPrivateKey)
 export const safeTestOwnerAddress = BigInt(safeTestOwnerAccount.address)
 
 export function createSafeStackTransactionFixture(options: {

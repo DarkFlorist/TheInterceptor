@@ -1,4 +1,5 @@
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
+import { getStoredSigningWalletBinding } from '../signing/signingWalletStore.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getSettings } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -95,7 +96,9 @@ export type RpcSwitchRequest =
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
 	const settings = await getSettings()
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
-	const route = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
+	const requestedRoute = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
+	// A Ledger or AirGap account signs through Interceptor on whichever chain is active, so there is no browser wallet whose chain has to follow.
+	const route = requestedRoute === 'wallet' && !simulationMode && await isSelectedSignerDirectWallet(settings.selectedSigningAddress) ? 'local' : requestedRoute
 	if (route !== 'wallet') {
 		if (route === 'local') {
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
@@ -109,6 +112,12 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } }
 	}
 	return await requestSignerChainChange(websiteTabConnections, rpcNetwork, request.signerTabId, timeoutMs)
+}
+
+async function isSelectedSignerDirectWallet(selectedSigningAddress: bigint | undefined) {
+	if (selectedSigningAddress === undefined) return false
+	const binding = await getStoredSigningWalletBinding(selectedSigningAddress)
+	return binding !== undefined && binding.wallet.type !== 'browser'
 }
 
 async function requestSignerChainChange(websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, requestTabId: number, timeoutMs: number) {

@@ -325,7 +325,7 @@ describe('popup settings changes', () => {
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
-			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
+			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateAddressBookAndSigningWalletBindings, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
@@ -335,7 +335,7 @@ describe('popup settings changes', () => {
 			const originalRpcList = [currentRpc, primaryRpc, requestedRpc]
 			await setRpcList(originalRpcList)
 			await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: outcome === 'safe' ? 3n : undefined })
-			await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+			await updateAddressBookAndSigningWalletBindings(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
 			await updateTabState(1, (previous) => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 			await saveCurrentTabId(1)
 			const socket = { tabId: 1, connectionName: 0n }
@@ -386,7 +386,7 @@ describe('popup settings changes', () => {
 
 	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Safe chain (crossChain=${ crossChain })`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
+		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateAddressBookAndSigningWalletBindings } = await loadModules()
 		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
 		const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
 		const currentRpc = (await getSettings()).activeRpcNetwork
@@ -394,7 +394,7 @@ describe('popup settings changes', () => {
 		const rpcList = [currentRpc, requestedRpc]
 		await setRpcList(rpcList)
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: 3n })
-		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+		await updateAddressBookAndSigningWalletBindings(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)
@@ -574,5 +574,102 @@ describe('popup settings changes', () => {
 				assert.notEqual((await getSettings()).activeRpcNetwork.httpsRpc, rpc.httpsRpc)
 			} else assert.equal(result.error?.message, 'User rejected network change')
 		})
+	}
+})
+
+test('a pinned signing address ignores the wallet\'s own chain changes but applies a network switch Interceptor requested', async () => {
+	installBrowserMock()
+	const { getSettings, websiteSocketToString, updateTabState, saveCurrentTabId } = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
+	const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	const pinnedAddress = 1n
+	const walletAccount = 5n
+	const originalRpc = (await getSettings()).activeRpcNetwork
+	const walletChosenRpc = { ...originalRpc, chainId: 3n, name: 'Wallet-chosen network', httpsRpc: 'https://wallet-chosen.example.test', primary: true }
+	const requestedRpc = { ...originalRpc, chainId: 2n, name: 'Requested network', httpsRpc: 'https://requested.example.test', primary: true }
+	await setRpcList([originalRpc, walletChosenRpc, requestedRpc])
+	await browserStorageLocalSet({ simulationMode: false, selectedSigningAddress: pinnedAddress, useSignersAddressAsActiveAddress: false })
+	await updateTabState(1, (previous) => ({ ...previous, signerAccounts: [walletAccount], activeSigningAddress: walletAccount, signerChain: originalRpc.chainId }))
+	await saveCurrentTabId(1)
+	const socket = { tabId: 1, connectionName: 0n }
+	const { port, messages } = createPort(1)
+	const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+		[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+	} }]])
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+	// The wallet switching networks on its own does not move Interceptor away from the pinned address's network.
+	await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x3', 1] }, 'hasAccess', pinnedAddress)
+	assert.deepEqual((await getSettings()).activeRpcNetwork, originalRpc)
+
+	const pending = popupChangeActiveRpc(simulationServicesOwner, connections, { method: 'popup_changeActiveRpc', data: requestedRpc })
+	await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
+	await walletSwitchEthereumChainReply(simulationServicesOwner, connections, port, {
+		method: 'wallet_switchEthereumChain_reply',
+		params: [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }],
+	}, 'hasAccess', pinnedAddress)
+	const reply = await pending
+
+	assert.equal(reply.ok, true)
+	const settings = await getSettings()
+	assert.deepEqual(settings.activeRpcNetwork, requestedRpc)
+	assert.equal(settings.selectedSigningAddress, pinnedAddress)
+	// Applying the requested network must not adopt the browser wallet's account in place of the pinned address.
+	assert.notEqual(settings.activeSigningAddress, walletAccount)
+})
+
+for (const source of ['dapp', 'popup'] as const) test(`a selected Ledger account switches networks without a browser wallet (${ source })`, async () => {
+	installBrowserMock()
+	const { getSettings, saveCurrentTabId } = await loadModules()
+	const { secp256k1 } = await import('@noble/curves/secp256k1')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { privateKeyToAccount } = await import('../../app/ts/utils/ethereumSigning.js')
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
+	const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	const privateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
+	const ledgerAddress = BigInt(privateKeyToAccount(privateKey).address)
+	await saveAddressSigningWallet(ledgerAddress, { type: 'ledger', label: 'Main Ledger', address: ledgerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Ledger account')
+	const originalRpc = (await getSettings()).activeRpcNetwork
+	const requestedRpc = { ...originalRpc, chainId: 2n, name: 'Configured network B', httpsRpc: 'https://network-b.example.test', primary: true }
+	await setRpcList([originalRpc, requestedRpc])
+	await browserStorageLocalSet({ simulationMode: false, selectedSigningAddress: ledgerAddress, useSignersAddressAsActiveAddress: false })
+	await saveCurrentTabId(1)
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	// No website has a browser wallet connected, so asking one to switch would fail as signer-unavailable.
+	const noBrowserWallet = new Map()
+
+	if (source === 'dapp') {
+		assert.deepEqual(await changeActiveRpc(simulationServicesOwner, noBrowserWallet, requestedRpc, { source: 'dapp', signerTabId: 1, simulationMode: false }, 10), { result: null })
+	} else {
+		assert.equal((await popupChangeActiveRpc(simulationServicesOwner, noBrowserWallet, { method: 'popup_changeActiveRpc', data: requestedRpc })).ok, true)
+	}
+
+	const settings = await getSettings()
+	assert.deepEqual(settings.activeRpcNetwork, requestedRpc)
+	assert.equal(settings.selectedSigningAddress, ledgerAddress)
+	assert.equal(isSignerChainChangePending(), false)
+})
+
+test('pinned signing selections retain the supported-network fallback when switching modes', async () => {
+	installBrowserMock()
+	const { changeSimulationMode, getSettings } = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { enableSimulationMode } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const supportedNetwork = (await getSettings()).activeRpcNetwork
+	const unsupportedNetwork = { name: 'Unsupported', chainId: 999999n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } satisfies import('../../app/ts/types/rpc.js').RpcNetwork
+	const services = createTestSimulationServicesOwner(createEthereumWithGetBlockCounter({ count: 0 }))
+	for (const simulationMode of [true, false]) {
+		await changeSimulationMode({ simulationMode: !simulationMode, rpcNetwork: unsupportedNetwork })
+		await browserStorageLocalSet({ selectedSigningAddress: 1n, useSignersAddressAsActiveAddress: false })
+		await enableSimulationMode(services, new Map(), { method: 'popup_enableSimulationMode', data: simulationMode })
+		const settings = await getSettings()
+		assert.equal(settings.simulationMode, simulationMode)
+		assert.equal(settings.activeRpcNetwork.chainId, supportedNetwork.chainId)
+		assert.equal(settings.selectedSigningAddress, 1n)
 	}
 })

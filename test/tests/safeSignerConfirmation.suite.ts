@@ -30,7 +30,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
 	})
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: activeAddress,
 		safeVersion: '1.4.1',
 	})])
@@ -124,14 +124,14 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), true)
 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
+	await modules.updateAddressBookAndSigningWalletBindings(() => modules.defaultActiveAddresses)
 })
 
 test('keeps a disconnected Safe proposal reviewable and attaches the owner after wallet connection', async () => {
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [],
@@ -196,7 +196,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 })
 
 test('does not turn unexpected signer-selection storage or RPC failures into Safe signer errors', async () => {
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
@@ -265,7 +265,7 @@ test('rebuilds an ordinary Safe proposal when the wallet switches between curren
 	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
 	fakeSafeContract.threshold = 2n
 	fakeSafeContract.nonce = 0n
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeVersion: '1.4.1',
 	})])
 	await modules.updateSafeTransactionStacks(() => [])
@@ -357,7 +357,7 @@ test('does not overwrite a request forwarded while its Safe signer refresh is in
 			},
 		}],
 	})
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [selectedOwner],
@@ -423,7 +423,7 @@ test('does not overwrite a newer Safe proposal while signer refresh is in flight
 			},
 		}],
 	})
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [selectedOwner],
@@ -492,7 +492,7 @@ test('does not overwrite an edited Safe proposal request while signer refresh is
 			},
 		}],
 	})
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [selectedOwner],
@@ -562,7 +562,7 @@ test('blocks signer refresh when the reviewed Safe owner set changed', async () 
 			},
 		}],
 	})
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [selectedOwner],
@@ -630,7 +630,7 @@ test('refreshes the selected signer and uses services installed during the walle
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress
 	fakeSafeContract.owners = [configuredSigner]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: configuredSigner,
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
@@ -775,7 +775,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
@@ -872,7 +872,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
-	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
@@ -958,7 +958,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
 	const safeAddressBookEntry = createSafeAddressBookEntry({ safeSimulationSignerAddress: safeSignerAddress })
-	await modules.updateUserAddressBookEntries(() => [safeAddressBookEntry])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [safeAddressBookEntry])
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
 		value: 0n,
@@ -1009,7 +1009,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		}],
 	})
 
-	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: recipientAddress }])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: recipientAddress }])
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },

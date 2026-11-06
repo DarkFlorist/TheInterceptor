@@ -6,7 +6,7 @@ import type { IdentifiedSwapWithMetadata } from '../components/simulationExplain
 import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { type AddressBookEntries, type AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
-import { SignerName } from './signerTypes.js'
+import { BrowserProviderIdentity, SignerName } from './signerTypes.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
 import { type RpcEntries, type RpcEntry, RpcNetwork } from './rpc.js'
 import type { TransactionOrMessageIdentifier } from './interceptor-messages.js'
@@ -199,7 +199,7 @@ export const TabState = funtypes.ReadonlyObject({
 	signerChain: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	tabIconDetails: TabIconDetails,
 	activeSigningAddress: OptionalEthereumAddress,
-})
+}).And(funtypes.ReadonlyPartial({ signerProvider: BrowserProviderIdentity }))
 
 export type RpcSlowRequest = funtypes.Static<typeof RpcSlowRequest>
 export const RpcSlowRequest = funtypes.ReadonlyObject({

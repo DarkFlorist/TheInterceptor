@@ -1,0 +1,99 @@
+import { beforeEach, expect, spyOn, test } from 'bun:test'
+import { createBrowserMock, resetConfirmTransactionTestState, createSafeAddressBookEntry, ethereum, fakeSafeContract, activeAddress } from './confirmTransactionTestHarness.js'
+import { getUserAddressBookEntries } from '../../app/ts/background/addressBookStore.js'
+import { saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings, getSigningWalletBinding } from '../../app/ts/background/signingAddressBookCoordinator.js'
+import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+
+const { setSafeSigningAccounts } = await import('../../app/ts/background/safeSigningAccountHandler.js')
+const { getSigningWallets, saveSigningWallet } = await import('../../app/ts/background/signingWalletHandlers.js')
+
+const saveWallet = async (address: bigint) => await saveAddressSigningWallet(address, { type: 'browser', address, label: 'Test account', signerName: 'MetaMask', providerId: 'eip6963:io.metamask' }, undefined, 'Test account')
+const select = async (executor: bigint | undefined, owner = 1n, chainId = ethereum.getChainId()) => await setSafeSigningAccounts({ method: 'signing_setSafeAccounts', chainId, address: activeAddress, owner, executor }, ethereum)
+
+beforeEach(async () => {
+	createBrowserMock()
+	await resetConfirmTransactionTestState()
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [], signingWalletBindings: [] })
+	await updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry()])
+	fakeSafeContract.owners = [1n]
+	fakeSafeContract.threshold = 1n
+	await saveWallet(1n)
+})
+
+test('Safe account handler rejects an explicit executor without a binding and leaves settings unchanged', async () => {
+	const before = await getUserAddressBookEntries()
+	expect(await select(2n)).toMatchObject({ ok: false, message: 'Set up the execution account’s signing wallet first' })
+	expect(await getUserAddressBookEntries()).toEqual(before)
+})
+
+test('Safe account handler permits a saved non-owner gas payer and owner fallback', async () => {
+	await saveWallet(2n)
+	expect(await select(2n)).toEqual({ ok: true })
+	expect((await getUserAddressBookEntries()).find((entry) => entry.type === 'safe')).toMatchObject({ safeSigningSignerAddress: 1n, safeExecutionAddress: 2n })
+	expect(await select(undefined)).toEqual({ ok: true })
+	const savedSafe = (await getUserAddressBookEntries()).find((entry) => entry.type === 'safe')
+	expect(savedSafe?.safeSigningSignerAddress).toBe(1n)
+	expect(savedSafe?.safeExecutionAddress).toBeUndefined()
+})
+
+test('Safe account handler retains on-chain owner and saved-owner checks', async () => {
+	await saveWallet(2n)
+	expect(await select(undefined, 2n)).toMatchObject({ ok: false, message: 'The selected signing account is not a current Safe owner' })
+	fakeSafeContract.owners = [3n]
+	expect(await select(undefined, 3n)).toMatchObject({ ok: false, message: 'Set up the owner’s signing wallet first' })
+	expect(await select(undefined, 1n, 999n)).toMatchObject({ ok: false, message: 'Return to this Safe’s network before changing its signing accounts' })
+})
+
+test('Safe account handler rejects a binding removed while the Safe state is loading', async () => {
+	await saveWallet(2n)
+	fakeSafeContract.beforeVersionResponse = async () => {
+		const binding = await getSigningWalletBinding(2n)
+		await saveAddressSigningWallet(2n, undefined, binding?.revision)
+	}
+	expect(await select(2n)).toMatchObject({ ok: false, message: 'Set up the execution account’s signing wallet first' })
+})
+
+test('signing handler propagates unexpected storage failures to its diagnostic boundary', async () => {
+	const storage = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const failure = new Error('Unexpected storage failure')
+	const read = spyOn(storage, 'getAddressBookAndSigningWalletBindings').mockRejectedValue(failure)
+	try {
+		await expect(getSigningWallets()).rejects.toBe(failure)
+	} finally {
+		read.mockRestore()
+	}
+})
+
+test('signing handler keeps stale binding revisions actionable', async () => {
+	const binding = await getSigningWalletBinding(1n)
+	if (binding === undefined) throw new Error('Missing test binding')
+	const reply = await saveSigningWallet({ method: 'signing_saveWallet', address: 1n, wallet: undefined, revision: 'stale-revision', name: undefined })
+	expect(reply).toMatchObject({ ok: false, message: 'Signing wallet changed. Review the current wallet before saving again.' })
+	expect(await getSigningWalletBinding(1n)).toEqual(binding)
+})
+
+test('Safe pin lookup uses the caller chain even when persisted settings have changed', async () => {
+	const { hasPinnedSigningAddress } = await import('../../app/ts/background/safeSigningAccount.js')
+	const { getSettings } = await import('../../app/ts/background/settings.js')
+	expect(await select(undefined)).toEqual({ ok: true })
+	const settings = await getSettings()
+	const snapshot = { ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, chainId: ethereum.getChainId() }, selectedSigningAddress: undefined, activeSigningSafeAddress: activeAddress }
+	const changedNetwork = { ...snapshot.activeRpcNetwork, chainId: 999n }
+	await browserStorageLocalSet({ activeRpcNetwork: changedNetwork })
+	expect(await hasPinnedSigningAddress(snapshot)).toBe(true)
+	expect(await hasPinnedSigningAddress({ ...snapshot, activeRpcNetwork: changedNetwork })).toBe(false)
+})
+
+test('a contact resolved before a duplicate Safe does not substitute its saved owner', async () => {
+	const { getSavedSafeSigningAccount } = await import('../../app/ts/background/safeSigningAccount.js')
+	const safe = { ...createSafeAddressBookEntry(), chainId: ethereum.getChainId(), safeSigningSignerAddress: 1n }
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [{ type: 'contact', address: activeAddress, name: 'Ordinary account on this chain', chainId: ethereum.getChainId(), entrySource: 'User', useAsActiveAddress: true }, safe] })
+	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBeUndefined()
+	expect(await getSavedSafeSigningAccount(activeAddress, 999n)).toBeUndefined()
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: { method: 'eth_sendTransaction', params: [{ from: activeAddress, to: 2n, value: 0n }] } }, false, activeAddress, 3n)
+	expect(preparation.rejection).toBeUndefined()
+	expect(preparation.transactionExecutor).toBe(activeAddress)
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [safe] })
+	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBe(1n)
+})
