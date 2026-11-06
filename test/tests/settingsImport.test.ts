@@ -94,6 +94,7 @@ function createBrowserStorageMock() {
 
 const browserMock = createBrowserStorageMock()
 const settingsModulePromise = import('../../app/ts/background/settings.js')
+const simulationModeGuardModulePromise = import('../../app/ts/background/simulationModeGuard.js')
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
 
@@ -204,7 +205,8 @@ describe('settings import', () => {
 	test('round-trips Safe settings in version 1.6 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		const { changeSimulationMode } = await simulationModeGuardModulePromise
+		const { exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
@@ -250,7 +252,8 @@ describe('settings import', () => {
 	test('publishes imported Safe preferences only after their address book entry', async () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
+		const { changeSimulationMode } = await simulationModeGuardModulePromise
+		const { exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
@@ -281,7 +284,8 @@ describe('settings import', () => {
 	test('clears a pre-existing signing Safe when importing a legacy export', async () => {
 		const signingSafeAddress = 0x6666666666666666666666666666666666666666n
 		const signerAddress = 0x6767676767676767676767676767676767676767n
-		const { changeSimulationMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
+		const { changeSimulationMode } = await simulationModeGuardModulePromise
+		const { getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
 		const { getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await changeSimulationMode({

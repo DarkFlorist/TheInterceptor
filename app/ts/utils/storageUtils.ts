@@ -52,7 +52,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 })
 
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
+export const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
@@ -189,8 +189,10 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+// simulationMode is excluded by type so that a stray write through this setter is a compile error; the only writer is the private setter in background/simulationModeGuard.ts, because that guard tracks every switch into simulation mode.
+export async function browserStorageLocalSet(items: LocalStorageItems & { readonly simulationMode?: never }) {
+	const storageItems: LocalStorageItems = items
+	return await browser.storage.local.set(serialize(LocalStorageItems, storageItems))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

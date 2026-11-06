@@ -25,7 +25,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
@@ -772,6 +772,8 @@ test('refreshes the selected signer and uses services installed during the walle
 })
 
 test('rebases a later pending Safe proposal after an earlier nonce is rejected', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
@@ -869,6 +871,8 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 })
 
 test('rejects a stale forwarded Safe nonce before persistence and rebases it when retried', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
@@ -982,7 +986,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	}]])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,
@@ -1072,7 +1076,7 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 	}]])
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
 		activeSigningSafeAddress: activeAddress,

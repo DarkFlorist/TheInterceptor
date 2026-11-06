@@ -67,6 +67,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
+		...await import('../../app/ts/background/simulationModeGuard.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
@@ -327,7 +328,7 @@ describe('startup storage recovery', () => {
 		assert.equal(storageState.latestUnexpectedError, undefined)
 	})
 
-	test('recovers simulationMode from corrupt settings storage', async () => {
+	test('reads a corrupt simulationMode as simulation mode without writing it', async () => {
 		const storageState = installBrowserMock()
 		const { requestSimulationMode } = await loadModules()
 		storageState.simulationMode = 'invalid'
@@ -336,7 +337,8 @@ describe('startup storage recovery', () => {
 
 		assert.equal(reply.method, 'popup_requestSimulationMode')
 		assert.equal(reply.simulationMode, true)
-		assert.equal(storageState.simulationMode, true)
+		// Settings reads never write simulationMode (see getParsedStorageValueOrDefaultFromItems); the next mode change replaces the corrupt value.
+		assert.equal(storageState.simulationMode, 'invalid')
 	})
 
 	test('recovers corrupt websiteAccess without resetting valid settings keys', async () => {

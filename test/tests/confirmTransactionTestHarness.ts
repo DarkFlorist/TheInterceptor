@@ -3,6 +3,7 @@ import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { resolvePendingTransactionOrMessage as resolvePendingTransactionOrMessageType } from '../../app/ts/background/windows/confirmTransaction.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
@@ -13,6 +14,15 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+
+type ResolvePendingTransactionOrMessageParameters = Parameters<typeof resolvePendingTransactionOrMessageType>
+type ResolvePendingTransactionOrMessageWithoutGuard = [
+	ethereum: ResolvePendingTransactionOrMessageParameters[0],
+	tokenPriceService: ResolvePendingTransactionOrMessageParameters[1],
+	websiteTabConnections: ResolvePendingTransactionOrMessageParameters[2],
+	confirmation: ResolvePendingTransactionOrMessageParameters[3],
+	refreshedSafeSignerSelection?: ResolvePendingTransactionOrMessageParameters[5],
+]
 
 export type RuntimeMessage = {
 	method?: string
@@ -189,6 +199,7 @@ export async function loadModules() {
 		simulationModeEthereumClientService,
 		constants,
 		settings,
+		simulationModeGuard,
 		popupMessageHandlers,
 		confirmTransaction,
 		storageVariables,
@@ -211,6 +222,7 @@ export async function loadModules() {
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/utils/constants.js'),
 		import('../../app/ts/background/settings.js'),
+		import('../../app/ts/background/simulationModeGuard.js'),
 		import('../../app/ts/background/popupMessageHandlers.js'),
 		import('../../app/ts/background/windows/confirmTransaction.js'),
 		import('../../app/ts/background/storageVariables.js'),
@@ -236,6 +248,7 @@ export async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
+		changeSimulationMode: simulationModeGuard.changeSimulationMode,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
@@ -243,7 +256,8 @@ export async function loadModules() {
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
-		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		// These tests start each approval at this call, so the guard is captured here; tests of a mode switch during an approval go through confirmDialog.
+		resolvePendingTransactionOrMessage: async (...[ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection]: ResolvePendingTransactionOrMessageWithoutGuard) => await confirmTransaction.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, simulationModeGuard.captureSimulationModeGuard(), refreshedSafeSignerSelection),
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,

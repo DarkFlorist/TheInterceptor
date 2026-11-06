@@ -402,7 +402,7 @@ function createRecordingSimulator() {
 async function openSimulationModeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
@@ -493,7 +493,7 @@ async function stackFormedTransaction(simulator: ReturnType<typeof createRecordi
 async function startSafeExecutionStack() {
 	configureSafe()
 	const simulator = createRecordingSimulator()
-	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
+	await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	return simulator
 }
@@ -623,7 +623,7 @@ const importCases = [
 for (const { description, imported } of importCases) {
 	test(description, async () => {
 		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
-		await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
+		await (await import('../../app/ts/background/simulationModeGuard.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
 		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), ORDINARY_SIMULATION_OPTIONS)
 	})
 }

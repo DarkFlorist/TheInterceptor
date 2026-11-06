@@ -78,6 +78,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
+		...await import('../../app/ts/background/simulationModeGuard.js'),
 	}
 }
 

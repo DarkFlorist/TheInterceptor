@@ -5,6 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type SimulationModeChanges, writeSimulationModeChanges } from './simulationModeGuard.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -55,19 +56,27 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
-async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+function parseStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): { readonly value: StartupStorageDefaults[Key], readonly corrupt: boolean } {
 	const rawValue = storedItems[key]
 	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
 	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = browserStorageLocalSafeParse(storedItem)
-	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
-	if (rawValue === undefined) return defaultValue
+	if (parsedValue !== undefined && key in parsedValue) return { value: parsedValue[key] as StartupStorageDefaults[Key], corrupt: false }
+	if (rawValue === undefined) return { value: defaultValue, corrupt: false }
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
-	return defaultValue
+	return { value: defaultValue, corrupt: true }
 }
 
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+// Writes the default back over a corrupt value. simulationMode is excluded by type: it is only ever written by writeSimulationModeChanges, which the signer-forward guard tracks.
+type RepairableStorageKey = Exclude<keyof StartupStorageDefaults, 'simulationMode'>
+
+async function getParsedStorageValueOrDefaultFromItems<Key extends RepairableStorageKey>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
+	const parsed = parseStorageValueOrDefaultFromItems(storedItems, key, defaultValue)
+	if (parsed.corrupt) await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
+	return parsed.value
+}
+
+async function getParsedStorageValueOrDefault<Key extends RepairableStorageKey>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
@@ -88,16 +97,16 @@ export async function getSettings() : Promise<Settings> {
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
+	// This key must stay on the non-repairing path: a repairing read would write simulationMode behind the signer-forward guard, from the background or a UI page, and could overwrite a later switch to signing mode. A corrupt value reads as the default (simulation on) and stays in storage until the next changeSimulationMode(). New keys should use the repairing path, getParsedStorageValueOrDefaultFromItems.
+	const simulationMode = parseStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode).value
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
 		websiteAccessPromise,
 		activeRpcNetworkPromise,
-		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
@@ -185,33 +194,8 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-type SimulationModeChanges = {
-	readonly simulationMode: boolean
-	readonly rpcNetwork?: RpcNetwork
-	readonly activeSimulationAddress?: EthereumAddress
-	readonly activeSigningAddress?: EthereumAddress
-	readonly activeSigningSafeAddress?: EthereumAddress
-}
-
-function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
-	return {
-		simulationMode: changes.simulationMode,
-		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
-		...'activeSimulationAddress' in changes ? { independentActiveSimulationAddress: changes.activeSimulationAddress } : {},
-		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
-		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
-	}
-}
-
-export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
-}
-
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
-		...getSimulationModeStorageUpdate(changes),
-		signingAddressPreferences,
-	}))
+	return await signingAddressPreferencesSemaphore.execute(async () => await writeSimulationModeChanges(changes, { signingAddressPreferences }))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
