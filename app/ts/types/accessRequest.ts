@@ -210,7 +210,7 @@ export type OwnedPendingRequestField = (typeof OWNED_PENDING_REQUEST_FIELDS)[num
 // A pending request as a generic update writes it: without its owned fields, which that update cannot write. Distributed over the union, so each kind of request keeps its own fields.
 type WithoutOwnedFields<Request> = Request extends unknown ? Omit<Request, OwnedPendingRequestField> : never
 export type PendingRequestWithoutOwnedFields = WithoutOwnedFields<PendingTransactionOrSignableMessage>
-// What a generic update may return: naming an owned field does not compile, and neither does a whole request read elsewhere, which withoutOwnedFields must mark as carrying none.
+// What a generic update may return: naming an owned field does not compile, and neither does a whole request read elsewhere, which withoutOwnedFields must mark as carrying none. Naming one as undefined still compiles (the project has no exactOptionalPropertyTypes), but it writes nothing: the store re-attaches the stored value, so an owned field can only be changed through updateOwnedPendingRequestField.
 export type GenericPendingRequestUpdate = PendingRequestWithoutOwnedFields & { readonly [Field in OwnedPendingRequestField]?: never }
 // A request read earlier, as a generic update writes it: its owned fields are not part of the write.
 export const withoutOwnedFields = (request: PendingRequestWithoutOwnedFields) => request
