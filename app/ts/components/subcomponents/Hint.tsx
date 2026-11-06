@@ -101,11 +101,11 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			displayHint(targetElement.getAttribute(toolTipAttribute) || '', { x: targetBounds.left + targetBounds.width / 2, top: targetBounds.top, bottom: targetBounds.bottom }, targetElement)
 		}
 
-		// Read from the document when needed rather than remembered, so it can never point at an element that lost focus or was removed: a removed element is no longer the active element or inside the container.
-		const getFocusedTooltipElement = () => {
+		// Read from the document when needed rather than remembered, so it can never point at an element that lost focus or was removed: a removed element is no longer the active element or inside the container. Only keyboard focus counts, which :focus-visible tells apart: a click also focuses a focusable element, but the pointer already opened its tooltip by hovering, and that tooltip must end when the pointer leaves.
+		const getKeyboardFocusedTooltipElement = () => {
 			// An element's ownerDocument is never null (only a Document's own is), and the DOM typings declare Element.ownerDocument as Document.
 			const focusedElement = containerElement.ownerDocument.activeElement
-			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !containerElement.contains(focusedElement)) return undefined
+			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !focusedElement.matches(':focus-visible') || !containerElement.contains(focusedElement)) return undefined
 			return focusedElement
 		}
 
@@ -127,7 +127,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 		// The pointer leaving any tooltip falls back to the tooltip of the element with keyboard focus, so mouse movement does not hide the explanation a keyboard user opened.
 		const mouseout = (event: MouseEvent) => {
 			dismissAbandonedTooltip()
-			leaveTooltip(event, getFocusedTooltipElement())
+			leaveTooltip(event, getKeyboardFocusedTooltipElement())
 		}
 		const focusout = (event: FocusEvent) => {
 			dismissAbandonedTooltip()
@@ -187,13 +187,19 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			}, 250)
 		}
 
-		// Only a focused element that carries the tooltip itself shows it, so focusable controls nested inside a tooltip wrapper such as CopyToClipboard keep their current behavior.
-		const focusin = (event: FocusEvent) => {
+		// Only a keyboard-focused element that carries the tooltip itself shows it, so focusable controls nested inside a tooltip wrapper such as CopyToClipboard keep their current behavior.
+		const focusin = () => {
 			dismissAbandonedTooltip()
-			const targetElement = event.target
-			if (!(targetElement instanceof Element) || !targetElement.hasAttribute(toolTipAttribute) || !containerElement.contains(targetElement)) return
+			const focusedTooltipElement = getKeyboardFocusedTooltipElement()
+			if (focusedTooltipElement === undefined) return
 			cancelPendingHintTimeouts()
-			showTooltipAtElement(targetElement)
+			showTooltipAtElement(focusedTooltipElement)
+		}
+
+		// Moves the tooltip of the keyboard-focused element along with it. It is kept rather than dismissed because tabbing to an element outside the view scrolls it into view, and that scroll event arrives after focusin. A hovered tooltip needs no handling: scrolling moves its element from under the pointer, which ends it through mouseout.
+		const followKeyboardFocusedTooltip = () => {
+			const tooltipOwner = displayedTooltipOwnerRef.current
+			if (tooltipOwner !== undefined && tooltipOwner === getKeyboardFocusedTooltipElement()) showTooltipAtElement(tooltipOwner)
 		}
 
 		containerElement.addEventListener('click', click)
@@ -202,6 +208,9 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 		containerElement.addEventListener('focusin', focusin)
 		containerElement.addEventListener('focusout', focusout)
 		containerElement.addEventListener(showHintEventName, show)
+		// Captured on the document because the element that scrolls is an ancestor of the container, and scroll events do not bubble.
+		const scrollEventTarget = containerElement.ownerDocument
+		scrollEventTarget.addEventListener('scroll', followKeyboardFocusedTooltip, { capture: true, passive: true })
 
 		return () => {
 			cancelPendingHintTimeouts()
@@ -211,6 +220,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			containerElement.removeEventListener('focusin', focusin)
 			containerElement.removeEventListener('focusout', focusout)
 			containerElement.removeEventListener(showHintEventName, show)
+			scrollEventTarget.removeEventListener('scroll', followKeyboardFocusedTooltip, { capture: true })
 		}
 	}, [copyAttribute, toolTipAttribute, isActive])
 

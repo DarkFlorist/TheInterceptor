@@ -9,6 +9,7 @@ type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly dispatchEvent?: (event: Event) => boolean
 	readonly focus?: () => void
+	readonly focusWithPointer?: () => void
 	readonly blur?: () => void
 	readonly getAttribute?: (name: string) => unknown
 	readonly style?: Record<string, unknown>
@@ -35,6 +36,11 @@ function findElementByClass(node: TestNode | undefined, className: string): Test
 }
 
 const findDisplayedHintText = (dom: ReturnType<typeof installDomMock>) => findElementByClass(dom.document.body, 'preact-hint__content')?.textContent
+
+const focusWithKeyboard = (element: TestNode | undefined) => {
+	element?.focus?.()
+	element?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+}
 
 const setBoundingClientRect = (element: TestNode, bounds: { left: number, top: number, width: number, height: number }) => {
 	Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => ({ ...bounds, right: bounds.left + bounds.width, bottom: bounds.top + bounds.height, x: bounds.left, y: bounds.top }) })
@@ -108,8 +114,10 @@ describe('Hint lifecycle', () => {
 			assert.equal(scheduledTimers.length, 2)
 			const timersAtUnmount = [...scheduledTimers]
 
+			assert.equal(dom.document.eventListeners.get('scroll')?.size, 1)
 			await act(() => { render(null, dom.document.body) })
 			assert.equal(timersAtUnmount.every((timerId) => clearedTimers.includes(timerId)), true)
+			assert.equal(dom.document.eventListeners.get('scroll')?.size, 0)
 
 			scheduledTimers = []
 			showHint(button, { content: 'After unmount', delay: 60_000, x: 0, y: 0 })
@@ -135,13 +143,13 @@ describe('Hint lifecycle', () => {
 			const nestedButton = findElement(dom.document.body, 'button')
 			if (focusableTooltip?.dispatchEvent === undefined || nestedButton?.dispatchEvent === undefined) throw new Error('tooltip targets were not rendered')
 
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			await act(() => { focusWithKeyboard(focusableTooltip) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Focused explanation')
 
 			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true })) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
 
-			await act(() => { nestedButton.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			await act(() => { focusWithKeyboard(nestedButton) })
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint__content'), undefined)
 		} finally {
 			render(null, dom.document.body)
@@ -336,7 +344,7 @@ describe('Hint lifecycle', () => {
 			// The DOM mock measures every hint as 100 by 40 pixels, so below this warning the hint would start at 606 pixels, outside the 600 pixel viewport.
 			setBoundingClientRect(focusableTooltip, { left: 192, top: 580, width: 16, height: 16 })
 
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			await act(() => { focusWithKeyboard(focusableTooltip) })
 			const hintStyle = findElementByClass(dom.document.body, 'preact-hint')?.style
 			assert.equal(hintStyle?.['top'], '530px')
 			assert.equal(hintStyle?.['left'], '150px')
@@ -344,6 +352,122 @@ describe('Hint lifecycle', () => {
 			render(null, dom.document.body)
 			dom.restore()
 			restoreViewportSize()
+		}
+	})
+
+	test('ends the tooltip of an element a pointer click focused when the pointer leaves it', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Hovered explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const clickedTooltip = findElement(dom.document.body, 'span')
+			if (clickedTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			await act(() => { clickedTooltip.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.equal(findDisplayedHintText(dom), 'Hovered explanation')
+
+			await act(() => {
+				clickedTooltip.focusWithPointer?.()
+				clickedTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			assert.equal(findDisplayedHintText(dom), 'Hovered explanation')
+
+			await act(() => { clickedTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('does not open a tooltip for focus from a pointer click, which only hovering opens', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const clickedTooltip = findElement(dom.document.body, 'span')
+			await act(() => {
+				clickedTooltip?.focusWithPointer?.()
+				clickedTooltip?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			assert.equal(findDisplayedHintText(dom), undefined)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('moves the tooltip of a keyboard-focused element along with it when the page scrolls', async () => {
+		const dom = installDomMock()
+		const restoreViewportSize = installViewportSize(400, 600)
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			setBoundingClientRect(focusableTooltip, { left: 192, top: 200, width: 16, height: 16 })
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '226px')
+
+			setBoundingClientRect(focusableTooltip, { left: 192, top: 140, width: 16, height: 16 })
+			await act(() => { dom.document.dispatchEvent(new Event('scroll')) })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '166px')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			restoreViewportSize()
+		}
+	})
+
+	test('leaves a hovered tooltip at the pointer when the page scrolls while another element has keyboard focus', async () => {
+		const dom = installDomMock()
+		const restoreViewportSize = installViewportSize(400, 600)
+		try {
+			await act(() => {
+				render(<Hint>
+					<span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span>
+					<div class = 'other-tooltip' data-tooltip = 'Hovered tooltip'>Other</div>
+				</Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			const otherTooltip = findElementByClass(dom.document.body, 'other-tooltip')
+			if (focusableTooltip?.dispatchEvent === undefined || otherTooltip?.dispatchEvent === undefined) throw new Error('tooltip targets were not rendered')
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			await act(() => { otherTooltip.dispatchEvent?.(Object.assign(new Event('mouseover', { bubbles: true }), { clientX: 200, clientY: 300 })) })
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.equal(findDisplayedHintText(dom), 'Hovered tooltip')
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '310px')
+
+			await act(() => { dom.document.dispatchEvent(new Event('scroll')) })
+			assert.equal(findDisplayedHintText(dom), 'Hovered tooltip')
+			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '310px')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			restoreViewportSize()
+		}
+	})
+
+	test('keeps a copy message shown over a keyboard-focused element when the page scrolls', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			await act(() => { showHint(focusableTooltip, { content: 'Copied', delay: 60_000, x: 0, y: 0 }) })
+
+			await act(() => { dom.document.dispatchEvent(new Event('scroll')) })
+			assert.equal(findDisplayedHintText(dom), 'Copied')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
 		}
 	})
 
@@ -368,7 +492,7 @@ describe('Hint lifecycle', () => {
 
 			await act(() => { showHint(focusableTooltip, { content: 'Copied', delay: 60_000, x: 200, y: 100 }) })
 			assert.equal(findDisplayedHintText(dom), 'Copied')
-			await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			await act(() => { focusWithKeyboard(focusableTooltip) })
 			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '260px')
 		} finally {
@@ -386,7 +510,7 @@ describe('Hint lifecycle', () => {
 		if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
 		await act(() => { showHint(focusableTooltip, { content: 'Copied', delay: copyMessageDelay, x: 0, y: 0 }) })
 		assert.equal(findElementByClass(dom.document.body, 'preact-hint__content')?.textContent, 'Copied')
-		await act(() => { focusableTooltip.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+		await act(() => { focusWithKeyboard(focusableTooltip) })
 		return focusableTooltip
 	}
 
@@ -476,7 +600,7 @@ describe('Hint lifecycle', () => {
 			await act(() => {
 				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
 			})
-			await act(() => { findElement(dom.document.body, 'span')?.dispatchEvent?.(new Event('focusin', { bubbles: true })) })
+			await act(() => { focusWithKeyboard(findElement(dom.document.body, 'span')) })
 
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.getAttribute?.('popover'), 'manual')
 			assert.deepEqual(hintCalls.filter((call) => call.includes('preact-hint')), ['open preact-hint', 'measure preact-hint__content'])
