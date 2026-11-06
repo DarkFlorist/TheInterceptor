@@ -1,5 +1,5 @@
 import { EthereumAddress, EthereumData, EthereumQuantity } from '../types/wire-types.js'
-import { CompoundTimeLock } from '../utils/abi.js'
+import { CompoundTimeLock, GovernanceTimelockReadsAbi } from '../utils/abi.js'
 import { addressString, bigintSecondsToDate, checksummedAddress, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from './services/EthereumClientService.js'
@@ -9,7 +9,37 @@ import * as funtypes from 'funtypes'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
-import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
+import { decodeFunctionOutput, decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCall, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
+import { isExecutionRevert } from '../utils/errors.js'
+import { isAbiDataDecodeError } from '../utils/ethereumPrimitives.js'
+
+// keccak256('PROPOSER_ROLE'), the role a governor holds on an OpenZeppelin TimelockController.
+const TIMELOCK_PROPOSER_ROLE = '0xb09aa5aeb3702cfd50b6b62bc4532604938f21248a27a1d5ca736082b6819cc1'
+
+// Most timelocks implement only one of the two reads, so a revert or an undecodable reply means that read does not apply. Any other failure, such as a rate limit, stays a failure.
+const readIfImplemented = async <Reply>(readFromTimelock: () => Promise<Reply>) => {
+	try {
+		return await readFromTimelock()
+	} catch (error: unknown) {
+		if (isAbiDataDecodeError(error) || isExecutionRevert(error)) return undefined
+		throw error
+	}
+}
+
+const isGovernorOfTimelock = async (ethereumClientService: EthereumClientService, timeLockContract: EthereumAddress, governanceContract: EthereumAddress, blockNumber: bigint) => {
+	const callTimelock = async (input: string) => await ethereumClientService.call({ to: timeLockContract, input: stringToUint8Array(input) }, blockNumber, undefined)
+	const [admin, governorIsProposer] = await Promise.all([
+		readIfImplemented(async () => decodeFunctionOutput(GovernanceTimelockReadsAbi, 'admin', await callTimelock(encodeFunctionCall(GovernanceTimelockReadsAbi, 'admin', [])))),
+		readIfImplemented(async () => decodeFunctionOutput(GovernanceTimelockReadsAbi, 'hasRole', await callTimelock(encodeFunctionCall(GovernanceTimelockReadsAbi, 'hasRole', [TIMELOCK_PROPOSER_ROLE, addressString(governanceContract)])))),
+	])
+	return governorIsProposer === true || (admin !== undefined && BigInt(admin) === governanceContract)
+}
+
+// The preview replaces the code at the timelock and runs the proposal from there, spending that address's real balance and tokens, and a governance contract can answer timelock() with any address. So the timelock itself has to name the governor, read from the chain and not the simulation stack. A contract built to answer still passes, but it then runs as itself, so only what it holds or may move can appear.
+const assertTimelockOfGovernor = async (ethereumClientService: EthereumClientService, timeLockContract: EthereumAddress, governanceContract: EthereumAddress, blockNumber: bigint) => {
+	if (await isGovernorOfTimelock(ethereumClientService, timeLockContract, governanceContract, blockNumber)) return
+	throw new Error(`No outcome is simulated: ${ checksummedAddress(timeLockContract) } does not name ${ checksummedAddress(governanceContract) } as its admin or proposer, so it is not this contract's timelock and would not execute this proposal.`)
+}
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
@@ -68,6 +98,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	if (governanceContractCalls[0]?.status !== 'success') throw new Error('multicall failed')
 	const [timeLockContractResult] = decodeFunctionOutputLoose(governanceContract.abi, 'timelock', governanceContractCalls[0].returnData)
 	const timeLockContract = EthereumAddress.parse(funtypes.String.parse(timeLockContractResult))
+	await assertTimelockOfGovernor(ethereumClientService, timeLockContract, governanceContract.address, parentBlock.number)
 	if (governanceContractCalls[1]?.status !== 'success') throw new Error('proposal simulation call failed')
 	const proposal = decodeFunctionOutputObjectLoose(governanceContract.abi, 'proposals', governanceContractCalls[1].returnData)
 	const { eta: rawEta } = proposal
