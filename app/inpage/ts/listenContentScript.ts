@@ -1,10 +1,8 @@
+import { generateUuidV4, isUuid } from '../../ts/utils/uuid.js'
+import { INTERCEPTOR_BRIDGE_REQUEST_MESSAGE, INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, INTERCEPTOR_PRIVATE_BRIDGE_EVENT, INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE, INTERCEPTOR_SIGNER_DOCUMENT_PROBE_METHOD } from '../../ts/utils/inpageBridgeProtocol.js'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
-function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
-	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
-	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
-	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
-	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
+function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start', bridgeSecret: string) {
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 		if (error !== null && error !== undefined && error.message !== undefined) throw new Error(error.message)
@@ -36,12 +34,19 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
 	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
+	// Capture the effective origin in the isolated world; URL origins alone cannot identify opaque sandbox documents.
+	const frameOrigin = window.origin
+	let signerDocumentGeneration: string | undefined
 	let pageHidden = false
 	let extensionPort: browser.runtime.Port | undefined 
 	let inpagePort: MessagePort | undefined
+	let inpageBridgeCapability: string | undefined
+	const contentScriptCapability = generateUuidV4()
+	let hasConnectedExtensionPort = false
 
 	type BridgeRequestCandidate = {
 		readonly type?: unknown
+		readonly bridgeCapability?: unknown
 		readonly method?: unknown
 		readonly params?: unknown
 		readonly usingInterceptorWithoutSigner?: unknown
@@ -52,8 +57,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 
 	const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 	const isBridgeRequestCandidate = (value: unknown): value is BridgeRequestCandidate => typeof value === 'object' && value !== null
-	const isBridgeRequest = (value: unknown): value is {
+	const isBridgeRequest = (value: unknown, expectedBridgeCapability: string): value is {
 		readonly type: typeof INTERCEPTOR_BRIDGE_REQUEST_MESSAGE
+		readonly bridgeCapability: string
 		readonly method: string
 		readonly params?: readonly unknown[]
 		readonly usingInterceptorWithoutSigner: boolean
@@ -63,6 +69,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	} => {
 		if (!isBridgeRequestCandidate(value)) return false
 		if (value.type !== INTERCEPTOR_BRIDGE_REQUEST_MESSAGE) return false
+		if (value.bridgeCapability !== expectedBridgeCapability) return false
 		if (typeof value.method !== 'string') return false
 		if (value.params !== undefined && !Array.isArray(value.params)) return false
 		if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
@@ -247,7 +254,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	}
 
 	const forwardInpageMessageToBackground = (data: unknown) => {
-		if (!isBridgeRequest(data)) return
+		const expectedBridgeCapability = inpageBridgeCapability
+		if (expectedBridgeCapability === undefined || !isBridgeRequest(data, expectedBridgeCapability)) return
 		const message: ForwardedBridgeMessage = { replayOnDisconnect: data.replayOnDisconnect === true, data: {
 			interceptorRequest: true,
 			method: data.method,
@@ -271,22 +279,42 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 	}
 
-	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
-		if (
-			inpagePort !== undefined
-			|| typeof messageEvent.data !== 'object'
-			|| messageEvent.data === null
-			|| !('type' in messageEvent.data)
-			|| messageEvent.data.type !== INTERCEPTOR_BRIDGE_PORT_MESSAGE
-		) return
-		const port = messageEvent.ports[0]
-		if (port === undefined) {
-			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
-			return
-		}
+	const receivePrivateBridge = (event: Event) => {
+		if (inpagePort !== undefined || !('data' in event) || typeof event.data !== 'string' || !('ports' in event) || !Array.isArray(event.ports)) return
+		const [bootstrapSecret, bridgeCapability] = event.data.split(':')
+		if (bootstrapSecret !== bridgeSecret || !isUuid(bridgeCapability)) return
+		const port: unknown = event.ports[0]
+		if (!(port instanceof MessagePort)) return
 		inpagePort = port
-		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
-	})
+		inpageBridgeCapability = bridgeCapability
+		port.onmessage = (message: MessageEvent<unknown>) => forwardInpageMessageToBackground(message.data)
+		port.postMessage({ type: INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE, bridgeCapability: inpageBridgeCapability, contentScriptCapability })
+		event.preventDefault()
+	}
+
+	const observedRoots = new WeakSet<object>()
+	const preparePrivateBridge = () => {
+		if (inpagePort !== undefined) return true
+		for (const host of Array.from(document.querySelectorAll('[data-interceptor-bridge]'))) {
+			let root: unknown
+			if ('openOrClosedShadowRoot' in host) {
+				// Firefox exposes closed roots directly on the content-script Xray wrapper.
+				root = host.openOrClosedShadowRoot
+			} else {
+				const dom: unknown = Reflect.get(browser, 'dom')
+				if (typeof dom !== 'object' || dom === null) throw new Error('The private bridge requires the extension DOM API')
+				const openRoot: unknown = Reflect.get(dom, 'openOrClosedShadowRoot')
+				if (typeof openRoot !== 'function') throw new Error('The private bridge requires access to closed shadow roots')
+				root = Reflect.apply(openRoot, dom, [host])
+			}
+			if (typeof root !== 'object' || root === null || observedRoots.has(root)) continue
+			const addListener: unknown = Reflect.get(root, 'addEventListener')
+			if (typeof addListener !== 'function') continue
+			Reflect.apply(addListener, root, [INTERCEPTOR_PRIVATE_BRIDGE_EVENT, receivePrivateBridge])
+			observedRoots.add(root)
+		}
+		return inpagePort !== undefined
+	}
 
 	connect = () => {
 		if (reconnectTimer !== undefined) {
@@ -305,9 +333,19 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 		const connectedExtensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
 		extensionPort = connectedExtensionPort
+		const reconnectingExistingBridge = hasConnectedExtensionPort
+		hasConnectedExtensionPort = true
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		connectedExtensionPort.onMessage.addListener(messageEvent => {
+			if (typeof messageEvent === 'object' && messageEvent !== null
+				&& 'type' in messageEvent && messageEvent.type === INTERCEPTOR_SIGNER_DOCUMENT_GENERATION_MESSAGE) {
+				if (extensionPort !== connectedExtensionPort) return
+				if (!('signerDocumentGeneration' in messageEvent) || !isUuid(messageEvent.signerDocumentGeneration)) throw new Error('Invalid signer document generation')
+				if (window.top !== window) throw new Error('Signer document generation targeted a child frame')
+				signerDocumentGeneration = messageEvent.signerDocumentGeneration
+				return
+			}
 			const isBridgeAcknowledgement = typeof messageEvent === 'object'
 				&& messageEvent !== null
 				&& 'type' in messageEvent
@@ -334,7 +372,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 					reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 					return
 				}
-				inpagePort.postMessage(withoutBridgeSettlementMarker(messageEvent))
+				const backgroundMessage = withoutBridgeSettlementMarker(messageEvent)
+				if (typeof backgroundMessage !== 'object' || backgroundMessage === null) throw new Error('Malformed message from background script')
+				inpagePort.postMessage({ ...backgroundMessage, contentScriptCapability })
 				checkAndThrowRuntimeLastError()
 				const settledBridgeRequestId = getSettledBridgeRequestId(messageEvent)
 				if (settledBridgeRequestId !== undefined) settleReplayableRequest(settledBridgeRequestId)
@@ -350,10 +390,24 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			reconnectAfterPortFailure(connectedExtensionPort, disconnectError)
 		})
 		flushPendingBridgeMessages(connectedExtensionPort)
+		if (reconnectingExistingBridge && inpagePort !== undefined && inpageBridgeCapability !== undefined) {
+			inpagePort.postMessage({
+				type: INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE,
+				bridgeCapability: inpageBridgeCapability,
+				contentScriptCapability,
+			})
+		}
 		return connectedExtensionPort
 	}
 	connect()
-	browser.runtime.onMessage.addListener(async (message: unknown) => {
+	browser.runtime.onMessage.addListener(async (message: unknown, sender?: browser.runtime.MessageSender) => {
+		if (typeof message === 'object' && message !== null && 'method' in message && message.method === INTERCEPTOR_SIGNER_DOCUMENT_PROBE_METHOD) {
+			if (sender?.id === undefined || sender.id !== browser.runtime.id) return false
+			const matches = 'signerDocumentGeneration' in message
+				? window.top === window && signerDocumentGeneration !== undefined && message.signerDocumentGeneration === signerDocumentGeneration
+				: 'connectionName' in message && typeof message.connectionName === 'string' && BigInt(message.connectionName) === BigInt(connectionNameNotUndefined)
+			return matches ? { origin: frameOrigin } : false
+		}
 		if (
 			typeof message !== 'object'
 			|| message === null
@@ -394,6 +448,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	} catch (error: unknown) {
 		console.error(error)
 	}
+	return preparePrivateBridge
 }
 
 function registerContentScriptListener() {

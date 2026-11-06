@@ -1,9 +1,19 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { allowLegacySignerExecution, blockSignerExecution, getSignerExecutionOwner, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+
+function authorizeConfirmationSigner(connections: WebsiteTabConnections) {
+	const socket = uniqueRequestIdentifier.requestSocket
+	registerAuthoritativeTopSocket(connections, socket, 'https://example.com')
+	const owner = getSignerExecutionOwner(connections, socket.tabId)
+	assert.equal(reconcileSignerExecutionDocument(owner, socket, 'https://example.com', undefined, true, 0), true)
+	assert.equal(allowLegacySignerExecution(owner, socket, 'https://example.com'), true)
+}
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -23,6 +33,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 	]
 
 	for (const connectionCase of connectionCases) {
+		authorizeConfirmationSigner(connectionCase.connections)
 		browserMock.sentMessages.length = 0
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 			...pendingTransaction,
@@ -50,6 +61,74 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		if (!isRecord(finalUpdatedRequest) || !isRecord(finalUpdatedRequest.approvalStatus)) throw new Error('missing approval status in final popup update')
 		assert.equal(finalUpdatedRequest.approvalStatus.status, 'SignerError')
 		assert.equal(disconnectedPort.getPostAttempts(), connectionCase.expectedPostAttempts)
+	}
+})
+
+test.each(['connected', 'disconnected', 'revoked on MV2 reconnect'])('signing authorization denial settles the persisted confirmation when %s', async (connectionState) => {
+	await browser.storage.local.set({ simulationMode: false })
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' },
+	}] })
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const disconnectedPort = createDisconnectedPort()
+	const recordingPort = createRecordingPort(postedMessages)
+	const connection = {
+		port: connectionState === 'connected' ? recordingPort : disconnectedPort.port,
+		socket,
+		websiteOrigin: 'https://example.com',
+		approved: true,
+		wantsToConnect: true,
+	}
+	const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: { [socketKey]: connection } }]])
+	let reconnects = 0
+	if (connectionState === 'revoked on MV2 reconnect') {
+		authorizeConfirmationSigner(connections)
+		browserMock.setManifestVersion(2)
+		browserMock.setTabMessageHandler(async () => {
+			reconnects++
+			blockSignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket.tabId)
+			connection.port = recordingPort
+			return { reconnected: true }
+		})
+	}
+	let persistedBeforeRemoval = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTerminalReplies' in items && Array.isArray(items.pendingTerminalReplies) && items.pendingTerminalReplies.length > 0) {
+			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+			assert.equal(postedMessages.length, 0)
+			persistedBeforeRemoval = true
+		}
+		writeStoredItems()
+	})
+	try {
+		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, {
+			method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier },
+		})
+		assert.equal(delivered, connectionState !== 'disconnected')
+		assert.equal(persistedBeforeRemoval, true)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+		assert.equal(reconnects, connectionState === 'revoked on MV2 reconnect' ? 1 : 0)
+		if (connectionState === 'disconnected') {
+			assert.equal((await modules.getPendingTerminalReplies()).length, 1)
+			connection.port = recordingPort
+			assert.equal(await modules.flushPendingTerminalRepliesForSocket(connections, socket), 1)
+		}
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		assert.equal(postedMessages.length, 1)
+		const denial = postedMessages[0]
+		if (!isRecord(denial) || !isRecord(denial.error)) throw new Error('missing authorization denial')
+		assert.equal(denial.type, 'result')
+		assert.equal(denial.error.code, 4100)
+		assert.equal(denial.bridgeRequestSettled, true)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+		browserMock.setManifestVersion(3)
+		browserMock.setTabMessageHandler(undefined)
 	}
 })
 
@@ -172,7 +251,7 @@ test('MV2 popup close rejects its captured requests without deleting a concurren
 	browserMock.setManifestVersion(2)
 	browserMock.setTabMessageHandler(async () => {
 		reconnectRequests += 1
-		await modules.appendPendingTransactionOrMessage(concurrentlyAppendedRequest)
+		await modules.appendPendingTransactionOrMessage(websiteTabConnections, concurrentlyAppendedRequest)
 		websiteTabConnections.set(uniqueRequestIdentifier.requestSocket.tabId, { connections: {
 			[socketKey]: {
 				port: replacementPort,
@@ -997,3 +1076,24 @@ test('a terminal reply delivery that throws still focuses the website and closes
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+test('pending transaction storage waits for a signer selection lease without caller-side locking', async () => {
+	const { acquireSignerSelectionLease, releaseSignerSelectionLease } = await import('../../app/ts/background/signerExecutionAuthority.js')
+	const tabId = pendingTransaction.uniqueRequestIdentifier.requestSocket.tabId
+	const websiteTabConnections = new Map()
+	const token = await acquireSignerSelectionLease(websiteTabConnections, tabId)
+	let persisted = false
+	const pendingWrite = modules.appendPendingTransactionOrMessage(websiteTabConnections, {
+		...pendingTransaction,
+		uniqueRequestIdentifier: { ...pendingTransaction.uniqueRequestIdentifier, requestId: 987654 },
+	}).then(() => { persisted = true })
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(persisted, false)
+		assert.equal((await modules.getPendingTransactionsAndMessages()).some((pending) => pending.uniqueRequestIdentifier.requestId === 987654), false)
+	} finally {
+		releaseSignerSelectionLease(websiteTabConnections, tabId, token)
+	}
+	await pendingWrite
+	assert.equal((await modules.getPendingTransactionsAndMessages()).some((pending) => pending.uniqueRequestIdentifier.requestId === 987654), true)
+})

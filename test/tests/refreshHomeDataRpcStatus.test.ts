@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -253,7 +254,7 @@ describe('refreshHomeData', () => {
 				})
 			})
 		})
-		const websiteTabConnections = new Map([[socket.tabId, {
+		const websiteTabConnections = createAuthorizedConnections(createAuthorizedConnections(new Map([[socket.tabId, {
 			signerStateOwner: {
 				connectionName: socket.connectionName,
 				confirmed: true,
@@ -263,7 +264,7 @@ describe('refreshHomeData', () => {
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
-		}]])
+		}]])))
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache() { /* noop test stub */ },
@@ -337,7 +338,7 @@ describe('refreshHomeData', () => {
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
-		const websiteTabConnections = new Map([[socket.tabId, {
+		const websiteTabConnections = createAuthorizedConnections(createAuthorizedConnections(new Map([[socket.tabId, {
 			signerStateOwner: {
 				connectionName: socket.connectionName,
 				confirmed: true,
@@ -347,7 +348,7 @@ describe('refreshHomeData', () => {
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
-		}]])
+		}]])))
 
 		try {
 			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 1)
@@ -420,7 +421,7 @@ describe('refreshHomeData', () => {
 		}))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
-		const websiteTabConnections = new Map([[socket.tabId, {
+		const websiteTabConnections = createAuthorizedConnections(createAuthorizedConnections(new Map([[socket.tabId, {
 			signerStateOwner: {
 				connectionName: socket.connectionName,
 				confirmed: true,
@@ -430,7 +431,7 @@ describe('refreshHomeData', () => {
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
-		}]])
+		}]])))
 
 		await requestHomePageBootstrap(websiteTabConnections, 7)
 
@@ -628,7 +629,7 @@ describe('refreshHomeData', () => {
 				})
 			})()
 		})
-		const websiteTabConnections = new Map([[socket.tabId, {
+		const websiteTabConnections = createAuthorizedConnections(createAuthorizedConnections(new Map([[socket.tabId, {
 			signerStateOwner: {
 				connectionName: socket.connectionName,
 				confirmed: true,
@@ -638,7 +639,7 @@ describe('refreshHomeData', () => {
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
-		}]])
+		}]])))
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache() { /* noop test stub */ },
@@ -770,7 +771,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { messages, port } = createPort(socket.tabId)
-		const websiteTabConnections = new Map([[socket.tabId, {
+		const websiteTabConnections = createAuthorizedConnections(createAuthorizedConnections(new Map([[socket.tabId, {
 			signerStateOwner: {
 				connectionName: socket.connectionName,
 				confirmed: true,
@@ -780,7 +781,7 @@ describe('refreshHomeData', () => {
 			connections: {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
 			},
-		}]])
+		}]])))
 
 		try {
 			await changeSettings(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), websiteTabConnections, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)

@@ -1,6 +1,8 @@
+import { attemptDeliveryAfterManifestV2Reconnect } from '../../app/ts/background/manifestV2Reconnect.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { getSignerExecutionOwner, allowLegacySignerExecution, authorizeSignerForward, blockSignerExecution, getSignerDocumentGeneration, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
 function installBrowserMock() {
@@ -18,7 +20,8 @@ function createPort(postMessage: (message: unknown) => void): browser.runtime.Po
 		hasListener() { return false },
 	}
 	return {
-		name: 'test-port',
+		name: '0x123',
+		sender: { tab: { id: 1 }, frameId: 0 },
 		disconnect() { return undefined },
 		postMessage,
 		onMessage: event,
@@ -27,6 +30,20 @@ function createPort(postMessage: (message: unknown) => void): browser.runtime.Po
 }
 
 describe('background messageSending port lifecycle', () => {
+	test('generic callback transports deliver their input without signer policy', () => {
+		installBrowserMock()
+		const socket = { tabId: 1, connectionName: 0x123n }
+		const messages: unknown[] = []
+		const port = createPort((message) => messages.push(message))
+		const connections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const command = { type: 'result', method: 'request_signer_to_eth_accounts', result: [] } as const
+		assert.equal(sendSubscriptionReplyOrCallBackToPort(port, command), true)
+		assert.equal(sendSubscriptionReplyOrCallBack(connections, socket, command), true)
+		assert.deepEqual(messages, [{ ...command, interceptorApproved: true }, { ...command, interceptorApproved: true }])
+	})
+
 	test('ignores disconnected runtime lastError after posting to a content-script port', () => {
 		installBrowserMock()
 		let postedMessages = 0
@@ -113,7 +130,7 @@ describe('background messageSending port lifecycle', () => {
 		}), false)
 	})
 
-	test('requests an MV2 content-script reconnect and retries the exact signing route', async () => {
+	for (const admission of ['transparent', 'authorized', 'revoked']) test(`MV2 reconnect delivery preserves the route and ${ admission } admission`, async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
 		const connectionKey = websiteSocketToString(socket)
 		const postedMessages: unknown[] = []
@@ -127,6 +144,11 @@ describe('background messageSending port lifecycle', () => {
 			[connectionKey]: { port: disconnectedPort, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 		} }]])
 		const reconnectMessages: unknown[] = []
+		let admissionChecks = 0
+		registerAuthoritativeTopSocket(websiteTabConnections, socket, 'https://example.test')
+		const generation = getSignerDocumentGeneration(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, 'https://example.test')
+		reconcileSignerExecutionDocument(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, 'https://example.test', generation, true, 0)
+		assert.equal(allowLegacySignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket, 'https://example.test'), true)
 		globalThis.browser = {
 			runtime: {
 				lastError: undefined,
@@ -135,10 +157,11 @@ describe('background messageSending port lifecycle', () => {
 			tabs: {
 				async sendMessage(_tabId: number, message: unknown) {
 					reconnectMessages.push(message)
+					if (admission === 'revoked') blockSignerExecution(getSignerExecutionOwner(websiteTabConnections, socket.tabId), socket.tabId)
 					setTimeout(() => {
-						websiteTabConnections.set(socket.tabId, { connections: {
-							[connectionKey]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
-						} })
+						const tab = websiteTabConnections.get(socket.tabId)
+						if (tab === undefined) throw new Error('Missing reconnecting tab')
+						tab.connections[connectionKey] = { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true }
 					}, 100)
 					return { reconnected: true }
 				},
@@ -151,14 +174,25 @@ describe('background messageSending port lifecycle', () => {
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 		}
 
-		assert.equal(await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, message), true)
+		assert.equal(await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => {
+			if (admission === 'transparent') return replyToInterceptedRequest(websiteTabConnections, message)
+			admissionChecks += 1
+			return replyToInterceptedRequest(websiteTabConnections, authorizeSignerForward(getSignerExecutionOwner(websiteTabConnections, socket.tabId), message))
+		}), true)
 		assert.deepEqual(reconnectMessages, [{ method: 'interceptor_reconnect_content_script_port', connectionName: '0x123' }])
 		assert.equal(disconnectedPostAttempts, 1)
 		assert.equal(postedMessages.length, 1)
+		assert.equal(admissionChecks, admission === 'transparent' ? 0 : 2)
+		if (admission === 'revoked') {
+			assert.match(JSON.stringify(postedMessages[0]), /not ready for this frame/)
+			assert.match(JSON.stringify(postedMessages[0]), /"type":"result"/)
+			assert.doesNotMatch(JSON.stringify(postedMessages[0]), /"type":"forwardToSigner"/)
+		} else assert.match(JSON.stringify(postedMessages[0]), /"type":"forwardToSigner"/)
 	})
 
 	test('reconnects an MV2 content-script port before requesting signer accounts', async () => {
 		const socket = { tabId: 1, connectionName: 0x123n }
+
 		const connectionKey = websiteSocketToString(socket)
 		const postedMessages: unknown[] = []
 		const connectedPort = createPort((message) => { postedMessages.push(message) })

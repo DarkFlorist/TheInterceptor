@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -60,7 +61,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
 	const postedMessages: unknown[] = []
 	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, postedMessages)
-	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
 				port,
@@ -70,7 +71,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	const request = {
 		interceptorRequest: true as const,
 		usingInterceptorWithoutSigner: false,
@@ -715,7 +716,7 @@ test('refreshes the selected signer and uses services installed during the walle
 			activeAddress,
 		))
 	})
-	websiteTabConnections = new Map([[socket.tabId, {
+	websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		signerStateOwner: {
 			connectionName: socket.connectionName,
 			confirmed: true,
@@ -731,7 +732,7 @@ test('refreshes the selected signer and uses services installed during the walle
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 
 	const confirmation = modules.confirmDialog(owner, websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -831,7 +832,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	const postedMessages: unknown[] = []
 	const socket = secondIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -841,7 +842,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier },
@@ -926,7 +927,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	const postedMessages: unknown[] = []
 	const socket = requestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -936,7 +937,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier },
@@ -969,7 +970,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -979,7 +980,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
@@ -1059,7 +1060,7 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, postedMessages)
-	const websiteTabConnections = new Map([[socket.tabId, {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, {
 		connections: {
 			[modules.websiteSocketToString(socket)]: {
 				port,
@@ -1069,7 +1070,7 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 				wantsToConnect: true,
 			},
 		},
-	}]])
+	}]]))
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({

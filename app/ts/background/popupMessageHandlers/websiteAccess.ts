@@ -1,3 +1,5 @@
+import { getConnectedTabIds } from '../websiteTabConnections.js'
+import { removeSignerPreference } from '../storageVariables.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
@@ -20,7 +22,7 @@ const isMissingTabReloadError = (error: unknown) => {
 }
 
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefresh = Array.from(websiteTabConnections.keys())
+	const tabIdsToRefresh = getConnectedTabIds(websiteTabConnections)
 	const currentTabId = await getLastKnownCurrentTabId()
 	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
 	for (const tabId of new Set(withCurrentTabId)) {
@@ -96,6 +98,7 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
+	await removeSignerPreference(parsedRequest.data.websiteOrigin)
 	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })

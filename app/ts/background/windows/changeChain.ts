@@ -1,10 +1,11 @@
+import { setChainChangeConfirmationPromise } from '../pendingSignerWork.js'
 import { isSignerChainChangePending, changeActiveRpc } from '../walletSwitch.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { ChainChangeConfirmation } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
+import { getChainChangeConfirmationPromise, getRpcNetworkForChain } from '../storageVariables.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
@@ -13,11 +14,11 @@ import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
-let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
+let pendForUserReply: Future<ChainChangeConfirmation> | undefined
 
 let chainChangeResolutionInProgress = false
 
-let openedDialog: PopupOrTab | undefined 
+let openedDialog: PopupOrTab | undefined
 
 export async function updateChainChangeViewWithPendingRequest() {
 	const promise = await getChainChangeConfirmationPromise()
@@ -97,7 +98,7 @@ export const openChangeChainDialog = async (
 		const oldPromise = await getChainChangeConfirmationPromise()
 		if (oldPromise !== undefined) {
 			if (await getPopupOrTabById(oldPromise.popupOrTabId) !== undefined) return userDeniedChange
-			await setChainChangeConfirmationPromise(undefined)
+			await setChainChangeConfirmationPromise(websiteTabConnections, undefined)
 		}
 		openedDialog = await openPopupOrTab({
 			url: getHtmlFile('changeChain'),
@@ -107,10 +108,11 @@ export const openChangeChainDialog = async (
 		})
 
 		if (openedDialog !== undefined) {
+			const confirmationDialog = openedDialog
 			addWindowTabListeners(onCloseWindow, onCloseTab)
-			await setChainChangeConfirmationPromise({
+			await setChainChangeConfirmationPromise(websiteTabConnections, {
 				website: website,
-				popupOrTabId: openedDialog,
+				popupOrTabId: confirmationDialog,
 				request: request,
 				simulationMode: simulationMode,
 				rpcNetwork: await getRpcNetworkForChain(params.params[0].chainId),
@@ -137,7 +139,7 @@ export const openChangeChainDialog = async (
 }
 
 async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
-	await setChainChangeConfirmationPromise(undefined)
+	await setChainChangeConfirmationPromise(websiteTabConnections, undefined)
 	if (reply.data.accept) {
 		return await changeActiveRpc(simulationServicesOwner, websiteTabConnections, reply.data.rpcNetwork, { source: 'dapp', simulationMode, signerTabId: reply.data.uniqueRequestIdentifier.requestSocket.tabId })
 	}

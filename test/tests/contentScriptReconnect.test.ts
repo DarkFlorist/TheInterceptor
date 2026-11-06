@@ -4,7 +4,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
-	readonly runtimeMessageListeners: ((message: unknown) => unknown)[]
+	readonly runtimeMessageListeners: ((message: unknown, sender?: browser.runtime.MessageSender) => unknown)[]
 	readonly disconnectListeners: (() => void)[]
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
 	readonly postedMessages: unknown[]
@@ -17,15 +17,30 @@ type ContentScriptMockState = {
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
+const BRIDGE_SECRET = 'a'.repeat(64)
+const BRIDGE_CAPABILITY = '11111111-1111-4111-8111-111111111111'
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
+	const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+	const isolatedWindow = {}
+	Object.defineProperty(isolatedWindow, 'top', { value: isolatedWindow })
+	Object.defineProperty(isolatedWindow, 'origin', { value: 'https://example.test' })
+	Object.defineProperty(globalThis, 'window', { configurable: true, value: isolatedWindow })
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
+	const observerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'MutationObserver')
+	const mutationCallbacks: (() => void)[] = []
+	let privateHostAvailable = source !== 'manifest-v2-document-start'
+	function createMockMutationObserver(callback: () => void) {
+		mutationCallbacks.push(callback)
+		return { observe: () => undefined, disconnect: () => undefined }
+	}
+	Object.defineProperty(globalThis, 'MutationObserver', { configurable: true, value: createMockMutationObserver })
 	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
 	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
-	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
+	const runtimeMessageListeners: ((message: unknown, sender?: browser.runtime.MessageSender) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
 	const postedMessages: unknown[] = []
@@ -35,7 +50,10 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	let shouldFailNextPost = false
 
 	const browserMock = {
+		dom: { openOrClosedShadowRoot: () => ({ addEventListener }) },
 		runtime: {
+			id: 'test-extension',
+			sendMessage: async () => true,
 			get lastError() { return runtime.lastError },
 			getURL: (path: string) => `browser-extension://test/${ path }`,
 			connect: ({ name }: { name: string }) => {
@@ -54,7 +72,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 					},
 				}
 			},
-			onMessage: { addListener: (listener: (message: unknown) => unknown) => { runtimeMessageListeners.push(listener) } },
+			onMessage: { addListener: (listener: (message: unknown, sender?: browser.runtime.MessageSender) => unknown) => { runtimeMessageListeners.push(listener) } },
 		},
 	}
 	const addEventListener = (type: string, listener: EventListenerOrEventListenerObject) => {
@@ -69,6 +87,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		removeChild: () => undefined,
 	}
 	Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: {
+		querySelectorAll: () => privateHostAvailable ? [{}] : [],
 		head: scriptContainer,
 		documentElement: scriptContainer,
 		createElement: () => ({
@@ -81,14 +100,23 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	try {
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
+		const listener = Reflect.get(globalThis, contentScriptListenerGlobalKey)
+		if (typeof listener !== 'function') throw new Error('Missing content script listener')
+		Object.defineProperty(globalThis, contentScriptListenerGlobalKey, { configurable: true, value: (name: unknown, diagnosticsSource: unknown) => listener(name, diagnosticsSource, BRIDGE_SECRET) })
 		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
+		privateHostAvailable = true
+		for (const callback of mutationCallbacks) callback()
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
+		if (windowDescriptor === undefined) Reflect.deleteProperty(globalThis, 'window')
+		else Object.defineProperty(globalThis, 'window', windowDescriptor)
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
 		if (addEventListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'addEventListener')
 		else Object.defineProperty(globalThis, 'addEventListener', addEventListenerDescriptor)
+		if (observerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'MutationObserver')
+		else Object.defineProperty(globalThis, 'MutationObserver', observerDescriptor)
 		if (documentDescriptor === undefined) Reflect.deleteProperty(globalThis, 'document')
 		else Object.defineProperty(globalThis, 'document', documentDescriptor)
 		if (interceptorInjectedDescriptor === undefined) Reflect.deleteProperty(globalThis, 'interceptorInjected')
@@ -105,6 +133,15 @@ function dispatchWindowMessage(eventListeners: Map<string, EventListenerOrEventL
 	}
 }
 
+function dispatchPrivateBridge(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, port: MessagePort, bootstrapSecret = BRIDGE_SECRET) {
+	const event = new MessageEvent('interceptor_private_bridge', { cancelable: true, data: `${ bootstrapSecret }:${ BRIDGE_CAPABILITY }`, ports: [port] })
+	for (const listener of eventListeners.get('interceptor_private_bridge') ?? []) {
+		if (typeof listener === 'function') listener(event)
+		else listener.handleEvent(event)
+	}
+	return event.defaultPrevented
+}
+
 function getPostedBridgeRequestId(value: unknown) {
 	if (typeof value !== 'object' || value === null || !('data' in value)) return undefined
 	const data = value.data
@@ -112,13 +149,26 @@ function getPostedBridgeRequestId(value: unknown) {
 	return data.requestId
 }
 
+function getContentScriptCapability(receivedMessages: readonly unknown[]) {
+	const initializationMessage = receivedMessages.find((message) => typeof message === 'object'
+		&& message !== null
+		&& 'type' in message
+		&& message.type === 'interceptor_bridge_initialized')
+	if (typeof initializationMessage !== 'object'
+		|| initializationMessage === null
+		|| !('contentScriptCapability' in initializationMessage)
+		|| typeof initializationMessage.contentScriptCapability !== 'string') throw new Error('Missing content-script bridge capability')
+	return initializationMessage.contentScriptCapability
+}
+
 async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, method = 'eth_sendTransaction', replayOnDisconnect = false, keepBridgeOpen = false) {
 	const channel = new MessageChannel()
 	const receivedMessages: unknown[] = []
 	channel.port1.onmessage = (event: MessageEvent<unknown>) => receivedMessages.push(event.data)
-	dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+	dispatchPrivateBridge(eventListeners, channel.port2)
 	channel.port1.postMessage({
 		type: 'interceptor_bridge_request',
+		bridgeCapability: BRIDGE_CAPABILITY,
 		method,
 		params: [],
 		usingInterceptorWithoutSigner: false,
@@ -268,6 +318,7 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 			method: 'example_terminalReply',
 			requestId: 1,
 			result: [],
+			contentScriptCapability: getContentScriptCapability(inpageBridge.receivedMessages),
 		})
 
 		disconnectListeners[1]?.()
@@ -294,9 +345,10 @@ async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScrip
 async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: ContentScriptSource) {
 	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages }) => {
 		const channel = new MessageChannel()
-		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+		dispatchPrivateBridge(eventListeners, channel.port2)
 		channel.port1.postMessage({
 			type: 'interceptor_bridge_request',
+			bridgeCapability: BRIDGE_CAPABILITY,
 			method: 'example_replayableMethod',
 			params: [],
 			usingInterceptorWithoutSigner: false,
@@ -307,6 +359,7 @@ async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: Co
 		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 		channel.port1.postMessage({
 			type: 'interceptor_bridge_request',
+			bridgeCapability: BRIDGE_CAPABILITY,
 			method: 'example_pendingMethod',
 			params: [],
 			usingInterceptorWithoutSigner: false,
@@ -359,10 +412,11 @@ async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource
 async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
 	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		const channel = new MessageChannel()
-		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+		dispatchPrivateBridge(eventListeners, channel.port2)
 		for (const requestId of [1, 2]) {
 			channel.port1.postMessage({
 				type: 'interceptor_bridge_request',
+				bridgeCapability: BRIDGE_CAPABILITY,
 				method: 'eth_sendTransaction',
 				params: [],
 				usingInterceptorWithoutSigner: false,
@@ -419,7 +473,137 @@ async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSour
 	})
 }
 
+async function verifyEstablishedBridgeRejectsForgedInternalRequests(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, runtimeMessageListeners, eventListeners, postedMessages, connectionNames }) => {
+		const documentGeneration = '33333333-3333-4333-8333-333333333333'
+		backgroundMessageListeners[0]?.({ type: 'interceptor_signer_document_generation', signerDocumentGeneration: documentGeneration })
+		const probe = { method: 'interceptor_signer_document_probe', signerDocumentGeneration: documentGeneration }
+		assert.deepEqual(await runtimeMessageListeners[0]?.(probe, { id: 'test-extension' }), { origin: 'https://example.test' })
+		assert.equal(await runtimeMessageListeners[0]?.(probe, { id: 'another-extension' }), false)
+		assert.deepEqual(await runtimeMessageListeners[0]?.({ method: probe.method, connectionName: connectionNames[0] }, { id: 'test-extension' }), { origin: 'https://example.test' })
+		assert.equal(await runtimeMessageListeners[0]?.({ method: probe.method, connectionName: '0x999' }, { id: 'test-extension' }), false)
+		const legitimateChannel = new MessageChannel()
+		dispatchPrivateBridge(eventListeners, legitimateChannel.port2)
+		legitimateChannel.port1.postMessage({
+			type: 'interceptor_bridge_request',
+			bridgeCapability: BRIDGE_CAPABILITY,
+			method: 'signer_providers_changed',
+			params: [[], false],
+			usingInterceptorWithoutSigner: false,
+			requestId: 1,
+			internal: true,
+		})
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(postedMessages.length, 1)
+		assert.deepEqual(postedMessages[0], { data: {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			method: 'signer_providers_changed',
+			params: [[], false],
+			usingInterceptorWithoutSigner: false,
+			requestId: 1,
+		} })
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+
+		const forgedCapability = '22222222-2222-4222-8222-222222222222'
+		const forgedChannel = new MessageChannel()
+		dispatchWindowMessage(eventListeners, new MessageEvent('message', {
+			data: { type: 'interceptor_bridge_port', bridgeCapability: forgedCapability },
+			ports: [forgedChannel.port2],
+		}))
+		forgedChannel.port1.postMessage({
+			type: 'interceptor_bridge_request',
+			bridgeCapability: forgedCapability,
+			method: 'signer_provider_selected',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 2,
+			internal: true,
+		})
+		// An observer only sees the content-side endpoint. Posting on it sends toward the inpage endpoint and cannot inject a request toward the extension.
+		legitimateChannel.port2.postMessage({
+			type: 'interceptor_bridge_request',
+			bridgeCapability: BRIDGE_CAPABILITY,
+			method: 'signer_provider_selected',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 3,
+			internal: true,
+		})
+		legitimateChannel.port1.postMessage({
+			type: 'interceptor_bridge_request',
+			bridgeCapability: forgedCapability,
+			method: 'signer_provider_selected',
+			params: [],
+			usingInterceptorWithoutSigner: false,
+			requestId: 4,
+			internal: true,
+		})
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(postedMessages.length, 1)
+
+		legitimateChannel.port1.close()
+		legitimateChannel.port2.close()
+		forgedChannel.port1.close()
+		forgedChannel.port2.close()
+	})
+}
+
+async function verifyInpageIsNotifiedAfterBackgroundBridgeReconnect(source: ContentScriptSource) {
+	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners }) => {
+		const inpageBridge = await dispatchBridgeRequest(eventListeners, 'signer_providers_changed', false, true)
+		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
+		disconnectListeners[0]?.()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(inpageBridge.receivedMessages.at(-1), {
+			type: 'interceptor_bridge_reconnected',
+			bridgeCapability: BRIDGE_CAPABILITY,
+			contentScriptCapability: getContentScriptCapability(inpageBridge.receivedMessages),
+		})
+		inpageBridge.close()
+	})
+}
+
+async function verifyContentScriptStartsWithoutRandomUuid() {
+	const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+	const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+	Object.defineProperty(globalThis, 'crypto', {
+		configurable: true,
+		value: { getRandomValues },
+	})
+	try {
+		await withContentScriptMock('standalone-listener', async ({ eventListeners, getConnectionCount }) => {
+			assert.equal(getConnectionCount(), 1)
+			const inpageBridge = await dispatchBridgeRequest(eventListeners, 'signer_providers_changed', false, true)
+			assert.match(getContentScriptCapability(inpageBridge.receivedMessages), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+			inpageBridge.close()
+		})
+	} finally {
+		if (cryptoDescriptor === undefined) Reflect.deleteProperty(globalThis, 'crypto')
+		else Object.defineProperty(globalThis, 'crypto', cryptoDescriptor)
+	}
+}
+
 if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
+	test('forged public and private ports arriving first cannot pin the bridge or inject internal requests', async () => {
+		await withContentScriptMock('standalone-listener', async ({ eventListeners, postedMessages }) => {
+			const forged = new MessageChannel()
+			dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port', bridgeCapability: BRIDGE_CAPABILITY }, ports: [forged.port2] }))
+			assert.equal(dispatchPrivateBridge(eventListeners, forged.port2, 'b'.repeat(64)), false)
+			forged.port1.postMessage({ type: 'interceptor_bridge_request', bridgeCapability: BRIDGE_CAPABILITY, method: 'signer_provider_selected', params: [], usingInterceptorWithoutSigner: false, requestId: 1, internal: true })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(postedMessages, [])
+			await dispatchBridgeRequest(eventListeners, 'signer_providers_changed')
+			assert.equal(postedMessages.length, 1)
+			forged.port1.close()
+			forged.port2.close()
+		})
+	})
+
+	test('content script starts without crypto.randomUUID on insecure pages', async () => {
+		await verifyContentScriptStartsWithoutRandomUuid()
+	})
+
 	test('standalone content script recovers its background port without reconnect churn', async () => {
 		await verifyContentScriptReconnect('standalone-listener')
 	})
@@ -498,6 +682,22 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start ignores acknowledgements from a stale port without diagnostics', async () => {
 		await verifyStalePortAcknowledgementIsIgnored('manifest-v2-document-start')
+	})
+
+	test('standalone content script rejects forged internal requests after bridge establishment', async () => {
+		await verifyEstablishedBridgeRejectsForgedInternalRequests('standalone-listener')
+	})
+
+	test('manifest v2 document-start rejects forged internal requests after bridge establishment', async () => {
+		await verifyEstablishedBridgeRejectsForgedInternalRequests('manifest-v2-document-start')
+	})
+
+	test('standalone content script notifies inpage after its background bridge reconnects', async () => {
+		await verifyInpageIsNotifiedAfterBackgroundBridgeReconnect('standalone-listener')
+	})
+
+	test('manifest v2 document-start notifies inpage after its background bridge reconnects', async () => {
+		await verifyInpageIsNotifiedAfterBackgroundBridgeReconnect('manifest-v2-document-start')
 	})
 
 	test('does not redefine a non-configurable legacy content script listener', async () => {

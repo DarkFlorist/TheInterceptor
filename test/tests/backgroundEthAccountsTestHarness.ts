@@ -1,3 +1,4 @@
+import { getSignerExecutionOwner, allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -25,7 +26,23 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+export function authorizeLegacySignerSocket(connections: WebsiteTabConnections, socket: { readonly tabId: number, readonly connectionName: bigint }, websiteOrigin = 'https://example.test') {
+	clearSignerExecutionAuthorityForTab(connections, socket.tabId)
+	registerAuthoritativeTopSocket(connections, socket, websiteOrigin)
+	reconcileSignerExecutionDocument(getSignerExecutionOwner(connections, socket.tabId), socket, websiteOrigin, '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(getSignerExecutionOwner(connections, socket.tabId), socket, websiteOrigin)
+}
+
+// Each fixture owns its live document proofs; browser mocks do not grant authority to unrelated collections.
+export function createAuthorizedConnections<T extends WebsiteTabConnections>(connections: T): T {
+	for (const [tabId, tab] of connections) {
+		const owner = Object.values(tab.connections).find((connection) => connection.socket.connectionName === (tab.signerStateOwner?.connectionName ?? 0n))
+		if (owner !== undefined) authorizeLegacySignerSocket(connections, owner.socket, owner.websiteOrigin)
+	}
+	return connections
+}
+
+export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, tabStatus = 'complete' }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly tabStatus?: 'loading' | 'complete' } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
@@ -76,7 +93,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
-			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
+			async get(tabId: number) { return { id: tabId, active: true, status: tabStatus } },
 			async update() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -152,6 +169,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/pendingSignerWork.js'),
 		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/windows/changeChain.js'),
@@ -160,7 +178,7 @@ export async function loadModules() {
 	}
 }
 
-export function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId?: number, connectionName = 0n) {
+export function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void, frameId = 0, connectionName = 0n) {
 	const messages: PortMessage[] = []
 	const port = {
 		name: `0x${ connectionName.toString(16) }`,

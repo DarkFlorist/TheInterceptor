@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -155,9 +156,9 @@ async function createApprovedDappHarness(ethSimulateV1Result?: unknown) {
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port, messages } = createPort(socket.tabId)
 	const connectionKey = websiteSocketToString(socket)
-	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+	const websiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 		[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
-	} }]])
+	} }]]))
 	const { ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = createEthereum(rpcEntry, ethSimulateV1Result)
 	return { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner }
 }

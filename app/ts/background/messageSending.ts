@@ -4,7 +4,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
+import { attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -38,10 +38,6 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 	return false
 }
 
-export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
-	return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => replyToInterceptedRequest(websiteTabConnections, message))
-}
-
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {
 	return postMessageToPortIfConnected(port, {...message, interceptorApproved: true })
 }
@@ -54,7 +50,7 @@ export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTa
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		return postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true })
+		return sendSubscriptionReplyOrCallBackToPort(connection.port, message)
 	}
 	return false
 }

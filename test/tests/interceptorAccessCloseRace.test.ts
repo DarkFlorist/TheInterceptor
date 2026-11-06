@@ -1,3 +1,4 @@
+import { createAuthorizedConnections } from './backgroundEthAccountsTestHarness.js'
 import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -165,9 +166,9 @@ describe('interceptor access close handling', () => {
 		const account = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
 		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
-		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
 		const request: InterceptedRequest = {
@@ -195,9 +196,9 @@ describe('interceptor access close handling', () => {
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
 		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
-		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const settings: Settings = {
 			activeSimulationAddress: undefined,
 			activeSigningAddress: undefined,
@@ -260,9 +261,9 @@ describe('interceptor access close handling', () => {
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
 		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
-		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const settings: Settings = {
 			activeSimulationAddress: undefined,
 			activeSigningAddress: undefined,
@@ -327,7 +328,7 @@ describe('interceptor access close handling', () => {
 		const firstSocket: WebsiteSocket = { tabId: 1, connectionName: 1n }
 		const secondSocket: WebsiteSocket = { tabId: 2, connectionName: 2n }
 		const createPort = (tabId: number) => ({ name: '0x0', sender: { tab: { id: tabId } }, postMessage() { return undefined } }) as unknown as browser.runtime.Port
-		const websiteTabConnections: WebsiteTabConnections = new Map([
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([
 			[firstSocket.tabId, { connections: {
 				[websiteSocketToString(firstSocket)]: {
 					port: createPort(firstSocket.tabId),
@@ -346,7 +347,7 @@ describe('interceptor access close handling', () => {
 					wantsToConnect: true,
 				},
 			} }],
-		])
+		]))
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const publishRpcConnectionStatus = async () => undefined
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
@@ -419,9 +420,9 @@ describe('interceptor access close handling', () => {
 		const website = { websiteOrigin: 'https://tab-dialog.example.test', icon: undefined, title: undefined }
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
 		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
-		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+		const websiteTabConnections: WebsiteTabConnections = createAuthorizedConnections(new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
-		} }]])
+		} }]]))
 		const settings: Settings = {
 			activeSimulationAddress: undefined,
 			activeSigningAddress: undefined,

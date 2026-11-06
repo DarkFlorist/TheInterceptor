@@ -1,4 +1,4 @@
-export const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
+export { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../utils/inpageBridgeProtocol.js'
 
 export function acknowledgeAndTrackBridgeRequest(
 	latestReceivedRequestIds: Map<string, number>,

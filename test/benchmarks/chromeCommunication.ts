@@ -122,7 +122,7 @@ async function main() {
 			workerConnection.close()
 		}
 
-		pageTargetId = await createTargetPage(chrome.browserConnection, `${ server.baseUrl }?flow=wallet-request-permissions&safe-probe=early`)
+		pageTargetId = await createTargetPage(chrome.browserConnection, `${ server.baseUrl }?flow=wallet-request-permissions&safe-probe=early&bridge-probe=true`)
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
@@ -140,6 +140,9 @@ async function main() {
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
 			const accessGrantedState = await getCommunicationPageState(pageConnection)
+			const bridgePrivacyProbe = await pageConnection.evaluate<{ publicPortObserved: boolean, privateEventObserved: boolean, prototypeCalls: number, iteratedSecrets: number, iteratedPorts: number, prototypePortReads: number, privateDataReads: number, regexpUuidObservations: number, forgedBootstrapAccepted: boolean }>('globalThis.__bridgePrivacyProbe')
+			if (bridgePrivacyProbe.publicPortObserved || bridgePrivacyProbe.privateEventObserved || bridgePrivacyProbe.prototypeCalls !== 0 || bridgePrivacyProbe.iteratedSecrets !== 0 || bridgePrivacyProbe.iteratedPorts !== 0 || bridgePrivacyProbe.prototypePortReads !== 0 || bridgePrivacyProbe.privateDataReads !== 0 || bridgePrivacyProbe.regexpUuidObservations !== 0 || bridgePrivacyProbe.forgedBootstrapAccepted) throw new Error(`The page observed or hijacked the private bridge: ${ JSON.stringify(bridgePrivacyProbe) }`)
+
 			if (accessGrantedState?.connectEvents !== 0) throw new Error(`Account authorization emitted ${ accessGrantedState?.connectEvents ?? 'an unknown number of' } connect events`)
 			if (accessGrantedState.accountsChangedEvents !== 1) throw new Error(`Account authorization emitted ${ accessGrantedState.accountsChangedEvents } accountsChanged events instead of one`)
 			if (accessGrantedState.eventOrder.join(',') !== 'accountsChanged,permissionsResolved,accountsResolved') throw new Error(`Unexpected account authorization event order: ${ accessGrantedState.eventOrder.join(',') }`)
