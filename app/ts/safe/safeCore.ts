@@ -5,12 +5,13 @@ import type { SafeOwnerSignature, SafeTransactionSigningRequest, SafeTransaction
 import type { EthereumAddress, EthereumBlockTag } from '../types/wire-types.js'
 import type { Abi, Hex } from '../utils/ethereumPrimitives.js'
 import { decodeFunctionOutput, encodeFunctionCall } from '../utils/abiRuntime.js'
-import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, bytes32String, checksummedAddress, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { ensureHex } from '../utils/ethereumBytes.js'
-import { recoverAddress } from '../utils/ethereumPrimitives.js'
+import { isAbiDataDecodeError, recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getMessageAndDomainHash, getSafeTxHash } from '../utils/eip712.js'
 import { EIP712Message } from '../types/eip721.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
+import { JsonRpcResponseError } from '../utils/errors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
@@ -178,6 +179,32 @@ export async function getSafeContractState(ethereum: EthereumClientService, safe
 export async function getSafeContractSnapshot(ethereum: EthereumClientService, safeAddress: EthereumAddress): Promise<SafeContractSnapshot> {
 	const blockNumber = await ethereum.getBlockNumber(undefined)
 	return { blockNumber, state: await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber) }
+}
+
+// Nodes report a revert as code 3, or with their own code and the word in the message. Any other JSON-RPC error says nothing about the contract.
+const isExecutionRevert = (error: unknown) => error instanceof JsonRpcResponseError && (error.code === 3 || /revert/iu.test(error.message))
+
+const readSafeOwnership = async (ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint) => {
+	const [ownersResult, thresholdResult] = await Promise.all([
+		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
+		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
+	])
+	return {
+		owners: decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult).map((owner) => BigInt(owner)),
+		threshold: decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult),
+	}
+}
+
+// A page's SafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. VERSION is not read: this only previews, and Safes outside SUPPORTED_SAFE_VERSIONS are in use. The active address counts as signer when it is the named Safe, because the user chose that Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
+export async function assertSafeTxPreviewAllowed(ethereum: EthereumClientService, safeAddress: EthereumAddress, activeAddress: EthereumAddress, messageChainId: bigint | undefined) {
+	if (messageChainId !== undefined && messageChainId !== ethereum.getChainId()) throw createSafeContractValidationFailure(`No outcome is simulated: this message is for chain ${ messageChainId.toString() }, not the selected network.`)
+	const notSafeMessage = `No outcome is simulated: ${ checksummedAddress(safeAddress) } is not a Gnosis Safe on this network, so nothing could execute this message there.`
+	const ownership = await readSafeOwnership(ethereum, safeAddress, await ethereum.getBlockNumber(undefined)).catch((error: unknown) => {
+		if (isAbiDataDecodeError(error) || isExecutionRevert(error)) throw createSafeContractValidationFailure(notSafeMessage)
+		throw error
+	})
+	if (ownership.threshold === 0n || ownership.threshold > BigInt(ownership.owners.length)) throw createSafeContractValidationFailure(notSafeMessage)
+	if (activeAddress !== safeAddress && !ownership.owners.includes(activeAddress)) throw createSafeOwnerValidationFailure(`No outcome is simulated: ${ checksummedAddress(activeAddress) } is not an owner of Gnosis Safe ${ checksummedAddress(safeAddress) }, so its signature could not execute this message.`)
 }
 
 export function createSafeOwnerValidator(
