@@ -5,8 +5,8 @@ import { AllApproval, TokenAmount, TokenSymbol } from '../../subcomponents/coins
 import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
-import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
-import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../../types/addressBookTypes.js'
+import type { TokenApprovalDisplay, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 
 const approvalTextColor = 'var(--danger-color)'
 
@@ -16,13 +16,6 @@ type SimpleTokenApprovalVisualisation = {
 	transactionGasses: TransactionGasses
 	rpcNetwork: RpcNetwork
 }
-
-// Only what the approval box renders, so a signature request can show an approval without any simulation data. Simulated token events fit this type as they are.
-export type TokenApprovalDisplay =
-	| { type: 'ERC20', token: Erc20TokenEntry, amount: bigint }
-	| { type: 'ERC721', token: Erc721Entry, tokenId: bigint }
-	| { type: 'ERC1155', token: Erc1155Entry, tokenId: bigint, tokenIdName: string | undefined, amount: bigint }
-	| { type: 'NFT All approval', token: Erc721Entry | Erc1155Entry, allApprovalAdded: boolean }
 
 type TokenApprovalsVisualisationParams = {
 	spender: AddressBookEntry
