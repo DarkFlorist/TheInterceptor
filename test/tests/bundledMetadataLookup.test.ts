@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { contractMetadata, erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
-import { getBundledContractMetadata, getBundledErc1155Metadata, getBundledErc721Metadata, getBundledTokenMetadata } from '../../app/ts/background/bundledMetadataLookup.js'
+import { getBundledContractMetadata, getBundledErc1155Metadata, getBundledErc721Metadata, getBundledTokenMetadata, listBundledContractMetadata, listBundledErc1155Metadata, listBundledErc721Metadata, listBundledTokenMetadata, listEveryBundledContractMetadata, listEveryBundledErc1155Metadata, listEveryBundledErc721Metadata, listEveryBundledTokenMetadata } from '../../app/ts/background/bundledMetadataLookup.js'
 
 const COMPOUND_PAX_DOLLAR_CHECKSUMMED_KEY = '0x041171993284df560249B57358F931D9eB7b925D'
 const AAVE_DAI_CHECKSUMMED_KEY = '0x028171bCA77440897B824Ca71D1c56caC55b68A3'
@@ -38,6 +38,24 @@ const assertEveryKeyResolves = <Definition>(metadata: ReadonlyMap<string, Defini
 	}
 }
 
+// The listing must hold every bundled address exactly once, under its lower case key, at the position of its first key in map order, with the entry the lookup returns for it.
+const assertListsEveryAddressOnce = <Definition>(metadata: ReadonlyMap<string, Definition>, list: () => Iterable<[string, Definition]>, lookup: (address: bigint) => Definition | undefined) => {
+	const listed = Array.from(list())
+	const listedKeys = listed.map(([key]) => key)
+	assert.deepEqual(listedKeys, Array.from(new Set(Array.from(metadata.keys(), (key) => key.toLowerCase()))))
+	for (const [key, definition] of listed) assert.strictEqual(definition, lookup(BigInt(key)), key)
+}
+
+// The matching listing must hold every bundled entry, shadowed ones included, under its lower case key, in map order.
+const assertListsEveryEntry = <Definition>(metadata: ReadonlyMap<string, Definition>, listEvery: () => Iterable<[string, Definition]>) => {
+	const listed = Array.from(listEvery())
+	assert.equal(listed.length, metadata.size)
+	Array.from(metadata).forEach(([key, definition], index) => {
+		assert.equal(listed[index]?.[0], key.toLowerCase(), key)
+		assert.strictEqual(listed[index]?.[1], definition, key)
+	})
+}
+
 describe('bundled metadata lookup', () => {
 	test('finds a token that the bundled metadata stores only under its checksummed address', () => {
 		assert.equal(tokenMetadata.has(COMPOUND_PAX_DOLLAR_CHECKSUMMED_KEY.toLowerCase()), false)
@@ -59,6 +77,20 @@ describe('bundled metadata lookup', () => {
 		assertEveryKeyResolves(tokenMetadata, getBundledTokenMetadata)
 		assertEveryKeyResolves(erc721Metadata, getBundledErc721Metadata)
 		assertEveryKeyResolves(erc1155Metadata, getBundledErc1155Metadata)
+	})
+
+	test('lists every bundled address once with the entry its lookup returns', () => {
+		assertListsEveryAddressOnce(contractMetadata, listBundledContractMetadata, getBundledContractMetadata)
+		assertListsEveryAddressOnce(tokenMetadata, listBundledTokenMetadata, getBundledTokenMetadata)
+		assertListsEveryAddressOnce(erc721Metadata, listBundledErc721Metadata, getBundledErc721Metadata)
+		assertListsEveryAddressOnce(erc1155Metadata, listBundledErc1155Metadata, getBundledErc1155Metadata)
+	})
+
+	test('lists every bundled entry for matching, including the ones the lookup shadows', () => {
+		assertListsEveryEntry(contractMetadata, listEveryBundledContractMetadata)
+		assertListsEveryEntry(tokenMetadata, listEveryBundledTokenMetadata)
+		assertListsEveryEntry(erc721Metadata, listEveryBundledErc721Metadata)
+		assertListsEveryEntry(erc1155Metadata, listEveryBundledErc1155Metadata)
 	})
 
 	test('trusts only the reviewed checksummed-only bundled entries', () => {
