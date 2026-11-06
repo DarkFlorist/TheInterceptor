@@ -31,11 +31,12 @@ const createNode = (replyToCall: CallReply) => {
 	}
 	return new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Test', chainId: CHAIN_ID, httpsRpc: handler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
 }
-const check = async (replyToCall: CallReply, activeAddress = OWNER, messageChainId: bigint | undefined = CHAIN_ID) => await assertSafeTxPreviewAllowed(createNode(replyToCall), SAFE, activeAddress, messageChainId)
+// No default values: a default would replace the undefined chain id a message without one passes.
+const check = async (replyToCall: CallReply, activeAddress: bigint, messageChainId: bigint | undefined) => await assertSafeTxPreviewAllowed(createNode(replyToCall), SAFE, activeAddress, messageChainId)
 
 describe('Safe preview check', () => {
 	test('allows an owner of a contract answering as a Safe', async () => {
-		await check(answeringAsSafe([STRANGER, OWNER], 2n))
+		await check(answeringAsSafe([STRANGER, OWNER], 2n), OWNER, CHAIN_ID)
 	})
 
 	test('allows a message without a chain id, as Safes before 1.3.0 sign', async () => {
@@ -43,7 +44,7 @@ describe('Safe preview check', () => {
 	})
 
 	test('allows the named Safe itself as the active address, because the user chose it and the signer is configured on it', async () => {
-		await check(answeringAsSafe([OWNER]), SAFE)
+		await check(answeringAsSafe([OWNER]), SAFE, CHAIN_ID)
 	})
 
 	const notSafes: readonly (readonly [string, CallReply])[] = [
@@ -56,12 +57,12 @@ describe('Safe preview check', () => {
 	]
 	for (const [name, replyToCall] of notSafes) {
 		test(`refuses ${ name }`, async () => {
-			await assert.rejects(check(replyToCall), /No outcome is simulated: 0x1111111111111111111111111111111111111111 is not a Gnosis Safe on this network/u)
+			await assert.rejects(check(replyToCall, OWNER, CHAIN_ID), /No outcome is simulated: 0x1111111111111111111111111111111111111111 is not a Gnosis Safe on this network/u)
 		})
 	}
 
 	test('refuses an active address that is not an owner', async () => {
-		await assert.rejects(check(answeringAsSafe([OWNER]), STRANGER), /0x3333333333333333333333333333333333333333 is not an owner of Gnosis Safe 0x1111111111111111111111111111111111111111/u)
+		await assert.rejects(check(answeringAsSafe([OWNER]), STRANGER, CHAIN_ID), /0x3333333333333333333333333333333333333333 is not an owner of Gnosis Safe 0x1111111111111111111111111111111111111111/u)
 	})
 
 	test('refuses a message for another chain without asking the contract', async () => {
@@ -69,7 +70,7 @@ describe('Safe preview check', () => {
 	})
 
 	test('does not call a node failure a missing Safe', async () => {
-		await assert.rejects(check(revertWith(-32005, 'rate limited')), /rate limited/u)
-		await assert.rejects(check(() => { throw new Error('connection lost') }), /connection lost/u)
+		await assert.rejects(check(revertWith(-32005, 'rate limited'), OWNER, CHAIN_ID), /rate limited/u)
+		await assert.rejects(check(() => { throw new Error('connection lost') }, OWNER, CHAIN_ID), /connection lost/u)
 	})
 })
