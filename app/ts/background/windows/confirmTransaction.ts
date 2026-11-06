@@ -13,7 +13,7 @@ import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimula
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updateOwnedPendingRequestField, updatePendingTransactionOrMessage } from '../storageVariables.js'
-import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
+import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, findStackOperation, getRequestStackIdentifier, isStackOperationOf, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { getQueuedTerminalReply } from '../terminalReplyDelivery.js'
@@ -23,7 +23,7 @@ import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage, withoutOwnedFields } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
@@ -259,12 +259,11 @@ const getPendingTransactionOrMessageByidentifier = async (uniqueRequestIdentifie
 export const setGasLimitForTransaction = async (transactionIdentifier: bigint, gasLimit: bigint) => {
 	const pendingTransaction = (await getPendingTransactionsAndMessages()).find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === transactionIdentifier)
 	if (pendingTransaction === undefined) {
-		const theTransactionIsAlreadyInStack = (await getInterceptorTransactionStack()).operations.some((transaction) => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
+		const theTransactionIsAlreadyInStack = findStackOperation((await getInterceptorTransactionStack()).operations, { type: 'Transaction', transactionIdentifier }) !== undefined
 		if (!theTransactionIsAlreadyInStack) return undefined
 		await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 			return { operations: prevStack.operations.map((operation) => {
-				if (operation.type !== 'Transaction') return operation
-				if (operation.preSimulationTransaction.transactionIdentifier !== transactionIdentifier) return operation
+				if (operation.type !== 'Transaction' || !isStackOperationOf(operation, { type: 'Transaction', transactionIdentifier })) return operation
 				if (operation.preSimulationTransaction.originalRequestParameters.method !== 'eth_sendTransaction') return operation
 				const originalParams = operation.preSimulationTransaction.originalRequestParameters
 				const originalRequestParameters = modifyObject(originalParams, { params: [modifyObject(originalParams.params[0], { gas: gasLimit })] })
@@ -379,13 +378,13 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 	}
 	if (safeResolution.status === 'refreshed') {
 		pendingTransactionOrMessage = safeResolution.pending
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => withoutOwnedFields(safeResolution.pending))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
 	}
 	pendingTransactionOrMessage = safeResolution.pending
 	if (safeResolution.pendingChanged) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => withoutOwnedFields(safeResolution.pending))
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
@@ -433,7 +432,7 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 		switch (simulatedPending.type) {
 			case 'SignableMessage': {
 				// A message an earlier accept already stacked before stopping is not stacked again.
-				await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => prevStack.operations.some((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === simulatedPending.signedMessageTransaction.messageIdentifier)
+				await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => findStackOperation(prevStack.operations, getRequestStackIdentifier(simulatedPending)) !== undefined
 					? prevStack
 					: { operations: [...prevStack.operations, { type: 'Message' as const, signedMessageTransaction: simulatedPending.signedMessageTransaction }] })
 				return await replyWith(await toStackedTerminalReply(simulatedPending, { type: 'Message', signedMessageTransaction: simulatedPending.signedMessageTransaction }), 'changed')
@@ -449,8 +448,8 @@ async function resolvePendingRequest(ethereum: EthereumClientService, tokenPrice
 					const transactionToStack = toPreSimulationTransaction(pendingTransaction.transactionToSimulate, current.simulationHashReservation ?? allocatedReservation)
 					return await updateInterceptorTransactionStackWithResult<AcceptedTransactionStacking>((prevStack: InterceptorTransactionStack) => {
 						// An accept repeated while the first one replies, or retried after it stacked the transaction, replies with the stacked hash again.
-						const alreadyStacked = prevStack.operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pendingTransaction.transactionIdentifier)
-						if (alreadyStacked?.type === 'Transaction') return { stack: prevStack, result: { kind: 'stacked', transaction: alreadyStacked.preSimulationTransaction } }
+						const alreadyStacked = findStackOperation(prevStack.operations, { type: 'Transaction', transactionIdentifier: pendingTransaction.transactionIdentifier })
+						if (alreadyStacked !== undefined) return { stack: prevStack, result: { kind: 'stacked', transaction: alreadyStacked.preSimulationTransaction } }
 						const stack = appendAcceptedTransactionToStack(prevStack, transactionToStack)
 						return stack === undefined ? { stack: prevStack, result: { kind: 'hash-taken' } } : { stack, result: { kind: 'stacked', transaction: transactionToStack } }
 					})

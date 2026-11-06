@@ -14,6 +14,7 @@ import { assertNever } from '../utils/typescript.js'
 import { type ConfirmationWindowAccess, type LockScope, updateConfirmationWindowAfterRemoving } from './confirmationWindowLifecycle.js'
 import { getPendingTerminalReplies } from './pendingTerminalReplies.js'
 import { resolutionState } from './requestResolutionState.js'
+import { findStackOperation, getRequestStackIdentifier } from './simulationStackHashes.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateOwnedPendingRequestField } from './storageVariables.js'
 import { attachTerminalReplyWindow, attemptQueuedTerminalReplyDelivery, forgetTerminalReplyWindow, getQueuedTerminalReply, queueTerminalReply, retireTerminalReply } from './terminalReplyDelivery.js'
 
@@ -356,15 +357,6 @@ export function toTerminalReply(request: PendingTransactionOrSignableMessage, me
 // What a request can leave on the simulation stack.
 type StackedRequestOperation = Extract<InterceptorStackOperation, { readonly type: 'Transaction' | 'Message' }>
 
-// The operation on the simulation stack that the request stacked, if any.
-function findStackedOperation(request: PendingTransactionOrSignableMessage, operations: readonly InterceptorStackOperation[]): StackedRequestOperation | undefined {
-	switch (request.type) {
-		case 'Transaction': return operations.flatMap((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === request.transactionIdentifier ? [operation] : [])[0]
-		case 'SignableMessage': return operations.flatMap((operation) => operation.type === 'Message' && operation.signedMessageTransaction.messageIdentifier === request.signedMessageTransaction.messageIdentifier ? [operation] : [])[0]
-		default: return assertNever(request)
-	}
-}
-
 // The one terminal reply of a request stacked on the simulation stack, whichever resolution commits it (an accept, or a decline of a request stacked before its reply was committed): a transaction's stacked hash, a message's simulated signature.
 export async function toStackedTerminalReply(request: PendingTransactionOrSignableMessage, stacked: StackedRequestOperation) {
 	switch (stacked.type) {
@@ -379,7 +371,7 @@ async function rejectUnlessStacked(request: PendingTransactionOrSignableMessage,
 	const rejection = reason === 'reject' && request.transactionOrMessageCreationStatus !== 'Simulated'
 		? formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
 		: formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')
-	const stacked = request.simulationMode ? findStackedOperation(request, (await getInterceptorTransactionStack()).operations) : undefined
+	const stacked = request.simulationMode ? findStackOperation((await getInterceptorTransactionStack()).operations, getRequestStackIdentifier(request)) : undefined
 	return await commitAndFinish(request, stacked === undefined ? toTerminalReply(request, rejection) : await toStackedTerminalReply(request, stacked), context, scope)
 }
 

@@ -199,14 +199,21 @@ export type PendingTransactionOrSignableMessage = PendingSignableMessage | Pendi
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 
-// The fields of a pending request that one layer owns, and how each is kept as stored when another writer replaces the request. A new owned field is one more entry here.
+// The fields of a pending request that one layer owns. A new owned field is one more entry here.
 export const OWNED_PENDING_REQUEST_FIELDS = [
 	// Owned by requestResolution.ts.
-	{ field: 'resolutionInputs', keepStored: (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage => ({ ...updated, resolutionInputs: stored.resolutionInputs }) },
-	// Owned by simulationStackHashes.ts, and accepting a transaction that has no reservation yet (confirmTransaction.ts). Only a transaction has one.
-	{ field: 'simulationHashReservation', keepStored: (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage => updated.type === 'Transaction' ? { ...updated, simulationHashReservation: stored.type === 'Transaction' ? stored.simulationHashReservation : undefined } : updated },
+	'resolutionInputs',
+	// Owned by simulationStackHashes.ts, and accepting a transaction that has no reservation yet (confirmTransaction.ts).
+	'simulationHashReservation',
 ] as const
-export type OwnedPendingRequestField = (typeof OWNED_PENDING_REQUEST_FIELDS)[number]['field']
+export type OwnedPendingRequestField = (typeof OWNED_PENDING_REQUEST_FIELDS)[number]
+// A pending request as a generic update writes it: without its owned fields, which that update cannot write. Distributed over the union, so each kind of request keeps its own fields.
+type WithoutOwnedFields<Request> = Request extends unknown ? Omit<Request, OwnedPendingRequestField> : never
+export type PendingRequestWithoutOwnedFields = WithoutOwnedFields<PendingTransactionOrSignableMessage>
+// What a generic update may return: naming an owned field does not compile, and neither does a whole request read elsewhere, which withoutOwnedFields must mark as carrying none.
+export type GenericPendingRequestUpdate = PendingRequestWithoutOwnedFields & { readonly [Field in OwnedPendingRequestField]?: never }
+// A request read earlier, as a generic update writes it: its owned fields are not part of the write.
+export const withoutOwnedFields = (request: PendingRequestWithoutOwnedFields) => request
 
 export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction
 const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction)

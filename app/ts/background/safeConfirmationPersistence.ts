@@ -6,6 +6,7 @@ import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
+import { findStackOperation } from './simulationStackHashes.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
@@ -167,9 +168,7 @@ async function persistSafeTransaction(
 				return persistedStackTransaction
 			})
 			const updatedOperations = stackWithUpdatedSafeMirror.operations
-			const mirrorIsStacked = updatedSafeMirror || updatedOperations.some((operation) =>
-				operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pendingTransaction.transactionIdentifier
-			)
+			const mirrorIsStacked = updatedSafeMirror || findStackOperation(updatedOperations, { type: 'Transaction', transactionIdentifier: pendingTransaction.transactionIdentifier }) !== undefined
 			// The mirror is stacked under its safeTxHash, which an imported simulation transaction can already carry; checked here, inside the stack update, so no other write can race it.
 			if (!mirrorIsStacked && updatedOperations.some((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.signedTransaction.hash === safeSigningRequest.safeTxHash)) {
 				throw createSafeContractValidationFailure(`A transaction on the simulation stack already uses this proposal's Gnosis Safe transaction hash ${ EthereumBytes32.serialize(safeSigningRequest.safeTxHash) }. Remove that transaction from the simulation stack, then try again.`)

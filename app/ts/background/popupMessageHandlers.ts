@@ -52,7 +52,8 @@ import { createSafeContractValidationFailure, getSafeContractSnapshot, validateS
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
-import { appendOperationsToStack, ensureSimulationHashReservation, getReservedTransactionHashes, withSimulationHashLock } from './simulationStackHashes.js'
+import { withoutOwnedFields } from '../types/accessRequest.js'
+import { appendOperationsToStack, ensureSimulationHashReservation, findStackOperation, getReservedTransactionHashes, isStackOperationOf, withSimulationHashLock } from './simulationStackHashes.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -446,10 +447,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 	if (params.data.type === 'Transaction') {
 		const currentStack = await getInterceptorTransactionStack()
 		const transactionIdentifier = params.data.transactionIdentifier
-		const safeOperation = currentStack.operations.find((operation): operation is Extract<InterceptorStackOperation, { type: 'Transaction' }> =>
-			operation.type === 'Transaction'
-			&& operation.preSimulationTransaction.transactionIdentifier === transactionIdentifier
-		)
+		const safeOperation = findStackOperation(currentStack.operations, { type: 'Transaction', transactionIdentifier })
 		const safeTransactionToRemove = safeOperation?.preSimulationTransaction.safeTransaction
 		if (safeTransactionToRemove !== undefined) {
 			await updateTransactionState((previousState) => {
@@ -476,8 +474,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		switch (params.data.type) {
 			case 'Transaction': {
-				const transactionIdentifier = params.data.transactionIdentifier
-				const transactionToBeRemoved = prevStack.operations.find((transaction): transaction is Extract<InterceptorStackOperation, { type: 'Transaction' }> => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
+				const transactionToBeRemoved = findStackOperation(prevStack.operations, params.data)
 				if (transactionToBeRemoved === undefined) return prevStack
 				const removedTransaction = transactionToBeRemoved.preSimulationTransaction
 				const shouldShiftNonceAfterRemoval = (transaction: typeof removedTransaction) => {
@@ -493,7 +490,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 				const newOperations: InterceptorStackOperation[] = []
 				let transactionWasFound = false
 				for (const operation of prevStack.operations) {
-					if (operation.type === 'Transaction' && transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier) {
+					if (isStackOperationOf(operation, params.data)) {
 						transactionWasFound = true
 						continue
 					}
@@ -509,11 +506,8 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 				return { operations: normalizeConsecutiveTimeManipulations(newOperations) }
 			}
 			case 'Message': {
-				const messageIdentifier = params.data.messageIdentifier
-				return {
-					operations: normalizeConsecutiveTimeManipulations(prevStack.operations)
-						.filter((operation) => !(operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier))
-				}
+				const removedMessage = params.data
+				return { operations: normalizeConsecutiveTimeManipulations(prevStack.operations).filter((operation) => !isStackOperationOf(operation, removedMessage)) }
 			}
 			default: assertNever(params.data)
 		}
@@ -578,7 +572,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 							data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
 						}
 					})
-				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => updatedFirst)
+				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => withoutOwnedFields(updatedFirst))
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
@@ -1018,14 +1012,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 	const newStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const normalizedPrevStack = { operations: normalizeConsecutiveTimeManipulations(prevStack.operations) }
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
-		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => {
-			switch(operation.type) {
-				case 'Transaction': return identifier.type === operation.type && identifier.transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier
-				case 'Message': return identifier.type === operation.type && identifier.messageIdentifier === operation.signedMessageTransaction.messageIdentifier
-				case 'TimeManipulation': return false
-				default: return assertNever(operation)
-			}
-		})
+		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => isStackOperationOf(operation, identifier))
 		if (appendAfterIndex < 0) return normalizedPrevStack
 		const indexOfMaybeManipulator = appendAfterIndex + 1
 		const maybeExistingManipulator = normalizedPrevStack.operations[indexOfMaybeManipulator]
@@ -1046,9 +1033,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true, onlyIfNotAlreadyUpdating: true })
 		return
 	}
-	const appendIdentifier = parsedRequest.data.transactionOrMessageIdentifier.type === 'Transaction' ? parsedRequest.data.transactionOrMessageIdentifier.transactionIdentifier : parsedRequest.data.transactionOrMessageIdentifier.messageIdentifier
-	const operationIdentifier = secondToLastOperation.type === 'Transaction' ? secondToLastOperation.preSimulationTransaction.transactionIdentifier : secondToLastOperation.signedMessageTransaction.messageIdentifier
-	const appendedToEnd = appendIdentifier === operationIdentifier
+	const appendedToEnd = isStackOperationOf(secondToLastOperation, parsedRequest.data.transactionOrMessageIdentifier)
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: !appendedToEnd, onlyIfNotAlreadyUpdating: true })
 }
 

@@ -9,7 +9,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import { OWNED_PENDING_REQUEST_FIELDS, type OwnedPendingRequestField, type PendingAccessRequests, type PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { type GenericPendingRequestUpdate, OWNED_PENDING_REQUEST_FIELDS, type OwnedPendingRequestField, type PendingAccessRequests, type PendingRequestWithoutOwnedFields, type PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -67,10 +67,16 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-// Every update of a pending request keeps its owned fields (OWNED_PENDING_REQUEST_FIELDS) as stored, so a request replaced from a snapshot taken earlier never loses or rewinds them. A write to an owned field must therefore go through updateOwnedPendingRequestField: through any other update it is silently reverted.
-const withStoredOwnedFields = (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage, writtenField: OwnedPendingRequestField | undefined) => OWNED_PENDING_REQUEST_FIELDS.reduce((merged, { field, keepStored }) => field === writtenField ? merged : keepStored(stored, merged), updated)
+/**
+ * The store's contract for owned pending-request fields (OWNED_PENDING_REQUEST_FIELDS), which is deliberate: they survive every generic write, because a stale whole-request write, built from a snapshot read before them, must not lose or rewind them.
+ * A generic update has no way to write them: its types leave them out, so naming one does not compile, a request read earlier goes through withoutOwnedFields, and the store takes them from the stored request. updateOwnedPendingRequestField is their only writer, for one field at a time.
+ */
+function withStoredOwnedFields(stored: PendingTransactionOrSignableMessage, updated: PendingRequestWithoutOwnedFields, writtenField: OwnedPendingRequestField | undefined): PendingTransactionOrSignableMessage {
+	const storedFields = new Map(Object.entries(stored))
+	return { ...updated, ...Object.fromEntries(OWNED_PENDING_REQUEST_FIELDS.filter((field) => field !== writtenField).map((field) => [field, storedFields.get(field)])) }
+}
 
-async function updatePendingRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>, writtenField: OwnedPendingRequestField | undefined) {
+async function updatePendingRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingRequestWithoutOwnedFields | undefined>, writtenField: OwnedPendingRequestField | undefined) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
@@ -82,8 +88,8 @@ async function updatePendingRequest(uniqueRequestIdentifier: UniqueRequestIdenti
 	})
 }
 
-// Updates a pending request, keeping its owned fields (OwnedPendingRequestField) as stored.
-export const updatePendingTransactionOrMessage = async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, undefined)
+// Updates a pending request, except its owned fields.
+export const updatePendingTransactionOrMessage = async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingRequestWithoutOwnedFields) => Promise<GenericPendingRequestUpdate | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, undefined)
 
 // Updates a pending request as the owner of one of its owned fields, which it writes; the other owned field is kept as stored.
 export const updateOwnedPendingRequestField = async (uniqueRequestIdentifier: UniqueRequestIdentifier, field: OwnedPendingRequestField, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, field)
