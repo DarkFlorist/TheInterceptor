@@ -5,8 +5,8 @@ import type { InterceptedRequest } from '../utils/requests.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
 import { hexOrUtf8StringToBytes } from '../utils/ethereumBytes.js'
 import { hashMessage, type Hex } from '../utils/ethereumPrimitives.js'
+import { tryRecoverAddress } from '../utils/ethereumRecovery.js'
 import { getSimulatedMessageSignature } from '../simulation/services/simulationPersonalSigning.js'
-import { tryRecoverAddress } from './personalEcRecoverClassification.js'
 
 const invalidPersonalEcRecoverRequest = (message: string): RPCReply => ({
 	type: 'result',
