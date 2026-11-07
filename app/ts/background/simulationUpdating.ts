@@ -34,7 +34,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext } from '../utils/activeStackContext.js'
+import type { getActiveStackContext } from '../utils/activeStackContext.js'
 export type { NetworkSnapshot, SimulationSnapshot } from './networkTransitionLock.js'
 import { getReadServices, type NetworkSnapshot, type SimulationSnapshot } from './networkTransitionLock.js'
 
