@@ -5,12 +5,18 @@ import { Semaphore } from '../utils/semaphore.js'
 import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
 /**
- * The lock order of the background, the one place that defines it. A lock may only be taken while holding locks earlier in this list:
- * 1. the pending-confirmation lock (this module);
- * 2. the simulation hash lock (simulationStackHashes.ts);
- * 3. the terminal-reply lock (terminalReplyDelivery.ts) or the input-log lock (requestResolution.ts), which are never held together;
- * 4. the storage locks (storageVariables.ts), which take no other lock.
- * test/tests/lockOrderBoundaries.test.ts pins which module may take which lock and the known nesting.
+ * The lock order of the background, the one place that defines it, for every lock there is. A lock may only be taken while holding locks of an earlier rank:
+ * 1. pendingRequestLimiter (background-startup.ts): admission of website requests, a count of 40 rather than an exclusive lock.
+ * 2. serializeSignerAccountRequest (interceptorAccess.ts), held while waiting for a signer's reply, which is handled under the next lock.
+ * 3. serializeSignerStateOperation (signerStateOwnership.ts): a signer's reply resolves its request and changes the active address under it, so it comes before every lock below.
+ * 4. pendingInterceptorAccessSemaphore (interceptorAccess.ts), then changeActiveAddressAndChainSemaphore (activeSettings.ts). Neither reaches the pending-confirmation lock, which reaches neither: intercepted requests are replayed, and access updates finished, after they are released.
+ * 5. pendingConfirmationSemaphore (this module).
+ * 6. simulationHashSemaphore (simulationStackHashes.ts).
+ * 7. The locks of one task, never two together: terminalReplySemaphore (terminalReplyDelivery.ts), inputLogSemaphore (requestResolution.ts), updateSimulationVisualisationSemaphore (popupVisualisationUpdater.ts), queueProcessingSemaphore (watchAsset.ts), updateDeclarativeNetRequestBlocksSemaphore (accessManagement.ts), publishSemaphore (rpcSlowRequestTracking.ts), runTabIconUpdate (iconHandler.ts), runFilterChangeSerially (EthereumSubscriptionService.ts).
+ * 8. simulationResultsSemaphore (storageVariables.ts), whose update fetches metadata while held.
+ * 9. The locks of one stored value, whose updates only compute the value, never two together: pendingTransactionsSemaphore, tabStateSemaphore, userAddressBookEntriesSemaphore, interceptorErrorDiagnosticsSemaphore, ensNodeHashesSemaphore, ensLabelHashesSemaphore and transactionStateSemaphore (storageVariables.ts), pendingTerminalRepliesSemaphore (pendingTerminalReplies.ts), signingAddressPreferencesSemaphore, makeMeRichSettingsSemaphore and websiteAccessSemaphore (settings.ts), and each stored value repository's updateSemaphore (storedValue.ts).
+ * 10. largeStateSemaphore (largeStateStore.ts), a leaf: it takes nothing else.
+ * test/tests/lockOrderBoundaries.test.ts fails on a lock this list does not name, and pins which module may take the main locks and that the locks below rank 5 cannot reach it.
  * It is not asserted at runtime: checking it needs to know which locks the current async call holds, and the extension's browser contexts have no async-context tracking, so a check would mean passing lock tokens through every call.
  * A resolution claim is not a lock: a resolution run while the pending-confirmation lock is held (the orphans of getPendingTransactionWindow) is given the lock's token (PendingConfirmationLock) and does not take it again, and scheduled retries run without it.
  */
