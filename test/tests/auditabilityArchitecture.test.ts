@@ -125,6 +125,11 @@ test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('__proto__'), false)
 })
 
+// Known debt, not permitted architecture: the page reads pending requests from storage outside the message protocol. This fails once the read is gone, and readPendingRequestsForConfirmationPage goes with it.
+test('known debt: the confirmation page still hydrates pending requests from storage', () => {
+	assert.match(confirmTransactionPageSource, /readPendingRequestsForConfirmationPage\(\)/u)
+})
+
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
 	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)

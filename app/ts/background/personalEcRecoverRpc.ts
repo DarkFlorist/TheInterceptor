@@ -19,7 +19,7 @@ export function getPersonalEcRecoverParseFailureReply(request: InterceptedReques
 	return invalidPersonalEcRecoverRequest('Invalid personal_ecRecover parameters. Expected a message string and a 65 byte or 64 byte compact signature.')
 }
 
-// Recovery decodes its message like MetaMask's personal_ecRecover (eth-sig-util legacyToBuffer). This is deliberately separate from how simulated personal_sign decodes the message it signs: the simulated signer lookup compares this hash with the hash simulated signing reports for the bytes it actually signed, so the two decodings only have to agree on the bytes, not on how a string is written.
+// Recovery decodes its message like MetaMask's personal_ecRecover (eth-sig-util legacyToBuffer). This is deliberately separate from how simulated personal_sign decodes the message it signs: the simulated signer lookup compares this hash with the hash simulated signing reports for the bytes it actually signed, so the two decodings only have to agree on the bytes, not on how a string is written. Like MetaMask, personal_ecRecover('12', signature) hashes the text '12', so it does not match a personal_sign('12') signature, which signed the byte 0x12.
 const hashPersonalEcRecoverMessage = (message: string) => hashMessage({ raw: hexOrUtf8StringToBytes(message) })
 
 const recoverSigner = async (messageHash: Hex, signature: RecoverableMessageSignature) => {

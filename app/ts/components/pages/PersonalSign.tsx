@@ -1,5 +1,5 @@
 import { bigintSecondsToDate } from '../../utils/bigint.js'
-import { EthereumData } from '../../types/wire-types.js'
+import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -92,13 +92,6 @@ type SignRequestParams = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-export const decodeMessage = (message: string) => {
-	if (!message.startsWith('0x')) return message
-	const parsedMessage = EthereumData.safeParse(message)
-	if (parsedMessage.success) return new TextDecoder().decode(parsedMessage.value)
-	return message
-}
-
 function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 	const asciiCount = input.split('').filter(char => char.charCodeAt(0) <= 127).length
 	const numberCount = input.split('').filter(char => !isNaN(Number(char))).length
@@ -109,7 +102,8 @@ function isNinetyFivePercentNumbersOrASCII(input: string): boolean {
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			const decoded = decodeMessage(visualizedPersonalSignRequest.message)
+			// Unparsed typed data is already readable JSON; only personal_sign messages carry bytes to decode, read the same way as the message hash.
+			const decoded = visualizedPersonalSignRequest.method === 'personal_sign' ? decodePersonalSignMessage(visualizedPersonalSignRequest.message, visualizedPersonalSignRequest.simulationMode) : visualizedPersonalSignRequest.message
 			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
 			return <Viewer id = 'personal_sign'>
 				<Viewer.List>
@@ -349,7 +343,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 		<ViewSelector id = 'raw_message'>
 			<ViewSelector.List>
 				<ViewSelector.View title = 'View Parsed' value = 'parsed'>
-					<pre> { decodeMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
+					<pre> { visualizedPersonalSignRequest.stringifiedMessage }</pre>
 				</ViewSelector.View>
 				<ViewSelector.View title = 'View Raw' value = 'raw'>
 					<pre>{ visualizedPersonalSignRequest.rawMessage }</pre>

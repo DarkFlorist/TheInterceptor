@@ -176,12 +176,21 @@ function ConnectedDelegationStack({ delegationNotice, children }: { delegationNo
 	</div>
 }
 
+// The failure shown for a transaction, or undefined when it succeeds. The confirmation's approval acknowledgement keys on this same text, so a tick covers exactly the failure the user saw.
+export function getTransactionFailureText(simTx: MaybeSimulatedTransaction) {
+	switch (simTx.transactionStatus) {
+		case 'Failed To Simulate': return 'Failed to simulate this transaction.'
+		case 'Transaction Failed': return getSimulatedTransactionInsufficientBalanceMessage(simTx) ?? `The transaction fails with an error: '${ simTx.error.decodedErrorMessage }' ${ simTx.error.data !== undefined ? ` (data: '${ simTx.error.data }')` : '' }`
+		case 'Transaction Succeeded': return undefined
+		default: return assertNever(simTx)
+	}
+}
+
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
 	const delegationNotice = getDelegationNotice(param.simTx.transaction, param.addressMetadata, param.renameAddressCallBack)
 	const content = (() => {
-		if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
-		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { getSimulatedTransactionInsufficientBalanceMessage(param.simTx) ?? `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
+		if (param.simTx.transactionStatus !== 'Transaction Succeeded') return <ErrorComponent text = { getTransactionFailureText(param.simTx) } containerStyle = { { margin: '0px' } } />
 		const transactionIdentification = identifyTransaction(param.simTx)
 		switch (transactionIdentification.type) {
 			case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
