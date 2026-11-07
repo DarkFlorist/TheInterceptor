@@ -2,7 +2,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { appendTransactionsToInput, getSimulatedSafeCallNonce } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
-import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
+import type { TransactionCreationError } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
 import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
@@ -144,7 +144,7 @@ export async function estimateSafeExecutionGas(
 	simulationInput: SimulationStateInput,
 	safeCallWithoutGas: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
 	safeCallFields: SafeCallFields,
-): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> {
+): Promise<{ error: TransactionCreationError } | { gas: bigint }> {
 	const parentBlock = await ethereum.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const blockGasLimit = parentBlock.gasLimit
@@ -169,7 +169,7 @@ export async function estimateSafeExecutionGas(
 	const initialResult = await simulateWithGasLimit(blockGasLimit)
 	if (initialResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 	const estimate = await getGasEstimateFromSimulation(initialResult, blockGasLimit, simulateWithGasLimit)
-	if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
+	if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, safeCallRevertedMessage: SAFE_CALL_REVERTED_MESSAGE } }
 	return estimate
 }
 
@@ -180,7 +180,7 @@ export const createSafeExecutionSimulationOptions = (chainId: bigint): Transacti
 export type ExecutedCallFormation = {
 	readonly simulationOptions: TransactionSimulationOptions
 	readonly getNonce: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, from: bigint) => Promise<bigint>
-	readonly estimateGas: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>, safeCallFields: SafeCallFields) => Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }>
+	readonly estimateGas: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>, safeCallFields: SafeCallFields) => Promise<{ error: TransactionCreationError } | { gas: bigint }>
 }
 
 // The formation of a Gnosis Safe's own call in simulation mode: marked by createSafeExecutionSimulationOptions, numbered by getSimulatedSafeCallNonce and estimated as its executor's call on top of the stack. A failed stack simulation fails the estimate, as in simulateEstimateGas.

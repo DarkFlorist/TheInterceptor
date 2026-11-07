@@ -187,7 +187,8 @@ for (const { description, message, errorData, returnData } of revertResponses) {
 		const { gas: _gas, hash: _hash, r: _r, s: _s, yParity: _yParity, ...safeCallWithoutGas } = safeCall.signedTransaction
 		const estimate = await estimateSafeExecutionGas(revertingEthereum, undefined, [], safeCallWithoutGas, { website: safeCall.website, created: safeCall.created, originalRequestParameters: safeCall.originalRequestParameters, transactionIdentifier: safeCall.transactionIdentifier })
 		if (!('error' in estimate)) throw new Error('Expected the estimate to fail')
-		assert.match(estimate.error.message, /Gnosis Safe's call reverted \(GS013\)/u)
+		assert.equal(estimate.error.safeCallRevertedMessage, SAFE_CALL_REVERTED_MESSAGE)
+		assert.equal(estimate.error.message, message, 'the node\'s message stays, so the displayed explanation can only come from the field')
 
 		// The estimate keeps the encoded GS013 as its data, which the confirmation must not show as a bare GS013 in place of the Safe's explanation.
 		const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')

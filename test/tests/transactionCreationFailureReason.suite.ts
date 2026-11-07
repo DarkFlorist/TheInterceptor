@@ -15,6 +15,10 @@ const routerAddress = 0x4242424242424242424242424242424242424242n
 const routerAbi = JSON.stringify([{ type: 'error', name: 'SwapDeadlinePassed', inputs: [] }])
 const swapDeadlinePassedSelector = toFunctionSelector('SwapDeadlinePassed()')
 const insufficientBalanceMessage = 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.'
+// Any wording, so that these tests hold whatever the Safe layer's message says.
+const safeCallRevertedMessage = 'A reworded explanation of the Safe\'s GS013.'
+// Spelled out rather than imported: this is the text already in users' storage, which the Safe layer's current wording must not affect.
+const storedLegacySafeCallRevertedMessage = 'The Gnosis Safe\'s call reverted (GS013). The Safe does not pass on the call\'s own revert reason.'
 const createJsonRpcError = (message: string, data: string) => new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message, data } })
 
 const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
@@ -82,6 +86,26 @@ test('shows the insufficient balance override instead of the decoded revert reas
 	const reason = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: swapDeadlinePassedSelector, insufficientBalanceMessage })
 
 	assert.equal(reason, insufficientBalanceMessage)
+	assertRouterWasNotProbed()
+})
+
+test('shows the Gnosis Safe\'s explanation instead of the decoded revert reason, without probing the recipient', async () => {
+	const reason = await getSuccessfulVisualisationFailureReason({ code: 3, message: 'execution reverted', data: swapDeadlinePassedSelector, safeCallRevertedMessage })
+
+	assert.equal(reason, safeCallRevertedMessage)
+	assertRouterWasNotProbed()
+})
+
+test('prefers the insufficient balance override over the Gnosis Safe\'s explanation', async () => {
+	const reason = await getSuccessfulVisualisationFailureReason({ code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), insufficientBalanceMessage, safeCallRevertedMessage })
+
+	assert.equal(reason, insufficientBalanceMessage)
+})
+
+test('keeps the Gnosis Safe\'s explanation that older versions stored as the message when the confirmation refreshes, without probing the recipient', async () => {
+	const reason = await getSuccessfulVisualisationFailureReason({ code: 3, message: storedLegacySafeCallRevertedMessage, data: swapDeadlinePassedSelector })
+
+	assert.equal(reason, storedLegacySafeCallRevertedMessage)
 	assertRouterWasNotProbed()
 })
 

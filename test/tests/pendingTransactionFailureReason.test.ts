@@ -1,14 +1,15 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { encodeErrorString } from './errorDataFixtures.js'
-import { addMissingTransactionCreationFailureReason } from '../../app/ts/simulation/pendingTransactionFailureReason.js'
-import type { TransactionCreationError } from '../../app/ts/types/error.js'
-import { SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
+import { addMissingTransactionCreationFailureReason } from '../../app/ts/components/pages/pendingTransactionFailureReason.js'
+import { TransactionCreationError } from '../../app/ts/types/error.js'
 
 const activeAddress = 0x1111111111111111111111111111111111111111n
 const created = new Date('2024-01-01T00:00:00.000Z')
 const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+// Spelled out rather than imported: this is the text already in users' storage, which the Safe layer's current wording must not affect.
+const storedLegacySafeCallRevertedMessage = 'The Gnosis Safe\'s call reverted (GS013). The Safe does not pass on the call\'s own revert reason.'
 const originalRequestParameters = { method: 'eth_sendTransaction' as const, params: [{ from: activeAddress, to: 0x2222222222222222222222222222222222222222n, value: 0n, input: new Uint8Array() }] as const }
 
 const createFailedToSimulatePendingTransaction = (error: TransactionCreationError, transactionCreationFailureReason: string | undefined) => {
@@ -61,8 +62,18 @@ describe('addMissingTransactionCreationFailureReason', () => {
 		assert.equal(getFailureReason({ code: -32000, message: legacyInsufficientBalanceMessage, data: encodeErrorString('ERC20: transfer amount exceeds balance') }, undefined), legacyInsufficientBalanceMessage)
 	})
 
-	test('keeps the Gnosis Safe\'s GS013 explanation that the Safe layer stored as the message instead of the bare GS013 its revert data decodes to', () => {
-		assert.equal(getFailureReason({ code: 3, message: SAFE_CALL_REVERTED_MESSAGE, data: encodeErrorString('GS013') }, undefined), SAFE_CALL_REVERTED_MESSAGE)
+	test('keeps the Gnosis Safe\'s GS013 explanation that older versions stored as the message instead of the bare GS013 its revert data decodes to', () => {
+		assert.equal(getFailureReason({ code: 3, message: storedLegacySafeCallRevertedMessage, data: encodeErrorString('GS013') }, undefined), storedLegacySafeCallRevertedMessage)
+	})
+
+	test('shows the Gnosis Safe\'s explanation from its field in whatever wording the Safe layer wrote, after parsing it as a stored failure', () => {
+		const safeCallRevertedMessage = 'A reworded explanation of the Safe\'s GS013.'
+		const storedError = TransactionCreationError.parse({ code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), safeCallRevertedMessage })
+		assert.equal(getFailureReason(storedError, undefined), safeCallRevertedMessage)
+	})
+
+	test('decodes the revert reason of a message that only resembles the Gnosis Safe\'s older explanation', () => {
+		assert.equal(getFailureReason({ code: 3, message: `${ storedLegacySafeCallRevertedMessage } Reworded.`, data: encodeErrorString('GS013') }, undefined), 'GS013')
 	})
 
 	test('decodes the revert reason when a contract\'s own message only resembles an Interceptor explanation', () => {

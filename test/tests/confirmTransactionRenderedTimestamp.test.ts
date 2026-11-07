@@ -695,9 +695,9 @@ describe('ConfirmTransaction', () => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
 
-		// Stored without transactionCreationFailureReason, so the popup derives it from the estimate error the Safe layer wrote.
+		// Stored without transactionCreationFailureReason, so the popup derives it from the field the Safe layer wrote on the estimate error.
 		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
-		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: 3, message: SAFE_CALL_REVERTED_MESSAGE, data: encodeErrorString('GS013') } }
+		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), safeCallRevertedMessage: SAFE_CALL_REVERTED_MESSAGE } }
 		const { transactionCreationFailureReason: _storedReason, ...dataWithoutReason } = failedPendingTransaction.popupVisualisation.data
 		const pendingTransaction = {
 			...failedPendingTransaction,
