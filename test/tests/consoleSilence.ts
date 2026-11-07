@@ -1,17 +1,10 @@
+import { replaceProperty } from '../harness/globals.js'
+
 export async function withSilencedConsole<T>(runWithConsoleSilenced: () => T | Promise<T>) {
-	const originalConsole = {
-		error: console.error,
-		trace: console.trace,
-		warn: console.warn,
-	}
-	console.error = () => undefined
-	console.trace = () => undefined
-	console.warn = () => undefined
+	const restoreConsoleMethods = (['error', 'trace', 'warn'] as const).map((methodName) => replaceProperty(console, methodName, () => undefined))
 	try {
 		return await runWithConsoleSilenced()
 	} finally {
-		console.error = originalConsole.error
-		console.trace = originalConsole.trace
-		console.warn = originalConsole.warn
+		for (const restoreConsoleMethod of restoreConsoleMethods.reverse()) restoreConsoleMethod()
 	}
 }
