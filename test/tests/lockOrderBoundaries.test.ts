@@ -118,3 +118,16 @@ test('the signer-state lock is taken only by its callers, and what runs under th
 		assert.doesNotMatch(getSource(file), earlierLocks, file)
 	}
 })
+
+test('only pending terminal replies report a recovery under a stored-value lock, and reporting takes no further lock', () => {
+	const reporting = /\breport(?:LocalRecovery|LocalRecoveryBestEffort|UnexpectedError)\(/u
+	assert.match(getSource('background/pendingTerminalReplies.ts'), reporting)
+	for (const file of ['background/storageVariables.ts', 'background/settings.ts', 'utils/storedValue.ts', 'utils/storageUtils.ts', 'utils/largeStateStore.ts']) {
+		assert.doesNotMatch(getSource(file), reporting, file)
+	}
+	assert.doesNotMatch(getSource('utils/storageUtils.ts'), /largeStateStore/u, 'the diagnostics storage does not reach the large state lock')
+	const storageVariables = getSource('background/storageVariables.ts')
+	const appendDiagnostic = storageVariables.slice(storageVariables.indexOf('export async function appendInterceptorErrorDiagnostic('), storageVariables.indexOf('export async function clearInterceptorErrorDiagnostics('))
+	assert.ok(appendDiagnostic.length > 0)
+	assert.doesNotMatch(appendDiagnostic, /LargeState|Semaphore\.execute[\s\S]*Semaphore\.execute/u)
+})

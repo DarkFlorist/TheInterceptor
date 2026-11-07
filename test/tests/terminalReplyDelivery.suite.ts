@@ -1955,4 +1955,17 @@ test('an action that throws after arbitration refused a stored signer result rea
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
 
+test('recovering corrupt pending terminal replies while marking one delivered reports it under the lock, without a deadlock', async () => {
+	const { markPendingTerminalReplyDelivered } = await import('../../app/ts/background/pendingTerminalReplies.js')
+	browserMock.storageState.pendingTerminalReplies = 'corrupt'
+	// Several at once, so the diagnostics lock is contended while the terminal reply lock is held.
+	await withSilencedConsole(async () => await Promise.all([
+		markPendingTerminalReplyDelivered(uniqueRequestIdentifier),
+		markPendingTerminalReplyDelivered(uniqueRequestIdentifier),
+		modules.getPendingTerminalReplies(),
+	]))
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.ok((await getInterceptorErrorDiagnostics()).some((diagnostic) => diagnostic.code === 'pending_terminal_replies_corrupt'))
+})
+
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
