@@ -563,6 +563,11 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
+	if (current.approvalStatus.status === 'NetworkRefusal') return <div style = 'display: grid'>
+		<div style = { margins }>
+			<ErrorComponent text = { current.approvalStatus.message } />
+		</div>
+	</div>
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorComponent text = { current.approvalStatus.message } />
@@ -803,6 +808,8 @@ export function ConfirmTransaction() {
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
+	// Counts pending data pushes and chain-change storage reads, so a storage read can tell that newer data arrived while it ran.
+	const latestPendingDataUpdate = useSignal(0)
 
 	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
@@ -822,6 +829,14 @@ export function ConfirmTransaction() {
 		if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.popupVisualisation !== undefined && firstMessage.popupVisualisation.statusCode === 'success' && (currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)) {
 			currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
 		}
+	}
+
+	// The background stores a change before it reports it, and storage answers without waiting for an RPC, so this is how a window learns of a change while an RPC is slow. A push or a later read that arrives during the read is newer than its result, so the result is dropped: it could otherwise re-enable approval of a request that is already waiting for the signer.
+	const showStoredPendingTransactions = async () => {
+		latestPendingDataUpdate.value += 1
+		const thisRead = latestPendingDataUpdate.value
+		const pendingTransactions = await hydratePendingTransactionsFromStorage()
+		if (thisRead === latestPendingDataUpdate.value && pendingTransactions.length > 0) applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 	}
 
 	const applyNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus, priority: number) => {
@@ -845,6 +860,10 @@ export function ConfirmTransaction() {
 
 			if (parsed.method === 'popup_settingsUpdated') {
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return false
+			}
+			if (parsed.method === 'popup_chain_update' || parsed.method === 'popup_confirm_transaction_stored_state_changed') {
+				showStoredPendingTransactions()
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
@@ -887,6 +906,7 @@ export function ConfirmTransaction() {
 				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
+				latestPendingDataUpdate.value += 1
 				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 			}
 			return false

@@ -98,7 +98,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -186,11 +186,17 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
-export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
+// The active network is left out of the generic setter and remover, so writeActiveNetwork in the background-only activeNetworkStorage.ts, which counts its writes, is the only typed way to write it.
+type RemovableLocalStorageKey = Exclude<LocalStorageKey, 'activeRpcNetwork'>
+type WritableLocalStorageItems = LocalStorageItems & { readonly activeRpcNetwork?: never }
+
+export async function browserStorageLocalRemove(keys: RemovableLocalStorageKey | RemovableLocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
+
+export async function browserStorageLocalSet(items: WritableLocalStorageItems) {
+	return await browser.storage.local.set(serializeLocalStorageItems(items))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

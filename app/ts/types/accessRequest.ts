@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
@@ -30,6 +30,18 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
+// Confirmations stored by versions that did not record the requested network or the simulation run lack these fields. They are decoded here, the only place that knows that shape, so every constructed confirmation has to provide both fields.
+const decodedFromMissingFieldAs = <StandIn>(standIn: StandIn) => funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, StandIn>(undefined, standIn))
+
+// The network the website requested the transaction on. Its preview is only refreshed and approved on this network. A confirmation stored without it decodes as 'unknown', which equals no chain id, so it is never refreshed or approved.
+const RequestedChainId = funtypes.Union(EthereumQuantity, funtypes.Literal('unknown'), decodedFromMissingFieldAs<'unknown'>('unknown'))
+
+// Identifies the confirmation simulation run that produced a visualisation: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A visualisation stored without one decodes as a run of no lifetime, which no run's lifetime matches.
+export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
+const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+export const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
+const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, decodedFromMissingFieldAs(CONFIRMATION_RUN_OF_NO_LIFETIME))
+
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
@@ -38,6 +50,7 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
+	confirmationRunId: ConfirmationRunIdCodec,
 })
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
@@ -85,6 +98,8 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 		code: funtypes.Number,
 		message: funtypes.String,
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
+	// The Interceptor's own refusal under the requested-network check, kept only while that check still refuses, unlike a SignerError, which the wallet or the signing flow reported and which stays until the next approval. Only transactionNetwork.ts writes it.
+	funtypes.ReadonlyObject({ status: funtypes.Literal('NetworkRefusal'), message: funtypes.String }),
 )
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
@@ -99,6 +114,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	transactionIdentifier: EthereumQuantity,
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
+	requestedChainId: RequestedChainId,
 }).And(funtypes.ReadonlyPartial({
 	safeTransaction: SafeTransactionSigningRequest,
 	safeExecutionSignerAddress: EthereumAddress,

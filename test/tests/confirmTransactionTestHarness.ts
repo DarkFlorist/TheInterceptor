@@ -94,6 +94,12 @@ export function createBrowserMock() {
 				async remove(keys: string | string[]) { removeItems(keys) },
 			},
 		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
+		},
 		tabs: {
 			async sendMessage(tabId: number, message: unknown) {
 				if (tabMessageHandler === undefined) throw new Error('Could not establish connection. Receiving end does not exist.')
@@ -495,7 +501,8 @@ export const signedTransaction = modules.mockSignTransaction(unsignedTransaction
 export const created = new Date('2024-01-01T00:00:00.000Z')
 export const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
 export const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
-export const safeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+export const safeTestOwnerPrivateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+export const safeTestOwnerAccount = privateKeyToAccount(safeTestOwnerPrivateKey)
 export const safeTestOwnerAddress = BigInt(safeTestOwnerAccount.address)
 
 export function createSafeStackTransactionFixture(options: {
@@ -558,6 +565,7 @@ export const popupVisualisation = {
 			transaction: unsignedTransaction,
 		},
 		signerName: 'NoSignerDetected',
+		confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		namedTokenIds: [],
@@ -584,6 +592,7 @@ export const pendingTransaction = {
 		activeAddress,
 		created,
 		transactionIdentifier: 1n,
+		requestedChainId: fakeRpcNetwork.chainId,
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
 		popupVisualisation,
@@ -595,6 +604,7 @@ export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 export function createDisconnectedPort() {

@@ -29,11 +29,16 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
+		const statusesToldToWindow: unknown[] = []
+		browserMock.setRuntimeSendMessageHandler(async (message) => {
+			if (message.method === 'popup_confirm_transaction_stored_state_changed') statusesToldToWindow.push((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus.status)
+		})
 
 		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		})
+		browserMock.setRuntimeSendMessageHandler(undefined)
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 
@@ -42,7 +47,11 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		assert.equal(retainedRequest?.approvalStatus.status, 'SignerError')
 		if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing signer delivery error')
 		assert.match(retainedRequest.approvalStatus.message, /request reached your wallet/)
-		const pendingUpdates = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		// The window is told of the spinner and of the error without an RPC, and the view updates that follow are not awaited.
+		assert.deepEqual(statusesToldToWindow, ['WaitingForSigner', 'SignerError'])
+		const getPendingUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		for (let attempt = 0; attempt < 200 && getPendingUpdates().length < 2; attempt++) await new Promise((resolve) => setTimeout(resolve, 1))
+		const pendingUpdates = getPendingUpdates()
 		assert.equal(pendingUpdates.length, 2)
 		const finalUpdateData = pendingUpdates.at(-1)?.data
 		if (!isRecord(finalUpdateData) || !Array.isArray(finalUpdateData.pendingTransactionAndSignableMessages)) throw new Error('missing final pending transaction popup update')
