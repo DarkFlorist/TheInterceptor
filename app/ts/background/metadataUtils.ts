@@ -100,11 +100,13 @@ function getBundledMetadataEntry(bundledMetadata: BundledMetadata, rpcEntry: Rpc
 async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
+	const chainId = rpcEntry?.chainId ?? 1n
 	if (useLocalStorage) {
-		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId ?? 1n)).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
-	const bundledMetadata = findBundledMetadata(address)
+	// bundled @darkflorist/address-metadata entries describe Ethereum mainnet contracts only
+	const bundledMetadata = chainId === 1n ? findBundledMetadata(address) : undefined
 	if (bundledMetadata !== undefined) return getBundledMetadataEntry(bundledMetadata, rpcEntry)
 
 	if (address === MOCK_ADDRESS) return {

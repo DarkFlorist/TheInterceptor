@@ -13,7 +13,7 @@ import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { addressString, checksummedAddress, stringToUint8Array } from '../../app/ts/utils/bigint.js'
-import { createOfflineMainnetEthereumClientService, failedMainnetSimulationState, installBrowserStorageMock } from './protectorTestHarness.js'
+import { createGoerliEthereumClientServiceWithoutContracts, createOfflineMainnetEthereumClientService, failedMainnetSimulationState, installBrowserStorageMock } from './protectorTestHarness.js'
 import { createIdentifyAddress, createTransaction, createTransferEvent, erc20Token, nativeToken, proxy, sender } from './sendToNonContactFixtures.js'
 
 const alice: AddressBookEntry = {
@@ -320,6 +320,37 @@ describe('sendToNonContact with the stored address book', () => {
 
 		assert.deepEqual(warnings, [])
 		assert.equal(readStorageKeys.includes('userAddressBookEntriesV3'), false)
+	})
+})
+
+// Bundled metadata describes Ethereum mainnet, so these use the real identifyAddress and known address loader to check that both agree on where it applies.
+describe('sendToNonContact with bundled metadata', () => {
+	const sendEtherToWeth = createTransaction({ to: WETH_ADDRESS })
+
+	test('recognizes a bundled address on mainnet', async () => {
+		installBrowserStorageMock()
+
+		assert.deepEqual(await sendToNonContact(sendEtherToWeth, createOfflineMainnetEthereumClientService(), undefined, failedMainnetSimulationState, Promise.resolve([])), [])
+	})
+
+	test('reports a bundled mainnet address as not in the address book on another chain, without calling it a lookalike of itself', async () => {
+		installBrowserStorageMock()
+
+		const warnings = await sendToNonContact(sendEtherToWeth, createGoerliEthereumClientServiceWithoutContracts(), undefined, failedMainnetSimulationState, Promise.resolve([]))
+
+		assert.deepEqual(warnings, [expectedNotInAddressBookWarning(wethAsStoredOnChainEntry)])
+	})
+
+	test('warns about a lookalike of a bundled address on mainnet only', async () => {
+		installBrowserStorageMock()
+		// The lookalike was auto-added on mainnet, which is how identifyAddress resolves it there without RPC calls.
+		await updateUserAddressBookEntries(() => [wethLookalike])
+
+		const mainnetWarnings = await sendToNonContact(sendEtherTo(wethLookalike), createOfflineMainnetEthereumClientService(), undefined, failedMainnetSimulationState, Promise.resolve([]))
+		const otherChainWarnings = await sendToNonContact(sendEtherTo(wethLookalike), createGoerliEthereumClientServiceWithoutContracts(), undefined, failedMainnetSimulationState, Promise.resolve([]))
+
+		assert.deepEqual(mainnetWarnings, [expectedLookalikeWarning(wethLookalike, { name: 'WETH', address: WETH_ADDRESS })])
+		assert.deepEqual(otherChainWarnings, [expectedNotInAddressBookWarning(wethLookalike)])
 	})
 })
 

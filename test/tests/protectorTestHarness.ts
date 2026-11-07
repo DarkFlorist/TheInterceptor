@@ -2,6 +2,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { SimulationState } from '../../app/ts/types/visualizer-types.js'
+import { MockRequestHandler } from '../MockRequestHandler.js'
 
 type StorageKeys = string | readonly string[] | Record<string, unknown> | undefined
 
@@ -65,6 +66,19 @@ const offlineRequestHandler: IEthereumJSONRpcRequestHandler = {
 }
 
 export const createOfflineMainnetEthereumClientService = () => new EthereumClientService(offlineRequestHandler, async () => undefined, async () => undefined, mainnetRpcEntry)
+
+// Every address reads as an EOA, so on-chain identification of a bundled mainnet address finds only an unknown contact.
+export const createGoerliEthereumClientServiceWithoutContracts = () => {
+	const requestHandler = new MockRequestHandler()
+	return new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+		...mainnetRpcEntry,
+		name: 'Goerli',
+		chainId: 5n,
+		httpsRpc: requestHandler.rpcUrl,
+		currencyName: 'Goerli Testnet ETH',
+		currencyTicker: 'GÖETH',
+	})
+}
 
 export const failedMainnetSimulationState: SimulationState = {
 	success: false,

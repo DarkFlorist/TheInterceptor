@@ -28,6 +28,18 @@ export const EntrySource = funtypes.Union(
 	funtypes.Literal('FilledIn'),
 )
 
+// Curated entries ship with The Interceptor instead of coming from the user, a website, a token contract or a placeholder, so the address book editor does not let users change them. The background assigns DarkFloristMetadata to entries from the bundled @darkflorist/address-metadata package and Interceptor to entries The Interceptor defines itself, such as the native token and the zero address, see background/metadataUtils.ts
+export function isCuratedEntrySource(entrySource: EntrySource) {
+	switch (entrySource) {
+		case 'DarkFloristMetadata':
+		case 'Interceptor': return true
+		case 'User':
+		case 'OnChain':
+		case 'FilledIn': return false
+		default: return assertNever(entrySource)
+	}
+}
+
 export type DeclarativeNetRequestBlockMode = funtypes.Static<typeof DeclarativeNetRequestBlockMode>
 export const DeclarativeNetRequestBlockMode = funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 

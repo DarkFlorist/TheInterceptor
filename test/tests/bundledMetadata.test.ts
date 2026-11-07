@@ -4,7 +4,7 @@ import { contractMetadata, erc1155Metadata, erc721Metadata, tokenMetadata } from
 import { findBundledMetadata, listBundledMetadata } from '../../app/ts/background/bundledMetadata.js'
 import { identifyAddress } from '../../app/ts/background/metadataUtils.js'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
-import { createOfflineMainnetEthereumClientService } from './protectorTestHarness.js'
+import { createGoerliEthereumClientServiceWithoutContracts, createOfflineMainnetEthereumClientService } from './protectorTestHarness.js'
 
 const COMPOUND_PAX_DOLLAR_ADDRESS = 0x041171993284df560249b57358f931d9eb7b925dn
 
@@ -31,6 +31,17 @@ describe('bundled metadata', () => {
 		for (const { address, type, definition } of listBundledMetadata()) {
 			const entry = await identifyAddress(ethereum, undefined, address, false)
 			assert.deepEqual({ type: entry.type, name: entry.name, entrySource: entry.entrySource }, { type, name: definition.name, entrySource: 'DarkFloristMetadata' })
+		}
+	})
+
+	test('identifyAddress applies no bundled metadata type outside Ethereum mainnet', async () => {
+		const ethereum = createGoerliEthereumClientServiceWithoutContracts()
+		const addressByBundledType = new Map(listBundledMetadata().map(({ type, address }) => [type, address]))
+
+		assert.deepEqual(Array.from(addressByBundledType.keys()).sort(), ['ERC1155', 'ERC20', 'ERC721', 'contract'])
+		for (const [bundledType, address] of addressByBundledType) {
+			const entry = await identifyAddress(ethereum, undefined, address, false)
+			assert.deepEqual({ bundledType, type: entry.type, name: entry.name, entrySource: entry.entrySource }, { bundledType, type: 'contact', name: checksummedAddress(address), entrySource: 'OnChain' })
 		}
 	})
 })
