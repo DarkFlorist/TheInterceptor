@@ -15,6 +15,7 @@ type PendingCommand = {
 
 export type FirefoxPage = {
 	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
+	reload: () => Promise<void>
 	setViewport: (width: number, height: number) => Promise<void>
 	captureScreenshot: () => Promise<string>
 	close: () => Promise<void>
@@ -23,6 +24,7 @@ export type FirefoxPage = {
 export type FirefoxSession = {
 	browserVersion: string
 	openExtensionPage: (pagePath: string) => Promise<FirefoxPage>
+	openPage: (url: string) => Promise<FirefoxPage>
 	close: () => Promise<void>
 }
 
@@ -274,45 +276,48 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 		const extensionUuid = await readExtensionUuid(webDriverSession.profileDirectory, extensionId)
 		const extensionOrigin = `moz-extension://${ extensionUuid }`
 		const activeBidi = bidi
+		const openPage = async (url: string): Promise<FirefoxPage> => {
+			const creation = await activeBidi.send('browsingContext.create', { type: 'tab' })
+			const context = readStringProperty(creation, 'context')
+			if (context === undefined) throw new Error('Firefox did not return a browsing context ID.')
+			await activeBidi.send('browsingContext.navigate', {
+				context,
+				url,
+				wait: 'complete',
+			})
+			return {
+				evaluate: async <T = unknown>(expression: string) => remoteValue<T>(await activeBidi.send('script.evaluate', {
+					expression,
+					target: { context },
+					awaitPromise: true,
+				})),
+				reload: async () => { await activeBidi.send('browsingContext.reload', { context, wait: 'complete' }) },
+				setViewport: async (width: number, height: number) => {
+					await activeBidi.send('browsingContext.setViewport', {
+						context,
+						viewport: { width, height },
+						devicePixelRatio: 1,
+					})
+				},
+				captureScreenshot: async () => {
+					const screenshot = await activeBidi.send('browsingContext.captureScreenshot', {
+						context,
+						origin: 'document',
+						format: { type: 'image/png' },
+					})
+					const data = readStringProperty(screenshot, 'data')
+					if (data === undefined) throw new Error('Firefox did not return screenshot data.')
+					return data
+				},
+				close: async () => {
+					await activeBidi.send('browsingContext.close', { context })
+				},
+			}
+		}
 		return {
 			browserVersion: webDriverSession.browserVersion,
-			openExtensionPage: async (pagePath: string) => {
-				const creation = await activeBidi.send('browsingContext.create', { type: 'tab' })
-				const context = readStringProperty(creation, 'context')
-				if (context === undefined) throw new Error('Firefox did not return a browsing context ID.')
-				await activeBidi.send('browsingContext.navigate', {
-					context,
-					url: `${ extensionOrigin }/${ pagePath }`,
-					wait: 'complete',
-				})
-				return {
-					evaluate: async <T = unknown>(expression: string) => remoteValue<T>(await activeBidi.send('script.evaluate', {
-						expression,
-						target: { context },
-						awaitPromise: true,
-					})),
-					setViewport: async (width: number, height: number) => {
-						await activeBidi.send('browsingContext.setViewport', {
-							context,
-							viewport: { width, height },
-							devicePixelRatio: 1,
-						})
-					},
-					captureScreenshot: async () => {
-						const screenshot = await activeBidi.send('browsingContext.captureScreenshot', {
-							context,
-							origin: 'document',
-							format: { type: 'image/png' },
-						})
-						const data = readStringProperty(screenshot, 'data')
-						if (data === undefined) throw new Error('Firefox did not return screenshot data.')
-						return data
-					},
-					close: async () => {
-						await activeBidi.send('browsingContext.close', { context })
-					},
-				}
-			},
+			openExtensionPage: (pagePath) => openPage(`${ extensionOrigin }/${ pagePath }`),
+			openPage,
 			close: async () => {
 				activeBidi.close()
 				await fetch(`http://127.0.0.1:${ port }/session/${ webDriverSession.sessionId }`, { method: 'DELETE' }).catch(() => undefined)
