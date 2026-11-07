@@ -3,9 +3,12 @@ import * as assert from 'assert'
 import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
-import { serialize } from '../../app/ts/types/wire-types.js'
-import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { EthereumBlockHeader, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { getActiveStackContext } from '../../app/ts/utils/activeStackContext.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
@@ -343,7 +346,7 @@ const sameChainRpcNetwork: RpcNetwork = {
 	httpsRpc: 'https://mainnet.example.com',
 	primary: false,
 }
-const otherChainRpcNetwork: RpcNetwork = {
+const otherChainRpcNetwork: RpcEntry = {
 	...rpcNetwork,
 	name: 'Test Chain',
 	chainId: 2n,
@@ -391,15 +394,53 @@ function createResetTestTransaction(transactionIdentifier: bigint, requiredChain
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
+// Selecting another endpoint installs services for it, which refresh the visualisation for that network.
+const otherChainLatestBlock = serialize(EthereumBlockHeader, {
+	author: 0n,
+	difficulty: 0n,
+	extraData: new Uint8Array(),
+	gasLimit: 30_000_000n,
+	gasUsed: 0n,
+	hash: 0x1234n,
+	logsBloom: 0n,
+	miner: 0n,
+	mixHash: 0n,
+	nonce: 0n,
+	number: 123n,
+	parentHash: 0x1n,
+	receiptsRoot: 0n,
+	sha3Uncles: 0n,
+	stateRoot: 0n,
+	timestamp: new Date('2024-01-01T00:00:00.000Z'),
+	size: 0n,
+	totalDifficulty: 0n,
+	uncles: [],
+	baseFeePerGas: 1n,
+	transactionsRoot: 0n,
+	transactions: [],
+	withdrawals: [],
+	withdrawalsRoot: 0n,
+})
+const otherChainEthereum = new EthereumClientService({
+	rpcUrl: otherChainRpcNetwork.httpsRpc,
+	clearCache() { return undefined },
+	async jsonRpcRequest(rpcRequest: { method: string }) {
+		switch (rpcRequest.method) {
+			case 'eth_blockNumber': return EthereumQuantity.serialize(123n)
+			case 'eth_getBlockByNumber': return otherChainLatestBlock
+			default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+		}
+	},
+}, async () => undefined, async () => undefined, otherChainRpcNetwork)
+const otherChainServices = { ethereum: otherChainEthereum, tokenPriceService: new TokenPriceService(otherChainEthereum, 60_000) }
 
 describe('popup clear reset', () => {
 	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {
 		browserMock.reset()
 		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
-		const { captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
+		const { buildSimulationInput, captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
 		const snapshot = captured ? await captureSimulationSnapshot() : undefined
-		if (captured) await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork })
 		const originalBlock = fakeEthereum.getBlock
 		const originalNumber = fakeEthereum.getBlockNumber
 		let providerReads = 0
@@ -407,7 +448,7 @@ describe('popup clear reset', () => {
 		fakeEthereum.getBlockNumber = async (...args) => { providerReads++; return await originalNumber(...args) }
 		try {
 			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { skipIfUnchanged: true, snapshot })
-			if (snapshot !== undefined) assert.equal((await getUpdatedSimulationState(fakeEthereum, snapshot)).kind, 'passthrough')
+			if (snapshot !== undefined) assert.equal((await getUpdatedSimulationState(fakeEthereum, await buildSimulationInput(snapshot))).kind, 'passthrough')
 			assert.equal(providerReads, 0)
 			assert.equal(result.simulationState.kind, 'passthrough')
 			assert.equal(result.simulationUpdatingState, 'done')
@@ -421,7 +462,7 @@ describe('popup clear reset', () => {
 	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { buildSimulationInput, captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const originalGet = browser.storage.local.get
 		let changed = false
 		browser.storage.local.get = async keys => {
@@ -436,9 +477,9 @@ describe('popup clear reset', () => {
 		try {
 			const snapshot = await captureSimulationSnapshot()
 			assert.equal(changed, true)
-			assert.deepEqual(snapshot.activeStackContext, { simulationMode: true })
-			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
-			assert.deepEqual(snapshot.simulationStateInput.flatMap(block => Object.keys(block.stateOverrides)), [`0x${ activeAddress.toString(16).padStart(40, '0') }`])
+			assert.deepEqual(getActiveStackContext(snapshot), { simulationMode: true })
+			assert.equal(snapshot.richAddresses.length, 1)
+			assert.deepEqual((await buildSimulationInput(snapshot)).simulationStateInput.flatMap(block => Object.keys(block.stateOverrides)), [`0x${ activeAddress.toString(16).padStart(40, '0') }`])
 		} finally { browser.storage.local.get = originalGet }
 	})
 
@@ -517,15 +558,16 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
 		const modules = await modulesPromise
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { buildSimulationInput, captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const snapshot = await captureSimulationSnapshot()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
-		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
+		const { simulationStateInput } = await buildSimulationInput(snapshot)
+		assert.notDeepEqual(await modules.getCurrentSimulationInput(), simulationStateInput)
 		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })
 		assert.equal(result.numberOfAddressesMadeRich, 0)
 		assert.equal(result.simulationState.kind, 'simulated')
 		if (result.simulationState.kind !== 'simulated') throw new Error('Expected a simulated snapshot')
-		assert.deepEqual(result.simulationState.value.simulationStateInput, snapshot.simulationStateInput)
+		assert.deepEqual(result.simulationState.value.simulationStateInput, simulationStateInput)
 	})
 
 	test('updates the cached popup active address without restamping the simulation', async () => {
@@ -707,7 +749,7 @@ describe('popup clear reset', () => {
 		const resets: RpcNetwork[] = []
 		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
-			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
+			return otherChainServices
 		})
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,
