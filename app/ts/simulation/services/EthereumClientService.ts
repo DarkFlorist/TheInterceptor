@@ -4,7 +4,7 @@ import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
+import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params, type StateOverrides } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
@@ -12,11 +12,13 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import { authorizesExecutedCall, type BlockTimeManipulation, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type BlockTimeManipulation, type SimulatedInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { mapBlocksWithEffectiveStateOverrides } from '../../utils/simulationStateOverrides.js'
+import { createDelegateClearingHintCache } from './delegateClearingHintCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -140,6 +142,8 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
+	// Hints describe this endpoint's latest code, so a replacement service starts empty; an expired hint may have outlived blocks the RPC response cache never saw (polling sleeps), so its refresh bypasses that cache.
+	private readonly delegateClearingHints = createDelegateClearingHintCache(async (address, controller, refreshesExpiredHint) => await this.getDelegation(address, 'latest', controller, refreshesExpiredHint))
 
 	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
@@ -197,7 +201,10 @@ export class EthereumClientService {
 			if (newBlock === null) return
 			console.info(`${ getCurrentTimestampString() } Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
-			if (gotNewBlock) this.requestHandler.clearCache()
+			if (gotNewBlock) {
+				this.requestHandler.clearCache()
+				this.delegateClearingHints.invalidateDelegatedForNewBlock()
+			}
 			this.cachedBlock = newBlock
 			await this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 		} catch(error: unknown) {
@@ -232,13 +239,15 @@ export class EthereumClientService {
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController)
+	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined, bypassCache = false) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController, bypassCache)
 		return EthereumData.parse(response)
 	}
 
-	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const code = await this.getCode(address, blockTag, requestAbortController)
+	public readonly getDelegateClearingHint = async (address: bigint, abortController?: AbortController) => await this.delegateClearingHints.get(address, abortController)
+
+	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined, bypassCache = false) => {
+		const code = await this.getCode(address, blockTag, requestAbortController, bypassCache)
 		if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
 		return BigInt(`0x${ dataString(code.slice(3)) }`)
 	}
@@ -338,7 +347,10 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+	public readonly prepareEthSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+		const simulationStateInput = simulationInput.value
+		// This service applies caller-supplied initial account state; mode and preference selection happen upstream.
+		const simulationOverrides = simulationInput.simulationOverrides
 		// Every simulation input reaches the node through here, so this enforces, in both directions, that a transaction runs a call other than its signedTransaction exactly when its simulation options authorize one (authorizesExecutedCall). A transaction whose options ask for an executed call but whose input was not prepared with one would otherwise run as the call it shows. Both throws are internal invariant failures (a caller skipped preparing its input), not user-facing errors, so they stay reported as unexpected errors. Their messages stay protocol-agnostic so this RPC layer names no Safe or background helper.
 		if (simulationStateInput.some((block) => block.transactions.some((transaction) => authorizesExecutedCall(transaction.simulationOptions) && transaction.executedTransaction === undefined))) throw createUnpreparedSimulationInputError('missing-executed-call', 'A transaction whose simulation options require a prepared executed call reached the node without one.')
 		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !authorizesExecutedCall(transaction.simulationOptions)))) throw createUnpreparedSimulationInputError('unauthorized-executed-call', 'A transaction reached the node with an executed call other than its signed transaction, which its simulation options do not authorize.')
@@ -387,7 +399,7 @@ export class EthereumClientService {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
-						rpcBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+							rpcBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
 					}
 				}
 				preparedBlocks.push({ inputBlock, rpcBlockCount: splitted.length })
@@ -408,7 +420,7 @@ export class EthereumClientService {
 			previousBlockOverride = newBlockOverride
 		}
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, effectiveStateOverrides: StateOverrides) => {
 			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(getExecutedTransaction(transaction)))
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
@@ -442,15 +454,15 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...block.stateOverrides,
+					...effectiveStateOverrides,
 				}
 			}
 		}
 
-		const blockStateCalls = await Promise.all(rpcBlocks.map(async (block, index) => {
+		const blockStateCalls = await Promise.all(mapBlocksWithEffectiveStateOverrides(rpcBlocks, simulationOverrides, (block) => block.stateOverrides, async (block, effectiveStateOverrides, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
-			return await getBlockStateCall(block, blockOverrideForBlock)
+			return await getBlockStateCall(block, blockOverrideForBlock, effectiveStateOverrides)
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {
@@ -468,20 +480,20 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
-		return (await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)).request
+	public readonly ethSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		return (await this.prepareEthSimulateV1Input(simulationInput, blockNumber, requestAbortController)).request
 	}
 
-	public readonly simulatePrepared = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
-		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+	public readonly simulatePrepared = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+		const prepared = await this.prepareEthSimulateV1Input(simulationInput, blockNumber, requestAbortController)
 		return {
 			prepared,
 			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
 		}
 	}
 
-	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
-		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
+	public readonly simulate = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
+		const input = await this.ethSimulateV1Input(simulationInput, blockNumber, requestAbortController)
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
 	}
 

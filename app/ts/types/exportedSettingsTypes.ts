@@ -5,6 +5,7 @@ import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
 import { SigningAddressPreferences } from './signerTypes.js'
+import { DelegateClearingPreferences } from './delegateClearing.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -123,6 +124,25 @@ export const ExportedSettings = funtypes.Union(
 			activeSimulationAddress: OptionalEthereumAddress,
 			activeSigningSafeAddress: OptionalEthereumAddress,
 			signingAddressPreferences: SigningAddressPreferences,
+			rpcNetwork: RpcNetwork,
+			openedPage: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressBookEntries: AddressBookEntries,
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+			safeAppsCompatibilityMode: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.7'),
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			activeSigningSafeAddress: OptionalEthereumAddress,
+			signingAddressPreferences: SigningAddressPreferences,
+			delegateClearingPreferences: DelegateClearingPreferences,
 			rpcNetwork: RpcNetwork,
 			openedPage: Page,
 			useSignersAddressAsActiveAddress: funtypes.Boolean,

@@ -81,7 +81,11 @@ export class EthereumJSONRpcRequestHandler {
 		this.rpcRequestLifecycleCallbacks = rpcRequestLifecycleCallbacks
 	}
 
-	public readonly clearCache = () => { this.cache = new Map() }
+	// A new block retires in-flight requests too, so later callers cannot join a request that was started, or aborted, for the previous block.
+	public readonly clearCache = () => {
+		this.cache = new Map()
+		this.pendingCache = new Map()
+	}
 
 	private readonly resolveResponse = async (response: Response): Promise<ResolvedResponse> => {
 		if (response.ok) return { responseState: 'success', response: await response.json() }
@@ -159,21 +163,24 @@ export class EthereumJSONRpcRequestHandler {
 			}
 		}
 		const hash = keccak256(stringToBytes(JSON.stringify(serialized)))
+		// Settle into the maps current at the start, so a request that outlives clearCache cannot fill or evict the replacement maps.
+		const cache = this.cache
+		const pendingCache = this.pendingCache
 		if (bypassCache === false) {
-			const cacheValue = this.cache.get(hash)
+			const cacheValue = cache.get(hash)
 			if (cacheValue !== undefined) return cacheValue
-			const pendingCacheValue = this.pendingCache.get(hash)
+			const pendingCacheValue = pendingCache.get(hash)
 			// we have already requested this, wait for it to resolve and then resolve this as well
 			if (pendingCacheValue !== undefined) return await pendingCacheValue
 		}
 		const future = new Future<ResolvedResponse>()
-		this.pendingCache.set(hash, future)
+		pendingCache.set(hash, future)
 		const startedAt = performance.now()
 		try {
 			const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
 			const responseObject = await this.resolveResponse(response)
 			assertMatchingJsonRpcResponseId(responseObject, requestId)
-			if (shouldCacheResponse(responseObject)) this.cache.set(hash, responseObject)
+			if (shouldCacheResponse(responseObject)) cache.set(hash, responseObject)
 			future.resolve(responseObject)
 		} catch(error: unknown) {
 			if (requestAbortController?.signal.aborted) {
@@ -186,7 +193,7 @@ export class EthereumJSONRpcRequestHandler {
 			}
 		} finally {
 			recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
-			this.pendingCache.delete(hash)
+			if (pendingCache.get(hash) === future) pendingCache.delete(hash)
 		}
 		return await future
 	}

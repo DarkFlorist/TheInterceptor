@@ -3,6 +3,7 @@ import { assertNever } from '../../utils/typescript.js'
 import type { EthereumClientService } from './EthereumClientService.js'
 import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
 import type { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
+import { getSimulationInputFromState } from '../../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
@@ -73,7 +74,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		simulatedBlocksPromise = (async () => {
 			const simulationState = await getCachedSimulationState()
 			if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
-			const simulationInput = { kind: 'simulated' as const, value: simulationState.value.simulationStateInput }
+			const simulationInput = getSimulationInputFromState(simulationState.value)
 			const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationInput)
 			const simulatedBlocks = []
 			for (let simulatedBlockNumber = blockNumber + 1n; simulatedBlockNumber <= simulatedHead; simulatedBlockNumber++) {

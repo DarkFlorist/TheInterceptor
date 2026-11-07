@@ -154,6 +154,7 @@ async function loadModules() {
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
+		createSimulationState: simulationModeEthereumClientService.createSimulationState,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 	}
@@ -287,7 +288,7 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 }
 
 describe('Gnosis Safe stack simulation', () => {
-	test('governance execution token balances are queried on top of stack plus execution transaction', async () => {
+	test('governance execution full state keeps the prior stack for token balances', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
@@ -331,7 +332,7 @@ describe('Gnosis Safe stack simulation', () => {
 							&& lastCall !== null
 							&& 'to' in lastCall
 							&& lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
+						if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
 						aggregate3BlockStateCallCount = callCount
 
 						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
@@ -411,30 +412,30 @@ describe('Gnosis Safe stack simulation', () => {
 			executionStateOverrides,
 		)
 
-		const tokenBalancesAfter = await modules.getGovernanceExecutionTokenBalancesAfter(
-			ethereum,
-			simulationInput,
-			executionTransaction,
-			executionTimestamp,
-			executionStateOverrides,
-			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
-		)
+		const fullState = await modules.createSimulationState(ethereum, undefined, {
+			kind: 'simulated', value: governanceExecutionSimulationInput, simulationOverrides: {},
+		})
 
 		assert.equal(governanceExecutionSimulationInput.length, 2)
 		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.stateOverrides, executionStateOverrides)
 		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.blockTimeManipulation, { type: 'SetTimetamp', timeToSet: 1704153600n })
 		assert.equal(aggregate3BlockStateCallCount, 3)
-		assert.equal(tokenBalancesAfter.length, 1)
-		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
+		assert.equal(fullState.success, true)
+		if (!fullState.success) throw new Error('Governance execution simulation failed')
+		assert.equal(fullState.simulatedBlocks.length, 2)
+		const executionResult = fullState.simulatedBlocks[1]?.simulatedTransactions[0]
+		assert.equal(executionResult?.tokenBalancesAfter.length, 1)
+		assert.equal(executionResult?.tokenBalancesAfter[0]?.owner, activeAddress.address)
 	})
 
 	const safeSimulationCases = [
-		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true },
-		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true },
-		{ name: 'applies Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false },
+		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true, delegateClearingEnabled: false },
+		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true, delegateClearingEnabled: false },
+		{ name: 'applies Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false, delegateClearingEnabled: false },
+		{ name: 'keeps delegate clearing out of a Safe co-signing preview', operation: 0n, seedStack: true, delegateClearingEnabled: true },
 	] as const
 
-	for (const { name, operation, seedStack } of safeSimulationCases) test(name, async () => {
+	for (const { name, operation, seedStack, delegateClearingEnabled } of safeSimulationCases) test(name, async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
@@ -572,6 +573,7 @@ describe('Gnosis Safe stack simulation', () => {
 			simulationMode: true,
 			independentActiveSimulationAddress: activeAddress.address,
 			activeRpcNetwork: fakeRpcNetwork,
+			delegateClearingPreferences: delegateClearingEnabled ? [{ address: activeAddress.address, chainId: fakeRpcNetwork.chainId }] : [],
 			interceptorTransactionStack: {
 				operations: stackOperations,
 			},
@@ -582,9 +584,10 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(simulationInput.length, seedStack ? 1 : 0)
 		assert.equal(simulationInput[0]?.transactions.length, seedStack ? 1 : undefined)
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, simulationInput, ethereum, tokenPriceService)
+		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, ethereum, tokenPriceService)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
+		assert.deepEqual(reply.result.simulationState.simulationOverrides, {})
 
 		assert.equal(reply.result.simulationState.rpcNetwork.chainId, fakeRpcNetwork.chainId)
 		assert.equal(reply.result.simulationState.simulationStateInput.length, seedStack ? 2 : 1)

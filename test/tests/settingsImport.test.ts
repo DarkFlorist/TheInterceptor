@@ -201,10 +201,11 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('round-trips Safe and delegate simulation settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		const simulationAddress = 0x5555555555555555555555555555555555555555n
+		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, isDelegateClearingEnabled, rememberSigningAddressPreference, setDelegateClearingEnabled, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
@@ -218,24 +219,27 @@ describe('settings import', () => {
 		}])
 		await changeSimulationMode({
 			simulationMode: false,
-			activeSimulationAddress: 0x5555555555555555555555555555555555555555n,
+			activeSimulationAddress: simulationAddress,
 			activeSigningSafeAddress: signingSafeAddress,
 		})
 		await rememberSigningAddressPreference({ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId })
 		await setSafeAppsCompatibilityMode(true)
+		await setDelegateClearingEnabled(simulationAddress, testRpcNetwork.chainId, true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
+		assert.deepEqual(exportedSettings.settings.delegateClearingPreferences, [{ address: simulationAddress, chainId: testRpcNetwork.chainId }])
 
 		browserMock.reset()
 		await importSettingsAndAddressBook(exportedSettings)
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
 		assert.equal(await getSafeAppsCompatibilityMode(), true)
+		assert.equal(await isDelegateClearingEnabled(simulationAddress, testRpcNetwork.chainId), true)
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
 		const previousTabState = await getTabState(1)
 		const transition = await getSigningAddressSelectionTransition(importedSettings, previousTabState, {
@@ -245,6 +249,16 @@ describe('settings import', () => {
 		})
 		assert.equal(transition.shouldActivate, false)
 		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
+	})
+
+	test('clears a saved delegate simulation choice when importing an older export', async () => {
+		const address = 0x5656565656565656565656565656565656565656n
+		const { importSettingsAndAddressBook, isDelegateClearingEnabled, setDelegateClearingEnabled } = await settingsModulePromise
+		await setDelegateClearingEnabled(address, testRpcNetwork.chainId, true)
+		assert.equal(await isDelegateClearingEnabled(address, testRpcNetwork.chainId), true)
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+		assert.equal(await isDelegateClearingEnabled(address, testRpcNetwork.chainId), false)
 	})
 
 	test('publishes imported Safe preferences only after their address book entry', async () => {
