@@ -57,7 +57,7 @@ test('Safe transaction confirmation owns stored stack reconciliation', () => {
 
 test('everything that sends the simulation stack to the node runs its Gnosis Safe executions through the Safe', () => {
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,4}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(snapshot\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,5}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(snapshot\.simulationStateInput, ethereumClientService\)/u)
 	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereumClientService\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereum\)/u)
 })
@@ -146,6 +146,18 @@ test('dialog and RPC delegate simulation share state-override construction', asy
 	assert.match(simulationUpdatingSource, /return prepareSafeDelegateStateOverrides\(/u)
 	assert.match(safeSimulation, /stateOverrides: prepareSafeDelegateStateOverrides\(/u)
 	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
+})
+
+test('RPC handlers run on the admitted network and only the live flows hold the services owner', () => {
+	const rpcHandlers = backgroundSource.slice(backgroundSource.indexOf('async function handleRPCRequest('), backgroundSource.indexOf('const providerHandlers = {'))
+	assert.match(rpcHandlers, /rpcRequestHandlers = \{/u)
+	assert.doesNotMatch(rpcHandlers, /simulationServicesOwner|getCurrent\(\)/u)
+})
+
+test('only the network transition lock can build a read that pairs services with a stack', async () => {
+	const lockSource = await Bun.file(new URL('../../app/ts/background/networkTransitionLock.ts', import.meta.url)).text()
+	assert.match(lockSource, /^const readUnderNetworkLock: unique symbol/mu)
+	assert.doesNotMatch(lockSource, /^export const readUnderNetworkLock/mu)
 })
 
 test('the content-script router delegates Safe Apps admission and error mapping to its feature handler', async () => {

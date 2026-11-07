@@ -46,8 +46,8 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesReader) {
 	await clearSimulationStateFromConfig()
-	const { services, simulation } = await readNetworkSnapshot(simulationServicesOwner)
-	await queuePopupSimulationRefresh({ ...services, invalidateOldState: true }, simulation)
+	const { simulation } = await readNetworkSnapshot(simulationServicesOwner)
+	await queuePopupSimulationRefresh(simulation, { invalidateOldState: true })
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {

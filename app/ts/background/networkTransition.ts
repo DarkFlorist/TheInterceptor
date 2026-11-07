@@ -1,6 +1,6 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import type { SimulationServices, SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { getRpcEntryIdentityKey, getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -104,7 +104,7 @@ export async function appendToActiveSimulationStack(simulationServicesOwner: Sim
 			: { operations: [...previousStack.operations, operation] })
 		// The confirmation reports the stacked operation, which an earlier attempt may have prepared differently.
 		const stackedOperation = interceptorTransactionStack.operations.find((stacked) => isSameStackOperation(stacked, operation)) ?? operation
-		return { stackedOperation, settings, simulation: reads.buildSimulationSnapshot(settings, sources, interceptorTransactionStack), services: simulationServicesOwner.getCurrent() }
+		return { ...reads.buildNetworkSnapshot(settings, sources, interceptorTransactionStack, simulationServicesOwner.getCurrent()), stackedOperation }
 	})
 }
 
@@ -126,7 +126,7 @@ async function installServicesForCommittedNetwork(simulationServicesOwner: Simul
 }
 
 // A popup refresh that a committed change needs: its services and snapshot are read under the lock, and it is simulated after the lock is released, so requests waiting for the lock do not wait for the simulation.
-type PendingPopupRefresh = { readonly services: SimulationServices, readonly snapshot: SimulationRead }
+type PendingPopupRefresh = SimulationRead
 
 // Notifies popups and approved websites inside the lock, so they see network changes in commit order. Only runSettingsTransition calls this, after it has installed the committed network's services and cleared the previous chain's stack. Returns the popup refresh to run after the lock.
 async function publishCommittedSettingsChange(reads: LockedNetworkReads, change: CommittedNetworkChange, updatedSettings: Settings): Promise<PendingPopupRefresh | undefined> {
@@ -137,7 +137,7 @@ async function publishCommittedSettingsChange(reads: LockedNetworkReads, change:
 	await runNetworkChangeEffect(change, 'notifyPopupsOfChainChange', updatedSettings)
 	// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
 	const needsPopupRefresh = (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (endpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))
-	const popupRefresh = needsPopupRefresh ? { services: change.simulationServicesOwner.getCurrent(), snapshot: (await reads.captureNetworkState()).simulation } : undefined
+	const popupRefresh = needsPopupRefresh ? (await reads.captureNetworkSnapshot(change.simulationServicesOwner.getCurrent)).simulation : undefined
 	await sendActiveAccountChangeToApprovedWebsitePorts(change.websiteTabConnections, await getSettings())
 	return popupRefresh
 }
@@ -175,7 +175,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 			throw error
 		}
 	})
-	if (popupRefresh !== undefined) await queuePopupSimulationRefresh(popupRefresh.services, popupRefresh.snapshot)
+	if (popupRefresh !== undefined) await queuePopupSimulationRefresh(popupRefresh)
 }
 
 // An RPC list update can make another endpoint the active chain's primary, or edit the active entry's metadata so the selection no longer exists. Settings then select that primary together with its services, like a switch to it would; a signer-only selection has no endpoint to replace. A selection that is still listed on the primary's endpoint stays selected.

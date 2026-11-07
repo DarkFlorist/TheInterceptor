@@ -237,20 +237,14 @@ describe('an unreadable simulation stack', () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
-		const { send, simulationServicesOwner, websiteTabConnections } = await createApprovedWebsite(modules)
-		const originalSet = browser.storage.local.set
-		browser.storage.local.set = async (items) => {
-			if ('interceptorTransactionStack' in items) throw new Error('the simulation stack cannot be written')
-			return await originalSet(items)
-		}
-		const rpcNetwork = { ...(await modules.getSettings()).activeRpcNetwork, name: 'Another chain', chainId: 2n, httpsRpc: 'https://another-chain.example' }
-		await assert.rejects(modules.changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false }))
+		const { send, websiteTabConnections } = await createApprovedWebsite(modules)
+		const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, 'stack clearing', websiteTabConnections)
 
 		assert.ok((await send(1, 'eth_chainId', []))?.result !== undefined)
 		assert.deepEqual((await send(2, 'eth_accounts', []))?.result, [addressString(account)])
 		assert.equal((await send(3, 'eth_getBalance', [addressString(account), 'latest']))?.error?.code, 123456)
 
-		browser.storage.local.set = originalSet
+		await letRepairSucceed()
 		assert.equal((await modules.readNetworkSnapshot(simulationServicesOwner)).simulation.kind, 'loaded')
 	})
 

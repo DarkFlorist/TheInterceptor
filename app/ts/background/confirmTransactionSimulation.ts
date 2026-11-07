@@ -1,7 +1,5 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
@@ -21,8 +19,6 @@ let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
 export async function refreshConfirmTransactionSimulation(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	simulation: SimulationSnapshot,
 	activeAddress: bigint,
 	simulationMode: boolean,
@@ -30,6 +26,7 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { ethereum, tokenPriceService } = simulation.services
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,

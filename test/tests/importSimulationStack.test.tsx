@@ -302,7 +302,9 @@ describe('import simulation stack', () => {
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
 		storageState.simulationMode = true
 		let exportedSimulationInput: unknown
+		const { activeRpcNetwork } = await (await import('../../app/ts/background/settings.js')).getSettings()
 		const ethereum = {
+			getRpcEntry: () => activeRpcNetwork,
 			async getBlockNumber() { return 1n },
 			async ethSimulateV1Input(simulationInput: unknown) {
 				exportedSimulationInput = simulationInput
@@ -310,7 +312,7 @@ describe('import simulation stack', () => {
 			},
 		}
 
-		const reply = await modules.requestInterceptorSimulationInput(ethereum as never, await modules.readNetworkState())
+		const reply = await modules.requestInterceptorSimulationInput(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService: {} }))
 
 		assert.equal(reply.ok, true)
 		if (!reply.ok) throw new Error(reply.message)

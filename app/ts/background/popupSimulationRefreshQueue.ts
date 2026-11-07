@@ -57,8 +57,8 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 	}
 }
 
-const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot }) => {
-	const result = await updatePopupVisualisationForSnapshot(ethereum, tokenPriceService, snapshot, { invalidateOldState, skipIfUnchanged: !invalidateOldState })
+const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ invalidateOldState = false, snapshot }) => {
+	const result = await updatePopupVisualisationForSnapshot(snapshot, { invalidateOldState, skipIfUnchanged: !invalidateOldState })
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
@@ -74,18 +74,21 @@ async function publishUnavailableSimulation(simulation: UnavailableSimulation): 
 }
 
 // Callers read the snapshot under the transition lock, so its settings and stack describe one network; the simulation itself runs outside the lock.
-export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh, snapshot: SimulationRead) {
-	if (snapshot.kind === 'unavailable') return await publishUnavailableSimulation(snapshot)
-	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
+export async function queuePopupSimulationRefresh(simulation: SimulationRead, { invalidateOldState }: { readonly invalidateOldState?: boolean } = {}): Promise<PopupSimulationRefreshOutcome> {
+	if (simulation.kind === 'unavailable') return await publishUnavailableSimulation(simulation)
+	// The change that replaced these services queues the refresh of its own network.
+	if (simulation.kind === 'replaced') return { status: 'observed', available: false }
+	const snapshot = simulation
+	const provider = getSimulationProviderForSnapshot(snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.
 	const revision = block === undefined ? Symbol('uncached block') : stringifyJSONWithBigInts([
-		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
+		getPopupVisualisationFingerprint(snapshot.simulationStateInput, snapshot.services.ethereum.getRpcEntry(), block.number),
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,
 		// A refresh read before a later network change is discarded when it runs, so a refresh of the same network read after the change, even with the same client and input, must not join it.
 		snapshot.networkChangeGeneration,
 	])
-	return await refreshRevision({ ...services, revision, snapshot })
+	return await refreshRevision({ ...snapshot.services, invalidateOldState, revision, snapshot })
 }

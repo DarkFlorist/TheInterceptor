@@ -1,4 +1,5 @@
 // Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
+import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, ResolvedSimulationState, SimulationState } from '../types/visualizer-types.js'
@@ -7,7 +8,7 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { getSimulationProviderForSnapshot, requireSimulationSnapshot, servesSnapshotNetwork, type SimulationRead, type SimulationSnapshot, type UnavailableSimulation, getUpdatedSimulationState } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot, requireSimulationSnapshot, type SimulationRead, type SimulationSnapshot, type UnavailableSimulation, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -15,7 +16,7 @@ import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 import { alwaysWrite } from '../utils/largeStateStore.js'
 import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
-import { readNetworkState } from './networkTransitionLock.js'
+import { readNetworkSnapshotForServices } from './networkTransitionLock.js'
 
 let abortController = new AbortController()
 
@@ -60,8 +61,13 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 // What a caller with its own snapshot shows when that snapshot has no visualisation; the stored result is shared by every refresh and may describe another network or stack.
 export const createUnavailableVisualisation = (): CompleteVisualizedSimulation => ({ ...createPassthroughCompleteVisualizedSimulation(0, 'invalid'), simulationUpdatingState: 'failed' })
 
-// A refresh without a snapshot of its own reads one under the network transition lock, so its settings and stack describe one network. It reads it before waiting for the visualisation semaphore, which a transition takes while holding its lock to publish a failed provider installation.
-const readSharedRefreshSnapshot = async (snapshot: SimulationSnapshot | undefined) => snapshot ?? requireSimulationSnapshot((await readNetworkState()).simulation)
+// A refresh without a snapshot of its own reads one under the network transition lock, so its settings and stack describe one network. It reads it before waiting for the visualisation semaphore, which a transition takes while holding its lock to publish a failed provider installation. Undefined means these services were replaced: the change that replaced them refreshes its own network, so this refresh has nothing to do.
+const readSharedRefreshSnapshot = async (services: SimulationServices) => {
+	const { simulation } = await readNetworkSnapshotForServices(services)
+	return simulation.kind === 'replaced' ? undefined : requireSimulationSnapshot(simulation)
+}
+
+type ReadRefreshSnapshot = () => Promise<SimulationSnapshot | undefined>
 
 type VisualisationRefreshOptions = {
 	readonly invalidateOldState?: boolean
@@ -77,14 +83,14 @@ type VisualisationRefreshAttempt =
 	| { readonly status: 'not-run' | 'unchanged' }
 	| { readonly status: 'ran', readonly computed: CompleteVisualizedSimulation | undefined }
 
-// The guards of both entry points below, in their order; each entry point only decides what its caller gets for each outcome. A snapshot of undefined is read here, after the consumer probe.
-const attemptVisualisationRefresh = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, storedVisualisation: CompleteVisualizedSimulation, snapshot: SimulationSnapshot | undefined, { invalidateOldState = false, skipIfUnchanged = false }: VisualisationRefreshOptions): Promise<VisualisationRefreshAttempt> => {
+// The guards of both entry points below, in their order; each entry point only decides what its caller gets for each outcome. The snapshot is read here, after the consumer probe.
+const attemptVisualisationRefresh = async (storedVisualisation: CompleteVisualizedSimulation, readSnapshot: ReadRefreshSnapshot, { invalidateOldState = false, skipIfUnchanged = false }: VisualisationRefreshOptions): Promise<VisualisationRefreshAttempt> => {
 	const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 	if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return { status: 'not-run' }
-	const capturedSnapshot = await readSharedRefreshSnapshot(snapshot)
-	// Services captured before a network change must neither simulate the later network's stack nor cancel or invalidate that network's own refresh.
-	if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return { status: 'not-run' }
-	const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
+	const capturedSnapshot = await readSnapshot()
+	// A replaced network must neither have its stack simulated nor cancel or invalidate the refresh of the network that replaced it.
+	if (capturedSnapshot === undefined || !snapshotNetworkIsActive(capturedSnapshot)) return { status: 'not-run' }
+	const provider = getSimulationProviderForSnapshot(capturedSnapshot)
 	// Only a completed result may stand in for this refresh: a refresh discarded after its network was replaced can leave the stored result marked updating or invalid, with the same input.
 	const storedResultIsComplete = storedVisualisation.simulationUpdatingState === 'done' && storedVisualisation.simulationResultState === 'done'
 	if (skipIfUnchanged && storedResultIsComplete && storedVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
@@ -102,7 +108,7 @@ const attemptVisualisationRefresh = async (ethereum: EthereumClientService, toke
 	abortController.abort(NEW_BLOCK_ABORT)
 	abortController = new AbortController()
 	const thisAbortController = abortController
-	return { status: 'ran', computed: await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, capturedSnapshot, invalidateOldState) }
+	return { status: 'ran', computed: await refreshStoredVisualisation(async () => capturedSnapshot, thisAbortController, false, invalidateOldState) }
 }
 
 // Visibility/throttle-aware refresh of the shared visualisation: callers such as block updates can replace obsolete work without entering the interactive queue. Returns the stored visualisation, whichever refresh wrote it.
@@ -114,7 +120,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const ageSeconds = (Date.now()- storedVisualisation.simulationState.value.simulationConductedTimestamp.getTime()) / 1000
 			if (ageSeconds < TIME_BETWEEN_BLOCKS) return storedVisualisation
 		}
-		const attempt = await attemptVisualisationRefresh(ethereum, tokenPriceService, storedVisualisation, undefined, refreshOptions)
+		const attempt = await attemptVisualisationRefresh(storedVisualisation, async () => await readSharedRefreshSnapshot({ ethereum, tokenPriceService }), refreshOptions)
 		if (attempt.status !== 'ran') return storedVisualisation
 	} catch(error: unknown) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
@@ -123,10 +129,10 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 }
 
 // The same refresh for the interactive queue, which refreshes with the snapshot its revision was computed from and needs that snapshot's visualisation, so it never reuses a merely recent result. Returns the stored visualisation only when it already describes the snapshot's input, otherwise the one built for the snapshot, or the unavailable state.
-export const updatePopupVisualisationForSnapshot = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, snapshot: SimulationSnapshot, refreshOptions: VisualisationRefreshOptions = {}): Promise<CompleteVisualizedSimulation> => {
+export const updatePopupVisualisationForSnapshot = async (snapshot: SimulationSnapshot, refreshOptions: VisualisationRefreshOptions = {}): Promise<CompleteVisualizedSimulation> => {
 	try {
 		const storedVisualisation = await getPopupVisualisationState()
-		const attempt = await attemptVisualisationRefresh(ethereum, tokenPriceService, storedVisualisation, snapshot, refreshOptions)
+		const attempt = await attemptVisualisationRefresh(storedVisualisation, async () => snapshot, refreshOptions)
 		if (attempt.status === 'unchanged') return storedVisualisation
 		// A superseded or failed refresh leaves another refresh's result in storage, which is not this snapshot's.
 		return (attempt.status === 'ran' ? attempt.computed : undefined) ?? createUnavailableVisualisation()
@@ -142,9 +148,9 @@ export type ConfirmationVisualisationDependencies = {
 }
 
 // A confirmation window shows the visualisation of its own snapshot, so it is computed for that window and never stored or broadcast as the shared visualisation, which follows the latest stack. A failed computation or an unreadable stack shows the unavailable state, so the rest of the dialog still updates and its queue stays open.
-export async function computeConfirmationVisualisation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationRead, dependencies: ConfirmationVisualisationDependencies = {}) {
+export async function computeConfirmationVisualisation(simulation: SimulationRead, dependencies: ConfirmationVisualisationDependencies = {}) {
 	try {
-		return await (dependencies.compute ?? computeSnapshotVisualisation)(ethereum, tokenPriceService, requireSimulationSnapshot(simulation)) ?? createUnavailableVisualisation()
+		return await (dependencies.compute ?? computeSnapshotVisualisation)(requireSimulationSnapshot(simulation)) ?? createUnavailableVisualisation()
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await (dependencies.reportError ?? reportUnexpectedError)(error)
 		return createUnavailableVisualisation()
@@ -193,11 +199,11 @@ async function visualiseSimulationState(simulationState: ResolvedSimulationState
 // Only the shared stored visualisation is ordered by its simulation id; a confirmation's own visualisation is never stored.
 const CONFIRMATION_VISUALISATION_ID = 0
 
-// Serialized with the shared refreshes, but neither cancellable by them nor stored. Returns undefined when the services serve another network or the visualisation could not be fetched; unexpected errors propagate.
-export async function computeSnapshotVisualisation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, snapshot: SimulationSnapshot) {
+// Serialized with the shared refreshes, but neither cancellable by them nor stored. Returns undefined when the visualisation could not be fetched; unexpected errors propagate.
+export async function computeSnapshotVisualisation(snapshot: SimulationSnapshot) {
+	const { ethereum, tokenPriceService } = snapshot.services
 	return await updateSimulationVisualisationSemaphore.execute(async () => {
-		if (!servesSnapshotNetwork(ethereum, snapshot)) return undefined
-		const simulationState = await getUpdatedSimulationState(ethereum, snapshot)
+		const simulationState = await getUpdatedSimulationState(snapshot)
 		try {
 			return await visualiseSimulationState(simulationState, ethereum, tokenPriceService, undefined, CONFIRMATION_VISUALISATION_ID, snapshot.numberOfAddressesMadeRich)
 		} catch (error) {
@@ -208,13 +214,19 @@ export async function computeSnapshotVisualisation(ethereum: EthereumClientServi
 }
 
 // Serialized refresh of the shared visualisation without a visibility probe; persistence callers can require unexpected errors to propagate. Invalidating the stored result runs in the same serialized section, so it cannot overwrite a result that a refresh of a newer network stored meanwhile. Returns the visualisation built for the snapshot, not the stored one, which a newer refresh may have written; undefined when the update was aborted, failed or its network was replaced.
-export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot, invalidateOldState = false) {
+export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false) {
+	return await refreshStoredVisualisation(async () => await readSharedRefreshSnapshot({ ethereum, tokenPriceService }), abortController, throwOnUnexpectedError, false)
+}
+
+async function refreshStoredVisualisation(readSnapshot: ReadRefreshSnapshot, abortController: AbortController | undefined, throwOnUnexpectedError: boolean, invalidateOldState: boolean) {
 	try {
-		const capturedSnapshot = await readSharedRefreshSnapshot(snapshot)
+		const capturedSnapshot = await readSnapshot()
+		if (capturedSnapshot === undefined) return undefined
+		const { ethereum, tokenPriceService } = capturedSnapshot.services
 		return await updateSimulationVisualisationSemaphore.execute(async () => {
 			if (abortController?.signal.aborted) return undefined
-			// Services captured before a network change cannot simulate a later network's stack; the refresh that follows the change publishes that network's result.
-			if (!servesSnapshotNetwork(ethereum, capturedSnapshot) || !snapshotNetworkIsActive(capturedSnapshot)) return undefined
+			// A replaced network cannot have its stack simulated; the refresh that follows the change publishes that network's result.
+			if (!snapshotNetworkIsActive(capturedSnapshot)) return undefined
 			// Every store and broadcast of this refresh first checks that its network is still active, so a replaced network's result never overwrites or announces over the newer network's.
 			const storeIfNetworkActive = async (state: CompleteVisualizedSimulation) => {
 				const { status, results } = await setPopupVisualisationState(state, () => snapshotNetworkIsActive(capturedSnapshot))
@@ -231,7 +243,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 				popupVisualisation = invalidated
 			}
 			const simulationId = popupVisualisation.simulationId + 1
-			const simulationState = await getUpdatedSimulationState(ethereum, capturedSnapshot)
+			const simulationState = await getUpdatedSimulationState(capturedSnapshot)
 			const numberOfAddressesMadeRich = capturedSnapshot.numberOfAddressesMadeRich
 			if (simulationState.kind === 'passthrough' || !hasSimulationInputOperations(simulationState.value)) {
 				const newState = await visualiseSimulationState(simulationState, ethereum, tokenPriceService, abortController, simulationId, numberOfAddressesMadeRich)

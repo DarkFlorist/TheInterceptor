@@ -10,13 +10,12 @@ import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
-import type { NetworkState } from './simulationUpdating.js'
+import type { NetworkSnapshot } from './networkTransitionLock.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { addressString } from '../utils/bigint.js'
 
@@ -40,9 +39,7 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 
 export async function sendTransaction(
 	simulationServicesOwner: SimulationServicesReader,
-	ethereumClientService: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	network: NetworkState,
+	network: NetworkSnapshot,
 	activeAddress: bigint | undefined,
 	confirmation: TransactionConfirmationRequest,
 	request: InterceptedRequest,
@@ -51,7 +48,7 @@ export async function sendTransaction(
 	simulationMode = true,
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
-	const action = await openConfirmTransactionDialogForTransaction(simulationServicesOwner, ethereumClientService, tokenPriceService, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(simulationServicesOwner, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }
@@ -126,9 +123,7 @@ export async function maxPriorityFeePerGas(ethereumClientService: EthereumClient
 
 export async function personalSign(
 	simulationServicesOwner: SimulationServicesReader,
-	ethereumClientService: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	network: NetworkState,
+	network: NetworkSnapshot,
 	activeAddress: bigint | undefined,
 	confirmation: MessageConfirmationRequest,
 	request: InterceptedRequest,
@@ -136,7 +131,7 @@ export async function personalSign(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(simulationServicesOwner, ethereumClientService, tokenPriceService, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(simulationServicesOwner, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }

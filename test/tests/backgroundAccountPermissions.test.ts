@@ -2,7 +2,7 @@ import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
-import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
 
@@ -207,7 +207,8 @@ describe('background eth_accounts', () => {
 			httpsRpc: 'https://other-chain.example',
 			primary: false,
 		}
-		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, (network) => createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network }))
 
 		await changeActiveAddressAndChain(simulationServicesOwner, new Map(), {
 			simulationMode: false,

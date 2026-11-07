@@ -108,9 +108,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const refreshNetwork = await readNetworkSnapshot(simulationServicesOwner)
-		const { ethereum, tokenPriceService } = refreshNetwork.services
-		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, refreshNetwork, tabId)
+		await refreshPendingSafeSignerSelectionErrors(await readNetworkSnapshot(simulationServicesOwner), tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
@@ -302,7 +300,6 @@ export async function signerReply(simulationServicesOwner: SimulationServicesRea
 		}
 		// The wallet has already answered, so its answer reaches the request whatever state the network is in.
 		const network = await readNetworkSnapshotForPendingRequest(simulationServicesOwner)
-		const { ethereum, tokenPriceService } = network.services
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
 		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }
 		const tabConnection = websiteTabConnections.get(socket.tabId)
@@ -311,7 +308,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesRea
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			await updateConfirmTransactionView(ethereum, tokenPriceService, network)
+			await updateConfirmTransactionView(network)
 			return doNotReply
 		}
 		switch(params.forwardRequest.method) {
@@ -325,7 +322,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesRea
 			case 'eth_sendTransaction': {
 				if (params.success) {
 					try {
-						await resolvePendingTransactionOrMessage(simulationServicesOwner, ethereum, tokenPriceService, network, websiteTabConnections, {
+						await resolvePendingTransactionOrMessage(simulationServicesOwner, network, websiteTabConnections, {
 							method: 'popup_confirmDialog',
 							data: {
 								uniqueRequestIdentifier,
@@ -340,11 +337,11 @@ export async function signerReply(simulationServicesOwner: SimulationServicesRea
 				}
 				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService, network)
+					await updateConfirmTransactionView(network)
 					return doNotReply
 				}
 				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService, network)
+				await updateConfirmTransactionView(network)
 				return doNotReply
 			}
 		}

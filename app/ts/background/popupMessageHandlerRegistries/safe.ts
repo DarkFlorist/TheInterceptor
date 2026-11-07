@@ -3,7 +3,7 @@ import { popupSnapshotMessageHandler, type PopupMessageHandlerMap } from '../pop
 
 export const safePopupMessageHandlers = {
 	popup_requestSafeContractState: popupSnapshotMessageHandler('popup_requestSafeContractState', async (context, request) => {
-		const { ethereum } = context.services
+		const { ethereum } = context.network.services
 		return await requestSafeContractState(ethereum, request)
 	}),
 } satisfies Partial<PopupMessageHandlerMap>

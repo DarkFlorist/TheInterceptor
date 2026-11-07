@@ -579,11 +579,12 @@ describe('Gnosis Safe stack simulation', () => {
 		})
 
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
-		const { simulation: snapshot } = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
+		const network = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService })
+		const snapshot = modules.requireSimulationSnapshot(network.simulation)
 		assert.equal(snapshot.simulationStateInput.length, seedStack ? 1 : 0)
 		assert.equal(snapshot.simulationStateInput[0]?.transactions.length, seedStack ? 1 : undefined)
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, snapshot, ethereum, tokenPriceService)
+		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, network)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
 

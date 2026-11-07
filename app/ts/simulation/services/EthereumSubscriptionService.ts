@@ -55,11 +55,11 @@ export async function sendSubscriptionMessagesForNewBlock(
 	ethereumClientService: EthereumClientService,
 	isSimulation: boolean,
 	websiteTabConnections: WebsiteTabConnections,
-	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
+	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState | undefined>,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
 	let liveBlockPromise: Promise<Awaited<ReturnType<EthereumClientService['getBlock']>>> | undefined
-	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
+	let simulationStatePromise: Promise<ResolvedExecutionSimulationState | undefined> | undefined
 	let simulatedBlocksPromise: Promise<readonly NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>[]> | undefined
 	const getLiveBlock = async () => {
 		if (liveBlockPromise === undefined) liveBlockPromise = ethereumClientService.getBlock(undefined, blockNumber, false)
@@ -73,7 +73,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		if (simulatedBlocksPromise !== undefined) return await simulatedBlocksPromise
 		simulatedBlocksPromise = (async () => {
 			const simulationState = await getCachedSimulationState()
-			if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
+			if (simulationState === undefined || simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
 			const simulationInput = { kind: 'simulated' as const, value: simulationState.value.simulationStateInput }
 			const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationInput)
 			const simulatedBlocks = []

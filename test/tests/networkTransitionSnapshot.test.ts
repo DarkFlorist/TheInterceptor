@@ -249,7 +249,7 @@ async function prepareNetworkARefreshAfterNetworkBVisualisation({ owner, install
 	if (servicesA === undefined) throw new Error('Missing network A services')
 	await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
-	const { settings, simulation } = await modules.readNetworkSnapshot(owner)
+	const networkAtRequest = await modules.readNetworkSnapshot(owner)
 	await switchToNetworkB(owner)
 	await addTransactionToNetworkBStack(modules)
 	const servicesB = getInstalled()
@@ -257,8 +257,8 @@ async function prepareNetworkARefreshAfterNetworkBVisualisation({ owner, install
 	await refreshNetworkB()
 	assert.ok(containsAddress(await modules.getPopupVisualisationState(), STACKED_ON_B_RECIPIENT))
 	const refreshConfirmation = {
-		'dialog simulation': async () => await updateConfirmTransactionView(servicesA.ethereum, servicesA.tokenPriceService, { settings, simulation }),
-		metadata: async (visualisation?: Parameters<typeof computeConfirmationVisualisation>[3]) => await modules.refreshPopupConfirmTransactionMetadata(servicesA.ethereum, servicesA.tokenPriceService, simulation, undefined, { visualisation }),
+		'dialog simulation': async () => await updateConfirmTransactionView(networkAtRequest),
+		metadata: async (visualisation?: Parameters<typeof computeConfirmationVisualisation>[1]) => await modules.refreshPopupConfirmTransactionMetadata(networkAtRequest, undefined, { visualisation }),
 	}
 	return { ...dapp, servicesA, refreshConfirmation, refreshNetworkB }
 }
@@ -680,7 +680,7 @@ describe('network transition snapshot', () => {
 			await dialogOpened.promise
 			const [servicesA] = installed
 			if (servicesA === undefined) throw new Error('Missing network A services')
-			await resolveFetchSimulationStackRequest(await getUpdatedSimulationStackSnapshot(servicesA.ethereum, true, (await modules.readNetworkSnapshot(owner)).simulation), websiteTabConnections, {
+			await resolveFetchSimulationStackRequest(await getUpdatedSimulationStackSnapshot(true, (await modules.readNetworkSnapshot(owner)).simulation), websiteTabConnections, {
 				method: 'popup_fetchSimulationStackRequestConfirmation',
 				data: { accept: true, simulationStackVersion: version, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } },
 			})
@@ -750,7 +750,7 @@ describe('network transition snapshot', () => {
 			const servicesB = getInstalled()
 
 			// The confirmation window refreshes on every new block of the active network.
-			await modules.refreshPopupConfirmTransactionSimulation(servicesB.ethereum, servicesB.tokenPriceService, await modules.readNetworkSnapshot(owner))
+			await modules.refreshPopupConfirmTransactionSimulation(await modules.readNetworkSnapshot(owner))
 			assert.equal(getSimulateV1Requests(servicesB).length, 0)
 			const [afterRefresh] = await modules.getPendingTransactionsAndMessages()
 			if (afterRefresh?.type !== 'Transaction') throw new Error('Expected a pending transaction')
@@ -964,7 +964,7 @@ describe('network transition snapshot', () => {
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: false, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
 			const servicesB = getInstalled()
 			const messagesBefore = runtimeMessages.length
-			await modules.refreshPopupConfirmTransactionMetadata(servicesB.ethereum, servicesB.tokenPriceService, (await modules.readNetworkSnapshot(owner)).simulation, undefined)
+			await modules.refreshPopupConfirmTransactionMetadata(await modules.readNetworkSnapshot(owner), undefined)
 
 			const refreshedMessages = runtimeMessages.slice(messagesBefore).flatMap((message) => {
 				const parsed = MessageToPopup.safeParse(message)
@@ -1174,7 +1174,7 @@ describe('network transition snapshot', () => {
 			if (outcome === 'failed to simulate') servicesA.interceptRequests(async (request) => {
 				if (request.method === 'eth_simulateV1') throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Injected simulation failure' } })
 			})
-			const simulationState = await getUpdatedSimulationState(servicesA.ethereum, simulation)
+			const simulationState = await getUpdatedSimulationState(simulation)
 			if (simulationState.kind !== 'simulated') throw new Error('Expected A to be simulated')
 			assert.equal(simulationState.value.success, outcome === 'simulated')
 			await switchToNetworkB(owner)
@@ -1654,7 +1654,7 @@ describe('network transition snapshot', () => {
 			// A current snapshot, so only the stored visualisation's network tells this client apart.
 			const { simulation } = await modules.readNetworkSnapshot(owner)
 
-			await updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
+			await updateSimulationMetadata(simulation, undefined)
 
 			assert.equal(servicesA.requests.length, requestsToABefore)
 			assert.deepEqual(await modules.getPopupVisualisationState(), visualisationOfB)
@@ -1678,7 +1678,7 @@ describe('network transition snapshot', () => {
 			const { simulation } = await modules.readNetworkSnapshot(owner)
 			// The metadata refresh pauses while it looks up its addresses in the address book.
 			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
-			const metadata = updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
+			const metadata = updateSimulationMetadata(simulation, undefined)
 			await Promise.race([
 				addressBookRead.started,
 				new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('The metadata refresh read no address book entries')), 1000) }),
@@ -1760,11 +1760,11 @@ describe('network transition snapshot', () => {
 			const { simulation } = await modules.readNetworkSnapshot(owner)
 			// The metadata refresh holds the stored visualisation's update while it looks up its addresses.
 			addressBookRead = pauseNextStorageReadOf('userAddressBookEntriesV3')
-			const metadata = updateSimulationMetadata(servicesA.ethereum, simulation, undefined)
+			const metadata = updateSimulationMetadata(simulation, undefined)
 			await addressBookRead.started
 			// A's invalidating refresh passes its network checks and reads the stored visualisation twice, first to compare and then inside its serialized section; from there it queues its invalidation behind the held update without touching storage again.
 			const refreshReadStoredVisualisation = whenStorageReadsReturned('popupVisualisation', 2)
-			const refresh = updatePopupVisualisationForSnapshot(servicesA.ethereum, servicesA.tokenPriceService, simulation, { invalidateOldState: true })
+			const refresh = updatePopupVisualisationForSnapshot(simulation, { invalidateOldState: true })
 			await refreshReadStoredVisualisation
 			reportSimulationConsumer(false)
 			const switchToNetwork = async (rpcNetwork: RpcEntry) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
@@ -1922,7 +1922,7 @@ describe('network transition snapshot', () => {
 		try {
 			const generationBefore = getCommittedNetworkChangeGeneration()
 			const { services, simulation } = await modules.readNetworkSnapshot(owner)
-			const obsoleteRefresh = queuePopupSimulationRefresh(services, simulation)
+			const obsoleteRefresh = queuePopupSimulationRefresh(simulation)
 			await firstProbeSent.promise
 			await switchToNetwork(signerOnlyB)
 			nextHeadReadIsTransitionRefresh = true
@@ -1956,7 +1956,7 @@ describe('network transition snapshot', () => {
 		try {
 			// With an empty stack only the made-rich address is simulated, so the stored input matches the snapshot's and the fingerprints agree.
 			const { services, simulation } = await modules.readNetworkSnapshot(owner)
-			await updatePopupVisualisationForSnapshot(services.ethereum, services.tokenPriceService, simulation, { invalidateOldState: true })
+			await updatePopupVisualisationForSnapshot(simulation, { invalidateOldState: true })
 			const completed = await modules.getPopupVisualisationState()
 			assert.equal(completed.simulationState.kind, 'simulated')
 			// Like a refresh that stored its updating state and was then discarded because its network was replaced, with the same input.
@@ -1964,7 +1964,7 @@ describe('network transition snapshot', () => {
 			const { alwaysWrite } = await import('../../app/ts/utils/largeStateStore.js')
 			await setPopupVisualisationState({ ...completed, simulationId: completed.simulationId + 1, simulationUpdatingState: 'updating' }, alwaysWrite)
 
-			await updatePopupVisualisationForSnapshot(services.ethereum, services.tokenPriceService, simulation, { skipIfUnchanged: true })
+			await updatePopupVisualisationForSnapshot(simulation, { skipIfUnchanged: true })
 
 			const refreshed = await modules.getPopupVisualisationState()
 			assert.equal(refreshed.simulationUpdatingState, 'done')
@@ -2002,9 +2002,9 @@ describe('network transition snapshot', () => {
 			assert.equal(after.simulation.networkChangeGeneration, before.simulation.networkChangeGeneration)
 			assert.equal(after.simulation.interceptorTransactionStack.operations.length, 1)
 			// The snapshot read before the edit still matches the client, so work in flight is not refused.
-			assert.equal(getSimulationProviderForSnapshot(client, before.simulation), client)
-			assert.equal(getSimulationProviderForSnapshot(client, after.simulation), client)
-			const simulated = await getUpdatedSimulationState(client, after.simulation)
+			assert.equal(getSimulationProviderForSnapshot(before.simulation), client)
+			assert.equal(getSimulationProviderForSnapshot(after.simulation), client)
+			const simulated = await getUpdatedSimulationState(after.simulation)
 			if (simulated.kind !== 'simulated') throw new Error('Expected a simulation')
 			assert.equal(simulated.value.rpcNetwork.currencyTicker, 'EDIT')
 		} finally {
@@ -2016,16 +2016,15 @@ describe('network transition snapshot', () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		const { continuesStackContext } = await import('../../app/ts/background/windows/confirmTransaction.js')
-		const { readNetworkState } = await import('../../app/ts/background/networkTransitionLock.js')
 		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		try {
-			const requestNetwork = await readNetworkState()
-			assert.equal(continuesStackContext(requestNetwork, await readNetworkState()), true)
+			const requestNetwork = await modules.readNetworkSnapshot(owner)
+			assert.equal(continuesStackContext(requestNetwork, await modules.readNetworkSnapshot(owner)), true)
 
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
-			const afterReturningToA = await readNetworkState()
+			const afterReturningToA = await modules.readNetworkSnapshot(owner)
 			assert.deepEqual(afterReturningToA.settings.activeRpcNetwork, requestNetwork.settings.activeRpcNetwork)
 			assert.equal(continuesStackContext(requestNetwork, afterReturningToA), false)
 		} finally {
@@ -2069,7 +2068,7 @@ describe('network transition snapshot', () => {
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		const observedPairs: { readonly settingsChainId: bigint, readonly servicesChainId: bigint }[] = []
 		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async (context) => {
-			observedPairs.push({ settingsChainId: context.settings.activeRpcNetwork.chainId, servicesChainId: context.services.ethereum.getChainId() })
+			observedPairs.push({ settingsChainId: context.network.settings.activeRpcNetwork.chainId, servicesChainId: context.network.services.ethereum.getChainId() })
 		})
 		const context: PopupMessageDispatcherContext = {
 			websiteTabConnections: new Map(),
@@ -2345,23 +2344,24 @@ describe('network transition snapshot', () => {
 		}
 	})
 
-	test('a snapshot is simulated only on a client of its own network', async () => {
+	test('a read for services of another network has no stack to simulate, and a read for the active network simulates on its own client', async () => {
 		const { modules } = await createApprovedSimulationDapp()
-		const { getSimulationProviderForSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
+		const { getSimulationProviderForSnapshot, getUpdatedSimulationState, requireSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
-		const { getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
 		const otherChainServices = createNetworkServices(networkB)
 		const otherEndpointServices = createNetworkServices(networkAOnOtherEndpoint)
 		try {
-			const { simulation } = await modules.readNetworkState()
 			for (const services of [otherChainServices, otherEndpointServices]) {
-				assert.equal(getSimulationProviderForSnapshot(services.ethereum, simulation), undefined)
-				assert.deepEqual(await getUpdatedSimulationState(services.ethereum, simulation), PASSTHROUGH_STATE)
+				const { simulation } = await modules.readNetworkSnapshotForServices(services)
+				assert.equal(simulation.kind, 'replaced')
+				assert.throws(() => requireSimulationSnapshot(simulation), /no longer serve the active network/u)
 				assert.deepEqual(services.requests, [])
 			}
 			const ownServices = getInstalled()
-			assert.equal(getSimulationProviderForSnapshot(ownServices.ethereum, simulation), ownServices.ethereum)
-			assert.equal((await getUpdatedSimulationState(ownServices.ethereum, simulation)).kind, 'simulated')
+			const snapshot = requireSimulationSnapshot((await modules.readNetworkSnapshot(owner)).simulation)
+			assert.equal(getSimulationProviderForSnapshot(snapshot), ownServices.ethereum)
+			assert.equal((await getUpdatedSimulationState(snapshot)).kind, 'simulated')
 			assert.ok(getSimulatedCallRecipients(ownServices).includes(STACKED_ON_A_RECIPIENT))
 		} finally {
 			retireAll()

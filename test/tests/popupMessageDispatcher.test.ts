@@ -138,6 +138,7 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
+	Object.defineProperty(ethereum, 'getRpcEntry', { configurable: true, value: () => settings.activeRpcNetwork })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),
@@ -223,10 +224,10 @@ describe('popup message dispatcher seams', () => {
 		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async snapshot => {
 			assert.equal('simulationServicesOwner' in snapshot, false)
 			assert.equal('resetSimulationState' in snapshot, false)
-			observed.push(snapshot.services)
+			observed.push(snapshot.network.services)
 			entered.resolve(undefined)
 			await release.promise
-			observed.push(snapshot.services)
+			observed.push(snapshot.network.services)
 		})
 		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
 		context.simulationServicesOwner.reset(network)

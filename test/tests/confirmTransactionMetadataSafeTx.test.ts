@@ -10,7 +10,12 @@ import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { alwaysWrite } from '../../app/ts/utils/largeStateStore.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
-const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkState()
+const readNetworkState = async (services: Parameters<typeof import('../../app/ts/background/networkTransitionLock.js').readNetworkSnapshotForServices>[0]) => {
+	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: services.ethereum.getRpcEntry() })
+	return await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices(services)
+}
 
 type RuntimeMessage = {
 	method?: string
@@ -414,7 +419,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 
-		const result = await modules.computeConfirmationVisualisation(ethereum, tokenPriceService, (await readNetworkState()).simulation, {
+		const result = await modules.computeConfirmationVisualisation((await readNetworkState({ ethereum, tokenPriceService })).simulation, {
 			async compute() { throw refreshError },
 			async reportError(error) {
 				reportedError = error
@@ -464,7 +469,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		let reportedError: unknown
 		let reportCalls = 0
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, (await readNetworkState()).simulation, undefined, {
+		await modules.refreshPopupConfirmTransactionMetadata(await readNetworkState({ ethereum, tokenPriceService }), undefined, {
 			visualisation: {
 				async compute() { throw refreshError },
 				async reportError(error) {
@@ -528,7 +533,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, (await readNetworkState()).simulation, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(await readNetworkState({ ethereum, tokenPriceService }), undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 		// The confirmation computes its own stack visualisation and leaves the shared one, which follows the latest stack, alone.
@@ -579,7 +584,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.updateConfirmTransactionView(ethereum, tokenPriceService, await readNetworkState())
+		await modules.updateConfirmTransactionView(await readNetworkState({ ethereum, tokenPriceService }))
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 	})

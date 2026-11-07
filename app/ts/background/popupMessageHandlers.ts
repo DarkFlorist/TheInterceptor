@@ -2,7 +2,7 @@ import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulat
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
 import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest } from './networkTransitionLock.js'
-import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot, type NetworkSnapshot, type NetworkState, type SimulationRead } from './simulationUpdating.js'
+import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot, type NetworkRead, type NetworkSnapshot } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -134,15 +134,14 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesR
 	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed services and their settings. A rejection has its outcome already.
 	const rejected = confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse'
 	const network = await (rejected ? readNetworkSnapshotForPendingRequest : readNetworkSnapshot)(simulationServicesOwner)
-	const { ethereum, tokenPriceService } = network.services
-	await resolvePendingTransactionOrMessage(simulationServicesOwner, ethereum, tokenPriceService, network, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
+	await resolvePendingTransactionOrMessage(simulationServicesOwner, network, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }
 
 export async function confirmRequestAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, confirmation.data, publishRpcConnectionStatus)
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(network: NetworkRead, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'watchAsset': {
 			const request = await updateWatchAssetViewWithPendingRequest(websiteTabConnections)
@@ -171,11 +170,11 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, to
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
-			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
+			const currentBlockNumber = await network.services.ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			// Like later confirmation updates, the bootstrap shows the visualisation of its own snapshot, never one cached for another network or stack.
 			const visualizedSimulatorState = network.settings.simulationMode
-				? await computeConfirmationVisualisation(ethereum, tokenPriceService, network.simulation)
+				? await computeConfirmationVisualisation(network.simulation)
 				: createPassthroughCompleteVisualizedSimulation()
 			return {
 				method: 'popup_readyAndListening' as const,
@@ -533,7 +532,8 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: ConfirmationVisualisationDependencies
 }
 
-export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationRead, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
+export async function refreshPopupConfirmTransactionMetadata(network: NetworkSnapshot, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
+	const { simulation, services: { ethereum, tokenPriceService } } = network
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
 	if (first === undefined) return
@@ -542,7 +542,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	// Signing confirmations are independent of the simulation-mode stack. Safe proposals carry their own isolated optimistic simulation in the pending transaction payload.
 	const visualizedSimulatorStatePromise = first.simulationMode
-		? silenceChromeUnCaughtPromise(computeConfirmationVisualisation(ethereum, tokenPriceService, simulation, dependencies.visualisation))
+		? silenceChromeUnCaughtPromise(computeConfirmationVisualisation(simulation, dependencies.visualisation))
 		: Promise.resolve(createPassthroughCompleteVisualizedSimulation())
 	switch (first.type) {
 		case 'SignableMessage': {
@@ -622,7 +622,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 	}
 }
 
-export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, network: NetworkState) {
+export async function refreshPopupConfirmTransactionSimulation(network: NetworkSnapshot) {
+	const { ethereum } = network.services
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const simulation = requireSimulationSnapshot(network.simulation)
@@ -634,7 +635,6 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
 	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
 		? await formEthSendTransaction(
-			ethereum,
 			simulation,
 			undefined,
 			firstTxn.activeAddress,
@@ -647,8 +647,6 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(
-		ethereum,
-		tokenPriceService,
 		simulation,
 		firstTxn.activeAddress,
 		firstTxn.simulationMode,
@@ -687,7 +685,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			default: assertNever(transactionOrMessage)
 		}
 	})
-	await updateConfirmTransactionView(ethereum, tokenPriceService, network)
+	await updateConfirmTransactionView(network)
 }
 
 export async function popupChangeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain) {
@@ -881,7 +879,7 @@ export async function refreshHomeData(
 			const snapshot = await readNetworkSnapshot(simulationServicesOwner)
 			const { ethereum, tokenPriceService } = snapshot.services
 			// Without a readable stack there is no metadata to add, and the home page still serves its settings.
-			if (snapshot.settings.simulationMode && snapshot.simulation.kind === 'loaded') await updateSimulationMetadata(ethereum, snapshot.simulation, requestAbortController)
+			if (snapshot.settings.simulationMode && snapshot.simulation.kind === 'loaded') await updateSimulationMetadata(snapshot.simulation, requestAbortController)
 			// The shared visualisation follows the latest stack, which a request accepted on the same network may have changed since this snapshot was read, so it reads its own snapshot under the transition lock; that snapshot's network checks keep these services from publishing for a replaced network.
 			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
 			if (!await snapshotNetworkIsStillActive(snapshot)) continue
@@ -906,11 +904,11 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	return await requestNewHomeData(simulationServicesOwner, websiteTabConnections, false, true, requestAbortController)
 }
 
-export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationRead, request: SimulateGovernanceContractExecution) {
+export async function simulateGovernanceContractExecutionOnPass(network: NetworkSnapshot, request: SimulateGovernanceContractExecution) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
 	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
-	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService, simulation)
+	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, network)
 	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }
@@ -919,8 +917,8 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	return reply
 }
 
-export async function simulateGnosisSafeTransactionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulation: SimulationRead, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
-	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, simulation, ethereum, tokenPriceService)
+export async function simulateGnosisSafeTransactionOnPass(network: NetworkSnapshot, gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx) {
+	const gnosisTransactionExecutionVisualisation = await simulateGnosisSafeMetaTransaction(gnosisSafeMessage, network)
 	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...gnosisTransactionExecutionVisualisation, transactionOrMessageIdentifier: gnosisSafeMessage.messageIdentifier }
@@ -1032,7 +1030,7 @@ export async function forceSetGasLimitForTransaction(simulationServicesOwner: Si
 	const network = await readNetworkSnapshot(simulationServicesOwner)
 	const { ethereum, tokenPriceService } = network.services
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService, network)
+	await refreshPopupConfirmTransactionSimulation(network)
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
@@ -1211,8 +1209,8 @@ export async function fetchSimulationStackRequestConfirmation(simulationServices
 	const pendingRequest = await getFetchSimulationStackRequestPromise()
 	if (pendingRequest === undefined) throw new Error('The pending simulation stack request is unavailable.')
 	if (!confirmation.data.accept) return await rejectFetchSimulationStackRequest(websiteTabConnections, confirmation)
-	const { services, simulation } = await readNetworkSnapshot(simulationServicesOwner)
-	const snapshot = await getUpdatedSimulationStackSnapshot(services.ethereum, pendingRequest.simulationOverlayEnabled, simulation)
+	const { simulation } = await readNetworkSnapshot(simulationServicesOwner)
+	const snapshot = await getUpdatedSimulationStackSnapshot(pendingRequest.simulationOverlayEnabled, simulation)
 	await resolveFetchSimulationStackRequest(snapshot, websiteTabConnections, confirmation)
 }
 
@@ -1228,7 +1226,8 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 }
 
 // The export describes the settings and stack captured with the services that prepare it.
-export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService, network: NetworkState) {
+export async function requestInterceptorSimulationInput(network: NetworkSnapshot) {
+	const { ethereum: ethereumClientService } = network.services
 	if (!network.settings.simulationMode) {
 		return {
 			method: 'popup_requestInterceptorSimulationInput' as const,
@@ -1316,8 +1315,9 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
 
-export async function requestSimulationMetadata(ethereumClientService: EthereumClientService, network: NetworkState) {
-	const simulationState = network.settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, requireSimulationSnapshot(network.simulation)) : { kind: 'passthrough' as const }
+export async function requestSimulationMetadata(network: NetworkSnapshot) {
+	const { ethereum: ethereumClientService } = network.services
+	const simulationState = network.settings.simulationMode ? await getUpdatedSimulationState(requireSimulationSnapshot(network.simulation)) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {
