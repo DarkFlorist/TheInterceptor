@@ -6,6 +6,7 @@ import { getPopupVisualisationState, setPopupVisualisationState } from '../../ap
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { Future } from '../../app/ts/utils/future.js'
 import { captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { queuePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
@@ -88,7 +89,7 @@ test('a refresh skipped as unchanged does not stop an earlier refresh from finis
 	// An updating visualisation for the current input, as a refresh whose RPC fetch failed leaves it: a skipIfUnchanged refresh finds it unchanged.
 	const currentSnapshot = await captureSimulationSnapshot()
 	await setPopupVisualisationState({
-		...createPassthroughCompleteVisualizedSimulation(7, 'done', currentSnapshot.numberOfAddressesMadeRich),
+		...createPassthroughCompleteVisualizedSimulation(7, 'done', currentSnapshot.richAddresses.length),
 		simulationUpdatingState: 'updating',
 		simulationState: toResolvedSimulationState({
 			success: true,
@@ -169,12 +170,16 @@ function createNetworkSwitchFixture() {
 	const otherEndpointSimulates = new Future<void>()
 	const releaseOtherEndpointSimulation = new Future<void>()
 	let holdOtherEndpointSimulation = false
+	let otherEndpointCancelledRequests = 0
 	const otherEndpointEthereum = new modules.EthereumClientService({
 		...fakeRequestHandler,
 		rpcUrl: otherEndpointNetwork.httpsRpc,
 		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }, requestAbortController?: AbortController) {
 			// Like the real request handler, a cancelled refresh's requests fail, so cancelling this endpoint's refresh is observable.
-			if (requestAbortController?.signal.aborted) throw new Error(requestAbortController.signal.reason)
+			if (requestAbortController?.signal.aborted) {
+				otherEndpointCancelledRequests++
+				throw new Error(requestAbortController.signal.reason)
+			}
 			if (rpcRequest.method === 'eth_simulateV1' && holdOtherEndpointSimulation) {
 				holdOtherEndpointSimulation = false
 				otherEndpointSimulates.resolve(undefined)
@@ -203,6 +208,7 @@ function createNetworkSwitchFixture() {
 			releaseOtherEndpointSimulation.resolve(undefined)
 		},
 		getFirstEndpointSimulations: () => firstEndpointSimulations,
+		getOtherEndpointCancelledRequests: () => otherEndpointCancelledRequests,
 	}
 }
 
@@ -217,11 +223,15 @@ function openVisualisationConsumer() {
 	return () => { browser.runtime.sendMessage = originalSendMessage }
 }
 
-// Accepts the pending transaction while no consumer is open, so the stack holds it without a refresh, then selects the other endpoint and lets its refresh publish.
-async function switchToOtherEndpointWithTransaction(fixture: ReturnType<typeof createNetworkSwitchFixture>, steps: { readonly beforeSwitch?: () => Promise<void>, readonly whileSwitching?: () => Promise<void> } = {}) {
+async function acceptTransactionOnFirstEndpoint(fixture: ReturnType<typeof createNetworkSwitchFixture>) {
 	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork })
 	await modules.resolvePendingTransactionOrMessage(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
 	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+}
+
+// Accepts the pending transaction while no consumer is open, so the stack holds it without a refresh, then selects the other endpoint and lets its refresh publish.
+async function switchToOtherEndpointWithTransaction(fixture: ReturnType<typeof createNetworkSwitchFixture>, steps: { readonly beforeSwitch?: () => Promise<void>, readonly whileSwitching?: () => Promise<void> } = {}) {
+	await acceptTransactionOnFirstEndpoint(fixture)
 	const restoreSendMessage = openVisualisationConsumer()
 	try {
 		await steps.beforeSwitch?.()
@@ -321,4 +331,117 @@ test('execution with the services of a previously selected endpoint publishes no
 	// The executor path a refresh takes after committing: its services were replaced while it waited for the semaphore.
 	await updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, undefined, true)
 	await assertOtherEndpointVisualisationKept(fixture, otherEndpointVisualisation)
+})
+
+const signerOnlyNetwork: RpcNetwork = { chainId: fakeRpcNetwork.chainId, httpsRpc: undefined, name: 'Test Chain (signer only)', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+
+// Selection changes that queue no refresh of their own, so nothing would replace what a refresh left behind by them publishes. A signer-only network keeps the previous services, so these services still look current to a comparison of services alone.
+const selectionChangesWithoutFollowUp = [
+	{
+		name: 'another endpoint',
+		apply: async (fixture: ReturnType<typeof createNetworkSwitchFixture>) => {
+			await modules.browserStorageLocalSet({ activeRpcNetwork: otherEndpointNetwork })
+			fixture.simulationServicesOwner.reset(otherEndpointNetwork)
+		},
+	},
+	{ name: 'a signer-only network', apply: async () => { await modules.browserStorageLocalSet({ activeRpcNetwork: signerOnlyNetwork }) } },
+	{ name: 'external-wallet signing on the same endpoint', apply: async () => { await modules.browserStorageLocalSet({ simulationMode: false }) } },
+]
+
+// A queue entry waiting in its unchanged-input check, holding the snapshot captured when it was queued. The refresh is wrapped so awaiting this helper does not wait for it.
+async function startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture: ReturnType<typeof createNetworkSwitchFixture>) {
+	await storeVisualisationForAnotherBlock()
+	fixture.holdNextFirstEndpointBlockNumber()
+	const refresh = queuePopupSimulationRefresh(fixture.firstEndpointServices)
+	await fixture.firstEndpointReadsBlockNumber
+	return { refresh }
+}
+
+const getPublications = () => browserMock.sentMessages.filter((message) => message.method === 'popup_simulation_state_changed')
+
+async function assertRefreshLeftNoTrace(fixture: ReturnType<typeof createNetworkSwitchFixture>, visualisationBefore: CompleteVisualizedSimulation, publicationsBefore: number) {
+	assert.deepEqual(await getPopupVisualisationState(), visualisationBefore)
+	assert.equal(getPublications().length, publicationsBefore, 'The refresh published after the selection changed')
+	assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated for a selection that was no longer current')
+}
+
+for (const selectionChange of selectionChangesWithoutFollowUp) test(`a queue entry left behind by selecting ${ selectionChange.name } returns from its pre-abort check without publishing`, async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreSendMessage = openVisualisationConsumer()
+	try {
+		const { refresh } = await startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture)
+		await selectionChange.apply(fixture)
+		const visualisationBefore = await getPopupVisualisationState()
+		const publicationsBefore = getPublications().length
+		fixture.releaseFirstEndpointBlockNumber.resolve(undefined)
+		await refresh
+		await assertRefreshLeftNoTrace(fixture, visualisationBefore, publicationsBefore)
+	} finally {
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
+})
+
+for (const selectionChange of selectionChangesWithoutFollowUp) test(`execution of a snapshot left behind by selecting ${ selectionChange.name } publishes nothing`, async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	await storeVisualisationForAnotherBlock()
+	const snapshot = await captureSimulationSnapshot()
+	await selectionChange.apply(fixture)
+	const visualisationBefore = await getPopupVisualisationState()
+	const publicationsBefore = getPublications().length
+	// The executor path a queue entry takes after passing its pre-abort check: the selection changed while it waited for the semaphore.
+	await updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, undefined, true, snapshot)
+	await assertRefreshLeftNoTrace(fixture, visualisationBefore, publicationsBefore)
+})
+
+test('a queue entry for a previously selected endpoint does not cancel the refresh running for the selected endpoint', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreSendMessage = openVisualisationConsumer()
+	try {
+		const { refresh: queueEntry } = await startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture)
+		await modules.browserStorageLocalSet({ activeRpcNetwork: otherEndpointNetwork })
+		const otherEndpointServices = fixture.simulationServicesOwner.reset(otherEndpointNetwork)
+		fixture.holdNextOtherEndpointSimulation()
+		const otherEndpointRefresh = updatePopupVisualisationIfNeeded(otherEndpointServices.ethereum, otherEndpointServices.tokenPriceService)
+		await fixture.otherEndpointSimulates
+		// The entry returns without waiting for that simulation; the bounded wait keeps an entry that instead queues behind the simulation from deadlocking the test.
+		fixture.releaseFirstEndpointBlockNumber.resolve(undefined)
+		await Promise.race([queueEntry, new Promise((resolve) => setTimeout(resolve, 200))])
+		fixture.releaseOtherEndpointSimulation.resolve(undefined)
+		await otherEndpointRefresh
+		await queueEntry
+		assert.equal(fixture.getOtherEndpointCancelledRequests(), 0, 'The queue entry cancelled the refresh of the selected endpoint')
+		const stored = await getPopupVisualisationState()
+		assert.equal(stored.simulationUpdatingState, 'done')
+		assert.equal(stored.simulationResultState, 'done')
+		if (stored.simulationState.kind !== 'simulated') throw new Error('Expected a simulated visualisation')
+		assert.equal(stored.simulationState.value.rpcNetwork.httpsRpc, otherEndpointNetwork.httpsRpc)
+		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated with the services of the previously selected endpoint')
+	} finally {
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
+})
+
+test('a queue entry for a previously selected endpoint publishes nothing after a switch to external-wallet signing, which queues no refresh', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreSendMessage = openVisualisationConsumer()
+	try {
+		const { refresh } = await startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture)
+		// Imported once the harness has installed the extension globals that its imports require.
+		const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+		await changeActiveAddressAndChain(fixture.simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork: otherEndpointNetwork })
+		const visualisationBefore = await getPopupVisualisationState()
+		const publicationsBefore = getPublications().length
+		fixture.releaseFirstEndpointBlockNumber.resolve(undefined)
+		await refresh
+		await assertRefreshLeftNoTrace(fixture, visualisationBefore, publicationsBefore)
+	} finally {
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
 })

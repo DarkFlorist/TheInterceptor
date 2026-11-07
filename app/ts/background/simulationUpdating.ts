@@ -1,6 +1,5 @@
 import type { Settings } from '../types/interceptor-messages.js'
-import type { RpcNetwork } from '../types/rpc.js'
-import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -34,7 +33,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
+import { activeStackContextsEqual, getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -54,17 +53,15 @@ export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => 
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
-	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? getSettings(),
-		getPreSimulationBlockTimeManipulation()
-	])
-	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const stack = await getInterceptorTransactionStack()
+// The settings the simulation input depends on, which together choose the endpoint and the stack to simulate.
+export type SimulationSelection = Pick<Settings, 'simulationMode' | 'activeSigningSafeAddress' | 'activeRpcNetwork'>
+
+const readSimulationInput = async (richAddresses: readonly bigint[], settings: SimulationSelection): Promise<SimulationStateInput> => {
+	const [preSimulationBlockTimeManipulation, stack] = await Promise.all([getPreSimulationBlockTimeManipulation(), getInterceptorTransactionStack()])
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
+	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(richAddresses)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 	let currentBlockSimulateWithZeroBaseFee = false
 
@@ -130,34 +127,36 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export type SimulationSnapshot = {
-	readonly activeRpcNetwork: RpcNetwork
-	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
+export const getCurrentSimulationInput = async () => {
+	const settings = await getSettings()
+	return await readSimulationInput(await getAddressesbeingMadeRich(settings), settings)
+}
+
+// Recapture contract: the selection and rich addresses are fixed at capture. simulationStateInput is the only field built from the others, and only recaptureSimulationStack rebuilds it, from the stack stored at that moment. A snapshot says nothing about the current selection, so a refresh confirms with snapshotMatchesSelection that it still applies before acting on it.
+export type SimulationSnapshot = SimulationSelection & {
 	readonly simulationStateInput: SimulationStateInput
-	readonly numberOfAddressesMadeRich: number
-	// The settings and rich addresses the input was built from, so the stack can be read again under the same selection.
-	readonly settings: Settings
+	// The addresses rather than their count, because recapturing rebuilds the input's balance overrides from them.
 	readonly richAddresses: readonly bigint[]
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
 	const settings = await getSettings()
+	const { simulationMode, activeSigningSafeAddress, activeRpcNetwork } = settings
 	const richAddresses = await getAddressesbeingMadeRich(settings)
-	return {
-		activeRpcNetwork: settings.activeRpcNetwork,
-		activeStackContext: getActiveStackContext(settings),
-		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
-		numberOfAddressesMadeRich: richAddresses.length,
-		settings,
-		richAddresses,
-	}
+	return { simulationMode, activeSigningSafeAddress, activeRpcNetwork, simulationStateInput: await readSimulationInput(richAddresses, settings), richAddresses }
 }
 
-// Rebuilds the input from the stack stored now while keeping the snapshot's selection and rich addresses.
+// Rebuilds the input from the stack stored now, under the snapshot's own selection and rich addresses.
 export async function recaptureSimulationStack(snapshot: SimulationSnapshot): Promise<SimulationSnapshot> {
-	return { ...snapshot, simulationStateInput: await getCurrentSimulationInput(snapshot.richAddresses, snapshot.settings) }
+	return { ...snapshot, simulationStateInput: await readSimulationInput(snapshot.richAddresses, snapshot) }
 }
+
+// Metadata edits keep a selection: only the endpoint and the stack context decide what a snapshot simulates.
+export const snapshotMatchesSelection = (snapshot: SimulationSnapshot, selection: SimulationSelection) => (
+	!getRpcNetworkChange(snapshot.activeRpcNetwork, selection.activeRpcNetwork).endpointChanged
+	&& activeStackContextsEqual(getActiveStackContext(snapshot), getActiveStackContext(selection))
+)
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum

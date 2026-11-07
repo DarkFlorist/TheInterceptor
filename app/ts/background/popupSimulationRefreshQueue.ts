@@ -5,6 +5,7 @@ import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type Simul
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { getActiveStackContext } from '../utils/activeStackContext.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
@@ -69,8 +70,8 @@ export async function queuePopupSimulationRefresh(services: PopupSimulationRefre
 	const revision = block === undefined ? Symbol('uncached block') : stringifyJSONWithBigInts([
 		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
 		block.hash,
-		snapshot.numberOfAddressesMadeRich,
-		snapshot.activeStackContext,
+		snapshot.richAddresses.length,
+		getActiveStackContext(snapshot),
 	])
 	return await refreshRevision({ ...services, revision, snapshot })
 }

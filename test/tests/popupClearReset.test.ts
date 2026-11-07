@@ -8,6 +8,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { getActiveStackContext } from '../../app/ts/utils/activeStackContext.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
@@ -440,7 +441,6 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
 		const { captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
 		const snapshot = captured ? await captureSimulationSnapshot() : undefined
-		if (captured) await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork })
 		const originalBlock = fakeEthereum.getBlock
 		const originalNumber = fakeEthereum.getBlockNumber
 		let providerReads = 0
@@ -477,8 +477,8 @@ describe('popup clear reset', () => {
 		try {
 			const snapshot = await captureSimulationSnapshot()
 			assert.equal(changed, true)
-			assert.deepEqual(snapshot.activeStackContext, { simulationMode: true })
-			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
+			assert.deepEqual(getActiveStackContext(snapshot), { simulationMode: true })
+			assert.equal(snapshot.richAddresses.length, 1)
 			assert.deepEqual(snapshot.simulationStateInput.flatMap(block => Object.keys(block.stateOverrides)), [`0x${ activeAddress.toString(16).padStart(40, '0') }`])
 		} finally { browser.storage.local.get = originalGet }
 	})

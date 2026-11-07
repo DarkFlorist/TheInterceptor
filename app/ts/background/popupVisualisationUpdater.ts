@@ -7,7 +7,7 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, recaptureSimulationStack, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getSimulationProviderForSnapshot, recaptureSimulationStack, snapshotMatchesSelection, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -19,8 +19,14 @@ import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkCha
 
 let abortController = new AbortController()
 
-// Selecting another endpoint installs new services and queues their own refresh (activeSettings.ts), so services for another endpoint must leave that network to it. Signer-only networks render passthrough without using the services.
+// Signer-only networks render passthrough without using the services.
 const servicesServeNetwork = (ethereum: EthereumClientService, network: RpcNetwork) => isSignerOnlyNetwork(network) || !getRpcNetworkChange(ethereum.getRpcEntry(), network).endpointChanged
+
+// The one rule for acting on a refresh, always read from the current settings because a queued snapshot only says what was selected at enqueue time: its services must serve the current selection, and any snapshot it would execute must still describe that selection. A selection change owns the refresh of what it selected (activeSettings.ts), and queues none for external-wallet signing, which has no stack to show, so a refresh failing this rule returns without cancelling or publishing.
+const refreshMatchesCurrentSelection = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined) => {
+	const selection = await getSettings()
+	return servicesServeNetwork(ethereum, selection.activeRpcNetwork) && (snapshot === undefined || snapshotMatchesSelection(snapshot, selection))
+}
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
@@ -89,11 +95,10 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
 			)
-			if (currentFingerprint === cachedFingerprint && (checkedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
+			if (currentFingerprint === cachedFingerprint && (checkedSnapshot.richAddresses.length === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
-		// Checked with no await before the abort: once another endpoint is selected, this refresh must not cancel or invalidate the refresh its services were replaced for.
-		const selectedNetwork = snapshot?.activeRpcNetwork ?? (await getSettings()).activeRpcNetwork
-		if (!servicesServeNetwork(ethereum, selectedNetwork)) return await getPopupVisualisationState()
+		// Nothing awaits between this check and the abort, so a refresh left behind by a selection change never cancels or invalidates the current selection's refresh. Only a supplied snapshot is checked: without one, execution reads the selection itself.
+		if (!await refreshMatchesCurrentSelection(ethereum, snapshot)) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
@@ -150,11 +155,11 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const simulationId = popupVisualisation.simulationId + 1
 			// The stack can change while a refresh waits, including after a supplied snapshot was captured: stack edits refresh directly, and onlyIfNotAlreadyUpdating edits skip their refresh while this one runs.
 			const capturedSnapshot = snapshot === undefined ? await captureSimulationSnapshot() : await recaptureSimulationStack(snapshot)
-			// Another endpoint was selected after this refresh committed; its services' own refresh publishes it.
-			if (!servicesServeNetwork(ethereum, capturedSnapshot.activeRpcNetwork)) return
+			// The selection can change after this refresh committed, including between the read above and this check.
+			if (!await refreshMatchesCurrentSelection(ethereum, capturedSnapshot)) return
 			const simulationState = await getUpdatedSimulationState(ethereum, capturedSnapshot)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
-			const numberOfAddressesMadeRich = capturedSnapshot.numberOfAddressesMadeRich
+			const numberOfAddressesMadeRich = capturedSnapshot.richAddresses.length
 			if (simulationState.kind === 'passthrough') {
 				const newState = buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich)
 				await setPopupVisualisationState(newState)
