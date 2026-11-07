@@ -15,14 +15,14 @@ import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSigner
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
-import { checksummedAddress, generate256BitRandomBigInt, stringToAddress, stringifyJSONWithBigInts } from '../utils/bigint.js'
+import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
 import { isAddress } from '../utils/ethereumPrimitives.js'
 import { getIssueWithAddressString } from '../utils/addressValidation.js'
 import type { Website } from '../types/websiteAccessTypes.js'
@@ -526,17 +526,8 @@ type ConfirmTransactionMetadataDependencies = {
 	readonly visualisation?: OpenConsumerVisualisationDependencies
 }
 
-// The parts of a confirmation's result that its simulation run decides. A metadata refresh rewrites only the names around them, so two results with the same parts are the same run, whichever names either holds.
-const getSimulationRunParts = (popupVisualisation: ConfirmTransactionTransactionSingleVisualization) => stringifyJSONWithBigInts({
-	statusCode: popupVisualisation.statusCode,
-	confirmationRunId: popupVisualisation.data.confirmationRunId,
-	simulationStartedTimestamp: popupVisualisation.data.simulationStartedTimestamp,
-	transactionToSimulate: popupVisualisation.data.transactionToSimulate,
-	// The simulation's results, without the time visualizeSimulatorState stamps on them again at every metadata refresh.
-	simulationState: { ...popupVisualisation.data.simulationState, simulationConductedTimestamp: undefined },
-	error: popupVisualisation.statusCode === 'failed' ? popupVisualisation.data.error : undefined,
-})
-const isSameSimulationRun = (first: ConfirmTransactionTransactionSingleVisualization, second: ConfirmTransactionTransactionSingleVisualization) => getSimulationRunParts(first) === getSimulationRunParts(second)
+// No two runs share an id, across background restarts too, so equal ids mean the same run, whatever names or timestamps a metadata refresh stored on it since. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
+const isSameConfirmationRun = (first: ConfirmationRunId, second: ConfirmationRunId) => first.lifetime === second.lifetime && first.sequence === second.sequence
 
 // Counts started confirmation metadata refreshes, so only the latest started one stores and sends its lookups; see refreshPopupConfirmTransactionMetadata and "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 let latestConfirmationMetadataRefresh = 0
@@ -601,8 +592,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				if (refreshedPopupVisualisation === undefined) return
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
-					// A simulation run stored during the metadata lookups has another id even within the same second, so the metadata of the older run must not replace it. Ids can repeat across a background restart, so the stored run must also have the simulation this refresh read; the names another refresh stored meanwhile don't count. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
-					if (!isSameSimulationRun(current.popupVisualisation, popupVisualisation)) return current
+					// A simulation run stored during the metadata lookups has another id even within the same second or after a background restart, so the metadata of the older run must not replace it. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
+					if (!isSameConfirmationRun(current.popupVisualisation.data.confirmationRunId, popupVisualisation.data.confirmationRunId)) return current
 					// Overlapping metadata refreshes, such as after two address-book changes, share the run and its id, so the run id alone would let an older refresh that finishes last store names from the older address book. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 					if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return current
 					return modifyObject(current, { popupVisualisation: refreshedPopupVisualisation })

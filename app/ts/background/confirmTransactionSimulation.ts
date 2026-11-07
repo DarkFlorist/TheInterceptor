@@ -3,7 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
@@ -20,11 +20,13 @@ import { getInterceptorTransactionStack, getTabState } from './storageVariables.
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
-let latestConfirmationRunId = 0
-// Every confirmation simulation run gets a new id, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, because it is only compared for equality. After a restart the counter starts over from the clock, above every id handed out before, unless the earlier session ran ahead of the clock by more than the restart took (more than one run per millisecond) or the clock moved back; for that case the metadata refresh also requires the stored run to have the simulation it read. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
-function getNextConfirmationRunId() {
-	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
-	return latestConfirmationRunId
+// Every confirmation simulation run gets an id no other run ever has, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from any other. The sequence numbers the runs of this background lifetime and starts over after a restart, and the random lifetime keeps a run of this lifetime from taking the id of a run stored before the restart. The id reads neither the clock nor storage. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
+const confirmationRunLifetime = crypto.randomUUID()
+let latestConfirmationRunSequence = 0
+
+function getNextConfirmationRunId(): ConfirmationRunId {
+	latestConfirmationRunSequence += 1
+	return { lifetime: confirmationRunLifetime, sequence: latestConfirmationRunSequence }
 }
 
 export async function refreshConfirmTransactionSimulation(

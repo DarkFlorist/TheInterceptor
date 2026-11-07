@@ -602,6 +602,7 @@ export const popupVisualisation = {
 			transaction: unsignedTransaction,
 		},
 		signerName: 'NoSignerDetected',
+		confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		namedTokenIds: [],

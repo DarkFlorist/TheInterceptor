@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
@@ -37,11 +37,11 @@ const FailedTransactionPreview = funtypes.ReadonlyObject({
 	parsedInputData: EnrichedEthereumInputData,
 })
 
-// Confirmations stored by versions without run ids parse as run 0, which is older than any run because getNextConfirmationRunId hands out ids from 1 upwards: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
-const ConfirmationRunId = funtypes.Union(funtypes.Number, funtypes.Undefined).withParser({
-	parse: (confirmationRunId) => ({ success: true, value: confirmationRunId ?? 0 }),
-	serialize: (confirmationRunId) => ({ success: true, value: confirmationRunId }),
-})
+// Identifies the confirmation simulation run that produced a visualisation, across background restarts too: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A confirmation stored by a version without run ids decodes as a run of no lifetime, which no run's lifetime matches: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
+export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
+const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
+const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, ConfirmationRunId>(undefined, CONFIRMATION_RUN_OF_NO_LIFETIME)))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
@@ -52,7 +52,7 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
 	// Names one confirmation simulation run of this pending transaction.
-	confirmationRunId: ConfirmationRunId,
+	confirmationRunId: ConfirmationRunIdCodec,
 }).And(funtypes.ReadonlyPartial({
 	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
 	failedTransactionPreview: FailedTransactionPreview,
