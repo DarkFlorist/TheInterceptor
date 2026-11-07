@@ -16,6 +16,7 @@ import { waitForRenderedCondition } from './preactRenderWait.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => boolean | undefined
 type TestDomNode = {
@@ -1720,12 +1721,12 @@ describe('simulation visualizer open replies', () => {
 	test('stack page asks for an RPC instead of claiming the Interceptor is disabled on a network without an RPC in simulation mode', async () => {
 		const text = await renderStackPageText(withNetworkWithoutRpc(createSimulationStackHomePageUpdate(18, 1, 'Simulation stack without RPC')))
 		assert.equal(text.includes('The Interceptor is disabled'), false)
-		assert.equal(text.includes('Signer only has no configured RPC. Select or configure an RPC for Signer only.'), true)
+		assert.equal(text.includes(getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcNeedsConfig' })), true)
 	})
 
 	test('stack page does not claim the Interceptor is disabled on a network without an RPC in signing mode', async () => {
 		const text = await renderStackPageText(withNetworkWithoutRpc(createStackHomePageUpdate(19, 1, 'Signing stack without RPC')))
 		assert.equal(text.includes('The Interceptor is disabled'), false)
-		assert.equal(text.includes('Signer only has no configured RPC. Until one is configured, the Interceptor cannot simulate requests on Signer only; in signing mode with a connected wallet they go to the wallet directly.'), true)
+		assert.equal(text.includes(getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcMayBypass' })), true)
 	})
 	})

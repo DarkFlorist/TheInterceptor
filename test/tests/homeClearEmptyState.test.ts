@@ -14,6 +14,7 @@ import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/typ
 import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SignedMessageTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -1650,8 +1651,8 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		primary: false,
 		minimized: true,
 	}
-	const interceptorDisabledText = 'Signer only is not a supported network. The Interceptor is disabled while you are using Signer only.'
-	const configureRpcText = 'Signer only has no configured RPC. Select or configure an RPC for Signer only.'
+	const interceptorDisabledText = getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcBypassToSigner' })
+	const configureRpcText = getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' })
 
 	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName'] | undefined) {
 		const dom = installDomMock()

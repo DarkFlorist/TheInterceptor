@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 type BrowserStorageState = Record<string, unknown>
 type MockTab = {
@@ -487,12 +488,12 @@ describe('extension icon deduping', () => {
 	}
 
 	test('signing mode tooltip says the Interceptor is disabled on a network without an RPC only when a signer receives the requests', async () => {
-		assert.equal(await getSigningTooltipOnNetworkWithoutRpc('MetaMask'), 'Signer only is not a supported network. The Interceptor is disabled while you are using Signer only.')
+		assert.equal(await getSigningTooltipOnNetworkWithoutRpc('MetaMask'), getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcBypassToSigner' }))
 	})
 
 	test('signing mode tooltip asks for an RPC on a network without an RPC when no signer is available', async () => {
 		const title = await getSigningTooltipOnNetworkWithoutRpc('NoSigner')
 		assert.equal(title.includes('The Interceptor is disabled'), false)
-		assert.equal(title, 'Signer only has no configured RPC. Select or configure an RPC for Signer only.')
+		assert.equal(title, getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcNeedsConfig' }))
 	})
 })

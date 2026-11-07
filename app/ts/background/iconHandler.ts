@@ -9,10 +9,10 @@ import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { assertNever, modifyObject } from '../utils/typescript.js'
+import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 import { getPrettySignerName, isSignerMissing } from '../utils/signerMetadata.js'
-import { getNetworkWithoutRpcWarningState } from '../utils/requestRouting.js'
+import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText } from '../utils/networkWithoutRpcUi.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
@@ -137,14 +137,9 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		}
 		if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
 		const tabState = await getTabState(tabId)
-		const networkName = settings.activeRpcNetwork.name
 		const networkWithoutRpcWarningState = getNetworkWithoutRpcWarningState(settings.activeRpcNetwork, settings.simulationMode, isSignerMissing(tabState.signerName) ? 'missing' : 'available')
-		switch (networkWithoutRpcWarningState.kind) {
-			case 'none': return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
-			case 'noRpcNeedsConfig': return setIcon(ICON_SIGNING_NOT_SUPPORTED, `${ networkName } has no configured RPC. Select or configure an RPC for ${ networkName }.`)
-			case 'noRpcBypassToSigner': return setIcon(ICON_SIGNING_NOT_SUPPORTED, `${ networkName } is not a supported network. The Interceptor is disabled while you are using ${ networkName }.`)
-			default: return assertNever(networkWithoutRpcWarningState)
-		}
+		if (networkWithoutRpcWarningState.kind !== 'none') return setIcon(ICON_SIGNING_NOT_SUPPORTED, getNetworkWithoutRpcWarningText(settings.activeRpcNetwork.name, networkWithoutRpcWarningState))
+		return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 	})
 }
 
