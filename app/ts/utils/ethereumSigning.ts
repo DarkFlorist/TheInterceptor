@@ -2,7 +2,7 @@ import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
 import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
-import { bytesFromHex, bytesFromHexOrBytes, ensureHex, isHexString, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
+import { bytesFromHex, bytesFromHexOrBytes, ensureHex, hexOrUtf8StringToBytes, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
 import { encodeAbiParameters } from './ethereumPrimitiveCore.js'
 import { normalizeSignatureYParity } from './ethereumSignature.js'
 import { isRecord } from './runtimeTypeGuards.js'
@@ -48,13 +48,7 @@ const bytesFromTypedDataPrimitive = (value: unknown): Uint8Array => {
 	if (value instanceof Uint8Array) return value
 	if (typeof value === 'boolean') return new Uint8Array([value ? 1 : 0])
 	if (typeof value === 'number' || typeof value === 'bigint') return integerToMinimalBytes(value)
-	if (typeof value === 'string') {
-		if (isHexString(value)) {
-			const hex = value.slice(2)
-			return hexToBytes(hex.length % 2 === 0 ? hex : `0${ hex }`)
-		}
-		return utf8ToBytes(value)
-	}
+	if (typeof value === 'string') return hexOrUtf8StringToBytes(value)
 	return utf8ToBytes(String(value))
 }
 

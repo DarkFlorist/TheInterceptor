@@ -5,6 +5,7 @@ import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { checksummedAddress } from '../utils/bigint.js'
+import { normalizeSignatureYParity } from '../utils/ethereumSignature.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
 // Some clients return bare `0x` for an empty storage slot. Accept it as zero; RPC replies still serialize through EthereumBytes32's canonical 32-byte form.
@@ -346,6 +347,43 @@ const EthSign = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, funtypes.String),
 }).asReadonly()
 
+type RecoverableMessageSignatureParts = { readonly r: bigint, readonly s: bigint, readonly yParity: number }
+const EIP2098_S_MASK = (1n << 255n) - 1n
+const RecoverableMessageSignatureParser: funtypes.ParsedValue<funtypes.String, RecoverableMessageSignatureParts>['config'] = {
+	parse: value => {
+		const match = /^0x([a-fA-F0-9]{64})([a-fA-F0-9]{64})(00|01|1[bBcC])?$/.exec(value)
+		const [, r, s, recoveryByte] = match ?? []
+		if (r === undefined || s === undefined) return { success: false, message: `${ value } is neither a 65 byte signature with a 0, 1, 27 or 28 recovery byte nor a 64 byte EIP-2098 compact signature.` }
+		if (recoveryByte === undefined) {
+			// EIP-2098 compact signatures carry yParity in the top bit of s.
+			const yParityAndS = BigInt(`0x${ s }`)
+			return { success: true, value: { r: BigInt(`0x${ r }`), s: yParityAndS & EIP2098_S_MASK, yParity: Number(yParityAndS >> 255n) } }
+		}
+		return { success: true, value: { r: BigInt(`0x${ r }`), s: BigInt(`0x${ s }`), yParity: normalizeSignatureYParity({ v: Number.parseInt(recoveryByte, 16) }) } }
+	},
+	serialize: value => ({ success: true, value: `0x${ value.r.toString(16).padStart(64, '0') }${ value.s.toString(16).padStart(64, '0') }${ (27 + value.yParity).toString(16) }` }),
+}
+
+// A 65 byte r || s || v signature or a 64 byte EIP-2098 compact signature. Every encoding parses to the same r, s and yParity, so equivalent signatures compare equal regardless of the dapp's convention.
+export type RecoverableMessageSignature = funtypes.Static<typeof RecoverableMessageSignature>
+export const RecoverableMessageSignature = funtypes.String.withParser(RecoverableMessageSignatureParser)
+
+const PersonalEcRecoverMessageAndSignature = funtypes.ReadonlyTuple(funtypes.String, RecoverableMessageSignature) // message (0x-prefixed hex bytes or UTF-8 text), signature
+// MetaMask reads only the first two parameters and ignores any others, so extra parameters must not turn a request it answers into an error. funtypes validates the ReadonlyArray before calling parse, so a missing or non-array params fails parsing (answered with invalid params) instead of reaching params.slice.
+const PersonalEcRecoverParams = funtypes.ReadonlyArray(funtypes.Unknown).withParser({
+	parse: params => PersonalEcRecoverMessageAndSignature.safeParse(params.slice(0, 2)),
+	serialize: ([message, signature]) => {
+		const serializedSignature = RecoverableMessageSignature.safeSerialize(signature)
+		return serializedSignature.success ? { success: true, value: [message, serializedSignature.value] } : serializedSignature
+	},
+})
+
+export type PersonalEcRecover = funtypes.Static<typeof PersonalEcRecover>
+export const PersonalEcRecover = funtypes.ReadonlyObject({
+	method: funtypes.Literal('personal_ecRecover'),
+	params: PersonalEcRecoverParams,
+}).asReadonly()
+
 export type SimulationStackVersion = funtypes.Static<typeof SimulationStackVersion>
 export const SimulationStackVersion = funtypes.Union(funtypes.Literal('1.0.0'), funtypes.Literal('1.0.1'), funtypes.Literal('2.0.0'))
 
@@ -508,6 +546,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthGetStorageAtParams,
 	EthGetLogsParams,
 	EthSign,
+	PersonalEcRecover,
 	EthSimulateV1Params,
 	WalletAddEthereumChain,
 	WalletWatchAsset,
