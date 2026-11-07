@@ -2,7 +2,7 @@ import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
 import { isAbiDataDecodeError, keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
-import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { EthereumClientService, fitsInRpcBlock, getGasLeftInRpcBlock, getGasUsedInLastRpcBlock } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { addressString, bigintToUint8Array, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
@@ -449,6 +449,34 @@ describe('SimulationModeEthereumClientService', () => {
 
 			const serialized = serialize(EthereumJsonRpcRequest, prepared.request)
 			assert.doesNotThrow(() => JSON.stringify(serialized))
+		})
+
+		test('prepareEthSimulateV1Input fills RPC blocks by fitsInRpcBlock, the rule that the appended gas estimate uses', async () => {
+			const blockGasLimit = 30_000_000n
+			const gases = [10_000_000n, 15_000_000n, 5_000_000n, 1n, 29_999_999n, 30_000_000n]
+			const [inputBlock] = createSimulationStateInput()
+			const input = [{ ...inputBlock, transactions: gases.map((gas, nonce) => ({ ...inputBlock.transactions[0], signedTransaction: mockSignTransaction({ ...exampleTransaction, nonce: BigInt(nonce), gas }) })) }]
+			const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined)
+			// The RPC blocks that the shared rule fills, transaction by transaction.
+			const ruleRpcBlocks: bigint[][] = []
+			let usedGas = 0n
+			for (const gas of gases) {
+				const currentRpcBlock = ruleRpcBlocks[ruleRpcBlocks.length - 1]
+				if (currentRpcBlock !== undefined && fitsInRpcBlock(usedGas, gas, blockGasLimit)) {
+					currentRpcBlock.push(gas)
+					usedGas += gas
+				} else {
+					ruleRpcBlocks.push([gas])
+					usedGas = gas
+				}
+			}
+
+			assert.deepEqual(prepared.rpcBlocks.map((block) => block.transactions.map((transaction) => transaction.signedTransaction.gas)), ruleRpcBlocks)
+			assert.deepEqual(ruleRpcBlocks, [[10_000_000n, 15_000_000n, 5_000_000n], [1n, 29_999_999n], [30_000_000n]])
+			assert.equal(getGasUsedInLastRpcBlock(prepared), 30_000_000n)
+			assert.equal(getGasLeftInRpcBlock(getGasUsedInLastRpcBlock(prepared), blockGasLimit), 0n)
+			assert.equal(fitsInRpcBlock(29_999_999n, 1n, blockGasLimit), true)
+			assert.equal(fitsInRpcBlock(29_999_999n, 2n, blockGasLimit), false)
 		})
 
 		test('prepareEthSimulateV1Input strips authorization authority metadata but preserves signatures', async () => {

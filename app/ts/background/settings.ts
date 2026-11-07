@@ -71,18 +71,23 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
+const SETTINGS_STORAGE_KEYS = [
+	'independentActiveSimulationAddress',
+	'activeSigningSafeAddress',
+	'openedPageV2',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'simulationMode',
+	'activeRpcNetwork',
+]
+
 export async function getSettings() : Promise<Settings> {
+	return await getSettingsFromStoredItems(await silenceChromeUnCaughtPromise(browser.storage.local.get(SETTINGS_STORAGE_KEYS)))
+}
+
+async function getSettingsFromStoredItems(storedItems: Readonly<Record<string, unknown>>): Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
-		'independentActiveSimulationAddress',
-		'activeSigningSafeAddress',
-		'openedPageV2',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'simulationMode',
-		'activeRpcNetwork',
-	]))
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
@@ -326,4 +331,25 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
-export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
+export const getPreSimulationBlockTimeManipulation = async() => getPreSimulationBlockTimeManipulationFromStoredItems(await browser.storage.local.get('preSimulationBlockTimeManipulation'))
+
+function getPreSimulationBlockTimeManipulationFromStoredItems(storedItems: Readonly<Record<string, unknown>>) {
+	if (!hasOwnKey(storedItems, 'preSimulationBlockTimeManipulation')) return DEFAULT_BLOCK_MANIPULATION
+	const { preSimulationBlockTimeManipulation } = storedItems
+	const parsedItems = browserStorageLocalSafeParse({ preSimulationBlockTimeManipulation })
+	if (parsedItems === undefined) throw new Error('The stored pre-simulation block time manipulation is invalid.')
+	return parsedItems.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
+}
+
+export type SimulationSettingsSnapshot = Awaited<ReturnType<typeof getSimulationSettingsSnapshot>>
+
+// The settings, pre-simulation block time manipulation and make-me-rich settings, read in one storage call, so they form one consistent snapshot: a change saved during the read is either entirely in it or entirely after it.
+export async function getSimulationSettingsSnapshot() {
+	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([...SETTINGS_STORAGE_KEYS, 'preSimulationBlockTimeManipulation', 'makeCurrentAddressRich', 'fixedAddressRichList']))
+	const [settings, makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
+		getSettingsFromStoredItems(storedItems),
+		getParsedStorageValueOrDefaultFromItems(storedItems, 'makeCurrentAddressRich', false),
+		getParsedStorageValueOrDefaultFromItems(storedItems, 'fixedAddressRichList', []),
+	])
+	return { settings, preSimulationBlockTimeManipulation: getPreSimulationBlockTimeManipulationFromStoredItems(storedItems), makeCurrentAddressRich, fixedAddressRichList }
+}

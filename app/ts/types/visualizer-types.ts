@@ -184,6 +184,9 @@ export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
  */
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor' | 'simulated-safe-executor'
 
+// Where a transaction's gas is estimated: in a new block after the simulation, or appended to the simulation, in the RPC block that preparation puts it in, which is where wallet_sendCalls approval adds a call. The estimate of a Gnosis Safe's own call follows the same placement (estimateSafeExecutionGas).
+export type GasEstimationPlacement = 'newBlock' | 'appendedToSimulation'
+
 export type FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumTransaction>
 export const FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	website: Website,

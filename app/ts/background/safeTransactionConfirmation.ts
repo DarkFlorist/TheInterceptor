@@ -7,7 +7,7 @@ import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
-import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getPendingTransactionsAndMessagesExceptBatches, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
@@ -51,6 +51,11 @@ export type SafeTransactionConfirmationPreparation = {
  */
 async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
 	if (!isSafeExecutableRequestFromActiveAddress(transactionParams, activeAddress)) return false
+	return await isSimulationModeSafeAccount(ethereum, activeAddress)
+}
+
+// Whether the simulation runs the transactions the active address sends through the Gnosis Safe it is (isSimulationModeSafeExecution): a Gnosis Safe configured on this chain, deployed with a version Interceptor supports. A wallet_sendCalls batch decides this once for its account when it is admitted, as a single transaction does, and then runs each of its calls that the Safe can make through execTransaction through the Safe (getTransactionBatchCallGasPayment).
+export async function isSimulationModeSafeAccount(ethereum: EthereumClientService, activeAddress: bigint) {
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
 	if (!addressBookEntries.some((entry) => entry.type === 'safe' && entry.address === activeAddress)) return false
 	try {
@@ -283,7 +288,7 @@ async function createSafeSigningRequestForTransaction(
 
 	const { safeState, storedStack } = reconciledStoredSafeState
 	const firstUncommittedNonce = safeState.nonce + BigInt(storedStack?.transactions.length ?? 0)
-	const pendingSafeTransactionNonces = new Set((await getPendingTransactionsAndMessages()).flatMap((pending) => {
+	const pendingSafeTransactionNonces = new Set((await getPendingTransactionsAndMessagesExceptBatches()).flatMap((pending) => {
 		const flow = getSafePendingFlow(pending)
 		if (flow?.kind !== 'proposal') return []
 		const pendingRequest = flow.pending.safeTransaction

@@ -2,16 +2,19 @@ import type { MessageConfirmationRequest, TransactionConfirmationRequest } from 
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
+import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS } from '../utils/constants.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
-import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
+import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError, WalletSendCalls } from '../types/JsonRpc-types.js'
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
-import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
+import { answerRequestsOfClosedConfirmationWindow, openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
+import { openConfirmTransactionDialogForTransactionBatch } from './walletSendCallsConfirmation.js'
+import { canonicalizeWalletSendCalls } from './walletSendCalls.js'
+import { getWalletSendCallsBatchId } from './walletSendCallsBatchIds.js'
 import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -51,6 +54,27 @@ export async function sendTransaction(
 	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
+}
+
+// Simulation mode only: wallet_sendCalls is bound to the website, account and chain that admitted it, and its calls are only added to the simulation stack after the user approves the simulated batch.
+export async function sendCalls(
+	ethereumClientService: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	websiteTabConnections: WebsiteTabConnections,
+	activeAddress: bigint | undefined,
+	walletSendCalls: WalletSendCalls,
+	request: InterceptedRequest,
+	website: Website,
+) {
+	if (activeAddress === undefined) return { type: 'result' as const, method: walletSendCalls.method, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
+	const chainId = ethereumClientService.getChainId()
+	const canonicalWalletSendCalls = canonicalizeWalletSendCalls(walletSendCalls, activeAddress, chainId)
+	if (!canonicalWalletSendCalls.success) return { type: 'result' as const, method: walletSendCalls.method, error: canonicalWalletSendCalls.error }
+	const binding = { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId }
+	const batchId = canonicalWalletSendCalls.value.params[0].id ?? getWalletSendCallsBatchId(request.uniqueRequestIdentifier)
+	const action = await openConfirmTransactionDialogForTransactionBatch(ethereumClientService, tokenPriceService, request, canonicalWalletSendCalls.value, binding, batchId, website, websiteTabConnections, answerRequestsOfClosedConfirmationWindow(ethereumClientService, tokenPriceService, websiteTabConnections))
+	if (action.type === 'doNotReply') return action
+	return { method: walletSendCalls.method, ...action }
 }
 
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthCallParams, from: bigint) {

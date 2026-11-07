@@ -132,6 +132,14 @@ export type PreparedEthSimulateV1Input = {
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }
+
+// The rule by which prepareEthSimulateV1Input fills the RPC blocks of a simulated block: a transaction joins the RPC block being filled while its gas fits in what that block has left of the block gas limit, and starts the next RPC block otherwise. A gas estimate for a transaction appended to a simulation applies the same rule, so it estimates the transaction in the RPC block that preparation puts it in.
+export const getGasLeftInRpcBlock = (usedGas: bigint, blockGasLimit: bigint) => usedGas >= blockGasLimit ? 0n : blockGasLimit - usedGas
+export const fitsInRpcBlock = (usedGas: bigint, transactionGas: bigint, blockGasLimit: bigint) => transactionGas <= getGasLeftInRpcBlock(usedGas, blockGasLimit)
+
+// The gas used by the last RPC block of a prepared input, which a transaction appended to the input joins if it fits.
+export const getGasUsedInLastRpcBlock = (prepared: PreparedEthSimulateV1Input) => getTotalExecutedGasLimit(prepared.rpcBlocks[prepared.rpcBlocks.length - 1]?.transactions ?? [])
+
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
@@ -363,7 +371,7 @@ export class EthereumClientService {
 			for (const transaction of currentTransactions) {
 				const { gas } = getExecutedTransaction(transaction)
 				if (gas > gasLimit) throw new Error(`Transaction gas ${ gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
-				if (currentChunkGasSum + gas <= gasLimit) {
+				if (fitsInRpcBlock(currentChunkGasSum, gas, gasLimit)) {
 					currentChunk.push(transaction)
 					currentChunkGasSum = currentChunkGasSum + gas
 				} else {
@@ -381,8 +389,9 @@ export class EthereumClientService {
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
 		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []
 		for (const inputBlock of gasLimitedInput) {
-			if (getTotalExecutedGasLimit(inputBlock.transactions) > parentBlock.gasLimit) {
-				const splitted = splitTransactionsByGasLimit(inputBlock.transactions, parentBlock.gasLimit)
+			// A block whose transactions all fit in one RPC block by fitsInRpcBlock is kept as it is, so empty blocks keep their messages and state overrides.
+			const splitted = splitTransactionsByGasLimit(inputBlock.transactions, parentBlock.gasLimit)
+			if (splitted.length > 1) {
 				for (const [index, transactions] of splitted.entries()) {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
