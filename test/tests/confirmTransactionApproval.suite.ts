@@ -1315,7 +1315,7 @@ for (const action of ['reject', 'noResponse'] as const) {
 	})
 }
 
-// Whether a resolution answered while an RPC is held, which a resolution that awaits a view update under its lock does not.
+// Whether a resolution answered while an RPC is held, which a resolution that awaits a view update under its resolution lock does not.
 const answersWithoutTheRpc = async (resolution: Promise<unknown>) => await Promise.race([resolution.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500))])
 
 const getRejections = (postedMessages: readonly unknown[]) => postedMessages.filter((message) => isRecord(message) && isRecord(message.error) && message.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST)
@@ -1383,7 +1383,7 @@ for (const safeReturn of ['blocked', 'error'] as const) {
 	test(`a Gnosis Safe ${ safeReturn } return shows its status, and closing the window delivers the rejection, while the block number is unanswered`, async () => {
 		const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 		const { safePending } = await setUpSafeProposal()
-		// Gnosis Safe validation reads the block number itself, which belongs under the lock, so the error used here is the one found before any RPC: a proposal with no signer.
+		// Gnosis Safe validation reads the block number itself, which belongs under the resolution lock of the approval and not under the commit lock, so the error used here is the one found before any RPC: a proposal with no signer.
 		const { safeSignerAddress: _safeSignerAddress, ...safeTransactionWithoutSigner } = safePending.safeTransaction
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safeReturn === 'error' ? { ...safePending, safeTransaction: safeTransactionWithoutSigner, approvalStatus: { status: 'WaitingForSigner' } } : safePending] })
 		const stalled = createSuspendedServices('eth_blockNumber')

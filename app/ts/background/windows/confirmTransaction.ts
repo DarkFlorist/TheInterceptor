@@ -286,7 +286,7 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// A resolution holds its request's lock, and a rejection or a closed window waits for that lock, so nothing in a resolution awaits an RPC to update the window. The window is told to read what is stored, which needs no RPC and reaches it before anything the resolution does next, such as prompting the wallet. The view update, which does need an RPC, is started without being awaited: the reply to the window would wait for it too, and that reply is what enables the reject button again.
+// A request has two locks: the resolution lock keeps its approvals and signer replies one at a time, and the short commit lock of commitIfStillPending orders their final commits against a rejection. A rejection or a closed window takes only the commit lock, so it bypasses preparation, and nothing here holds that lock. A resolution still awaits no RPC to update the window, as a queued approval or signer reply would wait for it under the resolution lock. The window is told to read what is stored, which needs no RPC and reaches it before anything the resolution does next, such as prompting the wallet. The view update, which does need an RPC, is started without being awaited, which keeps the reply to the approval prompt: that reply is what enables the reject button again.
 async function showStoredStateAndRefreshView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
 	silenceChromeUnCaughtPromise(updateConfirmTransactionView(ethereum, tokenPriceService))
@@ -321,7 +321,7 @@ type GetInstalledServices = () => Pick<SimulationServices, 'ethereum' | 'tokenPr
 const pendingTransactionOrMessageResolutionScope = {}
 const serializePendingTransactionOrMessageResolution = createScopedKeyedSerialExecutor<typeof pendingTransactionOrMessageResolutionScope, string>()
 
-// Resolutions of one request can overlap, for example when duplicate confirmation windows both approve it or a double click sends two approvals. They run one at a time on freshly read state, so a later approval sees that the first one already forwarded the request to the signer, or added it to the simulation stack and removed it.
+// Approvals and signer replies of one request can overlap, for example when duplicate confirmation windows both approve it or a double click sends two approvals. They run one at a time under this resolution lock on freshly read state, so a later approval sees that the first one already forwarded the request to the signer, or added it to the simulation stack and removed it.
 async function resolvePendingTransactionOrMessageSerially<T>(uniqueRequestIdentifier: UniqueRequestIdentifier, resolve: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<T>) {
 	return await serializePendingTransactionOrMessageResolution(pendingTransactionOrMessageResolutionScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
 		const pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
@@ -378,10 +378,10 @@ async function cancelPendingTransactionOrMessage(ethereum: EthereumClientService
 // A wallet-confirmed Gnosis Safe signer selection, with the confirmation run reserved for the rebuild it may need.
 type SafeSignerRefreshAtApproval = { readonly selection: RefreshedSafeSignerSelection, readonly confirmationRun: ConfirmationRunId }
 
-// Forwarding to the signer only posts the request, so the lock is not held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited.
+// Forwarding to the signer only posts the request, so neither lock is held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited.
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, safeRebuildRun?: ConfirmationRunId, getInstalledServices: GetInstalledServices = () => ({ ethereum, tokenPriceService })) {
 	const safeSignerRefresh = refreshedSafeSignerSelection === undefined ? undefined : { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun ?? reserveConfirmationRun() }
-	// The window work after a request leaves the queue needs an RPC, so it runs once the lock is released.
+	// The window work after a request leaves the queue needs an RPC, so it runs once the resolution lock is released.
 	const stepsAfterResolution: (() => Promise<void>)[] = []
 	try {
 		if (confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse') return await cancelPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation.data.uniqueRequestIdentifier, confirmation.data.action, stepsAfterResolution)
