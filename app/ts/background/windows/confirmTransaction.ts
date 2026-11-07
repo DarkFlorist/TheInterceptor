@@ -296,6 +296,9 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 async function invalidateTransactionApproval(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: TransactionNetworkError) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
 	const { ethereum, tokenPriceService } = getInstalledServices()
+	await reevaluateStoredNetworkRefusals(ethereum)
+	// The view update needs an RPC that can fail or hang, so the window is first told to read what is stored, which needs none.
+	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_refusal_updated' }, 'confirmTransaction')
 	await updateConfirmTransactionView(ethereum, tokenPriceService)
 	return false
 }

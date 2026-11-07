@@ -826,7 +826,7 @@ export function ConfirmTransaction() {
 		}
 	}
 
-	// The background updates stored network refusals before it reports a chain change, and storage answers without waiting for the RPC of the new network. A push or a later read that arrives during the read is newer than its result, so the result is dropped: it could otherwise re-enable approval of a request that is already waiting for the signer.
+	// The background updates stored network refusals before it reports a chain change or a refusal, and storage answers without waiting for an RPC. A push or a later read that arrives during the read is newer than its result, so the result is dropped: it could otherwise re-enable approval of a request that is already waiting for the signer.
 	const showStoredPendingTransactions = async () => {
 		latestPendingDataUpdate.value += 1
 		const thisRead = latestPendingDataUpdate.value
@@ -857,7 +857,7 @@ export function ConfirmTransaction() {
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 				return false
 			}
-			if (parsed.method === 'popup_chain_update') {
+			if (parsed.method === 'popup_chain_update' || parsed.method === 'popup_confirm_transaction_refusal_updated') {
 				showStoredPendingTransactions()
 				return false
 			}

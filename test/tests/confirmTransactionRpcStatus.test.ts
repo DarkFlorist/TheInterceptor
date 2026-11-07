@@ -637,7 +637,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 	})
 
 	// The real background and the real window in one process: what the background sends reaches the window in order, and the only things held are the block number of the network the user left and, if asked, the window's own read.
-	async function setUpApprovalOnOtherNetwork(shouldHoldClearingRead: boolean) {
+	async function setUpApprovalOnOtherNetwork(shouldHoldClearingRead: boolean, blockNumbers: { readonly onRequestedNetwork?: () => Promise<unknown>, readonly otherNetworkFails?: boolean } = {}) {
 		const dom = installDomMock()
 		let relayingChainUpdate = false
 		const browser = installBrowserMock(async (message) => {
@@ -673,10 +673,11 @@ describe('confirm transaction rpc status bootstrap', () => {
 			}, async () => undefined, async () => undefined, rpcNetwork)
 			return { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) }
 		}
-		const requestedServices = createServices(requestedNetwork, async () => undefined)
+		const requestedServices = createServices(requestedNetwork, blockNumbers.onRequestedNetwork ?? (async () => undefined))
 		const otherServices = createServices(otherNetwork, async () => {
 			blockNumberReached.resolve(undefined)
 			await blockNumberReleased.promise
+			if (blockNumbers.otherNetworkFails === true) throw new TypeError('Failed to fetch')
 		})
 		const simulationServicesOwner = createTestSimulationServicesOwner(requestedServices, (network) => network.chainId === otherNetwork.chainId ? otherServices : requestedServices)
 		const switchNetwork = async (rpcNetwork: typeof requestedNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork })
@@ -736,8 +737,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 		})
 	}
 
-	test('an approval queued on the other network is still refused after a switch back, and its refusal does not stay', async () => {
-		const race = await setUpApprovalOnOtherNetwork(false)
+	// Both approvals take the other network's services, and the second waits behind the first, whose window update waits for that network's block number.
+	async function approveTwiceOnOtherNetwork(race: Awaited<ReturnType<typeof setUpApprovalOnOtherNetwork>>) {
 		const { confirmDialog } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { websiteSocketToString } = await import('../../app/ts/background/backgroundUtils.js')
 		const { createPort } = await import('./backgroundEthAccountsTestHarness.js')
@@ -746,9 +747,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const { port, messages } = createPort(socket.tabId)
 		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true } } }]])
 		const approve = async () => await confirmDialog(race.simulationServicesOwner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+		return { approvals: Promise.all([approve(), approve()]), reachedWallet: () => messages.some((message) => message.type === 'forwardToSigner') }
+	}
 
-		// Both approvals take the other network's services, and the second waits behind the first, whose window update waits for that network's block number.
-		const approvals = Promise.all([approve(), approve()])
+	test('an approval queued on the other network is still refused after a switch back, and its refusal does not stay', async () => {
+		const race = await setUpApprovalOnOtherNetwork(false)
+		const { approvals, reachedWallet } = await approveTwiceOnOtherNetwork(race)
 		await race.blockNumberReached
 		await race.settle()
 		assert.equal((await race.getStoredApprovalStatus())?.status, 'SignerError')
@@ -761,10 +765,46 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await act(async () => { await race.settle() })
 
 		await race.expectNoRefusalShown()
-		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+		assert.equal(reachedWallet(), false)
 		await unmountConfirmTransaction(race.dom)
 		race.dom.restore()
 	})
+
+	// The clearing read of the switch is held, so the window keeps the refusal until the queued approval tells it what is stored, and neither block number ever arrives to let a view update publish.
+	for (const installedRpc of ['failing', 'hanging'] as const) {
+		test(`the window learns that a queued refusal was lifted while the RPC of the installed network is ${ installedRpc }`, async () => {
+			const { createDeferredValue } = await import('./backgroundEthAccountsTestHarness.js')
+			const hangingBlockNumber = createDeferredValue<undefined>()
+			const race = await setUpApprovalOnOtherNetwork(true, {
+				otherNetworkFails: true,
+				onRequestedNetwork: async () => {
+					if (installedRpc === 'failing') throw new TypeError('Failed to fetch')
+					await hangingBlockNumber.promise
+				},
+			})
+			const { approvals, reachedWallet } = await approveTwiceOnOtherNetwork(race)
+			await race.blockNumberReached
+			await act(async () => { await race.settle() })
+			assert.equal(race.dom.document.body.textContent?.includes('The active network changed'), true)
+
+			await race.switchBack()
+			assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
+			await act(async () => { await race.settle() })
+			assert.equal(race.reads.count, 1)
+			assert.equal(race.dom.document.body.textContent?.includes('The active network changed'), true)
+
+			race.releaseBlockNumber()
+			await act(async () => { await race.settle() })
+
+			await race.expectNoRefusalShown()
+			assert.equal(reachedWallet(), false)
+			hangingBlockNumber.resolve(undefined)
+			await approvals
+			await act(async () => { await race.reads.release(0) })
+			await unmountConfirmTransaction(race.dom)
+			race.dom.restore()
+		})
+	}
 
 	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()
