@@ -1,8 +1,24 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import { withSilencedConsole } from './consoleSilence.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
+
+async function captureConsoleWarnings(run: () => Promise<unknown>) {
+	const warnings: unknown[][] = []
+	const originalWarn = console.warn
+	console.warn = (...args: unknown[]) => { warnings.push(args) }
+	try {
+		await run()
+	} finally {
+		console.warn = originalWarn
+	}
+	return warnings
+}
+
+// Logged funtypes failures are nested string arrays; the logged request objects are skipped.
+const getLoggedValidationFailures = (warnings: readonly unknown[][]) => JSON.stringify(warnings.flat().filter((value) => Array.isArray(value)))
 
 describe('background eth_accounts', () => {
 	test('resolves an access prompt with the services installed after it opened', async () => {
@@ -340,7 +356,7 @@ describe('background eth_accounts', () => {
 		})
 	})
 
-	test('returns wallet_watchAsset parse errors before the Safe signing-mode fallback', async () => {
+	test('returns method-specific parse errors before the Safe signing-mode fallback and the Safe policy before invalid params errors', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -397,6 +413,126 @@ describe('background eth_accounts', () => {
 			type: 'result',
 			method: 'wallet_watchAsset',
 			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
+		})
+
+		// Malformed supported methods, including Safe message signing and transaction methods, get the Safe signing-mode policy reply exactly like unsupported methods, so a page cannot tell them apart.
+		for (const [requestId, method, params] of [
+			[3, 'eth_getBalance', ['0x1111111111111111111111111111111111111111']],
+			[4, 'personal_sign', ['0xdeadbeef', '0x1234']],
+			[5, 'eth_sendTransaction', [{ from: '0x1111111111111111111111111111111111111111', to: '0x1234' }]],
+			[6, 'eth_unsupportedMethod', ['0x1']],
+		] as const) {
+			await withSilencedConsole(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method,
+				params: [...params],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus))
+
+			const safePolicyReply = messages.at(-1)
+			assert.equal(safePolicyReply?.requestId, requestId, method)
+			assert.equal(safePolicyReply?.method, method)
+			assert.deepEqual(safePolicyReply?.error, { code: 4200, message: 'This RPC method is not supported while a Gnosis Safe is the active signing account.' }, method)
+		}
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+	})
+
+	test('returns readable invalid params errors for malformed supported methods', async () => {
+		installBrowserMock()
+		const { defaultActiveAddresses, handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: defaultActiveAddresses[0]?.address, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const address = '0x1111111111111111111111111111111111111111'
+
+		const requestUnionParse = spyOn(EthereumJsonRpcRequest, 'safeParse')
+		try {
+			for (const [requestId, method, params, message] of [
+				[1, 'eth_getBalance', [address, 'latest', '0x1'], 'eth_getBalance expects 2 parameters (address, block tag), but received 3.'],
+				[2, 'eth_sendTransaction', [{ from: address, to: '0x1234', value: '0x1' }], 'Invalid eth_sendTransaction parameter 1 (transaction object) field "to": expected a 20-byte hex address, but received "0x1234".'],
+				[3, 'eth_getBlockByNumber', ['newest', false], 'Invalid eth_getBlockByNumber parameter 1 (block tag): expected a block number, block hash or block tag ("latest", "pending", "safe", "finalized" or "earliest"), but received "newest".'],
+			] as const) {
+				const warnings = await captureConsoleWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+					interceptorRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId, requestSocket: socket },
+					method,
+					params: [...params],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus))
+
+				assert.deepEqual(messages.at(-1), {
+					interceptorApproved: true,
+					requestId,
+					bridgeRequestSettled: true,
+					type: 'result',
+					method,
+					error: { code: -32602, message },
+				})
+				// Only the failure of the requested method's codec is logged, never the failure of the whole request union.
+				const loggedFailures = getLoggedValidationFailures(warnings)
+				assert.ok(loggedFailures.includes(method), method)
+				assert.equal(loggedFailures.includes('eth_getTransactionReceipt'), false, method)
+			}
+			assert.equal(requestUnionParse.mock.calls.length, 0)
+		} finally {
+			requestUnionParse.mockRestore()
+		}
+	})
+
+	test('keeps unsupported method parse failures unchanged', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const unsupportedRequest = (requestId: number) => ({
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId, requestSocket: socket },
+			method: 'eth_unsupportedMethod',
+			params: ['0x1'],
+		})
+
+		const warnings = await captureConsoleWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, unsupportedRequest(1), websiteTabConnections, noopPublishRpcConnectionStatus))
+		assert.ok(getLoggedValidationFailures(warnings).includes('eth_getTransactionReceipt'))
+		const simulationModeReply = messages.at(-1)
+		assert.equal(simulationModeReply?.requestId, 1)
+		assert.equal(simulationModeReply?.error?.code, -32700)
+		assert.ok(simulationModeReply?.error?.message.startsWith('Failed to parse RPC request: '))
+
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: account, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await withSilencedConsole(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, unsupportedRequest(2), websiteTabConnections, noopPublishRpcConnectionStatus))
+		assert.deepEqual(messages.at(-1), {
+			interceptorApproved: true,
+			requestId: 2,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'eth_unsupportedMethod',
+			params: ['0x1'],
 		})
 	})
 
