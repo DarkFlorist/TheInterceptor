@@ -9,7 +9,7 @@ import { TokenApprovalsVisualisation } from '../simulationExplaining/customExpla
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TokenSymbol } from '../subcomponents/coins.js'
-import { type Permit2Witness, type VisualizedPersonalSignRequest, type VisualizedPersonalSignRequestPermit, type VisualizedPersonalSignRequestPermit2, type VisualizedPersonalSignRequestPermit2Batch, type VisualizedPersonalSignRequestPermit2SignatureTransfer, type VisualizedPersonalSignRequestSafeTx, parsePermit2SignatureTransfer } from '../../types/personal-message-definitions.js'
+import type { Permit2Witness, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestPermit2Batch, VisualizedPersonalSignRequestPermit2SignatureTransfer, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -219,17 +219,14 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			tokenAmounts = { visualizedPersonalSignRequest.details }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
-		case 'Permit2SignatureTransfer': {
-			if (parsePermit2SignatureTransfer(visualizedPersonalSignRequest.message) === undefined) return <ErrorComponent text = { 'Malformed Permit2 transfer request. The signed message could not be read as a Permit2 transfer, so only its raw message is shown.' }/>
-			return <>
-				<PermitTokenApprovals
-					spender = { visualizedPersonalSignRequest.spender }
-					tokenAmounts = { visualizedPersonalSignRequest.permitted }
-					renameAddressCallBack = { renameAddressCallBack }
-				/>
-				{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }
-			</>
-		}
+		case 'Permit2SignatureTransfer': return <>
+			<PermitTokenApprovals
+				spender = { visualizedPersonalSignRequest.spender }
+				tokenAmounts = { visualizedPersonalSignRequest.permitted }
+				renameAddressCallBack = { renameAddressCallBack }
+			/>
+			{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }
+		</>
 		default: assertNever(visualizedPersonalSignRequest)
 	}
 }
@@ -365,15 +362,12 @@ function Permit2BatchExtraDetails({ permit2Batch, renameAddressCallBack }: { per
 }
 
 function Permit2SignatureTransferExtraDetails({ permit2SignatureTransfer, renameAddressCallBack }: { permit2SignatureTransfer: VisualizedPersonalSignRequestPermit2SignatureTransfer, renameAddressCallBack: RenameAddressCallBack }) {
-	const transfer = parsePermit2SignatureTransfer(permit2SignatureTransfer.message)
-	if (transfer === undefined) return <SignatureHashes domainHash = { permit2SignatureTransfer.domainHash } messageHash = { permit2SignatureTransfer.messageHash }/>
-	const { domain, message } = transfer
 	return <>
-		<PermitDomainDetails chainId = { domain.chainId } verifyingContract = { permit2SignatureTransfer.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
+		<PermitDomainDetails chainId = { permit2SignatureTransfer.chainId } verifyingContract = { permit2SignatureTransfer.verifyingContract } renameAddressCallBack = { renameAddressCallBack }/>
 		<CellElement text = 'Nonce: '/>
-		<CellElement text = { message.nonce.toString(10) }/>
+		<CellElement text = { permit2SignatureTransfer.nonce.toString(10) }/>
 		<CellElement text = 'Signature expires in: '/>
-		<CellElement text = { <PermitTimeRemaining timestampSeconds = { message.deadline }/> }/>
+		<CellElement text = { <PermitTimeRemaining timestampSeconds = { permit2SignatureTransfer.deadline }/> }/>
 		<SignatureHashes domainHash = { permit2SignatureTransfer.domainHash } messageHash = { permit2SignatureTransfer.messageHash }/>
 	</>
 }
