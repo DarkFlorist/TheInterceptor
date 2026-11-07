@@ -4,7 +4,7 @@ import type { FetchSimulationStackRequestConfirmation } from '../../types/interc
 import type { PendingFetchSimulationStackRequestPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
-import { getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
+import { clearFetchSimulationStackRequestPromiseIfOwnedBy, getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import type { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
@@ -75,13 +75,14 @@ async function runExclusiveFetchSimulationStackResolution(resolution: () => Prom
 	}
 }
 
-// The reply is prepared first so a failed extraction leaves the request stored and retryable. The clear then has to precede the close: closing the dialog can store a new request, which a later clear would wipe
+// The reply is prepared first so a failed extraction leaves the request stored and retryable. The clear precedes the close so a request arriving while the dialog closes finds the slot free instead of being refused
 async function resolveStoredRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
 	const { uniqueRequestIdentifier, simulationStackVersion, popupOrTabId } = storedRequest
 	const reply: FetchSimulationStackRequestResult = confirmation.data.accept
 		? { type: 'result', method: 'interceptor_getSimulationStack', result: await getSimulationStack(snapshot.simulationState, simulationStackVersion) }
 		: { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error }
-	await setFetchSimulationStackRequestPromise(undefined)
+	// Preparing the reply can wait on storage, so a newer request may hold the slot by now. It only got there because openFetchSimulationStackDialog found this request's dialog gone, which makes the close below a no-op in that case
+	await clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier)
 	replyToInterceptedRequest(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
 	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
 	await closePopupOrTabById(popupOrTabId)
