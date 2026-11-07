@@ -1,8 +1,9 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
@@ -626,7 +627,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
-test('refreshes the selected signer and uses services installed during the wallet wait', async () => {
+test('refreshes the selected signer while keeping the services admitted before the wallet wait', async () => {
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress
 	fakeSafeContract.owners = [configuredSigner]
@@ -665,18 +666,18 @@ test('refreshes the selected signer and uses services installed during the walle
 	const socket = uniqueRequestIdentifier.requestSocket
 	const accountRequestEntered = createDeferredValue<void>()
 	const releaseAccountReply = createDeferredValue<void>()
-	let retiredClientRequests = 0
-	const retiredEthereum = new modules.EthereumClientService({
+	let admittedClientRequests = 0
+	const admittedEthereum = new modules.EthereumClientService({
 		rpcUrl: fakeRpcNetwork.httpsRpc,
 		clearCache() { return undefined },
-		async jsonRpcRequest() {
-			retiredClientRequests++
-			throw new Error('Confirmation used services captured before the wallet refresh')
+		async jsonRpcRequest(request) {
+			admittedClientRequests++
+			return await fakeRequestHandler.jsonRpcRequest(request)
 		},
 	}, async () => undefined, async () => undefined, fakeRpcNetwork)
 	const owner = createTestSimulationServicesOwner({
-		ethereum: retiredEthereum,
-		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
+		ethereum: admittedEthereum,
+		tokenPriceService: new modules.TokenPriceService(admittedEthereum, 60_000),
 	}, () => simulator)
 	let accountReply: Promise<unknown> | undefined
 	let websiteTabConnections: Map<number, {
@@ -733,7 +734,8 @@ test('refreshes the selected signer and uses services installed during the walle
 		},
 	}]])
 
-	const confirmation = modules.confirmDialog(owner, websiteTabConnections, {
+	const admittedServices = owner.requireCurrent()
+	const confirmation = modules.confirmDialog(admittedServices.ethereum, admittedServices.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	})
@@ -742,7 +744,7 @@ test('refreshes the selected signer and uses services installed during the walle
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply
-	assert.equal(retiredClientRequests, 0)
+	assert.equal(admittedClientRequests > 0, true)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'request_signer_to_eth_accounts'), true)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -900,6 +902,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 			uniqueRequestIdentifier: requestIdentifier,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -992,6 +995,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -1033,7 +1037,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		requiredChainId: fakeRpcNetwork.chainId,
 		simulateWithZeroBaseFee: true,
 	})
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await getRequiredSettings()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash
@@ -1143,6 +1147,7 @@ test('invalid Safe owner signatures retain the request as a signer error without
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,

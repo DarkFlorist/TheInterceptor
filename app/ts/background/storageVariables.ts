@@ -1,31 +1,30 @@
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
-import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, browserStorageLocalSetPendingAndTerminalState, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
-import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
+import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import type { PendingAccessRequests, PendingSafeProposalStore, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
-import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
 
-const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
+
+const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(`${ label } was corrupt:`)
-	console.warn(error)
+	console.warn(failure)
 }
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
@@ -37,7 +36,6 @@ const idsOfOpenedTabsRepository = createStoredValueRepository({
 export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
-const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
 	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
 	if (!result.success) return result
@@ -56,12 +54,16 @@ async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonl
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	const result = await readPendingTransactionsAndMessages()
 	if (result.success) return result.value
-	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
+	return await pendingRequestTerminalStateSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
+}
+
+export async function getPendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	return (await getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
-	return await pendingTransactionsSemaphore.execute(async () => {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
 	})
@@ -76,6 +78,82 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+	})
+}
+
+async function readPendingSafeProposalStores(): Promise<readonly PendingSafeProposalStore[]> {
+	const result = await browserStorageLocalGet2Result('pendingSafeProposalStores')
+	if (!result.success) throw result.error
+	return result.value.pendingSafeProposalStores ?? []
+}
+
+// The outbox of signed Gnosis Safe proposals waiting for services for their network to be added to the Safe stack. Corrupt storage throws instead of being discarded, because the entries hold signatures the website was already told about.
+export async function getPendingSafeProposalStores() {
+	return await pendingRequestTerminalStateSemaphore.execute(readPendingSafeProposalStores)
+}
+
+// Signed Gnosis Safe proposals waiting in the outbox still hold their Safe nonces until they are added to their Safe stack, so nonce allocation and the signing order count them like pending proposals.
+export async function getOutboxSafeProposals() {
+	return (await getPendingSafeProposalStores()).map((entry) => entry.proposal)
+}
+
+// Settles a pending Safe proposal whose website reply is being queued: in one storage write the request leaves the pending queue, the terminal replies are replaced and the signed proposal enters the outbox (a no-op when the request is no longer pending).
+export async function movePendingSafeProposalToOutbox(
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore,
+	getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>,
+	// Set when the move queues a new reply: a request already answered otherwise is not moved.
+	unlessAnswered = false,
+): Promise<'moved' | 'answered' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const found = result.value.find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (found === undefined) return 'gone'
+		if (unlessAnswered && found.websiteReplyQueued === true) return 'answered'
+		const remainingPending = result.value.filter((pending) => pending !== found)
+		const outbox = (await readPendingSafeProposalStores()).filter((entry) => !doesUniqueRequestIdentifiersMatch(entry.proposal.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		await browserStorageLocalSetPendingAndTerminalState(remainingPending, await getUpdatedTerminalReplies(), [...outbox, createStore(found)])
+		return 'moved'
+	})
+}
+
+// A pending request is answered either through a queued website reply or by deferring the signature the signer returned, never both: the reply is queued together with marking the request answered (websiteReplyQueued), and each writer checks the other's mark inside the pending-request critical section and writes nothing when the other came first.
+
+// Queues the request's website reply and marks the request answered in one write, unless the request is gone, already answered (a retry after its removal failed: nothing is queued again) or holds a deferred Gnosis Safe signature other than `settledSignerReply` (the signature this reply settles). The settled signature's claim is cleared in the same write, so an answered request never also holds a claim.
+export async function queueTerminalRepliesUnlessDeferred(uniqueRequestIdentifier: UniqueRequestIdentifier, getUpdatedTerminalReplies: () => Promise<readonly InterceptedRequestForward[]>, settledSignerReply?: string): Promise<'queued' | 'already-answered' | 'deferred' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const match = result.value.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const found = result.value[match]
+		if (found === undefined) return 'gone'
+		if (found.websiteReplyQueued === true) return 'already-answered'
+		if (found.deferredSafeSignerReply !== undefined && found.deferredSafeSignerReply.signerReply !== settledSignerReply) return 'deferred'
+		const { deferredSafeSignerReply: _settledClaim, ...unclaimed } = found
+		await browserStorageLocalSetPendingAndTerminalState(replaceElementInReadonlyArray(result.value, match, { ...unclaimed, websiteReplyQueued: true }), await getUpdatedTerminalReplies())
+		return 'queued'
+	})
+}
+
+// Defers a signature the signer returned unless the request is gone or already answered.
+export async function deferSignatureUnlessAnswered(uniqueRequestIdentifier: UniqueRequestIdentifier, deferredSafeSignerReply: { readonly signerReply: string, readonly chainId: bigint }): Promise<'deferred' | 'answered' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const match = result.value.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const found = result.value[match]
+		if (found === undefined) return 'gone'
+		if (found.websiteReplyQueued === true) return 'answered'
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: replaceElementInReadonlyArray(result.value, match, { ...found, deferredSafeSignerReply }) })
+		return 'deferred'
+	})
+}
+
+export async function removePendingSafeProposalStore(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const outbox = await readPendingSafeProposalStores()
+		await browserStorageLocalSet2({ pendingSafeProposalStores: outbox.filter((entry) => !doesUniqueRequestIdentifiersMatch(entry.proposal.uniqueRequestIdentifier, uniqueRequestIdentifier)) })
 	})
 }
 
@@ -199,10 +277,9 @@ export const saveCurrentTabId = async (tabId: number) => browserStorageLocalSet(
 export const getCurrentTabId = async () => (await browserStorageLocalGet('currentTabId'))?.currentTabId ?? undefined
 
 const rpcConnectionStatusRepository = createStoredValueRepository<RpcConnectionStatus>({
-	read: async () => (await browserStorageLocalGet('rpcConnectionStatus')).rpcConnectionStatus,
+	read: async () => (await browserStorageLocalSafeParseGet('rpcConnectionStatus', reportCorruptStoredValue('Connection status')))?.rpcConnectionStatus,
 	write: async (rpcConnectionStatus) => { await browserStorageLocalSet({ rpcConnectionStatus }) },
 	getDefault: () => undefined,
-	recover: reportCorruptStoredValue('Connection status'),
 })
 export const setRpcConnectionStatus = rpcConnectionStatusRepository.set
 export const getRpcConnectionStatus = rpcConnectionStatusRepository.get
@@ -218,51 +295,9 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 	return { oldSubscriptions: previous, newSubscriptions: current }
 }
 
-const rpcListRepository = createStoredValueRepository<RpcEntries>({
-	read: async () => (await browserStorageLocalGet('rpcEntries')).rpcEntries,
-	write: async (rpcEntries) => { await browserStorageLocalSet({ rpcEntries }) },
-	getDefault: () => DEFAULT_RPCS,
-	recover: reportCorruptStoredValue('Rpc entries'),
-})
-export const setRpcList = rpcListRepository.set
-export const getRpcList = rpcListRepository.get
-
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
 
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
-
-export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	await rpcListRepository.update((rpcs) => {
-		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
-		if (selectedIndex === -1) return rpcs
-		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
-	})
-}
-
-export const getPrimaryRpcForChain = async (chainId: bigint) => {
-	const rpcs = await getRpcList()
-	const primary = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
-	if (primary) return primary
-
-	// no primary was found, try to find what ever we have for that chain id
-	const nonPrimary = rpcs.find((rpc) => rpc.chainId === chainId)
-	if (nonPrimary) return nonPrimary
-	return undefined
-}
-
-export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
-	const rpc = await getPrimaryRpcForChain(chainId)
-	if (rpc !== undefined) return rpc
-	return {
-		chainId: chainId,
-		currencyName: 'Ether?',
-		currencyTicker: 'ETH?',
-		name: getChainName(chainId),
-		httpsRpc: undefined,
-		primary: false,
-		minimized: true,
-	}
-}
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)

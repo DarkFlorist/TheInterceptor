@@ -15,7 +15,7 @@ import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/compone
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
 import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
 import { completeRpcFormMutation, removeRpcEntryAndKeepActiveRpcConsistent, saveRpcEntryAndKeepActiveRpcConsistent } from '../../app/ts/components/subcomponents/ConfigureRpcConnection.js'
-import { readAndImportSettingsFile, withObjectUrl } from '../../app/ts/components/pages/SettingsView.js'
+import { readAndImportSettingsFile, RpcConfigurationUnavailableAlert, withObjectUrl } from '../../app/ts/components/pages/SettingsView.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { installDomMock } from './domMock.js'
 import { synchronizeViewConfig, ViewSelector } from '../../app/ts/components/subcomponents/ViewSelector.js'
@@ -23,7 +23,9 @@ import { synchronizeViewConfig, ViewSelector } from '../../app/ts/components/sub
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
 	readonly getAttribute?: (name: string) => string | null
+	readonly style?: { readonly cssText?: string }
 	readonly tagName?: string
+	readonly textContent?: string
 }
 
 function collectElements(node: TestNode | undefined, tagName: string, results: TestNode[] = []) {
@@ -337,6 +339,26 @@ describe('UI boundary fixes', () => {
 		assert.equal(views.find(view => view.value === 'raw')?.isActive, true)
 		assert.equal(views.find(view => view.value === 'parsed')?.isActive, false)
 		assert.equal(views.find(view => view.value === 'parsed')?.title, 'Decoded')
+	})
+
+	test('renders the RPC configuration outage explanation in the legible warning text style', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<RpcConfigurationUnavailableAlert retryState = 'inactive' restoreDefaultsState = 'inactive' onRetry = { () => undefined } onRestoreDefaults = { () => undefined } />, dom.document.body)
+			})
+
+			const alert = collectElements(dom.document.body, 'aside').find((element) => element.getAttribute?.('role') === 'alert')
+			const explanation = collectElements(alert, 'p').find((paragraph) => paragraph.textContent?.includes('could not safely read your RPC configuration') === true)
+			assert.notEqual(explanation, undefined)
+			// Without these the paragraph inherits Bulma's dark-grey body colour and is unreadable on the dark `.report` card.
+			assert.equal(explanation?.getAttribute?.('class'), 'paragraph')
+			assert.match(explanation?.style?.cssText ?? '', /color: var\(--warning-box-color\)/)
+			assert.deepEqual(collectElements(alert, 'button').map((button) => button.textContent), ['Retry reading RPC configuration', 'Restore bundled default RPC list'])
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
 	})
 
 	test('renders warning details supplied by InlineCard callers', async () => {

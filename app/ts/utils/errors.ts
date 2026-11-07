@@ -239,6 +239,22 @@ export async function reportLocalRecovery(error: unknown, metadata: LocalRecover
 	await appendErrorDiagnostic(report)
 }
 
+// How a failure collector reports what it does not throw. surfaceFailures requires one, so a collector chooses its severity explicitly and cannot silently downgrade a report.
+export type FailureReportingLevel = (failure: unknown) => Promise<unknown>
+
+export const reportAsUnexpectedError: FailureReportingLevel = async (failure) => await reportUnexpectedError(failure)
+
+// The single "throw the first failure, report the rest" rule: every failure is surfaced exactly once, in order. With `throwFirst: false` nothing is thrown and every failure is reported, for callers without anyone to handle a rejection.
+export async function surfaceFailures(failures: readonly [unknown, ...unknown[]], report: FailureReportingLevel): Promise<never>
+export async function surfaceFailures(failures: readonly unknown[], report: FailureReportingLevel, options?: { readonly throwFirst: boolean }): Promise<void>
+export async function surfaceFailures(failures: readonly unknown[], report: FailureReportingLevel, { throwFirst }: { readonly throwFirst: boolean } = { throwFirst: true }): Promise<void> {
+	if (failures.length === 0) return
+	const [firstFailure, ...otherFailures] = failures
+	if (!throwFirst) await report(firstFailure)
+	for (const failure of otherFailures) await report(failure)
+	if (throwFirst) throw firstFailure
+}
+
 export function reportLocalRecoveryBestEffort(error: unknown, metadata: LocalRecoveryMetadata) {
 	const report = logLocalRecovery(error, metadata)
 	void appendErrorDiagnostic(report)

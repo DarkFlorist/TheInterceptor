@@ -4,16 +4,21 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type LocalStorageItems, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, serializeLocalStorageItems } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { getRpcConfigurationStateWithStorageSnapshot } from './rpcConfigurationStorage.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
+import { rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import { hasOwnKey } from '../utils/typescript.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -71,35 +76,188 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
-export async function getSettings() : Promise<Settings> {
+const SETTINGS_STORAGE_KEYS = [
+	'independentActiveSimulationAddress',
+	'activeSigningSafeAddress',
+	'openedPageV2',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'simulationMode',
+] as const
+
+const getWebsiteAccessFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>) => sanitizeWebsiteAccess(await getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []))
+
+type SettingsStorageFields = Omit<Settings, 'activeRpcNetwork'>
+
+function getStartupSettingsStorageFields(): SettingsStorageFields {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
-	const defaultPage: Page = { page: 'Home' }
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
-		'independentActiveSimulationAddress',
-		'activeSigningSafeAddress',
-		'openedPageV2',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'simulationMode',
-		'activeRpcNetwork',
-	]))
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
-	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	return {
+		activeSimulationAddress: defaultActiveAddresses[0].address,
+		activeSigningSafeAddress: undefined,
+		openedPage: { page: 'Home' },
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess: [],
+		simulationMode: defaultSimulationMode,
+	}
+}
+
+// Settings are these stored fields on an active RPC network; this is the only place the two are combined.
+const withActiveRpcNetwork = (fields: SettingsStorageFields, activeRpcNetwork: RpcNetwork): Settings => ({
+	activeSimulationAddress: fields.activeSimulationAddress,
+	activeSigningSafeAddress: fields.activeSigningSafeAddress,
+	openedPage: fields.openedPage,
+	useSignersAddressAsActiveAddress: fields.useSignersAddressAsActiveAddress,
+	websiteAccess: fields.websiteAccess,
+	activeRpcNetwork,
+	simulationMode: fields.simulationMode,
+})
+
+// The single storage-to-settings-fields conversion. Fields missing from `storedItems` take their value from `missingFieldValues`.
+async function getSettingsFieldsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, missingFieldValues: SettingsStorageFields = getStartupSettingsStorageFields()): Promise<SettingsStorageFields> {
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', missingFieldValues.activeSimulationAddress))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', missingFieldValues.activeSigningSafeAddress))
+	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', missingFieldValues.openedPage))
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', missingFieldValues.useSignersAddressAsActiveAddress))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', missingFieldValues.websiteAccess).then(sanitizeWebsiteAccess))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', missingFieldValues.simulationMode))
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
 		websiteAccessPromise,
-		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode }
+}
+
+const getSettingsFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork, missingFieldValues?: SettingsStorageFields) => withActiveRpcNetwork(await getSettingsFieldsFromStorageItems(storedItems, missingFieldValues), activeRpcNetwork)
+
+// Website approvals are stored apart from the RPC configuration, so they stay readable while settings are unavailable; `unreadable` keeps the storage error for callers that must propagate it.
+export type WebsiteApprovalsSnapshot =
+	| { readonly status: 'readable', readonly websiteAccess: WebsiteAccessArray }
+	| { readonly status: 'unreadable', readonly error: unknown }
+
+// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. Settings need an active RPC network, so `unavailable` carries only the approvals' own availability.
+export type SettingsSnapshot =
+	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
+	| { readonly status: 'unavailable', readonly rpcConfiguration: RpcConfigurationState, readonly websiteApprovals: WebsiteApprovalsSnapshot }
+
+const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
+export type CapturedRpcNetwork = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly [capturedRpcNetworkMarker]: true
+}
+
+// Long-lived mutations use this token only when later settings fields may change but the admitted RPC network must remain pinned.
+export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
+	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
+}
+
+// A re-read for an admitted operation: `storedFields` are the persisted settings fields and `admittedRpcNetwork` is the operation's own network, which can differ from the persisted RPC configuration, so it is carried separately and is never presented as live settings.
+export type AdmittedRpcNetworkSnapshot =
+	| { readonly status: 'available', readonly storedFields: SettingsStorageFields, readonly admittedRpcNetwork: CapturedRpcNetwork }
+	| { readonly status: 'unreadable', readonly error: unknown }
+
+const getStorageReadError = (rpcConfiguration: RpcConfigurationState) => rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed' ? { error: 'error' in rpcConfiguration ? rpcConfiguration.error : undefined } : undefined
+
+// The one storage read both settings reads share, so they always agree on what was stored and whether storage could be read.
+async function readSettingsStorage() {
+	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	return { storedItems, rpcConfiguration, storageReadError: getStorageReadError(rpcConfiguration) }
+}
+
+// The persisted settings, available only while the stored RPC configuration has an active RPC network.
+export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
+	const { storedItems, rpcConfiguration, storageReadError } = await readSettingsStorage()
+	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
+	if (activeRpcNetwork !== undefined) return { status: 'available', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
+	const websiteApprovals: WebsiteApprovalsSnapshot = storageReadError === undefined
+		? { status: 'readable', websiteAccess: await getWebsiteAccessFromStorageItems(storedItems) }
+		: { status: 'unreadable', error: storageReadError.error }
+	return { status: 'unavailable', rpcConfiguration, websiteApprovals }
+}
+
+// The re-read for an admitted operation: the persisted settings fields beside the operation's own admitted network, whatever the stored RPC configuration says; unreadable only when storage cannot be read. Project it with settingsOnAdmittedRpcNetwork or settingsForPublication.
+export async function getAdmittedRpcNetworkSnapshot(admittedRpcNetwork: CapturedRpcNetwork): Promise<AdmittedRpcNetworkSnapshot> {
+	const { storedItems, storageReadError } = await readSettingsStorage()
+	if (storageReadError !== undefined) return { status: 'unreadable', error: storageReadError.error }
+	return { status: 'available', storedFields: await getSettingsFieldsFromStorageItems(storedItems), admittedRpcNetwork }
+}
+
+// The approvals-only read, for paths that must not wait on the RPC configuration lock. `repairCorrupt` writes no approvals over a corrupt value (a failed write is unreadable); without it a corrupt value reads as no approvals and nothing is written.
+export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorrupt: boolean }): Promise<WebsiteApprovalsSnapshot> {
+	try {
+		if (options.repairCorrupt) return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(await getParsedStorageValueOrDefault('websiteAccess', [])) }
+		const { websiteAccess: storedWebsiteAccess } = await browser.storage.local.get('websiteAccess')
+		if (storedWebsiteAccess === undefined) return { status: 'readable', websiteAccess: [] }
+		return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(browserStorageLocalSafeParse({ websiteAccess: storedWebsiteAccess })?.websiteAccess ?? []) }
+	} catch (error: unknown) {
+		return { status: 'unreadable', error }
+	}
+}
+
+// Projection for operations that cannot continue without settings: throws the RPC-configuration-unavailable error.
+export function requireAvailableSettings(snapshot: SettingsSnapshot): Settings {
+	if (snapshot.status === 'unavailable') throw createRpcConfigurationUnavailableError()
+	return snapshot.settings
+}
+
+// Projection for callers that branch on availability themselves and only need the settings fields. An unavailable RPC configuration that kept a readable active network (corrupt, emptied or unwritable entries) still has settings, so this says nothing about whether the configuration is usable.
+export function settingsIfAvailable(snapshot: SettingsSnapshot): Settings | undefined {
+	return snapshot.status === 'available' ? snapshot.settings : undefined
+}
+
+// Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
+export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): Settings | undefined {
+	return rpcConfigurationIsReady(snapshot.rpcConfiguration) ? settingsIfAvailable(snapshot) : undefined
+}
+
+// Projection for granting access: unreadable approvals fail closed to none.
+export function approvalsOrNone(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (snapshot.status === 'available') return snapshot.settings.websiteAccess
+	const websiteApprovals = snapshot.status === 'unavailable' ? snapshot.websiteApprovals : snapshot
+	return websiteApprovals.status === 'readable' ? websiteApprovals.websiteAccess : []
+}
+
+// Projection for paths where a failed read must stop the caller (for example so applied request blocks stay in place): rethrows the storage error.
+export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (websiteApprovals.status === 'unreadable') throw websiteApprovals.error
+	return websiteApprovals.websiteAccess
+}
+
+const liveSettingsMarker = Symbol('liveSettings')
+// Settings proven to come from a ready RPC configuration on the network the caller worked on. Granting a connection takes this type (see verifyAccess), so code that holds plain settings cannot grant. The proof lasts only until the next await: read it immediately before the grant, with no await in between.
+export type LiveSettings = Settings & { readonly [liveSettingsMarker]: true }
+
+export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
+
+export type LiveSettingsOnAdmittedRpcNetwork =
+	| { readonly kind: 'ready', readonly settings: LiveSettings }
+	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
+
+// The single check behind every connection grant, and behind routing a request: work can be parked on the website lookup, signer prompts or address lookups after it read its settings, so one live snapshot is read and used unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
+export async function getLiveSettingsOnAdmittedRpcNetwork(admitted: Settings | CapturedRpcNetwork): Promise<LiveSettingsOnAdmittedRpcNetwork> {
+	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
+	if (liveSettings === undefined) return { kind: 'unavailable' }
+	const rpcNetworkChange = getRpcNetworkChange(admitted.activeRpcNetwork, liveSettings.activeRpcNetwork)
+	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
+	// Rejected rather than continued: the admitted service pair still talks to the deselected endpoint (which the user may have left for privacy or reliability), and a signer-only selection's fallback service may serve another chain.
+	if (rpcNetworkChange.endpointChanged) return { kind: 'endpoint-changed' }
+	return { kind: 'ready', settings: { ...liveSettings, [liveSettingsMarker]: true } }
+}
+
+// Projection for an admitted operation that continues on its own network: the persisted fields on the admitted RPC network, undefined when storage is unreadable.
+export function settingsOnAdmittedRpcNetwork(snapshot: AdmittedRpcNetworkSnapshot): Settings | undefined {
+	return snapshot.status === 'available' ? withActiveRpcNetwork(snapshot.storedFields, snapshot.admittedRpcNetwork.activeRpcNetwork) : undefined
+}
+
+// Settings a committing operation publishes when it cannot read them back: without website approvals, so revoked approvals are never republished. This limits only the publication; access reconciliation decides with its own read inside its lock, and only when that read also fails does it use these settings, revoke-only (see reconcileWebsiteApprovalAccesses).
+export const settingsWithoutApprovals = (settings: Settings): Settings => ({ ...settings, websiteAccess: [] })
+
+// Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals.
+export function settingsForPublication(snapshot: AdmittedRpcNetworkSnapshot, fallback: Settings): Settings {
+	return settingsOnAdmittedRpcNetwork(snapshot) ?? settingsWithoutApprovals(fallback)
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -178,14 +336,17 @@ export async function trackPreviousActiveAddressForMakeMeRichList(previousActive
 	})
 }
 
-export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	return await browserStorageLocalSet({
+// The active-settings writers return the exact storage items they persisted. Those items are the single representation of the transition: they are written as-is and `getSettingsAfterStorageUpdates` projects Settings from them.
+export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined): Promise<LocalStorageItems> {
+	const storageUpdate = {
 		useSignersAddressAsActiveAddress,
 		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
-	})
+	}
+	await browserStorageLocalSet(storageUpdate)
+	return storageUpdate
 }
 
-type SimulationModeChanges = {
+export type SimulationModeChanges = {
 	readonly simulationMode: boolean
 	readonly rpcNetwork?: RpcNetwork
 	readonly activeSimulationAddress?: EthereumAddress
@@ -203,8 +364,17 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 	}
 }
 
-export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+export async function changeSimulationMode(changes: SimulationModeChanges): Promise<LocalStorageItems> {
+	const storageUpdate = getSimulationModeStorageUpdate(changes)
+	await browserStorageLocalSet(storageUpdate)
+	return storageUpdate
+}
+
+// The Settings that committed storage updates produce, derived by running the serialized updates (applied in write order) through the same storage-to-Settings conversion used for reads; fields no update writes keep their previous values. No field mapping is repeated here.
+export async function getSettingsAfterStorageUpdates(previousSettings: Settings, storageUpdates: readonly LocalStorageItems[]): Promise<Settings> {
+	const updatedItems = storageUpdates.reduce<Record<string, unknown>>((items, storageUpdate) => ({ ...items, ...serializeLocalStorageItems(storageUpdate) }), {})
+	const activeRpcNetwork = await getParsedStorageValueOrDefaultFromItems(updatedItems, 'activeRpcNetwork', previousSettings.activeRpcNetwork)
+	return await getSettingsFromStorageItems(updatedItems, activeRpcNetwork, previousSettings)
 }
 
 async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
@@ -219,10 +389,6 @@ async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
-}
-
-export async function getWebsiteAccess() {
-	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
@@ -260,7 +426,7 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences] = await Promise.all([getSettingsSnapshot().then(requireAvailableSettings), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.6' as const,

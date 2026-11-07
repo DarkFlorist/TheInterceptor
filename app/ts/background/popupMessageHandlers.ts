@@ -1,15 +1,17 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { getConfirmationWindowRequests } from '../utils/confirmationQueue.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, requireAvailableSettings, requireReadableApprovals, getWebsiteApprovalsSnapshot, settingsForPublication, captureRpcNetwork } from './settings.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getRpcList, selectPrimaryRpc } from './rpcConfigurationStorage.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, resolveConfirmationWithoutServices, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
-import { updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { type CommittedAccessChange, reconcileCommittedAccessChange, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -43,6 +45,8 @@ import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './win
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
+import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
+import { createRpcConfigurationUnavailableError, isRpcConfigurationUnavailableError, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -56,12 +60,13 @@ import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '..
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
-export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
+export { exportSettings, importSettings, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -112,7 +117,16 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 	}
 }
 
-export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+// Reject and no-response are admitted without RPC services and settle without them; with services available they update the confirmation window as usual.
+export async function confirmDialogWithAvailableServices(services: { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService } | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+	if (services === undefined) {
+		await resolveConfirmationWithoutServices(websiteTabConnections, confirmation)
+		return
+	}
+	await confirmDialog(services.ethereum, services.tokenPriceService, websiteTabConnections, confirmation)
+}
+
+export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -128,8 +142,6 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
-	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }
 
@@ -137,13 +149,14 @@ export async function confirmRequestAccess(simulationServicesOwner: SimulationSe
 	await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, confirmation.data, publishRpcConnectionStatus)
 }
 
-export async function popupReadyAndListening(ethereum: EthereumClientService, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
+export async function popupReadyAndListening(ethereum: EthereumClientService | undefined, websiteTabConnections: WebsiteTabConnections, page: PopupReadyAndListeningPage) {
 	switch (page) {
 		case 'watchAsset': {
 			const request = await updateWatchAssetViewWithPendingRequest(websiteTabConnections)
 			if (request === undefined) return undefined
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: request.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -156,6 +169,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			await updateChainChangeViewWithPendingRequest()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -163,14 +177,16 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			}
 		}
 		case 'confirmTransaction': {
-			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const pendingTransactions = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
+			if (ethereum === undefined) return { method: 'popup_readyAndListening' as const, ok: false as const, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
 					confirmTransactionBootstrap: {
@@ -189,6 +205,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			await updateInterceptorAccessViewWithPendingRequests()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: firstPendingAccessRequest.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -201,6 +218,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			await updateFetchSimulationStackRequestWithPendingRequest()
 			return {
 				method: 'popup_readyAndListening' as const,
+				ok: true as const,
 				data: {
 					popupOrTabId: promise.popupOrTabId,
 					confirmTransactionBootstrap: undefined,
@@ -222,12 +240,17 @@ async function getSignerAccount() {
 	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
 }
 
-export async function changeActiveAddress(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
+export async function changeActiveAddress(
+	simulationServicesOwner: SimulationServicesOwner,
+	websiteTabConnections: WebsiteTabConnections,
+	addressChange: ChangeActiveAddress,
+	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
+) {
 	if (addressChange.data.activeAddress === 'signer') {
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
-	const settings = await getSettings()
+	const settings = admittedSnapshot?.settings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const signerAccount = await getSignerAccount()
 	const activeAddresses = await getActiveAddresses()
 	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
@@ -238,7 +261,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, undefined, {
 					simulationMode: false,
 					signerAddress: undefined,
-				})
+				}, admittedSnapshot)
 				return { type: 'ChangeActiveAddressReply', ok: true } as const
 			}
 		}
@@ -256,7 +279,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 	await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
 		signerAddress: signerAccount,
-	})
+	}, admittedSnapshot)
 	return { type: 'ChangeActiveAddressReply', ok: true } as const
 }
 
@@ -278,23 +301,27 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	))
 }
 
+// Address-book writes can change any website's effective address policy.
+const ADDRESS_BOOK_CHANGE: CommittedAccessChange = { kind: 'address-book' }
+
 export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		// Reconciled against approvals read after the write; the admitted snapshot may predate a website access revocation.
+		await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
-	const { ethereum } = simulationServicesOwner.getCurrent()
+export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService | undefined, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	try {
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
 			try {
+				if (ethereum === undefined) throw createRpcConfigurationUnavailableError()
 				if (entry.data.chainId !== ethereum.getChainId()) {
 					return {
 						type: 'AddOrModifyAddressBookEntryReply' as const,
@@ -332,11 +359,12 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
+		// Reconciled against approvals read after the write; the admitted snapshot may predate a website access revocation and Safe validation can take a long time.
+		if (entryToStore.useAsActiveAddress) await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true, true))
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
-		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {
+		if (!isExpectedInfrastructureError(error) && !isRpcConfigurationUnavailableError(error)) await reportUnexpectedError(error, {
 			source: 'address_book_save',
 			code: 'address_book_save_failed',
 			displayMessage: 'Failed to save address-book entry.',
@@ -350,11 +378,11 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 }
 
 export async function setSafeSimulationSigner(
-	simulationServicesOwner: SimulationServicesOwner,
+	ethereum: EthereumClientService,
+	accessPromptSimulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
 ) {
-	const { ethereum } = simulationServicesOwner.getCurrent()
 	if (request.data.chainId !== ethereum.getChainId()) {
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
@@ -410,7 +438,8 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Settings are read after the write because the active address may have changed while Safe validation and the write awaited.
+		await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, async (committedSettings) => await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, committedSettings, true))
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -428,7 +457,9 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 
 	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	// Settings are read after the write and the content-script reload, so active addresses changed meanwhile are the ones reconciled.
+	const editedWebsiteAccess: CommittedAccessChange = { kind: 'website-access', websiteOrigins: accessChange.data.map((change) => change.newEntry.website.websiteOrigin) }
+	await reconcileCommittedAccessChange(websiteTabConnections, editedWebsiteAccess, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -526,7 +557,7 @@ type ConfirmTransactionMetadataDependencies = {
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
-	const promises = await getPendingTransactionsAndMessages()
+	const promises = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	const first = promises[0]
 	if (first === undefined) return
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
@@ -570,14 +601,17 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
-				const updatedFirst = modifyObject(first,
-					{
-						popupVisualisation: {
-							statusCode: 'success',
-							data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
-						}
-					})
-				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => updatedFirst)
+				const visualizedPopupVisualisation = {
+					statusCode: 'success' as const,
+					data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
+				}
+				const updatedFirst = modifyObject(first, { popupVisualisation: visualizedPopupVisualisation })
+				// Only the visualisation is written, onto the stored request, so fields written while it was formed (an Accept's signerRequestChainId and approval status, a signature's claim or the answered marker) are kept, and a simulation stored meanwhile is not replaced by this older one.
+				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode === 'failed') return current
+					if (getSimulationConductedTimestamp(current.popupVisualisation).getTime() !== getSimulationConductedTimestamp(first.popupVisualisation).getTime()) return current
+					return modifyObject(current, { popupVisualisation: visualizedPopupVisualisation })
+				})
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
@@ -611,7 +645,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 }
 
 export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	const [firstTxn] = await getPendingTransactionsAndMessages()
+	const [firstTxn] = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
@@ -682,18 +716,23 @@ export async function enableSimulationMode(
 	websiteTabConnections: WebsiteTabConnections,
 	params: EnableSimulationMode,
 	signerAccountRefreshOptions: SignerAccountRefreshOptions = {},
+	admitted?: { readonly settings: Settings, readonly rpcConfiguration: Extract<RpcConfigurationState, { readonly status: 'ready' }> },
 ) {
-	const settings = await getSettings()
+	const settings = admitted?.settings ?? requireAvailableSettings(await getSettingsSnapshot())
 	if (settings.simulationMode === params.data) return
+	const getAvailableRpcEntries = async () => admitted?.rpcConfiguration.rpcEntries ?? await getRpcList()
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
 		const tabId = await getLastKnownCurrentTabId()
 		if (tabId !== undefined) await refreshSignerAccountsForTab(websiteTabConnections, tabId, false, signerAccountRefreshOptions)
 		if (tabId !== undefined) sendCallbackToConfirmedSignerOwner(websiteTabConnections, tabId, { method: 'request_signer_chainId', result: [] })
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
-		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
+		const networkToSwitch = chainToSwitch === undefined
+			? params.data ? (await getAvailableRpcEntries())[0] : undefined
+			: selectPrimaryRpc(await getAvailableRpcEntries(), chainToSwitch)
 		const signerAccount = await getSignerAccount()
 		if (!params.data) {
+			// Without a signer chain the active RPC network is kept, so the signing selection is resolved on that chain instead of the first configured RPC entry.
 			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
 			const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
 			const configuredSigningSafe = await getConfiguredSigningSafeForChain(
@@ -708,20 +747,20 @@ export async function enableSimulationMode(
 				simulationMode: false,
 				signerAddress: signerAccount,
 				...(chainToSwitch === undefined || networkToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch }),
-			})
+			}, admitted)
 			return
 		}
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: signerAccount,
 			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
-		})
+		}, admitted)
 	} else {
-		const selectedNetworkToSwitch = settings.activeRpcNetwork.httpsRpc !== undefined ? settings.activeRpcNetwork : (await getRpcList())[0]
+		const selectedNetworkToSwitch = settings.activeRpcNetwork.httpsRpc !== undefined ? settings.activeRpcNetwork : (await getAvailableRpcEntries())[0]
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 			simulationMode: params.data,
 			...settings.activeRpcNetwork === selectedNetworkToSwitch ? {} : { rpcNetwork: selectedNetworkToSwitch }
-		})
+		}, admitted)
 	}
 }
 
@@ -793,6 +832,7 @@ export async function requestNewHomeData(
 	includeWebsiteAccessAddressMetadata: boolean,
 	requestAbortController: AbortController | undefined,
 	popupRefreshGeneration: number,
+	admittedSettings?: Settings,
 ) {
 	const newPopupRefreshGeneration = popupRefreshGeneration
 	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
@@ -801,18 +841,20 @@ export async function requestNewHomeData(
 		shouldRefreshSignerAccounts,
 		includeWebsiteAccessAddressMetadata,
 		popupRefreshGeneration: newPopupRefreshGeneration,
+		admittedSettings,
 	})
 	await sendPopupMessageToOpenWindows(updatedPage)
 }
 
 export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTabConnections, popupRefreshGeneration: number) {
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
-	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
+	const settingsSnapshotPromise = silenceChromeUnCaughtPromise(getSettingsSnapshot())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
 	const safeTransactionStacksPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks())
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
-	const settings = await settingsPromise
+	const snapshot = await settingsSnapshotPromise
+	const { rpcConfiguration } = snapshot
+	const settings = requireAvailableSettings(snapshot)
 	const tabState = await tabStatePromise
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
@@ -830,7 +872,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 			settings,
 			activeSigningAddressInThisTab: activeSigningAddress,
 			tabId,
-			rpcEntries: await rpcEntriesPromise,
+			rpcEntries: rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
 			interceptorDisabled,
 		},
 	})
@@ -845,14 +887,14 @@ export async function refreshHomeData(
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 	refreshSimulation = true,
 	requestAbortController: AbortController | undefined = undefined,
+	admittedSettings?: Settings,
 ) {
 	const newPopupRefreshGeneration = popupRefreshGeneration
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
-		const currentSettings = await getSettings()
-		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
+		if (settings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
-		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
 			requestAbortController,
@@ -860,6 +902,7 @@ export async function refreshHomeData(
 			shouldRefreshSignerAccounts,
 			includeWebsiteAccessAddressMetadata: true,
 			popupRefreshGeneration: newPopupRefreshGeneration,
+			admittedSettings: settings,
 		})
 		await sendPopupMessageToOpenWindows(updatedPage)
 	} finally {
@@ -877,7 +920,24 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
-	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
+	const popupRefreshGeneration = bumpPopupRefreshGeneration()
+	try {
+		const snapshot = await getSettingsSnapshot()
+		if (snapshot.status === 'unavailable') {
+			const error = 'error' in snapshot.rpcConfiguration ? snapshot.rpcConfiguration.error : undefined
+			throw error ?? createRpcConfigurationUnavailableError()
+		}
+		const services = getRpcServicesAtAdmission(snapshot.rpcConfiguration, simulationServicesOwner)
+		if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
+		return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration, snapshot.settings)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, {
+			source: 'settings_home_refresh',
+			code: 'settings_saved_home_refresh_failed',
+			displayMessage: 'The setting was saved, but the popup could not be refreshed. Reopen it to retry.',
+			suppressExpectedHandledErrors: false,
+		})
+	}
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
@@ -1084,7 +1144,10 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 
 export const requestActiveAddresses = async () => ({ method: 'popup_requestActiveAddresses' as const, activeAddresses: await getActiveAddresses() })
 
-export const requestSimulationMode = async () => ({ method: 'popup_requestSimulationMode' as const, simulationMode: (await getSettings()).simulationMode })
+export const requestSimulationMode = async (admittedSettings?: Settings) => {
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
+	return { method: 'popup_requestSimulationMode' as const, simulationMode: settings.simulationMode }
+}
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
@@ -1115,15 +1178,17 @@ async function buildHomePageUpdate(
 		shouldRefreshSignerAccounts,
 		includeWebsiteAccessAddressMetadata,
 		popupRefreshGeneration,
+		admittedSettings,
 	}: {
 		requestAbortController?: AbortController
 		richDataSource: 'cached' | 'fresh'
 		shouldRefreshSignerAccounts: boolean
 		includeWebsiteAccessAddressMetadata: boolean
 		popupRefreshGeneration: number
+		admittedSettings?: Settings
 	}
 ): Promise<UpdateHomePage> {
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const settingsPromise = silenceChromeUnCaughtPromise(admittedSettings === undefined ? getSettingsSnapshot().then(requireAvailableSettings) : Promise.resolve(admittedSettings))
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
@@ -1143,7 +1208,8 @@ async function buildHomePageUpdate(
 	let settings = await settingsPromise
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
-	if (shouldRefreshSignerAccounts) settings = await getSettings()
+	// Signer refresh may update address selection. Reload those fields without switching away from the admitted provider's network.
+	if (shouldRefreshSignerAccounts) settings = settingsForPublication(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(settings)), settings)
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
@@ -1193,9 +1259,10 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 	})
 }
 
-export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
+export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService, admittedSettings?: Settings) {
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const stack = await getInterceptorTransactionStack()
-	if (!(await getSettings()).simulationMode) {
+	if (!settings.simulationMode) {
 		return {
 			method: 'popup_requestInterceptorSimulationInput' as const,
 			ok: false as const,
@@ -1236,7 +1303,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
 	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
 
-	const websiteAccess = await getWebsiteAccess()
+	const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
 	const updateWebsiteDetails = (website: Website) => {
 		const websiteData = websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website
 		return websiteData ?? website
@@ -1280,8 +1347,8 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
 
-export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
-	const settings = await getSettings()
+export async function requestSimulationMetadata(ethereumClientService: EthereumClientService, admittedSettings?: Settings) {
+	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,

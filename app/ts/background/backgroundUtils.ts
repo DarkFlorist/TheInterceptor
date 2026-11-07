@@ -236,7 +236,7 @@ export async function requestIsSimulationDataConsumerOpen() {
 
 export async function sendPopupReadyAndListening(page: PopupReadyAndListeningPage): Promise<PopupOrTabId | undefined> {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page } })
-	return reply?.method === 'popup_readyAndListening' ? reply.data.popupOrTabId : undefined
+	return reply?.method === 'popup_readyAndListening' && reply.ok ? reply.data.popupOrTabId : undefined
 }
 
 export const INTERNAL_CHANNEL_NAME = 'internalChannel'

@@ -127,6 +127,7 @@ export function createBrowserMock() {
 				await windowRemoveHandler?.(windowId)
 				return undefined
 			},
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
 		action: {
 			async setIcon() { return undefined },
@@ -139,6 +140,12 @@ export function createBrowserMock() {
 			async setTitle() { return undefined },
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
+		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
 		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
@@ -237,7 +244,10 @@ export async function loadModules() {
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		confirmDialog: popupMessageHandlers.confirmDialog,
+		resolvePendingSignerReply: confirmTransaction.resolvePendingSignerReply,
+		popupReadyAndListening: popupMessageHandlers.popupReadyAndListening,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
@@ -253,6 +263,9 @@ export async function loadModules() {
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
+		resolveDeferredSafeSignerReplies: confirmTransaction.resolveDeferredSafeSignerReplies,
+		advanceOutstandingSafeSignerReplies: confirmTransaction.advanceOutstandingSafeSignerReplies,
+		recoverPendingConfirmationState: confirmTransaction.recoverPendingConfirmationState,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
 		createSafeSigningSimulationInput: safeSimulation.createSafeSigningSimulationInput,
@@ -265,6 +278,7 @@ export async function loadModules() {
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
+		getPendingSafeProposalStores: storageVariables.getPendingSafeProposalStores,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
@@ -280,8 +294,10 @@ export async function loadModules() {
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
+		queueSafeProposalReplyAndMoveToOutbox: terminalReplyDelivery.queueSafeProposalReplyAndMoveToOutbox,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
+		queueTerminalReplyUnlessDeferred: terminalReplyDelivery.queueTerminalReplyUnlessDeferred,
 		signerReply: providerMessageHandlers.signerReply,
 		ethAccountsReply: providerMessageHandlers.ethAccountsReply,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,

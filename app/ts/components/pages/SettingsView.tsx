@@ -1,20 +1,18 @@
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
-import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
+import { MessageToPopup, type ImportSettingsReply, type PopupRpcStatus } from '../../types/interceptor-messages.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
-import { ErrorComponent } from '../subcomponents/Error.js'
+import { ErrorComponent, ErrorText } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
-import { DEFAULT_RPCS } from '../../config/defaults.js'
 import { getChainName } from '../../utils/constants.js'
-import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
-import { useAsyncState } from '../../utils/preact-utilities.js'
+import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
@@ -238,9 +236,21 @@ export function SettingsView() {
 }
 
 const RpcListings = () => {
-	const rpcEntries = useRpcConnectionsList()
+	const { entries: rpcEntries, status, reload } = useRpcConnectionsState()
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
-	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
+	const { value: retryRpcListState, waitFor: waitForRetryRpcList } = useAsyncState<void>()
+	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_restoreDefaultRpcConfiguration' }))
+	const retryRpcList = () => void waitForRetryRpcList(reload)
+
+	if (status.value === 'loading') return <></>
+	if (status.value === 'unavailable') {
+		return <RpcConfigurationUnavailableAlert
+			retryState = { retryRpcListState.value.state }
+			restoreDefaultsState = { resetRpcListState.value.state }
+			onRetry = { retryRpcList }
+			onRestoreDefaults = { loadDefaultRpcs }
+		/>
+	}
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (
@@ -265,6 +275,34 @@ const RpcListings = () => {
 	)
 }
 
+type RpcConfigurationUnavailableAlertProps = {
+	retryState: AsyncStates
+	restoreDefaultsState: AsyncStates
+	onRetry: () => void
+	onRestoreDefaults: () => void
+}
+
+// Uses the shared warning text style because the inherited Bulma body colour is unreadable dark grey on the `.report` card.
+export const RpcConfigurationUnavailableAlert = (props: RpcConfigurationUnavailableAlertProps) => (
+	<aside class = 'report' role = 'alert' style = { { display: 'grid', minHeight: '11rem', textAlign: 'center', rowGap: '0.5rem', padding: '1rem' } }>
+		<ErrorText warning = { true } text = 'Interceptor could not safely read your RPC configuration. Network requests are paused to prevent sending them to an endpoint you did not choose.' />
+		<AsyncActionButton
+			class = 'btn btn--outline'
+			state = { props.retryState }
+			text = 'Retry reading RPC configuration'
+			pendingText = 'Retrying RPC configuration'
+			onClick = { props.onRetry }
+		/>
+		<AsyncActionButton
+			class = 'btn btn--outline'
+			state = { props.restoreDefaultsState }
+			text = 'Restore bundled default RPC list'
+			pendingText = 'Restoring default RPC list'
+			onClick = { props.onRestoreDefaults }
+		/>
+	</aside>
+)
+
 const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => {
 	const currentInfo = resolveSignal(info)
 	if (currentInfo === undefined) return <></>
@@ -288,41 +326,48 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 }
 
 export function useRpcConnectionsList() {
+	return useRpcConnectionsState().entries
+}
+
+type RpcConnectionsStatus = 'ready' | 'unavailable' | 'loading'
+
+export function useRpcConnectionsState() {
 	const entries = useSignal<RpcEntries>([])
+	const status = useSignal<RpcConnectionsStatus>('loading')
+	const reload = async () => { await sendPopupMessageToBackgroundPage({ method: 'popup_retryRpcConfiguration' }) }
 
 	useEffect(() => {
 		let disposed = false
 		let updateVersion = 0
+		const applyRpcStatus = (rpcStatus: PopupRpcStatus) => {
+			updateVersion += 1
+			status.value = rpcStatus.available ? 'ready' : 'unavailable'
+			if (rpcStatus.available) entries.value = rpcStatus.rpcEntries
+		}
 		const trackRpcListChanges = (message: unknown): false => {
 			const parsedMessage = MessageToPopup.safeParse(message)
 			if (parsedMessage.success === false) return false
-			if (parsedMessage.value.method === 'popup_update_rpc_list') {
-				updateVersion += 1
-				entries.value = parsedMessage.value.data
-			}
+			if (parsedMessage.value.method === 'popup_update_rpc_list') applyRpcStatus(parsedMessage.value.data)
+			if (parsedMessage.value.method === 'popup_requestSettingsReply') applyRpcStatus(parsedMessage.value.data.rpcStatus)
 			return false
 		}
 		const removePopupMessageListener = noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		const initialUpdateVersion = updateVersion
-		const initiallyLoadEntriesFromStorage = async () => {
-			try {
-				const initialEntries = await getRpcList()
-				if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) entries.value = initialEntries
-			} catch(error: unknown) {
-				await reportUnexpectedError(error, {
-					source: 'settingsView',
-					code: 'rpc_list_initial_load_failed',
-					displayMessage: 'Failed to load RPC connections.',
-					suppressExpectedHandledErrors: false,
-				})
-			}
-		}
-		void initiallyLoadEntriesFromStorage()
+		// The section leaves `loading` on the RPC status the background publishes for this request, which it publishes even when the request fails (settingsOpened); a request that cannot be sent at all rejects here, so it shows the unavailable alert with its Retry and Restore controls instead of staying blank.
+		void sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_requestSettings' }).catch(async (error: unknown) => {
+			if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) status.value = 'unavailable'
+			await reportUnexpectedError(error, {
+				source: 'settingsView',
+				code: 'rpc_list_initial_load_failed',
+				displayMessage: 'Failed to load RPC connections.',
+				suppressExpectedHandledErrors: false,
+			})
+		})
 		return () => {
 			disposed = true
 			removePopupMessageListener()
 		}
 	}, [])
 
-	return entries
+	return { entries, status, reload }
 }

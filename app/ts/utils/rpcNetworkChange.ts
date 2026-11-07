@@ -1,3 +1,4 @@
+import type { PopupRpcStatus } from '../types/interceptor-messages.js'
 import { RpcNetwork } from '../types/rpc.js'
 
 export type RpcNetworkChange = {
@@ -21,6 +22,9 @@ export function getRpcNetworkChange(previous: RpcNetwork | undefined, next: RpcN
 		selectionChanged: previous === undefined || getRpcNetworkSelectionKey(previous) !== getRpcNetworkSelectionKey(next),
 	}
 }
+
+// The network a page can browse local data for, whether or not the RPC configuration is usable.
+export const getReadableRpcNetwork = (rpcStatus: PopupRpcStatus) => rpcStatus.available ? rpcStatus.activeRpcNetwork : rpcStatus.readableActiveRpcNetwork
 
 // Signer-only selections retain a fallback service, but it must not be used for simulation or cache probes.
 export const isSignerOnlyNetwork = (network: RpcNetwork) => network.httpsRpc === undefined

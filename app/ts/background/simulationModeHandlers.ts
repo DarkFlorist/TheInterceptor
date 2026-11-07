@@ -18,6 +18,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addressString } from '../utils/bigint.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHashFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
@@ -137,7 +138,10 @@ export async function personalSign(
 }
 
 export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	if (simulationServicesOwner.getCurrent().ethereum.getChainId() === params.params[0].chainId) {
+	// The active chain can change while the request is parked after admission, so chain equality is decided from the live service owner rather than the admitted pair.
+	const liveEthereum = simulationServicesOwner.getCurrent()?.ethereum
+	if (liveEthereum === undefined) return { type: 'result' as const, method: params.method, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
+	if (liveEthereum.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}

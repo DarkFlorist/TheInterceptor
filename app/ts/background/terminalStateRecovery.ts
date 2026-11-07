@@ -1,3 +1,5 @@
+import { type FailureReportingLevel, reportLocalRecovery } from '../utils/errors.js'
+
 type RecoveryTimer = ReturnType<typeof setTimeout>
 
 type RetriableRecoveryOptions = {
@@ -22,3 +24,6 @@ export function createRetriableTerminalStateRecovery({ recover, onFailure, sched
 	}
 	return runRecovery
 }
+
+// A recovery pass still fails, with its first failure, once every item ran; its other failures are reported at this level so none goes unseen.
+export const reportRecoveryItemFailure: FailureReportingLevel = async (failure) => await reportLocalRecovery(failure, { code: 'pending_confirmation_recovery_item_failed', message: 'One item failed during recovery; the other items were still recovered.' })

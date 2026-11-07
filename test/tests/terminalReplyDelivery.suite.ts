@@ -3,7 +3,29 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+
+test('popup close rejects and removes pending confirmations while RPC services are unavailable', async () => {
+	const postedMessages: unknown[] = []
+	const socketKey = modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)
+	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
+		[socketKey]: {
+			port: createRecordingPort(postedMessages),
+			socket: uniqueRequestIdentifier.requestSocket,
+			websiteOrigin: 'https://example.com',
+			approved: true,
+			wantsToConnect: true,
+		},
+	} }]])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+
+	await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, undefined, undefined, websiteTabConnections)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(postedMessages.length, 1)
+	const reply = postedMessages[0]
+	assert.equal(isRecord(reply) && isRecord(reply.error) ? reply.error.code : undefined, 4001)
+})
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -297,6 +319,52 @@ test('popup close retries outbox cleanup without reposting after direct delivery
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 	browserMock.setStorageGetHandler(undefined)
+})
+
+test('popup close settles once and stops reading the queue even when follow-up view work failed', async () => {
+	delete browserMock.storageState.pendingTerminalReplies
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[socketKey]: {
+			port: createRecordingPort(postedMessages),
+			socket,
+			websiteOrigin: 'https://example.com',
+			approved: true,
+			wantsToConnect: true,
+		},
+	} }]])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' },
+	}] })
+	let emptyPendingReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages') && Array.isArray(browserMock.storageState.pendingTransactionsAndMessages) && browserMock.storageState.pendingTransactionsAndMessages.length === 0) {
+			emptyPendingReads += 1
+			if (emptyPendingReads === 1) throw new Error('follow-up view storage unavailable')
+		}
+		return readStoredItems()
+	})
+
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	const retryDeadline = Date.now() + 2_000
+	while (emptyPendingReads < 2) {
+		if (Date.now() > retryDeadline) throw new Error('Timed out waiting for the popup-close retry existence check')
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+
+	assert.equal(postedMessages.length, 1)
+	// The failed view step is reported instead of retried (the website already has its answer), so once the request is gone nothing reads the queue again.
+	await new Promise((resolve) => setTimeout(resolve, 100))
+	const readsAfterSettling = emptyPendingReads
+	await new Promise((resolve) => setTimeout(resolve, 100))
+	assert.equal(emptyPendingReads, readsAfterSettling)
+	assert.equal(postedMessages.length, 1)
+	browserMock.setStorageGetHandler(undefined)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 })
 
 test('MV2 reconnect cleanup failure retries without reposting the rejection', async () => {
@@ -879,6 +947,8 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus,
+		// Recorded by the Accept that forwarded the proposal to its signer.
+		signerRequestChainId: fakeRpcNetwork.chainId,
 		safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: safeTestOwnerAddress,
@@ -997,3 +1067,306 @@ test('a terminal reply delivery that throws still focuses the website and closes
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+// A deferred Gnosis Safe co-signature waits for services for its own network after its window closed, so it stays at the queue head with a window that no longer exists.
+function storeDeferredCoSignatureBeforeLaterRequest() {
+	const deferredCoSignature = {
+		...pendingTransaction,
+		uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 70 },
+		popupOrTabId: { type: 'popup' as const, id: 41 },
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' as const },
+		deferredSafeSignerReply: { signerReply: '0x1234', chainId: fakeRpcNetwork.chainId + 1n },
+	}
+	const laterWindow = { type: 'popup' as const, id: 77 }
+	const laterRequest = { ...pendingTransaction, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 71 }, popupOrTabId: laterWindow }
+	return { laterWindow, store: async () => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [deferredCoSignature, laterRequest] }) }
+}
+
+const getRejectionsTo = (postedMessages: readonly unknown[], requestId: number) => getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === requestId && 'error' in message)
+
+test('closing a later confirmation window answers its request while a deferred co-signature keeps its closed window', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { laterWindow, store } = storeDeferredCoSignatureBeforeLaterRequest()
+	await store()
+	browserMock.setLiveWindowIds([laterWindow.id])
+
+	await modules.onCloseWindowOrTab(laterWindow, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [70])
+	assert.equal(getRejectionsTo(postedMessages, 71).length, 1)
+	assert.equal(getRepliesToWebsite(postedMessages).length, 1)
+})
+
+test.each(['open', 'closed'] as const)('a new request joins the open confirmation window, or answers orphaned requests when none is, without touching a deferred co-signature (later window %s)', async (laterWindowState) => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { laterWindow, store } = storeDeferredCoSignatureBeforeLaterRequest()
+	await store()
+	// The mock browser opens every new window with id 99.
+	browserMock.setLiveWindowIds(laterWindowState === 'open' ? [laterWindow.id] : [99])
+	const nextRequestIdentifier = { ...uniqueRequestIdentifier, requestId: 72 }
+	const nextSignRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	const nextRequest = { method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: nextRequestIdentifier }
+
+	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)), { type: 'doNotReply' })
+
+	const pending = (await modules.getPendingTransactionsAndMessages()).map((request) => ({ requestId: request.uniqueRequestIdentifier.requestId, windowId: request.popupOrTabId.id }))
+	if (laterWindowState === 'open') {
+		assert.deepEqual(pending, [{ requestId: 70, windowId: 41 }, { requestId: 71, windowId: laterWindow.id }, { requestId: 72, windowId: laterWindow.id }])
+		assert.equal(getRejectionsTo(postedMessages, 71).length, 0)
+		return
+	}
+	assert.deepEqual(pending, [{ requestId: 70, windowId: 41 }, { requestId: 72, windowId: 99 }])
+	assert.equal(getRejectionsTo(postedMessages, 71).length, 1)
+})
+
+test('the confirmation window shows, refreshes and approves a later request while a deferred co-signature waits for its chain', async () => {
+	const { getConfirmationWindowRequests } = await import('../../app/ts/utils/confirmationQueue.js')
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const { laterWindow, store } = storeDeferredCoSignatureBeforeLaterRequest()
+	await store()
+	browserMock.setLiveWindowIds([laterWindow.id])
+	const requestIdsOf = (requests: readonly unknown[]) => requests.map((request) => isRecord(request) && isRecord(request.uniqueRequestIdentifier) ? request.uniqueRequestIdentifier.requestId : undefined)
+
+	// Opening (or reloading) the window and storage hydration show the later request in its own window.
+	const bootstrap = await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction')
+	if (bootstrap?.ok !== true || bootstrap.data.confirmTransactionBootstrap === undefined) throw new Error('Missing confirmation bootstrap')
+	assert.deepEqual(bootstrap.data.popupOrTabId, laterWindow)
+	assert.deepEqual(requestIdsOf(bootstrap.data.confirmTransactionBootstrap.pendingTransactionAndSignableMessages), [71])
+	assert.deepEqual(requestIdsOf(getConfirmationWindowRequests(await modules.getPendingTransactionsAndMessages())), [71])
+
+	// Pushed updates show it too.
+	browserMock.sentMessages.length = 0
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	const pushedUpdate = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)?.data
+	if (!isRecord(pushedUpdate) || !Array.isArray(pushedUpdate.pendingTransactionAndSignableMessages)) throw new Error('Missing pushed pending transactions')
+	assert.deepEqual(requestIdsOf(pushedUpdate.pendingTransactionAndSignableMessages), [71])
+
+	// The later request can be approved while the deferred co-signature stays in storage.
+	assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 71 } },
+	})), true)
+	assert.equal(getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === 71 && 'result' in message).length, 1)
+	assert.deepEqual(requestIdsOf(await modules.getPendingTransactionsAndMessages()), [70])
+	assert.equal(await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction'), undefined)
+})
+
+// Opens simulated personal_sign requests in one confirmation window and turns the first into a Gnosis Safe co-signature waiting for its signer on chain A.
+async function openMessagesWithFirstAwaitingSafeCoSignature(requestIds: readonly number[], websiteTabConnections: ReturnType<typeof connectRequestingWebsite>['websiteTabConnections']) {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	// The mock browser opens every new window with id 99.
+	browserMock.setLiveWindowIds([99])
+	for (const requestId of requestIds) {
+		const requestIdentifier = { ...uniqueRequestIdentifier, requestId }
+		const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+		const request = { method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: requestIdentifier }
+		assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)), { type: 'doNotReply' })
+	}
+	const [firstRequestId] = requestIds
+	if (firstRequestId === undefined) throw new Error('Missing request')
+	const firstRequestIdentifier = { ...uniqueRequestIdentifier, requestId: firstRequestId }
+	await modules.updatePendingTransactionOrMessage(firstRequestIdentifier, async (pending) => ({
+		...pending,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' as const },
+		signerRequestChainId: fakeRpcNetwork.chainId,
+		...(pending.type === 'SignableMessage' ? { safeMessageCoSignSnapshot: { safeAddress: activeAddress, safeSignerAddress: recipientAddress, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [recipientAddress], threshold: 1n }, safeMessageHash: 1n } } : {}),
+	}))
+	return firstRequestIdentifier
+}
+
+const otherChainSimulatorForWindowTests = () => {
+	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, { ...fakeRpcNetwork, chainId: fakeRpcNetwork.chainId + 1n })
+	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
+}
+
+const lastPushedRequestIds = () => {
+	const pushed = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)?.data
+	if (!isRecord(pushed) || !Array.isArray(pushed.pendingTransactionAndSignableMessages)) return undefined
+	return pushed.pendingTransactionAndSignableMessages.map((request) => isRecord(request) && isRecord(request.uniqueRequestIdentifier) ? request.uniqueRequestIdentifier.requestId : undefined)
+}
+
+test.each(['services unavailable', 'services on another chain'] as const)('a co-signature becoming deferred moves its open window on to the next request (%s)', async (servicesState) => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1, 2], websiteTabConnections)
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+	browserMock.sentMessages.length = 0
+	const services = servicesState === 'services unavailable' ? undefined : otherChainSimulatorForWindowTests()
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(services, async () => services, websiteTabConnections, coSignature, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: coSignature.requestId }, reply: '0x1234' }))
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => ({ requestId: pending.uniqueRequestIdentifier.requestId, deferred: pending.deferredSafeSignerReply !== undefined })), [{ requestId: 1, deferred: true }, { requestId: 2, deferred: false }])
+	assert.deepEqual(lastPushedRequestIds(), [2])
+	assert.deepEqual(removedWindowIds, [])
+})
+
+const lastPushedApprovalStatus = () => {
+	const pushed = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)?.data
+	const [shownRequest] = isRecord(pushed) && Array.isArray(pushed.pendingTransactionAndSignableMessages) ? pushed.pendingTransactionAndSignableMessages : []
+	return isRecord(shownRequest) && isRecord(shownRequest.approvalStatus) ? shownRequest.approvalStatus.status : undefined
+}
+
+test.each([
+	{ description: 'a wallet rejection', code: 4001, status: 'WaitingForUser' },
+	{ description: 'a wallet error', code: -32000, status: 'SignerError' },
+])('$description on a signature request reaches the popup while services are unavailable', async ({ code, status }) => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const signatureRequest = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	browserMock.sentMessages.length = 0
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, signatureRequest, { success: false, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: signatureRequest.requestId }, error: { code, message: 'Wallet refused' } }))
+
+	assert.equal(lastPushedApprovalStatus(), status)
+})
+
+test('a simulated signature that cannot be finished without services reaches the popup as an error', async () => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const signatureRequest = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	await modules.updatePendingTransactionOrMessage(signatureRequest, async (pending) => ({ ...pending, simulationMode: true }))
+	browserMock.sentMessages.length = 0
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, signatureRequest, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: signatureRequest.requestId }, reply: '0x1234' }))
+
+	assert.equal(lastPushedApprovalStatus(), 'SignerError')
+})
+
+test('a sole co-signature becoming deferred closes its confirmation window', async () => {
+	const { websiteTabConnections } = connectRequestingWebsite()
+	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	const removedWindowIds: number[] = []
+	browserMock.setWindowRemoveHandler(async (windowId) => { removedWindowIds.push(windowId) })
+
+	await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, coSignature, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: coSignature.requestId }, reply: '0x1234' }))
+
+	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply !== undefined, true)
+	assert.deepEqual(removedWindowIds, [99])
+})
+
+test('a rejected request stays answered when its removal fails, so a later signature is not deferred and the cleanup retry removes it', async () => {
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	const coSignature = await openMessagesWithFirstAwaitingSafeCoSignature([1], websiteTabConnections)
+	// The rejection reaches the website, then removing the request fails once.
+	let failRequestRemoval = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (failRequestRemoval && getRejectionsTo(postedMessages, 1).length === 1 && Object.keys(items).join() === 'pendingTransactionsAndMessages') {
+			failRequestRemoval = false
+			throw new Error('Pending request removal unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 99 }, undefined, undefined, websiteTabConnections))
+		assert.equal(failRequestRemoval, false)
+		assert.equal(getRejectionsTo(postedMessages, 1).length, 1)
+		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+
+		// The signer's reply arrives before the cleanup retry: the request is already answered, so the signature is not deferred.
+		await withSilencedConsole(async () => await modules.resolvePendingSignerReply(undefined, async () => undefined, websiteTabConnections, coSignature, { success: true, signerProviderGeneration: 0, forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: 'personal_sign', params: ['0x68656c6c6f', activeAddress], requestId: coSignature.requestId }, reply: '0x1234' }))
+		assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.deferredSafeSignerReply, undefined)
+
+		const retryDeadline = Date.now() + 2_000
+		while ((await modules.getPendingTransactionsAndMessages()).length > 0) {
+			if (Date.now() > retryDeadline) throw new Error('Timed out waiting for the cleanup retry')
+			await new Promise((resolve) => setTimeout(resolve, 10))
+		}
+		assert.equal(getRepliesToWebsite(postedMessages).filter((message) => isRecord(message) && message.requestId === 1).length, 1)
+		assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+})
+
+test('cleanup after a failed removal delivers the queued success reply, never a rejection', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
+	// The approved transaction's result is queued (marking the request answered), then removing the request fails once.
+	let resultQueued = false
+	let failRequestRemoval = true
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		const keys = Object.keys(items).sort().join()
+		if (keys === 'pendingTerminalReplies,pendingTransactionsAndMessages') resultQueued = true
+		else if (resultQueued && failRequestRemoval && keys === 'pendingTransactionsAndMessages') {
+			failRequestRemoval = false
+			throw new Error('Pending request removal unavailable.')
+		}
+		writeStoredItems()
+	})
+	try {
+		await assert.rejects(withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })), /Pending request removal unavailable/u)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	const [queuedResult] = await modules.getPendingTerminalReplies()
+	if (queuedResult === undefined || !('result' in queuedResult)) throw new Error('Missing the queued transaction result')
+	// The answered request only waits for its cleanup, so the confirmation window no longer shows it.
+	assert.equal(await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction'), undefined)
+
+	// The popup closes and later startup recovery runs: the website gets exactly the queued result.
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab(pendingTransaction.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await withSilencedConsole(async () => await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, uniqueRequestIdentifier.requestSocket)
+
+	const replies = getRepliesToWebsite(postedMessages)
+	assert.equal(replies.length, 1)
+	assert.equal(isRecord(replies[0]) ? replies[0].result : undefined, modules.EthereumBytes32.serialize(queuedResult.result))
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+// The flow that queued a reply still owns its delivery while the answered request's cleanup runs: the cleanup read the queued reply, a socket flush then delivered it (leaving a completion marker for that flow), and the cleanup resumed. The cleanup leaves the reply and the marker to the flow, which then finds it delivered, so the website receives one reply. Another flow's attempt to queue a reply for the answered request first queues nothing and leaves the owner's reservation in place.
+test.each([false, true])('an answered request\'s cleanup never consumes the completion marker of the flow still delivering its reply (overlapping queue attempt: %p)', async (overlappingQueueAttempt) => {
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const websiteTabConnections = new Map([[socket.tabId, { connections: {
+		[modules.websiteSocketToString(socket)]: { port: createRecordingPort(postedMessages), socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	const reply = { ...pendingTransaction.originalRequestParameters, type: 'result' as const, result: signedTransaction.hash, uniqueRequestIdentifier }
+	assert.equal(await modules.queueTerminalReplyUnlessDeferred(reply), 'queued')
+	if (overlappingQueueAttempt) {
+		const rejection = { ...pendingTransaction.originalRequestParameters, type: 'result' as const, error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User denied transaction signature' }, uniqueRequestIdentifier }
+		assert.equal(await modules.queueTerminalReplyUnlessDeferred(rejection), 'already-answered')
+	}
+	let cleanupReadPaused = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const readsReplies = Array.isArray(keys) ? keys.includes('pendingTerminalReplies') : keys === 'pendingTerminalReplies'
+		if (cleanupReadPaused || !readsReplies) return readStoredItems()
+		cleanupReadPaused = true
+		const readBeforeTheFlush = readStoredItems()
+		assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
+		return readBeforeTheFlush
+	})
+	try {
+		await modules.resolveDeferredSafeSignerReplies(simulator, websiteTabConnections)
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+	assert.equal(cleanupReadPaused, true)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply), true)
+
+	assert.equal(postedMessages.filter((message) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+// The last confirmation left the queue while the stored RPC configuration is corrupt: the view update returns early without reading the unavailable settings, so nothing rejects unhandled.
+test('updating the confirmation view after its last request left reads no unavailable settings', async () => {
+	const unhandledRejections: unknown[] = []
+	const recordUnhandledRejection = (reason: unknown) => { unhandledRejections.push(reason) }
+	const storedRpcNetwork = await browser.storage.local.get('activeRpcNetwork')
+	process.on('unhandledRejection', recordUnhandledRejection)
+	try {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		assert.equal(await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService), false)
+		await new Promise((resolve) => setTimeout(resolve, 20))
+	} finally {
+		process.off('unhandledRejection', recordUnhandledRejection)
+		await browser.storage.local.set(storedRpcNetwork)
+	}
+	assert.deepEqual(unhandledRejections, [])
+})

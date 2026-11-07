@@ -1,8 +1,1112 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../app/ts/utils/constants.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	const setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork = async (consentedWebsiteOrigin: string) => {
+		const { changeSimulationMode, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{
+			type: 'contact',
+			name: 'Blocked active address',
+			address: activeAddress,
+			chainId: 'AllChains',
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: false,
+			declarativeNetRequestBlockMode: 'block-all',
+		}])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		// Persisted consent only; the website itself has no site-level block rule.
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: consentedWebsiteOrigin, icon: undefined, title: undefined }, access: true }])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	}
+
+	const withSilencedWarnings = async <T>(operation: () => Promise<T>) => {
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			return await operation()
+		} finally {
+			console.warn = originalWarn
+		}
+	}
+
+	// Registers like the content-script connection handler and returns the icon refresh that handler gives its error boundary, so a test decides when the refresh runs.
+	const registerConnection = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, connection: TabConnection['connections'][string], isTopFrame: boolean) => {
+		const { registerWebsiteConnection } = await loadModules()
+		let observedRefresh: (() => Promise<void>) | undefined
+		await withSilencedWarnings(async () => await registerWebsiteConnection(websiteTabConnections, socket, connection, isTopFrame, (refreshIcon) => { observedRefresh = refreshIcon }))
+		if (observedRefresh === undefined) throw new Error('The registration did not hand over its icon refresh')
+		return observedRefresh
+	}
+
+	const registerConnectionAndSettle = async (...registration: Parameters<typeof registerConnection>) => await withSilencedWarnings(await registerConnection(...registration))
+
+	test('blocks newly registered tabs with persisted consent while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const consentedWebsiteOrigin = 'consented-startup.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const consentedSocket = { tabId: 9876, connectionName: 0n }
+		const unconsentedSocket = { tabId: 9877, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// Background startup reconciles before any content script connects.
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+		// Connections register unapproved through the same call content-script connection uses; runtime approval is never restored while settings are unavailable.
+		await registerConnectionAndSettle(websiteTabConnections, consentedSocket, { port: createPort(consentedSocket.tabId).port, socket: consentedSocket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+		await registerConnectionAndSettle(websiteTabConnections, unconsentedSocket, { port: createPort(unconsentedSocket.tabId).port, socket: unconsentedSocket, websiteOrigin: 'unconsented.example', approved: false, wantsToConnect: false }, true)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [consentedSocket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(consentedSocket.tabId, consentedWebsiteOrigin)), true)
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(unconsentedSocket.tabId, 'unconsented.example')), false)
+	})
+
+	const unusableRpcEntriesWithReadableActiveNetwork = [
+		{ description: 'corrupt', storedRpcEntries: 'corrupt' },
+		{ description: 'empty', storedRpcEntries: [] },
+	]
+
+	const setUpBlockAllWithPersistedConsent = async (websiteOrigin: string) => {
+		const { changeSimulationMode, getRequiredSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Blocked active address', address: activeAddress, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true }])
+		return await getRequiredSettings()
+	}
+
+	test.each(unusableRpcEntriesWithReadableActiveNetwork)('blocks a consented tab after a restart while the RPC entries are $description and the active network is readable', async ({ storedRpcEntries }) => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, getTabState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const { bumpPopupRefreshGeneration } = await import('../../app/ts/background/popupRefreshGeneration.js')
+		const websiteOrigin = 'consented-unusable-entries.example'
+		await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+		const socket = { tabId: 9883, connectionName: 0n }
+		// A restarted service worker has no connections, so none is approved.
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, websiteOrigin)), true)
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /RPC configuration/)
+	})
+
+	// A consented block-all tab registered during an outage: it is blocked, but not approved, when the outage ends.
+	const registerConsentedTabDuringOutage = async (tabId: number, storedRpcEntries: unknown = 'corrupt') => {
+		const { setRpcConfiguration, getRequiredSettings } = await loadModules()
+		const websiteOrigin = `consented-outage-${ tabId.toString() }.example`
+		const { activeRpcNetwork } = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+		const socket = { tabId, connectionName: 0n }
+		const connection = { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await registerConnectionAndSettle(websiteTabConnections, socket, connection, true)
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const simulationServicesOwner = createTestSimulationServicesOwner(services, () => services)
+		const endOutage = async () => await setRpcConfiguration([activeRpcNetwork], activeRpcNetwork)
+		return { activeRpcNetwork, connection, endOutage, getRequiredSettings, simulationServicesOwner, websiteOrigin, websiteTabConnections }
+	}
+
+	test.each([
+		{ path: 'Retry', tabId: 9901 },
+		{ path: 'restoring the default RPC list', tabId: 9902 },
+		{ path: 'saving the RPC list', tabId: 9903 },
+		{ path: 'a later reconciliation after storage reads recover', tabId: 9904 },
+		{ path: 'a service worker restart', tabId: 9905 },
+	] as const)('a tab registered during an outage with persisted consent stays blocked across $path', async ({ path, tabId }) => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, publishRpcConfigurationRecovery, setNewRpcList, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		// Only an emptied list can be saved during an outage; a corrupt one is refused.
+		const { activeRpcNetwork, endOutage, getRequiredSettings, simulationServicesOwner, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId, path === 'saving the RPC list' ? [] : 'corrupt')
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+
+		await withSilencedWarnings(async () => {
+			if (path === 'restoring the default RPC list') return await handlePopupRuntimeMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_restoreDefaultRpcConfiguration' }, noopPublishRpcConnectionStatus)
+			if (path === 'saving the RPC list') {
+				if (activeRpcNetwork.httpsRpc === undefined) throw new Error('The default network has an endpoint')
+				return await setNewRpcList(simulationServicesOwner, websiteTabConnections, { method: 'popup_set_rpc_list', data: [{ ...activeRpcNetwork, httpsRpc: activeRpcNetwork.httpsRpc }] }, await getRequiredSettings(), publishRpcConfigurationRecovery)
+			}
+			await endOutage()
+			if (path === 'Retry') return await handlePopupRuntimeMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_retryRpcConfiguration' }, noopPublishRpcConnectionStatus)
+			// A restarted worker has no connections yet; the tab's stored website still identifies it.
+			return await updateDeclarativeNetRequestBlocks(path === 'a service worker restart' ? new Map() : websiteTabConnections)
+		})
+
+		assert.equal(await areWeBlocking(tabId, websiteOrigin), true)
+	})
+
+	test('a block retained across an outage is lifted once the website no longer has consent', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const { endOutage, websiteTabConnections } = await registerConsentedTabDuringOutage(9906)
+		await endOutage()
+		await updateWebsiteAccess(() => [])
+
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+	})
+
+	test('approving a block-all tab outside any reconciliation installs its rule', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'approved-later.example'
+		await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		const socket = { tabId: 9907, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: false } } }]])
+		const { updateTabState } = await loadModules()
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, website: { websiteOrigin, icon: undefined, title: undefined } }))
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 92, requestSocket: socket }, method: 'eth_chainId', params: [] }, websiteTabConnections, noopPublishRpcConnectionStatus))
+		await new Promise((resolve) => setTimeout(resolve, 10))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+	})
+
+	test.each([
+		{ description: 'the website', revokedAddress: undefined, tabId: 9908 },
+		{ description: 'the active address', revokedAddress: 0x1010101010101010101010101010101010101010n, tabId: 9909 },
+	])('revoking $description after recovery and approval lifts the retained block by the time the revocation completes', async ({ revokedAddress, tabId }) => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { persistWebsiteAccessChange, reconcileWebsiteApprovalAccesses } = await loadModules()
+		const { connection, endOutage, getRequiredSettings, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId)
+		await endOutage()
+		await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getRequiredSettings(), true)
+		assert.equal(connection.approved, true)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+
+		await persistWebsiteAccessChange(undefined, websiteTabConnections, { websiteOrigin, icon: undefined, title: undefined }, false, revokedAddress, false)
+
+		assert.equal(connection.approved, false)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+	})
+
+	const createConsentedBlockAllConnectionWithFailingConnectEvent = async (tabId: number) => {
+		const { websiteSocketToString } = await loadModules()
+		const websiteOrigin = `failing-connect-event-${ tabId.toString() }.example`
+		const settings = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(socket.tabId, (message) => {
+			if (message.method === 'connect') throw new Error('Connect event delivery failed')
+		})
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { updateTabState } = await loadModules()
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, website: { websiteOrigin, icon: undefined, title: undefined } }))
+		return { connection, port, settings, socket, websiteOrigin, websiteTabConnections }
+	}
+
+	test('a connection event that cannot be delivered during a direct access check does not skip the block rule, and is reported', async () => {
+		const { runtimeMessages, requestBlockingCalls } = installBrowserMock({ manifestVersion: 3 })
+		const { handleInterceptedRequest } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const { connection, port, socket, websiteOrigin, websiteTabConnections } = await createConsentedBlockAllConnectionWithFailingConnectEvent(9910)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalError = console.error
+		console.error = () => undefined
+		try {
+			await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 93, requestSocket: socket }, method: 'eth_chainId', params: [] }, websiteTabConnections, noopPublishRpcConnectionStatus))
+			await new Promise((resolve) => setTimeout(resolve, 10))
+		} finally {
+			console.error = originalError
+		}
+
+		assert.equal(connection.approved, true)
+		assert.deepEqual(requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data.message] : []
+		})
+		assert.ok(reportedFailures.includes('Connect event delivery failed'), `reported: ${ reportedFailures.join(' | ') }`)
+	})
+
+	test('a connection event that cannot be delivered during reconciliation does not skip the block rule, and is thrown', async () => {
+		const { requestBlockingCalls } = installBrowserMock({ manifestVersion: 3 })
+		const { reconcileWebsiteApprovalAccesses } = await loadModules()
+		const { connection, settings, socket, websiteTabConnections } = await createConsentedBlockAllConnectionWithFailingConnectEvent(9911)
+
+		await assert.rejects(reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, true), /Connect event delivery failed/)
+
+		assert.equal(connection.approved, true)
+		assert.deepEqual(requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+	})
+
+	test('derives tab blocking from approved connections on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { setRpcConfiguration } = await loadModules()
+		const websiteOrigin = 'consented-signer-only.example'
+		const { activeRpcNetwork } = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await setRpcConfiguration([], { name: 'Signer only', chainId: activeRpcNetwork.chainId + 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true })
+		const socket = { tabId: 9884, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+	})
+
+	test.each(unusableRpcEntriesWithReadableActiveNetwork)('does not approve a connection from a signer handshake or access reconciliation while the RPC entries are $description', async ({ storedRpcEntries }) => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { handleInterceptedRequest, reconcileWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'consented-no-grant.example'
+		const settings = await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+		const socket = { tabId: 9885, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 990, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 2],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus))
+		assert.equal(connection.approved, false)
+
+		await withSilencedWarnings(async () => await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings))
+		assert.equal(connection.approved, false)
+	})
+
+	test('blocks a consented tab registered after the active RPC network becomes unreadable at runtime', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, changeSimulationMode, updateDeclarativeNetRequestBlocks, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const consentedWebsiteOrigin = 'consented-runtime.example'
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Blocked active address', address: activeAddress, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: consentedWebsiteOrigin, icon: undefined, title: undefined }, access: true }])
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// A healthy reconciliation runs first, so no earlier fail-closed state is carried into the registration below.
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const socket = { tabId: 9879, connectionName: 0n }
+
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, consentedWebsiteOrigin)), true)
+	})
+
+	test('blocks a tab when a consented child frame registers after an unconsented top frame while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const consentedFrameOrigin = 'consented-frame.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		const tabId = 9881
+		const topFrameSocket = { tabId, connectionName: 0n }
+		const childFrameSocket = { tabId, connectionName: 1n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await registerConnectionAndSettle(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: 'unconsented-top.example', approved: false, wantsToConnect: false }, true)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+
+		await registerConnectionAndSettle(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false)
+
+		// Checked straight after registration, before areWeBlocking or any navigation-completion update could reconcile.
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+	})
+
+	test('a failed initial tab-state write and a rejected registration reconciliation are each surfaced exactly once', async () => {
+		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
+		const { registerWebsiteConnection } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const tabId = 9887
+		const socket = { tabId, connectionName: 0n }
+		const websiteOrigin = 'failed-initial-tab-state.example'
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// Without a readable active RPC network the registration reconciles request blocks from persisted approvals, whose read rejects.
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const readStorage = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (args[0] === 'websiteAccess') throw new Error('Reconciliation rule read failed')
+			return await readStorage(...args)
+		} })
+		const writeStorage = browser.storage.local.set
+		// A top frame first clears the tab's signer state; the new tab's initial state write is the one after it.
+		let tabStateWrites = 0
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if (`tabState_${ tabId }` in items) {
+				tabStateWrites += 1
+				if (tabStateWrites === 2) throw new Error('Initial tab state write failed')
+			}
+			await writeStorage(items)
+		} })
+		const originalError = console.error
+		console.error = () => undefined
+		let observedReconciliation: Promise<unknown> = Promise.resolve(undefined)
+		let tabStateFailure: unknown
+		try {
+			tabStateFailure = await withSilencedWarnings(async () => await registerWebsiteConnection(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true, (refreshIcon) => {
+				observedReconciliation = refreshIcon().then(() => undefined, (failure: unknown) => failure)
+			}).then(() => undefined, (failure: unknown) => failure))
+			observedReconciliation = await withSilencedWarnings(async () => await observedReconciliation)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: readStorage })
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: writeStorage })
+			console.error = originalError
+		}
+
+		const reconciliationFailure = await observedReconciliation
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data.message] : []
+		})
+		const surfacedFailures = [tabStateFailure, reconciliationFailure].map((failure) => failure instanceof Error ? failure.message : String(failure)).concat(reportedFailures)
+		assert.equal(surfacedFailures.filter((message) => message === 'Initial tab state write failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
+		assert.equal(surfacedFailures.filter((message) => message === 'Reconciliation rule read failed').length, 1, `surfaced: ${ surfacedFailures.join(' | ') }`)
+	})
+
+	const connectionEventMethods = ['connect', 'accountsChanged', 'chainChanged']
+	const hasConnectionEvent = (messages: ReturnType<typeof createPort>['messages']) => messages.some((message) => typeof message.method === 'string' && connectionEventMethods.includes(message.method))
+
+	// Runs `change` once, during the first address-book read after the signer name was published: the address lookup that follows the handshake's settings read.
+	const onAddressLookupAfterSignerHandshake = (runtimeMessages: readonly unknown[], change: () => Promise<void>) => {
+		const readStorage = browser.storage.local.get
+		const signerNamePublished = () => runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signer_name_changed')
+		let ran = false
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (!ran && args[0] === 'userAddressBookEntriesV3' && signerNamePublished()) {
+				ran = true
+				await change()
+			}
+			return await readStorage(...args)
+		} })
+	}
+
+	const otherEndpointOf = (rpc: RpcNetwork) => ({ ...rpc, name: 'Same chain, other endpoint', httpsRpc: 'https://same-chain-other-endpoint.example.test' })
+	const otherChainOf = (rpc: RpcNetwork) => ({ ...rpc, name: 'Other chain', chainId: rpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' })
+
+	test.each([
+		{ description: 'the RPC configuration fails', storedChange: 'corrupt' },
+		{ description: 'the chain changes', storedChange: 'chain' },
+		{ description: 'the endpoint changes', storedChange: 'endpoint' },
+	])('does not restore cached consent when $description during the signer handshake address lookup', async ({ storedChange }) => {
+		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
+		const { changeSimulationMode, getRequiredSettings, handleInterceptedRequest, setRpcConfiguration, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const account = 0x5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5cn
+		const websiteOrigin = 'https://deferred-restore.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, signerAccounts: [account], activeSigningAddress: account }))
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { activeRpcNetwork } = await getRequiredSettings()
+		onAddressLookupAfterSignerHandshake(runtimeMessages, async () => {
+			if (storedChange === 'corrupt') return await browser.storage.local.set({ rpcEntries: 'corrupt' })
+			const changedRpc = storedChange === 'chain' ? otherChainOf(activeRpcNetwork) : otherEndpointOf(activeRpcNetwork)
+			await setRpcConfiguration([activeRpcNetwork, changedRpc], changedRpc)
+		})
+
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
+		}, connections, noopPublishRpcConnectionStatus))
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	const setUpCachedSafeConsent = async () => {
+		const { changeSimulationMode, getRequiredSettings, setUseSignersAddressAsActiveAddress, updateTabState, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const signer = 0x6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6dn
+		const safeAddress = 0x7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7en
+		const websiteOrigin = 'https://cached-safe.example.test'
+		const { activeRpcNetwork } = await getRequiredSettings()
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Cached Safe', address: safeAddress, chainId: activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signer] }])
+		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: safeAddress })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, signerAccounts: [signer] }))
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		return { activeRpcNetwork, connection, connections, messages }
+	}
+
+	const sendSignerHandshake = async ({ connection, connections }: Awaited<ReturnType<typeof setUpCachedSafeConsent>>) => {
+		const { handleInterceptedRequest } = await loadModules()
+		const { port, socket, websiteOrigin } = connection
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await withSilencedWarnings(async () => await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, {
+			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
+			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
+		}, connections, noopPublishRpcConnectionStatus))
+	}
+
+	test('restores cached consent for a Safe from a signer handshake when the network does not change', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const cachedConsent = await setUpCachedSafeConsent()
+
+		await sendSignerHandshake(cachedConsent)
+
+		assert.equal(cachedConsent.connection.approved, true)
+		assert.equal(hasConnectionEvent(cachedConsent.messages), true)
+	})
+
+	test('does not restore consent for an address picked on another network when the network changes before the handshake reads its settings', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { setRpcConfiguration } = await loadModules()
+		const cachedConsent = await setUpCachedSafeConsent()
+		const { activeRpcNetwork } = cachedConsent
+		const sendRuntimeMessage = browser.runtime.sendMessage
+		// Published just before the handshake's first settings read, and after the Safe was resolved on the original chain.
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (...args: Parameters<typeof sendRuntimeMessage>) => {
+			const [message] = args
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signer_name_changed') await setRpcConfiguration([activeRpcNetwork, otherChainOf(activeRpcNetwork)], otherChainOf(activeRpcNetwork))
+			return await sendRuntimeMessage(...args)
+		} })
+
+		await sendSignerHandshake(cachedConsent)
+
+		assert.equal(cachedConsent.connection.approved, false)
+		assert.equal(hasConnectionEvent(cachedConsent.messages), false)
+	})
+
+	// Enabling the feature runs the refresh that restores cached Safe consent.
+	const enableSafeAppsCompatibility = async (connections: WebsiteTabConnections, messages: ReturnType<typeof createPort>['messages']) => {
+		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode } = await loadModules()
+		const dispose = await initializeSafeAppsCompatibility(connections)
+		try {
+			await withSilencedWarnings(async () => {
+				await setSafeAppsCompatibilityMode(true)
+				await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+			})
+		} finally {
+			dispose()
+		}
+	}
+
+	test('restores cached Safe consent on a ready configuration', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { connection, connections, messages } = await setUpCachedSafeConsent()
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, true)
+		assert.equal(hasConnectionEvent(messages), true)
+	})
+
+	test.each([
+		{ description: 'corrupt RPC entries', storedRpcEntries: 'corrupt' },
+		{ description: 'empty RPC entries', storedRpcEntries: [] },
+	])('does not restore cached Safe consent with $description', async ({ storedRpcEntries }) => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { connection, connections, messages } = await setUpCachedSafeConsent()
+		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	test('does not restore cached Safe consent when the RPC entries cannot be written', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { connection, connections, messages } = await setUpCachedSafeConsent()
+		await browser.storage.local.remove('rpcEntries')
+		const writeStorage = browser.storage.local.set
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if ('rpcEntries' in items) throw new Error('RPC entries write failed')
+			await writeStorage(items)
+		} })
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	test('does not restore cached Safe consent when the chain changes during the Safe lookup', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { setRpcConfiguration } = await loadModules()
+		const { activeRpcNetwork, connection, connections, messages } = await setUpCachedSafeConsent()
+		const readStorage = browser.storage.local.get
+		let ran = false
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (!ran && args[0] === 'userAddressBookEntriesV3') {
+				ran = true
+				await setRpcConfiguration([activeRpcNetwork, otherChainOf(activeRpcNetwork)], otherChainOf(activeRpcNetwork))
+			}
+			return await readStorage(...args)
+		} })
+
+		await enableSafeAppsCompatibility(connections, messages)
+
+		assert.equal(connection.approved, false)
+		assert.equal(hasConnectionEvent(messages), false)
+	})
+
+	test('hands over the icon refresh after the first state write of a new tab, so the icon follows that state', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { getTabState, registerWebsiteConnection } = await loadModules()
+		const socket = { tabId: 9888, connectionName: 0n }
+		const websiteOrigin = 'first-tab-state.example'
+		let tabStateAtHandover: ReturnType<typeof getTabState> | undefined
+
+		await registerWebsiteConnection(new Map(), socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true, () => { tabStateAtHandover = getTabState(socket.tabId) })
+
+		assert.equal((await tabStateAtHandover)?.website?.websiteOrigin, websiteOrigin)
+	})
+
+	test('a rejected registration reconciliation is thrown and a failed icon refresh is reported after it', async () => {
+		const { runtimeMessages } = installBrowserMock({ manifestVersion: 3 })
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const tabId = 9886
+		const socket = { tabId, connectionName: 0n }
+		const websiteOrigin = 'icon-after-failed-reconciliation.example'
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		// Without a ready RPC configuration the registration reconciles request blocks from persisted approvals, whose read rejects.
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const readStorage = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof readStorage>) => {
+			if (args[0] === 'websiteAccess') throw new Error('Request-block reconciliation failed')
+			return await readStorage(...args)
+		} })
+		// The icon reads the applied session rules, which fail as well.
+		Object.defineProperty(browser.declarativeNetRequest, 'getSessionRules', { configurable: true, value: async () => { throw new Error('Icon refresh failed') } })
+		const originalError = console.error
+		console.error = () => undefined
+		try {
+			const refreshIcon = await registerConnection(websiteTabConnections, socket, { port: createPort(tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
+			await withSilencedWarnings(async () => await assert.rejects(refreshIcon(), /Request-block reconciliation failed/))
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: readStorage })
+			console.error = originalError
+		}
+
+		const reportedFailures = runtimeMessages.flatMap((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_UnexpectedErrorOccured' ? [parsed.value.data.message] : []
+		})
+		assert.ok(reportedFailures.includes('Icon refresh failed'), `reported: ${ reportedFailures.join(' | ') }`)
+		assert.equal(reportedFailures.includes('Request-block reconciliation failed'), false)
+	})
+
+	for (const rpcNetwork of ['unreadable', 'readable'] as const) test(`${ rpcNetwork === 'unreadable' ? 'refreshes' : 'keeps' } an existing tab's icon after a consented child frame registers while the active RPC network is ${ rpcNetwork }`, async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { getTabState, updateTabState } = await loadModules()
+		const consentedFrameOrigin = 'consented-icon-frame.example'
+		const topFrameOrigin = 'unconsented-icon-top.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		if (rpcNetwork === 'readable') await browser.storage.local.remove('activeRpcNetwork')
+		const tabId = 9884
+		const topFrameSocket = { tabId, connectionName: 0n }
+		const childFrameSocket = { tabId, connectionName: 1n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const topFrameRegistration = await registerConnection(websiteTabConnections, topFrameSocket, { port: createPort(tabId).port, socket: topFrameSocket, websiteOrigin: topFrameOrigin, approved: false, wantsToConnect: false }, true)
+		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: topFrameOrigin, icon: undefined, title: undefined } }))
+		await withSilencedWarnings(topFrameRegistration)
+		const topFrameIcon = (await getTabState(tabId)).tabIconDetails
+		assert.doesNotMatch(topFrameIcon.iconReason, /blocking external requests/)
+
+		const childFrameRegistration = await registerConnection(websiteTabConnections, childFrameSocket, { port: createPort(tabId, undefined, 1, childFrameSocket.connectionName).port, socket: childFrameSocket, websiteOrigin: consentedFrameOrigin, approved: false, wantsToConnect: false }, false)
+		await withSilencedWarnings(childFrameRegistration)
+
+		const { tabIconDetails } = await getTabState(tabId)
+		if (rpcNetwork === 'readable') {
+			// A readable active network derives blocking from runtime approvals, which a fresh unapproved frame cannot change, so the icon is left as it was.
+			assert.deepEqual(tabIconDetails, topFrameIcon)
+			return
+		}
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+		assert.doesNotMatch(tabIconDetails.iconReason, new RegExp(consentedFrameOrigin.replaceAll('.', '\\.')))
+	})
+
+	for (const topLevelSource of ['top-frame connection', 'tab URL'] as const) test(`resolves a child frame's icon refresh from the ${ topLevelSource }, not from child-frame metadata in tab state`, async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { getTabState, updateTabState, updateWebsiteAccess } = await loadModules()
+		const consentedFrameOrigin = 'consented-metadata-frame.example'
+		const disabledFrameOrigin = 'disabled-metadata-frame.example'
+		const topFrameOrigin = 'unconsented-metadata-top.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		await updateWebsiteAccess((previous) => [...previous, { website: { websiteOrigin: disabledFrameOrigin, icon: undefined, title: undefined }, addressAccess: [], access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled' }])
+		// Distinct tabs per variant: the applied-block record is module state shared across tests.
+		const tabId = topLevelSource === 'top-frame connection' ? 9885 : 9886
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const registerFrame = async (connectionName: bigint, websiteOrigin: string) => {
+			const socket = { tabId, connectionName }
+			const isTopFrame = connectionName === 0n
+			const { port } = isTopFrame ? createPort(tabId) : createPort(tabId, undefined, Number(connectionName), connectionName)
+			return { socket, refreshIcon: await registerConnection(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame) }
+		}
+		if (topLevelSource === 'top-frame connection') {
+			const topFrame = await registerFrame(0n, topFrameOrigin)
+			await withSilencedWarnings(topFrame.refreshIcon)
+		} else {
+			// No top-frame content script connected (for example a restricted top-level page), so the tab's own URL is the top-level website.
+			Object.defineProperty(browser.tabs, 'get', { configurable: true, value: async (requestedTabId: number) => ({ id: requestedTabId, active: true, status: 'complete', url: `https://${ topFrameOrigin }/page` }) })
+		}
+		await registerFrame(1n, disabledFrameOrigin)
+		const consentedFrame = await registerFrame(2n, consentedFrameOrigin)
+		// Child frames publish their website metadata into tab state as they connect; this one lands before the consented frame's reconciliation is observed.
+		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: disabledFrameOrigin, icon: undefined, title: undefined } }))
+		await withSilencedWarnings(consentedFrame.refreshIcon)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+		const { tabIconDetails } = await getTabState(tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+		assert.doesNotMatch(tabIconDetails.iconReason, /disabled-metadata-frame/)
+	})
+
+	for (const tabUrl of ['current page', 'unknown'] as const) test(`resolves an icon refresh from the tab URL (${ tabUrl }) when two top-level websites are registered, regardless of registration order`, async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { getTabState, updateTabState, updateWebsiteAccess } = await loadModules()
+		const consentedFrameOrigin = 'consented-navigation-frame.example'
+		const currentTopOrigin = 'current-navigation-top.example'
+		const staleTopOrigin = 'stale-navigation-top.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedFrameOrigin)
+		// The stale page's website is interceptor-disabled, so resolving the icon for it would show the disabled icon instead of the blocking shield.
+		await updateWebsiteAccess((previous) => [...previous, { website: { websiteOrigin: staleTopOrigin, icon: undefined, title: undefined }, addressAccess: [], access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled' }])
+		const tabId = tabUrl === 'current page' ? 9889 : 9890
+		if (tabUrl === 'current page') Object.defineProperty(browser.tabs, 'get', { configurable: true, value: async (requestedTabId: number) => ({ id: requestedTabId, active: true, status: 'complete', url: `https://${ currentTopOrigin }/page` }) })
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const register = async (connectionName: bigint, websiteOrigin: string, isTopFrame: boolean) => {
+			const socket = { tabId, connectionName }
+			const { port } = isTopFrame ? createPort(tabId, undefined, undefined, connectionName) : createPort(tabId, undefined, Number(connectionName), connectionName)
+			return { socket, refreshIcon: await registerConnection(websiteTabConnections, socket, { port, socket, websiteOrigin, approved: false, wantsToConnect: false }, isTopFrame) }
+		}
+		// The current page's top frame registers first and the previous page's top-frame port is still registered after it, so the last-inserted top frame is the stale one.
+		const currentTop = await register(1n, currentTopOrigin, true)
+		await withSilencedWarnings(currentTop.refreshIcon)
+		await register(2n, staleTopOrigin, true)
+		const iconBeforeChildFrame = (await getTabState(tabId)).tabIconDetails
+		await updateTabState(tabId, (previous) => ({ ...previous, website: { websiteOrigin: staleTopOrigin, icon: undefined, title: undefined } }))
+		const consentedFrame = await register(3n, consentedFrameOrigin, false)
+		await withSilencedWarnings(consentedFrame.refreshIcon)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+		const { tabIconDetails } = await getTabState(tabId)
+		if (tabUrl === 'unknown') {
+			// With two top-level websites and no tab URL there is no reliable top-level website, so the icon is left to the navigation-complete refresh.
+			assert.deepEqual(tabIconDetails, iconBeforeChildFrame)
+			return
+		}
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+	})
+
+	const createTwoApprovedTabs = async () => {
+		const { websiteSocketToString } = await loadModules()
+		const connectionFor = (tabId: number, websiteOrigin: string) => {
+			const socket = { tabId, connectionName: 0n }
+			return [tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port: createPort(tabId).port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
+		}
+		const websiteTabConnections: WebsiteTabConnections = new Map([connectionFor(9887, 'affected.example'), connectionFor(9888, 'unaffected.example')])
+		const isApproved = (tabId: number) => Object.values(websiteTabConnections.get(tabId)?.connections ?? {}).every((connection) => connection.approved)
+		return { websiteTabConnections, isApproved }
+	}
+
+	// Each committed change kind fixes which websites fail closed: the edited website, every website, or none.
+	for (const { change, revokesAffected, revokesUnaffected } of [
+		{ change: { kind: 'website-access', websiteOrigins: ['affected.example'] }, revokesAffected: true, revokesUnaffected: false },
+		{ change: { kind: 'address-book' }, revokesAffected: true, revokesUnaffected: true },
+		{ change: { kind: 'settings-import' }, revokesAffected: true, revokesUnaffected: true },
+		{ change: { kind: 'request-block-mode' }, revokesAffected: false, revokesUnaffected: false },
+	] as const) test(`reconciling a committed ${ change.kind } change with unreadable settings revokes its scope and throws without reconciling`, async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { reconcileCommittedAccessChange } = await loadModules()
+		const { isRpcConfigurationUnavailableError } = await import('../../app/ts/utils/rpcConfigurationError.js')
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const { websiteTabConnections, isApproved } = await createTwoApprovedTabs()
+		let reconciled = false
+
+		await assert.rejects(withSilencedWarnings(async () => await reconcileCommittedAccessChange(websiteTabConnections, change, async () => { reconciled = true })), isRpcConfigurationUnavailableError)
+		assert.equal(reconciled, false)
+		assert.equal(isApproved(9887), !revokesAffected)
+		assert.equal(isApproved(9888), !revokesUnaffected)
+	})
+
+	test('reconciling a committed change with readable settings only runs the reconciliation', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { reconcileCommittedAccessChange, getRequiredSettings } = await loadModules()
+		const { websiteTabConnections, isApproved } = await createTwoApprovedTabs()
+		const expectedSettings = await getRequiredSettings()
+
+		const result = await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'address-book' }, async (committedSettings) => committedSettings)
+		assert.deepEqual(result, expectedSettings)
+		assert.equal(isApproved(9887) && isApproved(9888), true)
+	})
+
+	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const consentedWebsiteOrigin = 'consented-icon.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const socket = { tabId: 9882, connectionName: 0n }
+		// Registered without its request-block reconciliation, so blocking is not applied yet.
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, consentedWebsiteOrigin, 1))
+
+		// The icon path only reads blocking state, and nothing is applied before reconciliation.
+		assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates, 0)
+		assert.equal(await areWeBlocking(socket.tabId, consentedWebsiteOrigin), false)
+		assert.equal((await getTabState(socket.tabId)).tabIconDetails.icon, ICON_NOT_ACTIVE)
+
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, consentedWebsiteOrigin, 2))
+
+		assert.equal(await areWeBlocking(socket.tabId, consentedWebsiteOrigin), true)
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /RPC configuration is unavailable/)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+	})
+
+	test('does not show the blocking shield when applying persisted-consent tab blocking fails', async () => {
+		installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, getTabState, registerWebsiteConnectionAndProvisionallyClaimSignerState, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const { updateExtensionIcon } = await import('../../app/ts/background/iconHandler.js')
+		const consentedWebsiteOrigin = 'consented-rejected.example'
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork(consentedWebsiteOrigin)
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const socket = { tabId: 9883, connectionName: 0n }
+		await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin: consentedWebsiteOrigin, approved: false, wantsToConnect: false }, true)
+		Object.defineProperty(browser.declarativeNetRequest, 'updateSessionRules', { configurable: true, value: async () => { throw new Error('Session rules unavailable') } })
+
+		await assert.rejects(withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections)), /Session rules unavailable/)
+		await withSilencedWarnings(async () => await updateExtensionIcon(socket.tabId, consentedWebsiteOrigin, 1))
+
+		assert.equal(await areWeBlocking(socket.tabId, consentedWebsiteOrigin), false)
+		const { tabIconDetails } = await getTabState(socket.tabId)
+		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE)
+		assert.doesNotMatch(tabIconDetails.iconReason, /blocking external requests/)
+	})
+
+	test('reports MV2 site blocking only after its request listener is installed and retries a failed installation', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 2 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const blockedWebsiteOrigin = 'mv2-blocked.example'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: blockedWebsiteOrigin, icon: undefined, title: undefined }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
+		const onBeforeRequest = browser.webRequest.onBeforeRequest
+		const installListener = onBeforeRequest.addListener
+		Object.defineProperty(onBeforeRequest, 'addListener', { configurable: true, value: () => { throw new Error('Listener installation failed') } })
+
+		await assert.rejects(updateDeclarativeNetRequestBlocks(new Map()), /Listener installation failed/)
+		assert.equal(await areWeBlocking(1, blockedWebsiteOrigin), false)
+
+		Object.defineProperty(onBeforeRequest, 'addListener', { configurable: true, value: installListener })
+		await updateDeclarativeNetRequestBlocks(new Map())
+
+		assert.equal(browserMock.requestBlockingCalls.webRequestListenerAdds, 1)
+		assert.equal(await areWeBlocking(1, blockedWebsiteOrigin), true)
+	})
+
+	test('keeps tab blocking rules applied before a service-worker restart while the active RPC network is unreadable', async () => {
+		const blockedBeforeRestartTabId = 9878
+		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedBeforeRestartTabId] } }] })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork('consented-restart.example')
+		// Startup reconciles before any content script reconnects.
+		const emptyConnections: WebsiteTabConnections = new Map()
+
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(emptyConnections))
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [blockedBeforeRestartTabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(blockedBeforeRestartTabId, 'consented-restart.example')), true)
+	})
+
+	test('leaves applied request blocks untouched when storage becomes unreadable', async () => {
+		const blockedTabId = 9884
+		const browserMock = installBrowserMock({ manifestVersion: 3, initialSessionRules: [{ id: 1, condition: { tabIds: [blockedTabId] } }] })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		await setUpAddressLevelBlockAllWithUnreadableActiveRpcNetwork('consented-read-failure.example')
+		const updatesBeforeReadFailure = browserMock.requestBlockingCalls.declarativeNetRequestUpdates
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async () => { throw new Error('Storage read unavailable') } })
+
+		// Unreadable storage yields no website approvals or block lists, so reconciling with them would lift applied blocks; the rejection keeps every applied rule instead.
+		await assert.rejects(withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(new Map())), /Storage read unavailable/)
+
+		assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates, updatesBeforeReadFailure)
+		assert.equal(await areWeBlocking(blockedTabId, 'consented-read-failure.example'), true)
+	})
+
+	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const {
+			changeSimulationMode,
+			getTabState,
+			getPendingWatchAssetRequests,
+			handleInterceptedRequest,
+			updateTabState,
+			updatePendingWatchAssetRequests,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const previousAccount = 0x1010101010101010101010101010101010101010n
+		const nextAccount = 0x2020202020202020202020202020202020202020n
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		let signerAccountsChangedCalls = 0
+		const websiteTabConnections = Object.assign(new Map([[socket.tabId, {
+			...confirmedSignerOwnership(socket),
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			},
+		}]]), { lifecycle: { signerAccountsChanged: () => { signerAccountsChangedCalls += 1 } } })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: previousAccount })
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [previousAccount],
+			activeSigningAddress: previousAccount,
+		}))
+		const storedActiveRpcNetwork = readStoredValue('activeRpcNetwork')
+		const storedActiveSigningAddress = readStoredValue('activeSigningAddress')
+		await browser.storage.local.set({ rpcEntries: 'corrupt' })
+		simulationServicesOwner.clear()
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{
+				signerProviderGeneration: 1,
+				type: 'success',
+				accounts: ['0x2020202020202020202020202020202020202020'],
+				requestAccounts: false,
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [nextAccount])
+		assert.equal((await getTabState(socket.tabId)).activeSigningAddress, nextAccount)
+		assert.deepEqual(readStoredValue('activeRpcNetwork'), storedActiveRpcNetwork)
+		assert.deepEqual(readStoredValue('activeSigningAddress'), storedActiveSigningAddress)
+		assert.equal(signerAccountsChangedCalls, 1)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
+			method: 'signer_chainChanged',
+			params: ['0x2', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
+		assert.deepEqual(readStoredValue('activeRpcNetwork'), storedActiveRpcNetwork)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 3, requestSocket: socket },
+			method: 'eth_chainId',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const rpcReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 3)
+		assert.equal(rpcReply?.error?.code, 4900)
+
+		const watchAssetIdentifier = { requestId: 4, requestSocket: socket }
+		const signerIdentity = { tabId: socket.tabId, connectionName: socket.connectionName, ownerGeneration: 1, signerProviderGeneration: 1 }
+		const requestedAsset = { type: 'ERC20' as const, options: { address: 0x3030303030303030303030303030303030303030n, chainId: 1 } }
+		const token = {
+			type: 'ERC20' as const,
+			name: 'Test Token',
+			symbol: 'TEST',
+			decimals: 18n,
+			address: requestedAsset.options.address,
+			chainId: 1n,
+			entrySource: 'User' as const,
+		}
+		await updatePendingWatchAssetRequests(() => [{
+			website,
+			popupOrTabId: { type: 'popup', id: 12 },
+			request: {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: watchAssetIdentifier,
+				method: 'wallet_watchAsset',
+				params: [{ type: 'ERC20', options: { address: '0x3030303030303030303030303030303030303030', chainId: 1 } }],
+			},
+			requestedAsset,
+			currentToken: token,
+			token,
+			proposedImageUrl: undefined,
+			selectedImageUri: undefined,
+			imageDownloadError: undefined,
+			forwardToSigner: { signerName: 'MetaMask', connectionName: socket.connectionName, ownerGeneration: 1, signerProviderGeneration: 1 },
+			forwardingStatus: { status: 'pending' },
+		}])
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 5, requestSocket: socket },
+			method: 'signer_reply',
+			params: [{
+				success: true,
+				signerProviderGeneration: 1,
+				forwardRequest: {
+					type: 'forwardToSigner',
+					replyWithSignersReply: true,
+					method: 'wallet_watchAsset',
+					params: {
+						parameters: requestedAsset,
+						uniqueRequestIdentifier: { requestId: watchAssetIdentifier.requestId, requestSocket: { tabId: socket.tabId, connectionName: '0x0' } },
+						signerIdentity: { ...signerIdentity, connectionName: '0x0' },
+					},
+					requestId: watchAssetIdentifier.requestId,
+				},
+				reply: true,
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.deepEqual((await getPendingWatchAssetRequests())[0]?.forwardingStatus, { status: 'completed', accepted: true })
+	})
+
+	test.each([
+		{ websiteAccess: 'unapproved', expectedSignerChain: 1n },
+		{ websiteAccess: 'denied', expectedSignerChain: 1n },
+		{ websiteAccess: 'approved', expectedSignerChain: 5n },
+	] as const)('uses the stored $websiteAccess website approval for signer callbacks while the active RPC network is unreadable', async ({ websiteAccess, expectedSignerChain }) => {
+		installBrowserMock()
+		const { getTabState, handleInterceptedRequest, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = `https://${ websiteAccess }-signer-callback.example`
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 4321, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		if (websiteAccess !== 'unapproved') await updateWebsiteAccess(() => [{ website, access: websiteAccess === 'approved' }])
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerChain: 1n }))
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+				method: 'signer_chainChanged',
+				params: ['0x5', 1],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal((await getTabState(socket.tabId)).signerChain, expectedSignerChain)
+	})
+
+	test.each(['reset', 'clear'])('decides a parked chain switch from the live owner when the owner is %s before execution', async (lifecycleChange) => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getChainChangeConfirmationPromise, resolveChainChange } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const initialServices = createEthereumWithGetBlockCounter({ count: 0 })
+		const replacementServiceState = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
+		const replacementNetwork = { ...initialServices.ethereum.getRpcEntry(), name: 'Replacement', chainId: 10n, httpsRpc: 'https://replacement.invalid' }
+		const replacementEthereum = new Proxy(replacementServiceState.ethereum, {
+			get(target, property, receiver) {
+				if (property === 'getRpcEntry') return () => replacementNetwork
+				if (property === 'getChainId') return () => replacementNetwork.chainId
+				return Reflect.get(target, property, receiver)
+			},
+		})
+		const replacementServices = { ethereum: replacementEthereum, tokenPriceService: replacementServiceState.tokenPriceService }
+		const simulationServicesOwner = createTestSimulationServicesOwner(
+			{ ethereum: initialServices.ethereum, tokenPriceService: initialServices.tokenPriceService },
+			() => replacementServices,
+		)
+		const settingsReadStarted = createDeferredValue<void>()
+		const releaseSettingsRead = createDeferredValue<void>()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let paused = false
+		let settingsSnapshotReads = 0
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys: string | readonly string[]) => {
+				const requestedKeys = Array.isArray(keys) ? keys : [keys]
+				if (requestedKeys.includes('simulationMode') && requestedKeys.includes('rpcEntries')) settingsSnapshotReads += 1
+				if (!paused && settingsSnapshotReads === 2) {
+					paused = true
+					settingsReadStarted.resolve(undefined)
+					await releaseSettingsRead.promise
+				}
+				return await originalGet(keys)
+			},
+		})
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'wallet_switchEthereumChain',
+			params: [{ chainId: '0x1' }],
+		}
+
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await settingsReadStarted.promise
+		initialServices.ethereum.setBlockPolling(false)
+		if (lifecycleChange === 'reset') simulationServicesOwner.reset(replacementNetwork)
+		else simulationServicesOwner.clear()
+		releaseSettingsRead.resolve(undefined)
+		if (lifecycleChange === 'reset') {
+			// The request was admitted on chain 1, but the live owner moved to chain 10 while it was parked, so the switch back to chain 1 must ask the user instead of reporting success.
+			const deadline = Date.now() + 1000
+			let pendingChainChange = await getChainChangeConfirmationPromise()
+			while (pendingChainChange === undefined) {
+				if (Date.now() >= deadline) throw new Error('Expected the chain change dialog to open for the live chain')
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				pendingChainChange = await getChainChangeConfirmationPromise()
+			}
+			await resolveChainChange(simulationServicesOwner, websiteTabConnections, {
+				method: 'popup_changeChainDialog',
+				data: { rpcNetwork: pendingChainChange.rpcNetwork, uniqueRequestIdentifier: request.uniqueRequestIdentifier, accept: false },
+			})
+		}
+		await requestPromise
+
+		const reply = messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.result, undefined)
+		assert.equal(reply?.error?.code, lifecycleChange === 'reset' ? 4001 : 4900)
+		assert.equal(initialServices.ethereum.isBlockPolling(), false)
+		assert.equal(replacementEthereum.isBlockPolling(), lifecycleChange === 'reset')
+	})
+
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()
@@ -499,7 +1603,7 @@ describe('background eth_accounts', () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			popupChangeActiveRpc,
 			resolveChainChange,

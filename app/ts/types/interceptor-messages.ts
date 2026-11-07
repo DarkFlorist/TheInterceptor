@@ -559,7 +559,8 @@ export type UpdateConfirmTransactionDialogPendingTransactions = {
 	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
 	readonly data: {
 		readonly pendingTransactionAndSignableMessages: readonly PopupPendingTransactionOrSignableMessage[]
-		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
+		// Undefined when the queue is published without RPC services and the connection status knows no block.
+		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity> | undefined
 		readonly rpcConnectionStatus: funtypes.Static<typeof RpcConnectionStatus>
 	}
 }
@@ -567,7 +568,7 @@ const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => fun
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
-		currentBlockNumber: EthereumQuantity,
+		currentBlockNumber: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
 	})
 }).asReadonly()
@@ -714,10 +715,24 @@ export const SetRpcList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
+// The RPC configuration as the popup pages see it. An unavailable status has no list, so a page has to narrow on `available` before it can read one, and keeps what it last showed. Its `readableActiveRpcNetwork` is the stored active network when that can still be read, for browsing local data such as the address book; it says nothing about the network being usable.
+export type PopupRpcStatus = funtypes.Static<typeof PopupRpcStatus>
+const PopupRpcStatus = funtypes.Union(
+	funtypes.ReadonlyObject({
+		available: funtypes.Literal(true),
+		rpcEntries: RpcEntries,
+		activeRpcNetwork: RpcNetwork,
+	}),
+	funtypes.ReadonlyObject({
+		available: funtypes.Literal(false),
+		readableActiveRpcNetwork: funtypes.Union(RpcNetwork, funtypes.Undefined),
+	}),
+)
+
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
-	data: RpcEntries,
+	data: PopupRpcStatus,
 })
 
 export { ChangeActiveChain } from './popupSettingsRequests.js'
@@ -815,8 +830,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
-		activeRpcNetwork: RpcNetwork,
-		rpcEntries: RpcEntries,
+		rpcStatus: PopupRpcStatus,
 	})
 }).asReadonly()
 
@@ -1055,6 +1069,8 @@ const PopupMessageRuntype = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_retryRpcConfiguration') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_restoreDefaultRpcConfiguration') }),
 	SimulateGovernanceContractExecution,
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),
