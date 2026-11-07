@@ -128,6 +128,12 @@ function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessage
 	}
 }
 
+function isApprovalDisabled(dom: ReturnType<typeof installDomMock>) {
+	const approveButton = collectElements(dom.document.body, 'button').find((button) => button.attributes?.class?.includes('dialog-action-button') === true && !button.attributes.class.includes('is-danger'))
+	if (approveButton === undefined) throw new Error('Expected the approve button')
+	return approveButton.attributes?.disabled !== undefined
+}
+
 async function unmountConfirmTransaction(dom: ReturnType<typeof installDomMock>) {
 	await act(() => {
 		render(null, dom.document.body)
@@ -256,16 +262,17 @@ async function makeSimulatedPendingTransaction(approvalStatus: { readonly status
 	}
 }
 
-// Holds every read of the stored pending transactions, each with the value storage had when it was made, until the test releases it.
-function holdStoredPendingTransactionReads() {
+// Holds the reads of the stored pending transactions that shouldHold selects, each with the value storage had when it was made, until the test releases it.
+function holdStoredPendingTransactionReads(shouldHold: () => boolean = () => true) {
 	const { local } = globalThis.browser.storage
 	const read = local.get.bind(local)
 	const heldReads: (() => void)[] = []
 	Object.defineProperty(local, 'get', {
 		configurable: true,
 		value: async (keys: Parameters<typeof read>[0]) => {
+			const held = shouldHold() && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')
 			const stored = await read(keys)
-			if (!(Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages'))) return stored
+			if (!held) return stored
 			await new Promise<void>((resolve) => { heldReads.push(resolve) })
 			return stored
 		},
@@ -582,17 +589,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 			})
 			await new Promise((resolve) => setTimeout(resolve, 25))
 		}
-		const isApprovalDisabled = () => {
-			const approveButton = collectElements(dom.document.body, 'button').find((button) => button.attributes?.class?.includes('dialog-action-button') === true && !button.attributes.class.includes('is-danger'))
-			if (approveButton === undefined) throw new Error('Expected the approve button')
-			return approveButton.attributes?.disabled !== undefined
-		}
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
 		await push('WaitingForUser')
-		assert.equal(isApprovalDisabled(), false)
+		assert.equal(isApprovalDisabled(dom), false)
 
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [await makeSimulatedPendingTransaction({ status: 'WaitingForUser' })] })
 		const reads = holdStoredPendingTransactionReads()
@@ -602,7 +604,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await push('WaitingForSigner')
 		await act(async () => { await reads.release(0) })
 		assert.equal(dom.document.body.textContent?.includes('Waiting for'), true)
-		assert.equal(isApprovalDisabled(), true)
+		assert.equal(isApprovalDisabled(dom), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
@@ -633,6 +635,90 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
+
+	// The real background and the real window in one process: what the background sends reaches the window in order, and the only things held are the block number of the network the user left and, if asked, the window's own read.
+	for (const clearingRead of ['still running', 'finished'] as const) {
+		test(`a refusal that outlived a switch back cannot return to the window when the clearing read is ${ clearingRead } as its update completes`, async () => {
+			const dom = installDomMock()
+			let relayingChainUpdate = false
+			const browser = installBrowserMock(async (message) => {
+				if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
+				if (message.method === 'popup_isMainPopupWindowOpen') return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+				if (!('role' in message)) return undefined
+				relayingChainUpdate = message.method === 'popup_chain_update'
+				browser.dispatch(message)
+				relayingChainUpdate = false
+				return undefined
+			})
+			const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+			const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
+			const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+			const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+			const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
+			const { createDeferredValue, createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
+			const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+
+			const requestedNetwork = { name: 'Requested Chain', chainId: 1n, httpsRpc: 'https://requested.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+			const otherNetwork = { ...requestedNetwork, name: 'Other Chain', chainId: 8453n, httpsRpc: 'https://other.invalid' }
+			const blockNumberReached = createDeferredValue<undefined>()
+			const blockNumberReleased = createDeferredValue<undefined>()
+			const createServices = (rpcNetwork: typeof requestedNetwork, beforeBlockNumber: () => Promise<unknown>) => {
+				const ethereum = new EthereumClientService({
+					rpcUrl: rpcNetwork.httpsRpc,
+					clearCache() { return undefined },
+					async jsonRpcRequest(rpcRequest: { method: string }) {
+						if (rpcRequest.method !== 'eth_blockNumber') throw new Error(`Unexpected RPC request ${ rpcRequest.method }`)
+						await beforeBlockNumber()
+						return '0x7b'
+					},
+				}, async () => undefined, async () => undefined, rpcNetwork)
+				return { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) }
+			}
+			const requestedServices = createServices(requestedNetwork, async () => undefined)
+			const otherServices = createServices(otherNetwork, async () => {
+				blockNumberReached.resolve(undefined)
+				await blockNumberReleased.promise
+			})
+			const simulationServicesOwner = createTestSimulationServicesOwner(requestedServices, (network) => network.chainId === otherNetwork.chainId ? otherServices : requestedServices)
+			const switchNetwork = async (rpcNetwork: typeof requestedNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork })
+			const settle = async () => await new Promise((resolve) => setTimeout(resolve, 25))
+
+			const pendingTransaction = await makeSimulatedPendingTransaction({ status: 'WaitingForUser' })
+			await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+			await switchNetwork(otherNetwork)
+			await act(() => {
+				render(h(ConfirmTransaction, {}), dom.document.body)
+			})
+			await settle()
+
+			// The approval is refused on the other network, and its window update waits for that network's block number.
+			const approval = resolvePendingTransactionOrMessage(otherServices.ethereum, otherServices.tokenPriceService, new Map(), {
+				method: 'popup_confirmDialog',
+				data: { action: 'accept', uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier },
+			})
+			await blockNumberReached.promise
+			await settle()
+			assert.equal((await getPendingTransactionsAndMessages())[0]?.approvalStatus.status, 'SignerError')
+
+			const reads = holdStoredPendingTransactionReads(() => relayingChainUpdate && clearingRead === 'still running')
+			await switchNetwork(requestedNetwork)
+			assert.deepEqual((await getPendingTransactionsAndMessages())[0]?.approvalStatus, { status: 'WaitingForUser' })
+			assert.equal(reads.count, clearingRead === 'still running' ? 1 : 0)
+			await settle()
+
+			blockNumberReleased.resolve(undefined)
+			await approval
+			await settle()
+			await act(async () => { await reads.release(0) })
+			await act(async () => { await settle() })
+
+			assert.equal(dom.document.body.textContent?.includes('The active network changed'), false)
+			assert.equal(isApprovalDisabled(dom), false)
+			await unmountConfirmTransaction(dom)
+			dom.restore()
+		})
+	}
 
 	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()

@@ -79,6 +79,11 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
+// Hands the stored confirmations to publish while no writer can change them, so a message that publish sends reaches the windows ahead of the message of any later write. The lock is released as soon as publish returns, so publish must send without waiting for the delivery.
+export async function publishPendingTransactionsAndMessages<Published extends object | undefined>(publish: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Published) {
+	return await pendingTransactionsSemaphore.execute(async () => publish(await readPendingTransactionsAndMessagesWithRecovery()))
+}
+
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }

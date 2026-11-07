@@ -6,6 +6,7 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../../app/ts/utils/constants.js'
@@ -163,8 +164,7 @@ test('concurrent approvals add a simulation-mode transaction to the simulation s
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 })
 
-test('concurrent approvals forward a message signing request to the signer only once', async () => {
-	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+async function requestPersonalSign(websiteTabConnections: TransactionTestConnections) {
 	const personalSignParams = PersonalSignParams.parse({ method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)] })
 	const reply = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
 		interceptorRequest: true,
@@ -174,6 +174,11 @@ test('concurrent approvals forward a message signing request to the signer only 
 		params: personalSignParams.params,
 	}, { kind: 'message', parameters: personalSignParams }, false, activeAddress, website, websiteTabConnections)
 	assert.deepEqual(reply, { type: 'doNotReply' })
+}
+
+test('concurrent approvals forward a message signing request to the signer only once', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestPersonalSign(websiteTabConnections)
 
 	const approvals = await Promise.all([approveRequest(websiteTabConnections), approveRequest(websiteTabConnections)])
 
@@ -243,6 +248,14 @@ test('a confirmation stored without its requested network decodes as requested o
 	// Written back, it keeps decoding the same way.
 	assert.equal((await getPendingTransaction()).requestedChainId, 'unknown')
 })
+
+// What the confirmation window last received for the first pending request.
+function getLastPublishedApprovalStatus() {
+	const published = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)
+	if (!isRecord(published) || !isRecord(published.data) || !Array.isArray(published.data.pendingTransactionAndSignableMessages)) return undefined
+	const first: unknown = published.data.pendingTransactionAndSignableMessages[0]
+	return isRecord(first) ? first.approvalStatus : undefined
+}
 
 const NETWORK_CHANGED_REFUSAL = 'The active network changed after this transaction was requested. Reject this transaction and send the request again.'
 const OLDER_VERSION_REFUSAL = 'This transaction was requested with an older version of The Interceptor. Reject this transaction and send the request again.'
@@ -366,6 +379,83 @@ test('a confirmation stored by an older version is told so, and its refusal neve
 	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
+})
+
+test('a push whose read overlaps a write reaches the windows before that write is announced', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { publishConfirmationView } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { sendPopupMessageToOpenWindows } = await import('../../app/ts/background/backgroundUtils.js')
+	const readStarted = createDeferredValue<undefined>()
+	const releaseRead = createDeferredValue<undefined>()
+	let holdNextRead = true
+	browserMock.setStorageGetHandler(async (_keys, read) => {
+		const stored = read()
+		if (holdNextRead) {
+			holdNextRead = false
+			readStarted.resolve(undefined)
+			await releaseRead.promise
+		}
+		return stored
+	})
+
+	const publishing = publishConfirmationView({ currentBlockNumber: 1n, rpcConnectionStatus: undefined, visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() })
+	await readStarted.promise
+	browserMock.sentMessages.length = 0
+	const writing = storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } })).then(async () => await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' }))
+	await new Promise((resolve) => setTimeout(resolve, 10))
+	releaseRead.resolve(undefined)
+	await Promise.all([publishing, writing])
+	browserMock.setStorageGetHandler(undefined)
+
+	const methods = browserMock.sentMessages.map((message) => message.method)
+	assert.ok(methods.indexOf('popup_update_confirm_transaction_dialog_pending_transactions') >= 0)
+	assert.ok(methods.indexOf('popup_update_confirm_transaction_dialog_pending_transactions') < methods.indexOf('popup_chain_update'))
+})
+
+test('a metadata refresh of a transaction publishes the approval as it is stored when it publishes', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const suspended = createSuspendedServices('eth_blockNumber')
+
+	const refresh = refreshPopupConfirmTransactionMetadata(suspended.ethereum, suspended.tokenPriceService, undefined)
+	await suspended.reached
+	await new Promise((resolve) => setTimeout(resolve, 25))
+	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	suspended.release()
+	await refresh
+
+	assert.deepEqual(getLastPublishedApprovalStatus(), { status: 'WaitingForSigner' })
+})
+
+test('a metadata refresh of a message publishes the approval as it is stored when it publishes', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestPersonalSign(websiteTabConnections)
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const suspended = createSuspendedServices('eth_blockNumber')
+
+	const refresh = refreshPopupConfirmTransactionMetadata(suspended.ethereum, suspended.tokenPriceService, undefined)
+	await suspended.reached
+	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	suspended.release()
+	await refresh
+
+	assert.deepEqual(getLastPublishedApprovalStatus(), { status: 'WaitingForSigner' })
+})
+
+test('a confirmation window that starts during slow lookups starts from what is stored after them', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { popupReadyAndListening } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const suspended = createSuspendedServices('eth_blockNumber')
+
+	const ready = popupReadyAndListening(suspended.ethereum, websiteTabConnections, 'confirmTransaction')
+	await suspended.reached
+	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	suspended.release()
+
+	assert.equal((await ready)?.data.confirmTransactionBootstrap?.pendingTransactionAndSignableMessages[0]?.approvalStatus.status, 'WaitingForSigner')
 })
 
 test('a network round trip keeps the transaction preview of the network the transaction was requested for', async () => {
