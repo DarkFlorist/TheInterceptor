@@ -8,7 +8,7 @@ import { getDeployedContractAddress } from '../../../simulation/services/Simulat
 import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
 import { EnsEventsExplainer } from './EnsEventExplainer.js'
-import type { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import type { TokenApprovalDisplay, TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { type ReadonlySignal, useComputed } from '@preact/signals'
@@ -23,7 +23,7 @@ type SendOrReceiveTokensImportanceBoxParams = {
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
-export function tokenEventToTokenSymbolParams(tokenEvent: TokenVisualizerResultWithMetadata){
+export function tokenEventToTokenSymbolParams(tokenEvent: TokenApprovalDisplay){
 	switch(tokenEvent.type) {
 		case 'ERC1155': return { tokenEntry: tokenEvent.token, tokenId: tokenEvent.tokenId, tokenIdName: tokenEvent.tokenIdName }
 		case 'ERC20': return { tokenEntry: tokenEvent.token }
