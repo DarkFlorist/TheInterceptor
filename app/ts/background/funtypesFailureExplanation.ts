@@ -1,4 +1,4 @@
-// The only adapter over funtypes internals: it explains funtypes validation failures by reading parts of funtypes that are not documented API, namely the codec `tag` names, the `underlying`, `fields`, `alternatives`, `components`, `intersectees`, `element` and `value` members, and the grammar of `Failure.key`. It is written against funtypes 5.1.0, the exact version pinned in package.json, and the layout and grammar pins in test/tests/funtypesFailureExplanation.test.ts are what make a mismatch visible, so every funtypes upgrade must pass them. There is deliberately no runtime or startup check, because this module builds a dapp-facing error reply that must not gain a failure path: a tag missing from CODEC_TAGS_BY_HANDLING is handled like an opaque leaf, and a renamed tag or member or a changed key string does not throw. Such a mismatch usually degrades the reply to the generic `Invalid <method> parameters` message or a vaguer expectation, but a lost `components`, `alternatives` or literal `value` member yields wrong wording such as "expects no parameters", so a failing pin must block the upgrade.
+// The only adapter over funtypes internals: it words a rejection funtypes already made and never decides validity, using parts of funtypes that are not documented API because funtypes has no public way to walk a failure, namely the codec `tag` names, the `underlying`, `fields`, `alternatives`, `components`, `intersectees`, `element` and `value` members, and the grammar of `Failure.key`. An upgrade is gated twice. FUNTYPES_ADAPTER_VERSION names the funtypes version these internals were validated against, and test/tests/funtypesFailureExplanation.test.ts fails on any other package.json pin until the pins there are re-validated. If that is skipped, or a security fix forces a bump first, the reply calls isCodecLayoutRecognized before wording anything and answers with the generic `Invalid <method> parameters` message for a tag or member layout it does not recognise, so the reply loses detail instead of stating something wrong. That check only reads codecs, never the page's values, and returns a boolean, so it adds no failure path to this dapp-facing reply. A changed `Failure.key` grammar is not detected by it, but only stops the explanation at an enclosing value.
 import type { CodecDescription, JsonDocumentDescription, ReflectedCodec } from '../types/codecDescription.js'
 
 // A funtypes failure of one codec for one value. The key is the path from that value to the failing value, for example `params.[0].to`.
@@ -31,6 +31,9 @@ export type ValueProblem =
 // funtypes drops the failure key at unions, so every union the explanation descends into validates the remaining subtree again, which is quadratic in the nesting depth of recursive values such as EIP-712 messages. Capping the validations keeps an explanation within a fixed multiple of one parse of the value.
 const MAX_EXPLANATION_VALIDATIONS = 16
 
+// The funtypes version the internals read here were validated against. Only the upgrade test reads it; change it after re-validating them, not to silence that test.
+export const FUNTYPES_ADAPTER_VERSION = '5.1.0'
+
 // Every funtypes codec tag, by how this module handles it. This is the authoritative list that the tests check funtypes and the real RPC codecs against.
 export const CODEC_TAGS_BY_HANDLING = {
 	// Validate a value with their `underlying` codec before applying their own check. Lazy codecs store a function that returns the underlying codec.
@@ -44,6 +47,7 @@ export const CODEC_TAGS_BY_HANDLING = {
 }
 
 const WRAPPER_CODEC_TAGS = new Set(CODEC_TAGS_BY_HANDLING.wrapper)
+const LEAF_CODEC_TAGS = new Set([...CODEC_TAGS_BY_HANDLING.describedLeaf, ...CODEC_TAGS_BY_HANDLING.opaqueLeaf])
 
 export const isReflectedCodec = (value: unknown): value is ReflectedCodec => typeof value === 'object'
 	&& value !== null
@@ -78,6 +82,45 @@ const getUnderlyingCodec = (codec: ReflectedCodec) => {
 	const underlying: unknown = Reflect.get(codec, 'underlying')
 	const resolvedUnderlying: unknown = typeof underlying === 'function' ? underlying() : underlying
 	return isReflectedCodec(resolvedUnderlying) ? resolvedUnderlying : undefined
+}
+
+const toChildCodecList = (child: ReflectedCodec | undefined) => child === undefined ? undefined : [child]
+
+const readChildCodecList = (children: unknown): readonly ReflectedCodec[] | undefined => Array.isArray(children) && children.every(isReflectedCodec) ? children : undefined
+
+// The codecs a codec directly holds, or undefined when its tag is unknown or it lacks the members its tag promises. The accessors above return nothing for a lost member, which looks like a legitimately empty tuple, so the layout has to be checked here before they are trusted.
+function getRecognizedChildCodecs(codec: ReflectedCodec): readonly ReflectedCodec[] | undefined {
+	if (WRAPPER_CODEC_TAGS.has(codec.tag)) return toChildCodecList(getUnderlyingCodec(codec))
+	switch (codec.tag) {
+		case 'object': {
+			const fields: unknown = Reflect.get(codec, 'fields')
+			return typeof fields === 'object' && fields !== null ? readChildCodecList(Object.values(fields)) : undefined
+		}
+		case 'record': return toChildCodecList(getChildCodec(codec, 'value'))
+		case 'array': return toChildCodecList(getChildCodec(codec, 'element'))
+		case 'tuple': return readChildCodecList(Reflect.get(codec, 'components'))
+		case 'intersect': return readChildCodecList(Reflect.get(codec, 'intersectees'))
+		case 'union': return readChildCodecList(Reflect.get(codec, 'alternatives'))
+		// A literal of undefined holds an undefined value, so only the absence of the member shows a lost one.
+		case 'literal': return Reflect.has(codec, 'value') ? [] : undefined
+		default: return LEAF_CODEC_TAGS.has(codec.tag) ? [] : undefined
+	}
+}
+
+// Whether every codec the explanation could reach from a codec has a tag and member layout this module recognises. It walks the codecs, whose size is fixed by this extension, and never the page's values.
+export function isCodecLayoutRecognized(descriptions: CodecDescriptions, rootCodec: ReflectedCodec) {
+	const visitedCodecs = new Set<ReflectedCodec>()
+	const pendingCodecs = [rootCodec]
+	for (let codec = pendingCodecs.pop(); codec !== undefined; codec = pendingCodecs.pop()) {
+		if (visitedCodecs.has(codec)) continue
+		visitedCodecs.add(codec)
+		const children = getRecognizedChildCodecs(codec)
+		if (children === undefined) return false
+		pendingCodecs.push(...children)
+		const jsonDocument = descriptions.get(codec)?.jsonDocument
+		if (jsonDocument !== undefined) pendingCodecs.push(jsonDocument.codec)
+	}
+	return true
 }
 
 const unwrapCodec = (codec: ReflectedCodec): ReflectedCodec => {

@@ -6,7 +6,7 @@ import { EIP712MessageDescription } from '../types/eip721.js'
 import { CanonicalEthereumQuantityDescription, EthereumAddressDescription, EthereumBlockTagDescription, EthereumBytes32Description, EthereumDataDescription, EthereumInputDescription, EthereumQuantityDescription } from '../types/wire-types.js'
 import type { ReflectedCodec } from '../types/codecDescription.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
-import { explainValueFailure, formatAlternatives, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, type ValueFailure, type ValuePath, type ValueProblem } from './funtypesFailureExplanation.js'
+import { explainValueFailure, formatAlternatives, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, type ValueFailure, type ValuePath, type ValueProblem } from './funtypesFailureExplanation.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { assertNever } from '../utils/typescript.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
@@ -143,7 +143,8 @@ function describeParamsProblem(request: InterceptedRequest, requestCodec: Reflec
 }
 
 function describeInvalidRpcParams(request: InterceptedRequest, requestCodec: SupportedEthereumJsonRpcRequestCodec, requestCodecFailure: ValueFailure) {
-	const paramsCodec = getObjectFieldCodec(requestCodec, 'params')
+	// Wording built from a codec layout this module does not recognise could be wrong, so such a codec gets the method codec failure below, which funtypes worded itself.
+	const paramsCodec = isCodecLayoutRecognized(CODEC_DESCRIPTIONS, requestCodec) ? getObjectFieldCodec(requestCodec, 'params') : undefined
 	const paramsProblem = paramsCodec === undefined ? undefined : describeParamsProblem(request, requestCodec, requestCodecFailure, paramsCodec)
 	if (paramsProblem !== undefined) return paramsProblem
 	// Fall back to the failure of this method's own codec, which is far more specific than the failure of the whole request union.

@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
+import { getObjectFieldCodec } from '../../app/ts/background/funtypesFailureExplanation.js'
 import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EIP712MessageDescription } from '../../app/ts/types/eip721.js'
 import { EthereumJsonRpcRequest, findEthereumJsonRpcRequestCodec, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
@@ -93,6 +94,27 @@ function createRejectedTypedDataRequest() {
 	const parseResult = requestCodec.safeParse(request)
 	if (parseResult.success) throw new Error('The typed data should fail to parse')
 	return { typedDataDocument, getReply: () => getInvalidRpcParamsReply(request, requestCodec, parseResult) }
+}
+
+// Changes a real codec the way a funtypes upgrade could while the reply is built, so the reply is exactly the one such an upgrade would produce.
+function getReplyMessageWithChangedCodec(method: string, params: unknown[], getChangedCodec: (paramsCodec: object) => object, member: string, changedValue: unknown) {
+	const request = createRequest(method, params)
+	const requestCodec = findEthereumJsonRpcRequestCodec(method)
+	const paramsCodec = requestCodec === undefined ? undefined : getObjectFieldCodec(requestCodec, 'params')
+	if (requestCodec === undefined || paramsCodec === undefined) throw new Error(`${ method } should have params`)
+	const parseResult = requestCodec.safeParse(request)
+	if (parseResult.success) throw new Error(`${ method } request should fail to parse`)
+	const changedCodec = getChangedCodec(paramsCodec)
+	const originalValue: unknown = Reflect.get(changedCodec, member)
+	Reflect.set(changedCodec, member, changedValue)
+	try {
+		const reply = getInvalidRpcParamsReply(request, requestCodec, parseResult)
+		if (reply.type !== 'result' || !('error' in reply)) throw new Error('Expected an error reply')
+		assert.equal(reply.error.code, -32602)
+		return reply.error.message
+	} finally {
+		Reflect.set(changedCodec, member, originalValue)
+	}
 }
 
 describe('readable RPC parse failure replies', () => {
@@ -279,6 +301,22 @@ describe('readable RPC parse failure replies', () => {
 		} finally {
 			validationSpy.mockRestore()
 		}
+	})
+
+	test('reports the method codec failure instead of wrong wording when a codec lost a member it should have', () => {
+		const message = getReplyMessageWithChangedCodec('eth_getBlockByNumber', ['latest'], (paramsCodec) => paramsCodec, 'components', undefined)
+		assert.equal(message, 'Invalid eth_getBlockByNumber parameters at params: Expected an array of length 2, but was 1.')
+	})
+
+	test('reports the method codec failure when a nested codec has an unknown tag', () => {
+		const getBooleanParameterCodec = (paramsCodec: object): object => {
+			const components: unknown = Reflect.get(paramsCodec, 'components')
+			const booleanParameterCodec: unknown = Array.isArray(components) ? components[1] : undefined
+			if (typeof booleanParameterCodec !== 'object' || booleanParameterCodec === null) throw new Error('eth_getBlockByNumber should have a second parameter')
+			return booleanParameterCodec
+		}
+		const message = getReplyMessageWithChangedCodec('eth_getBlockByNumber', ['latest', 'yes'], getBooleanParameterCodec, 'tag', 'futureCodec')
+		assert.equal(message, 'Invalid eth_getBlockByNumber parameters at params.[1]: Expected boolean, but was "yes" (i.e. a string literal).')
 	})
 
 	test('falls back to the method codec failure when every field is valid on its own', () => {

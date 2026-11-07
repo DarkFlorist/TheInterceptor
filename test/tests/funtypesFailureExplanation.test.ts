@@ -3,7 +3,7 @@ import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
 import { CODEC_DESCRIPTIONS } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumJsonRpcRequest, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
-import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
+import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, FUNTYPES_ADAPTER_VERSION, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, isReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
 import type { ReflectedCodec } from '../../app/ts/types/codecDescription.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
@@ -274,6 +274,38 @@ describe('funtypes failure explanation', () => {
 			const failure = parseResult.success ? { message: 'rejected by an enclosing codec' } : parseResult
 			assert.deepEqual(explainValueFailure(noDescriptions, codec, value, failure), problem, codec.tag)
 		}
+	})
+
+	test('recognizes the real RPC request codecs, so their readable errors stay in use', () => {
+		for (const requestCodec of [EthereumJsonRpcRequest, WalletRevokePermissions]) assert.equal(isCodecLayoutRecognized(CODEC_DESCRIPTIONS, requestCodec), true)
+	})
+
+	test('recognizes a codec of every classified tag', () => {
+		for (const { codec } of CODEC_SAMPLES) assert.equal(isCodecLayoutRecognized(noDescriptions, codec), true, codec.tag)
+	})
+
+	test('does not recognize an unknown tag or a codec that lost the members its tag promises', () => {
+		const shapelessCodec = (tag: string): ReflectedCodec => ({ tag, safeParse: (value) => funtypes.Unknown.safeParse(value) })
+		const tagsWithMembers = [...CODEC_TAGS_BY_HANDLING.wrapper, ...CODEC_TAGS_BY_HANDLING.composite, 'literal']
+		for (const tag of ['futureCodec', ...tagsWithMembers]) assert.equal(isCodecLayoutRecognized(noDescriptions, shapelessCodec(tag)), false, tag)
+	})
+
+	test('finds an unknown codec shape however deep it is nested, including inside a JSON document', () => {
+		const futureCodec: ReflectedCodec = { tag: 'futureCodec', safeParse: (value) => funtypes.Unknown.safeParse(value) }
+		const nestedCodec = { tag: 'union', safeParse: (value: unknown) => funtypes.Unknown.safeParse(value), alternatives: [funtypes.String, { ...funtypes.ReadonlyTuple(funtypes.String), components: [futureCodec] }] }
+		assert.equal(isCodecLayoutRecognized(noDescriptions, nestedCodec), false)
+		const jsonDocument = { name: 'settings', shape: 'a JSON object', codec: futureCodec, parse: JSON.parse }
+		assert.equal(isCodecLayoutRecognized(indexCodecDescriptions([{ codec: funtypes.String, label: 'settings', jsonDocument }]), funtypes.ReadonlyTuple(funtypes.String)), false)
+	})
+
+	test('walks recursive codecs without looping', () => {
+		assert.equal(isCodecLayoutRecognized(noDescriptions, NestedValue), true)
+	})
+
+	test('is re-validated before the funtypes version changes', async () => {
+		const packageManifest = await Bun.file(new URL('../../package.json', import.meta.url).pathname).json()
+		const pinnedVersion: unknown = packageManifest.dependencies.funtypes
+		assert.equal(pinnedVersion, FUNTYPES_ADAPTER_VERSION, `package.json pins funtypes ${ pinnedVersion }, but app/ts/background/funtypesFailureExplanation.ts was validated against ${ FUNTYPES_ADAPTER_VERSION }. Re-validate its tags (CODEC_TAGS_BY_HANDLING), the members it reads (isCodecLayoutRecognized) and the Failure.key grammar against the new version, keep the pins in this test passing, then update FUNTYPES_ADAPTER_VERSION.`)
 	})
 
 	test('falls back to the generic expectation for a tag it does not classify', () => {
