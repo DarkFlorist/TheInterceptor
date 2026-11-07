@@ -75,16 +75,14 @@ async function runExclusiveFetchSimulationStackResolution(resolution: () => Prom
 	}
 }
 
-// The clear has to come first: closing the dialog can store a new request, which a later clear would wipe
+// The reply is prepared first so a failed extraction leaves the request stored and retryable. The clear then has to precede the close: closing the dialog can store a new request, which a later clear would wipe
 async function resolveStoredRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
-	await setFetchSimulationStackRequestPromise(undefined)
 	const { uniqueRequestIdentifier, simulationStackVersion, popupOrTabId } = storedRequest
-	if (confirmation.data.accept) {
-		const result = await getSimulationStack(snapshot.simulationState, simulationStackVersion)
-		replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack', result, uniqueRequestIdentifier })
-	} else {
-		replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error, uniqueRequestIdentifier })
-	}
+	const reply: FetchSimulationStackRequestResult = confirmation.data.accept
+		? { type: 'result', method: 'interceptor_getSimulationStack', result: await getSimulationStack(snapshot.simulationState, simulationStackVersion) }
+		: { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error }
+	await setFetchSimulationStackRequestPromise(undefined)
+	replyToInterceptedRequest(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
 	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
 	await closePopupOrTabById(popupOrTabId)
 }

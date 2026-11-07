@@ -116,6 +116,21 @@ function createSnapshot(): SimulationStackSnapshot {
 	}
 }
 
+function createSnapshotWithFailingExtraction(): SimulationStackSnapshot {
+	const snapshot = createSnapshot()
+	if (snapshot.simulationState.kind !== 'simulated' || !snapshot.simulationState.value.success) throw new Error('Expected a successful simulation snapshot')
+	return {
+		...snapshot,
+		simulationState: {
+			kind: 'simulated',
+			value: {
+				...snapshot.simulationState.value,
+				get simulatedBlocks(): never { throw new Error('Injected extraction failure') },
+			},
+		},
+	}
+}
+
 function createRecordingPort(postedMessages: unknown[]): browser.runtime.Port {
 	const event = {
 		addListener() { return undefined },
@@ -195,6 +210,12 @@ function assertUserRejectedReply(message: object) {
 	assert.equal(message.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
 }
 
+function assertSimulationStackReply(message: object) {
+	assert.equal('error' in message, false)
+	if (!('result' in message) || typeof message.result !== 'object' || message.result === null || !('version' in message.result)) throw new Error('Expected the website to receive the simulation stack')
+	assert.equal(message.result.version, '2.0.0')
+}
+
 describe('fetch simulation stack confirmation after a background restart', () => {
 	test('rejecting replies with the user-rejected error and does not share the simulation stack', async () => {
 		const postedMessages: unknown[] = []
@@ -217,10 +238,7 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 
 		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(true))
 
-		const message = getOnlyPostedMessage(postedMessages)
-		assert.equal('error' in message, false)
-		if (!('result' in message) || typeof message.result !== 'object' || message.result === null || !('version' in message.result)) throw new Error('Expected the website to receive the simulation stack')
-		assert.equal(message.result.version, '2.0.0')
+		assertSimulationStackReply(getOnlyPostedMessage(postedMessages))
 		assert.equal(await getFetchSimulationStackRequestPromise(), undefined)
 		assert.equal(openWindowIds.has(dialogWindowId), false)
 	})
@@ -268,6 +286,25 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 		])
 
 		assertUserRejectedReply(getOnlyPostedMessage(postedMessages))
+		assert.equal(await getFetchSimulationStackRequestPromise(), undefined)
+		assert.equal(openWindowIds.has(dialogWindowId), false)
+	})
+
+	test('a failed stack extraction keeps the request retryable and a successful retry replies once', async () => {
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
+		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
+
+		await assert.rejects(resolveFetchSimulationStackRequest(createSnapshotWithFailingExtraction(), websiteTabConnections, createConfirmation(true)), /Injected extraction failure/)
+
+		assert.equal(postedMessages.length, 0)
+		assert.equal((await getFetchSimulationStackRequestPromise())?.uniqueRequestIdentifier.requestId, uniqueRequestIdentifier.requestId)
+		assert.equal(openWindowIds.has(dialogWindowId), true)
+
+		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(true))
+
+		assertSimulationStackReply(getOnlyPostedMessage(postedMessages))
 		assert.equal(await getFetchSimulationStackRequestPromise(), undefined)
 		assert.equal(openWindowIds.has(dialogWindowId), false)
 	})
