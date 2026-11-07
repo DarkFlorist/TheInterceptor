@@ -265,25 +265,18 @@ const getRefusalMessage = async () => {
 	return approvalStatus.status === 'SignerError' ? approvalStatus.message : undefined
 }
 
-// What the confirmation window last received for the first pending request.
-function getLastPublishedApprovalStatus() {
-	const published = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)
-	if (!isRecord(published) || !isRecord(published.data) || !Array.isArray(published.data.pendingTransactionAndSignableMessages)) return undefined
-	const first: unknown = published.data.pendingTransactionAndSignableMessages[0]
-	return isRecord(first) ? first.approvalStatus : undefined
-}
-
-// The window update after a network change is not awaited by the change, so it is waited for here.
-async function waitForPublishedWaitingForUser() {
-	for (let attempt = 0; attempt < 200; attempt++) {
-		const published = getLastPublishedApprovalStatus()
-		if (isRecord(published) && published.status === 'WaitingForUser') return
-		await new Promise((resolve) => setTimeout(resolve, 1))
+// Records the stored approval status at each chain update, which is what a confirmation window reads from storage when that message reaches it.
+function recordApprovalStatusAtChainUpdates() {
+	const recorded: unknown[] = []
+	const sendMessage = browser.runtime.sendMessage
+	browser.runtime.sendMessage = async (message: Parameters<typeof sendMessage>[0]) => {
+		if (isRecord(message) && message.method === 'popup_chain_update') recorded.push(await getStoredApprovalStatus())
+		return await sendMessage(message)
 	}
-	assert.deepEqual(getLastPublishedApprovalStatus(), { status: 'WaitingForUser' })
+	return { recorded, restore: () => { browser.runtime.sendMessage = sendMessage } }
 }
 
-test('a refusal is lifted as soon as the network is back on the requested network, and the confirmation window is told', async () => {
+test('a refusal is lifted as soon as the network is back on the requested network, before the windows are told', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
 	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
@@ -293,9 +286,11 @@ test('a refusal is lifted as soon as the network is back on the requested networ
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 
+	const chainUpdates = recordApprovalStatusAtChainUpdates()
 	await switchNetwork(fakeRpcNetwork)
+	chainUpdates.restore()
 	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
-	await waitForPublishedWaitingForUser()
+	assert.deepEqual(chainUpdates.recorded, [{ status: 'WaitingForUser' }])
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 
 	assert.equal(await approveRequest(websiteTabConnections), true)
@@ -315,10 +310,7 @@ test('lifting a refusal does not hold back the network change behind an RPC of t
 	// The change completes and the refusal is gone while the RPC of the requested network has not answered.
 	await switchNetwork(fakeRpcNetwork)
 	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
-
-	await suspended.reached
 	suspended.release()
-	await waitForPublishedWaitingForUser()
 })
 
 test('a refusal stays while the check still refuses, and approving again still sends nothing', async () => {

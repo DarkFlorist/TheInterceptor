@@ -16,6 +16,15 @@ const listReached = (from: readonly string[], forbidden: readonly string[]) => f
 	.filter((reached) => forbidden.includes(reached))
 	.map((reached) => `${ path.basename(module) } reaches ${ path.basename(reached) }`))
 
+// The settings transition updates stored refusals through the network rule and tells the windows, so the confirmation window machinery stays out of it, and the rule stays out of the cycle the settings transition is part of.
+test('the settings transition depends on the network rule but not on the confirmation window', () => {
+	const settingsTransitionModule = backgroundModule('activeSettings.ts')
+	const directImports = getRuntimeDependencies(settingsTransitionModule).map((dependency) => dependency.module)
+	assert.ok(directImports.includes(networkRuleModule))
+	assert.equal(directImports.includes(path.join(backgroundDirectory, 'windows', 'confirmTransaction.ts')), false)
+	assert.deepEqual(listReached([networkRuleModule], [settingsTransitionModule]), [])
+})
+
 // requestedNetworkForwarding.ts composes delivery with the requested-network rule, so neither side depends on the other.
 test('the transport depends on no network policy or storage, and the network rule on no delivery', () => {
 	// The transport already reaches settings and storage indirectly through backgroundUtils.ts, so for those only its own imports are checked.

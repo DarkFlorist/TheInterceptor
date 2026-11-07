@@ -824,6 +824,12 @@ export function ConfirmTransaction() {
 		}
 	}
 
+	// The background updates stored network refusals before it reports a chain change, and storage answers without waiting for the RPC of the new network.
+	const showStoredPendingTransactions = async () => {
+		const pendingTransactions = await hydratePendingTransactionsFromStorage()
+		if (pendingTransactions.length > 0) applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+	}
+
 	const applyNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus, priority: number) => {
 		if (priority < networkDataPriority.value) return
 		networkDataPriority.value = priority
@@ -845,6 +851,10 @@ export function ConfirmTransaction() {
 
 			if (parsed.method === 'popup_settingsUpdated') {
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				return false
+			}
+			if (parsed.method === 'popup_chain_update') {
+				showStoredPendingTransactions()
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {

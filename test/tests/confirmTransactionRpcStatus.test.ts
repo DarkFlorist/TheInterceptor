@@ -441,6 +441,49 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 
+	test('shows the stored pending transactions when the chain changes, as a refusal may have been lifted', async () => {
+		const dom = installDomMock()
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		const browser = installBrowserMock()
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const dispatchChainUpdate = async () => {
+			await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
+			await new Promise((resolve) => setTimeout(resolve, 25))
+		}
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [makePendingTransaction('transaction before the chain change')],
+						currentBlockNumber: 124n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+		await new Promise((resolve) => setTimeout(resolve, 25))
+		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), true)
+
+		// With nothing stored the window keeps what it shows until the background closes it.
+		await dispatchChainUpdate()
+		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), true)
+
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction after the chain change')] })
+		await dispatchChainUpdate()
+		assert.equal(dom.document.body.textContent?.includes('transaction after the chain change'), true)
+		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), false)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
 	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()
 		installBrowserMock((message) => {

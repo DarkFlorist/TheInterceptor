@@ -63,21 +63,15 @@ export async function getTransactionNetworkApprovalError(ethereum: EthereumClien
 
 const getStoredNetworkRefusalMessage = ({ approvalStatus }: PendingTransactionOrSignableMessage) => approvalStatus.status === 'SignerError' && approvalStatus.networkRefusal === true ? approvalStatus.message : undefined
 
-// A refusal describes the network at the moment of the approval, so a stored one is replaced by what the same check says now, which lifts it once approving would work again. Only what the user is told changes: every approval runs the check itself whatever is stored, and a request that holds no refusal is never given one here. It reads only storage and the client's chain id, never an RPC, and tells whether any stored refusal changed.
+// A refusal describes the network at the moment of the approval, so a stored one is replaced by what the same check says now, which lifts it once approving would work again. Only what the user is told changes: every approval runs the check itself whatever is stored, and a request that holds no refusal is never given one here. It reads only storage and the client's chain id, never an RPC.
 export async function reevaluateStoredNetworkRefusals(ethereum: EthereumClientService) {
-	let refusalChanged = false
 	for (const pending of await getPendingTransactionsAndMessages()) {
 		const storedMessage = getStoredNetworkRefusalMessage(pending)
 		if (pending.type !== 'Transaction' || storedMessage === undefined) continue
 		const refusal = await getTransactionNetworkApprovalError(ethereum, pending)
 		if (refusal?.message === storedMessage) continue
-		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
-			if (getStoredNetworkRefusalMessage(current) === undefined) return undefined
-			refusalChanged = true
-			return modifyObject(current, { approvalStatus: refusal ?? { status: 'WaitingForUser' as const } })
-		})
+		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => getStoredNetworkRefusalMessage(current) === undefined ? undefined : modifyObject(current, { approvalStatus: refusal ?? { status: 'WaitingForUser' as const } }))
 	}
-	return refusalChanged
 }
 
 // Queues the update on the transaction state lock in the same synchronous step as the passed check, so the stack reset of a later network switch, which takes the same lock, is applied after it. The update itself runs later, under the lock, and is synchronous.
