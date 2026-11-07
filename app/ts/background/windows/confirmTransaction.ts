@@ -292,14 +292,13 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// The refusal is the verdict of the approval's own services, but the window is shown what approving would do now, as a queued approval can outlive a network switch. The installed services are read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows.
-async function invalidateTransactionApproval(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: TransactionNetworkError) {
+// The one step that stores a network refusal. The refusal is the verdict of the approval's own services, but the window is shown what approving would do now, as a resolution can outlive a network switch. The installed services are read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows. The window is told to read what is stored, which needs no RPC, and the view update that does need one is not awaited: the lock of the resolution and the reply to the window would wait for it, which would hold back a rejection and keep the reject button disabled.
+async function storeNetworkRefusal(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: TransactionNetworkError) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	await reevaluateStoredNetworkRefusals(ethereum)
-	// The view update needs an RPC that can fail or hang, so the window is first told to read what is stored, which needs none.
 	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_refusal_updated' }, 'confirmTransaction')
-	await updateConfirmTransactionView(ethereum, tokenPriceService)
+	silenceChromeUnCaughtPromise(updateConfirmTransactionView(ethereum, tokenPriceService))
 	return false
 }
 
@@ -333,7 +332,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
 		// Checked before the Gnosis Safe refresh below, which rebuilds the transaction with this client, and before a proposal is stored in this client's Gnosis Safe stack.
 		const networkApprovalError = pendingTransactionOrMessage.type === 'Transaction' ? await getTransactionNetworkApprovalError(ethereum, pendingTransactionOrMessage) : undefined
-		if (networkApprovalError !== undefined) return await invalidateTransactionApproval(getInstalledServices, confirmation.data.uniqueRequestIdentifier, networkApprovalError)
+		if (networkApprovalError !== undefined) return await storeNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier, networkApprovalError)
 	}
 	if (
 		confirmation.data.action === 'accept'
@@ -431,6 +430,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 	if (confirmation.data.action === 'addToSafeStack') {
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
 		const safeReply = await persistUnsignedSafeTransaction(ethereum, pendingTransactionOrMessage)
+		if (safeReply.status === 'networkRefusal') return await storeNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier, safeReply.refusal)
 		if (safeReply.status === 'error') {
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
@@ -450,7 +450,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		// The forwarded parameters carry no chain id, so the network is checked once more right before every attempt to post the request to the wallet.
 		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-		if (!forwarding.committed) return await invalidateTransactionApproval(getInstalledServices, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
+		if (!forwarding.committed) return await storeNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
 		if (forwarding.result) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -476,6 +476,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply)
+			if (safeReply.status === 'networkRefusal') return await storeNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier, safeReply.refusal)
 			if (safeReply.status === 'error') {
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 					approvalStatus: safeReply.approvalStatus,
@@ -507,7 +508,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
-			if (!addition.committed) return await invalidateTransactionApproval(getInstalledServices, confirmation.data.uniqueRequestIdentifier, addition.refusal)
+			if (!addition.committed) return await storeNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier, addition.refusal)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) }, 'changed')
 		}

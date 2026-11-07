@@ -565,6 +565,11 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await dispatchChainUpdate()
 		assert.equal(dom.document.body.textContent?.includes('transaction after the chain change'), true)
 		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), false)
+
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction after a refusal update')] })
+		await act(() => { browser.dispatch({ role: 'confirmTransaction', method: 'popup_confirm_transaction_refusal_updated' }) })
+		await new Promise((resolve) => setTimeout(resolve, 25))
+		assert.equal(dom.document.body.textContent?.includes('transaction after a refusal update'), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
@@ -750,18 +755,16 @@ describe('confirm transaction rpc status bootstrap', () => {
 		return { approvals: Promise.all([approve(), approve()]), reachedWallet: () => messages.some((message) => message.type === 'forwardToSigner') }
 	}
 
-	test('an approval queued on the other network is still refused after a switch back, and its refusal does not stay', async () => {
+	test('approvals on the other network are refused without waiting for its block number, and the refusal does not stay after a switch back', async () => {
 		const race = await setUpApprovalOnOtherNetwork(false)
 		const { approvals, reachedWallet } = await approveTwiceOnOtherNetwork(race)
-		await race.blockNumberReached
-		await race.settle()
+		await approvals
 		assert.equal((await race.getStoredApprovalStatus())?.status, 'SignerError')
 
 		await race.switchBack()
 		assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
 
 		race.releaseBlockNumber()
-		await approvals
 		await act(async () => { await race.settle() })
 
 		await race.expectNoRefusalShown()
@@ -770,37 +773,31 @@ describe('confirm transaction rpc status bootstrap', () => {
 		race.dom.restore()
 	})
 
-	// The clearing read of the switch is held, so the window keeps the refusal until the queued approval tells it what is stored, and neither block number ever arrives to let a view update publish.
-	for (const installedRpc of ['failing', 'hanging'] as const) {
-		test(`the window learns that a queued refusal was lifted while the RPC of the installed network is ${ installedRpc }`, async () => {
+	// Neither network's block number is ever answered with a value, so no view update can publish: the refusal is shown and cleared through storage alone.
+	for (const rpc of ['failing', 'hanging'] as const) {
+		test(`the window shows a refusal and learns that it was lifted while the RPC is ${ rpc }`, async () => {
 			const { createDeferredValue } = await import('./backgroundEthAccountsTestHarness.js')
 			const hangingBlockNumber = createDeferredValue<undefined>()
-			const race = await setUpApprovalOnOtherNetwork(true, {
+			const race = await setUpApprovalOnOtherNetwork(false, {
 				otherNetworkFails: true,
 				onRequestedNetwork: async () => {
-					if (installedRpc === 'failing') throw new TypeError('Failed to fetch')
+					if (rpc === 'failing') throw new TypeError('Failed to fetch')
 					await hangingBlockNumber.promise
 				},
 			})
 			const { approvals, reachedWallet } = await approveTwiceOnOtherNetwork(race)
-			await race.blockNumberReached
+			await approvals
+			if (rpc === 'failing') race.releaseBlockNumber()
 			await act(async () => { await race.settle() })
 			assert.equal(race.dom.document.body.textContent?.includes('The active network changed'), true)
 
 			await race.switchBack()
-			assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
-			await act(async () => { await race.settle() })
-			assert.equal(race.reads.count, 1)
-			assert.equal(race.dom.document.body.textContent?.includes('The active network changed'), true)
-
-			race.releaseBlockNumber()
 			await act(async () => { await race.settle() })
 
 			await race.expectNoRefusalShown()
 			assert.equal(reachedWallet(), false)
+			race.releaseBlockNumber()
 			hangingBlockNumber.resolve(undefined)
-			await approvals
-			await act(async () => { await race.reads.release(0) })
 			await unmountConfirmTransaction(race.dom)
 			race.dom.restore()
 		})

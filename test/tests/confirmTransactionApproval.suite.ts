@@ -9,7 +9,7 @@ import { serialize } from '../../app/ts/types/wire-types.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
-import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN } from '../../app/ts/utils/constants.js'
+import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 
 const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 const socket = uniqueRequestIdentifier.requestSocket
@@ -1141,8 +1141,8 @@ test('a signer reply after a network switch is still delivered to the website', 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.result === transactionHash), true)
 })
 
-test('a network switch while a Gnosis Safe proposal is validated keeps it out of the Gnosis Safe stack', async () => {
-	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+// A Gnosis Safe proposal requested on the fake network with the wallet's signature for it, and a Safe that accepts it.
+async function setUpSafeProposal() {
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	await modules.updateSafeTransactionStacks(() => [])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
@@ -1161,7 +1161,113 @@ test('a network switch while a Gnosis Safe proposal is validated keeps it out of
 			safeTx,
 		},
 	}
-	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	return { safePending, signature: await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx))) }
+}
+
+// Suspends the next Gnosis Safe validation at its read of the contract version, which comes after the first network check.
+function holdSafeValidation() {
+	const reached = createDeferredValue<undefined>()
+	const release = createDeferredValue<undefined>()
+	fakeSafeContract.beforeVersionResponse = async () => {
+		reached.resolve(undefined)
+		await release.promise
+	}
+	return { reached: reached.promise, release: () => release.resolve(undefined) }
+}
+
+const wasWindowToldOfRefusal = () => browserMock.sentMessages.some((message) => message.method === 'popup_confirm_transaction_refusal_updated')
+
+test('a signed Gnosis Safe proposal that resumes after a switch back is refused, and the refusal clears without any RPC', async () => {
+	const { postedMessages } = await setUpTransactionApprovalTest(false)
+	const { safePending, signature } = await setUpSafeProposal()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...safePending, approvalStatus: { status: 'WaitingForSigner' } }] })
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+	const otherNetworkServices = createOtherNetworkServices()
+	const installedServices = createSuspendedServices('eth_blockNumber')
+	const simulationServicesOwner = createTestSimulationServicesOwner(otherNetworkServices, (network) => network.chainId === otherNetwork.chainId ? otherNetworkServices : installedServices)
+	const port = createWebsitePort(socket, 0, postedMessages)
+	const signerConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } },
+	}]])
+	const validation = holdSafeValidation()
+
+	const reply = modules.signerReply(simulationServicesOwner, signerConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: { type: 'forwardToSigner', replyWithSignersReply: true, method: safePending.originalRequestParameters.method, params: safePending.originalRequestParameters.params, requestId: uniqueRequestIdentifier.requestId },
+			reply: signature,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: uniqueRequestIdentifier.requestId + 1, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	await validation.reached
+	await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork: fakeRpcNetwork })
+	browserMock.sentMessages.length = 0
+	validation.release()
+	await reply
+
+	// The installed network's block number has not been answered, and nothing was stored or forwarded.
+	assert.deepEqual((await getPendingTransaction()).approvalStatus, { status: 'WaitingForUser' })
+	assert.equal(wasWindowToldOfRefusal(), true)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+	installedServices.release()
+})
+
+test('an unsigned Gnosis Safe proposal refused after a network switch tells the window through the same step', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { safePending } = await setUpSafeProposal()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
+	const validation = holdSafeValidation()
+
+	const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'addToSafeStack', uniqueRequestIdentifier } })
+	await validation.reached
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	browserMock.sentMessages.length = 0
+	validation.release()
+
+	assert.equal(await resolution, false)
+	assert.equal(wasWindowToldOfRefusal(), true)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+for (const action of ['reject', 'noResponse'] as const) {
+	test(`after a refusal, ${ action } reaches the website while the block number is unanswered`, async () => {
+		const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+		await requestTransaction(websiteTabConnections, false)
+		const stalled = createSuspendedServices('eth_blockNumber')
+		await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+		const stillWaiting = async () => await new Promise<string>((resolve) => setTimeout(() => resolve('still waiting'), 500))
+
+		// The reply to the approval is what re-enables the reject button in the window, so it does not wait for the RPC either.
+		const approval = approveRequest(websiteTabConnections, stalled.ethereum, stalled.tokenPriceService)
+		await stalled.reached
+		const approvalOutcome = await Promise.race([approval.then(() => 'answered'), stillWaiting()])
+		const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier } })
+		const resolutionOutcome = await Promise.race([resolution.then(() => 'answered'), stillWaiting()])
+		const pendingBeforeRpcAnswers = await modules.getPendingTransactionsAndMessages()
+		const rejectionsBeforeRpcAnswers = postedMessages.filter((message) => isRecord(message) && isRecord(message.error) && message.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST)
+		stalled.release()
+		await Promise.all([approval, resolution])
+
+		assert.equal(approvalOutcome, 'answered')
+		assert.equal(resolutionOutcome, 'answered')
+		assert.deepEqual(pendingBeforeRpcAnswers, [])
+		assert.equal(rejectionsBeforeRpcAnswers.length, 1)
+		assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+	})
+}
+
+test('a network switch while a Gnosis Safe proposal is validated keeps it out of the Gnosis Safe stack', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { safePending, signature } = await setUpSafeProposal()
 	const persistences = [
 		{ approvalStatus: { status: 'WaitingForUser' as const }, data: { action: 'addToSafeStack' as const, uniqueRequestIdentifier } },
 		{ approvalStatus: { status: 'WaitingForSigner' as const }, data: { action: 'signerIncluded' as const, signerReply: signature, uniqueRequestIdentifier } },
