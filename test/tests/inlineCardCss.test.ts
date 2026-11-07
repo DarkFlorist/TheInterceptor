@@ -11,7 +11,7 @@ async function readInlineCardCss() {
 describe('inline card action layout CSS', () => {
 	test('keeps hover action labels on one line inside wrapping containers', async () => {
 		const css = await readInterceptorAppCss()
-		const actionMatch = css.match(/> :has\(svg\):has\(span\)\s*\{([\s\S]*?)\n\s*\}/)
+		const actionMatch = css.match(/> \.inline-card-action-chip\s*\{([\s\S]*?)\n\s*\}/)
 		assert.ok(actionMatch)
 		assert.match(actionMatch[1], /white-space: nowrap;/)
 	})
