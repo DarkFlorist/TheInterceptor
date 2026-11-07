@@ -292,14 +292,35 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// The one step that stores a network refusal. The refusal is the verdict of the approval's own services, but the window is shown what approving would do now, as a resolution can outlive a network switch. The installed services are read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows. The window is told to read what is stored, which needs no RPC, and the view update that does need one is not awaited: the lock of the resolution and the reply to the window would wait for it, which would hold back a rejection and keep the reject button disabled.
+// A resolution holds its request's lock, and a rejection or a closed window waits for that lock, so nothing in a resolution awaits an RPC to update the window. The window is told to read what is stored, which needs no RPC and reaches it before anything the resolution does next, such as prompting the wallet. The view update, which does need an RPC, is started without being awaited: the reply to the window would wait for it too, and that reply is what enables the reject button again.
+async function showStoredStateAndRefreshView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
+	silenceChromeUnCaughtPromise(updateConfirmTransactionView(ethereum, tokenPriceService))
+}
+
+// The one step that stores a network refusal. The refusal is the verdict of the approval's own services, but the window is shown what approving would do now, as a resolution can outlive a network switch. The installed services are read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows.
 async function storeNetworkRefusal(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: TransactionNetworkError) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	await reevaluateStoredNetworkRefusals(ethereum)
-	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_refusal_updated' }, 'confirmTransaction')
-	silenceChromeUnCaughtPromise(updateConfirmTransactionView(ethereum, tokenPriceService))
+	await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 	return false
+}
+
+// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
+async function updateViewAfterPendingRequestRemoved(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, removedRequest: PendingTransactionOrSignableMessage, simulationStack: SimulationStackChange) {
+	const removedRequestWindow = removedRequest.popupOrTabId
+	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
+	await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
+	await runConfirmationViewStep(async () => {
+		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: removedRequest.uniqueRequestIdentifier.requestSocket.tabId })
+	})
+	await runConfirmationViewStep(async () => {
+		const confirmationQueueIsShown = await updateConfirmTransactionView(ethereum, tokenPriceService)
+		// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
+		const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
+		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
+	})
 }
 
 type GetInstalledServices = () => Pick<SimulationServices, 'ethereum' | 'tokenPriceService'>
@@ -322,10 +343,16 @@ type SafeSignerRefreshAtApproval = { readonly selection: RefreshedSafeSignerSele
 // Forwarding to the signer only posts the request, so the lock is not held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited.
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, safeRebuildRun?: ConfirmationRunId, getInstalledServices: GetInstalledServices = () => ({ ethereum, tokenPriceService })) {
 	const safeSignerRefresh = refreshedSafeSignerSelection === undefined ? undefined : { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun ?? reserveConfirmationRun() }
-	return await resolvePendingTransactionOrMessageSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage) => await resolveStoredPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, getInstalledServices, safeSignerRefresh))
+	// The window work after a request leaves the queue needs an RPC, so it runs once the lock is released.
+	const stepsAfterResolution: (() => Promise<void>)[] = []
+	try {
+		return await resolvePendingTransactionOrMessageSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage) => await resolveStoredPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, getInstalledServices, stepsAfterResolution, safeSignerRefresh))
+	} finally {
+		for (const step of stepsAfterResolution) await step()
+	}
 }
 
-async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, getInstalledServices: GetInstalledServices, safeSignerRefresh?: SafeSignerRefreshAtApproval) {
+async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, getInstalledServices: GetInstalledServices, stepsAfterResolution: (() => Promise<void>)[], safeSignerRefresh?: SafeSignerRefreshAtApproval) {
 	let pendingTransactionOrMessage = storedPendingTransactionOrMessage
 	if (confirmation.data.action === 'accept' || confirmation.data.action === 'addToSafeStack') {
 		// A request that was already forwarded can only be completed by the signer's reply, so it is not approved or added to a Gnosis Safe stack again.
@@ -348,11 +375,11 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		)
 		const refreshResult = refresh.refreshResult
 		if (refresh.refreshRequired && refreshResult.status !== 'unchanged' && !refresh.persisted) {
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 			return false
 		}
 		if (refresh.refreshRequired && (refreshResult.status === 'blocked' || directSafeExecution && refreshResult.status === 'refreshed')) {
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 			return false
 		}
 		if (refresh.persistedPending !== undefined) pendingTransactionOrMessage = refresh.persistedPending
@@ -367,13 +394,13 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 			approvalStatus: safeResolution.approvalStatus,
 		}))
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 		return false
 	}
 	if (safeResolution.status === 'refreshed') {
 		pendingTransactionOrMessage = safeResolution.pending
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 		return false
 	}
 	pendingTransactionOrMessage = safeResolution.pending
@@ -382,34 +409,17 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
-		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
-		await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
-		await runConfirmationViewStep(async () => {
-			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-		})
-		await runConfirmationViewStep(async () => {
-			const confirmationQueueIsShown = await updateConfirmTransactionView(ethereum, tokenPriceService)
-			// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
-			const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
-			if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
-		})
-	}
+	const afterPendingRequestRemoved = (simulationStack: SimulationStackChange) => stepsAfterResolution.push(async () => await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingTransactionOrMessage, simulationStack))
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		await updateViewAfterPendingRequestRemoved('unchanged')
+		afterPendingRequestRemoved('unchanged')
 	}
-	// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
+	// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The window is updated after the resolution even when delivery throws, and the delivery error reaches the caller once it is.
 	const removePendingRequestAndDeliverTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => {
 		await queueTerminalReply(terminalReply)
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		try {
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		} finally {
-			// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
-			await updateViewAfterPendingRequestRemoved(simulationStack)
-		}
+		afterPendingRequestRemoved(simulationStack)
+		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 	}
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
 		if (message.type === 'result' && !('error' in message)) {
@@ -435,7 +445,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
 			}))
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 			return false
 		}
 		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
@@ -447,7 +457,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 		// The forwarded parameters carry no chain id, so the network is checked once more right before every attempt to post the request to the wallet.
 		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (!forwarding.committed) return await storeNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
@@ -459,7 +469,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 				message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
 			}
 		}))
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 		return false
 	}
 	if (confirmation.data.action === 'noResponse') {
@@ -481,7 +491,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 					approvalStatus: safeReply.approvalStatus,
 				}))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 				return false
 			}
 			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)

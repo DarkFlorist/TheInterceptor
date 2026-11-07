@@ -19,6 +19,18 @@ test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', 
 	assert.doesNotMatch(backgroundSource, /Gnosis Safe message signing is not supported|Gnosis Safe transaction proposals require/u)
 })
 
+// A rejection or a closed window waits for the request's lock, so an RPC awaited for a view update inside a resolution would hold it back.
+test('nothing under the resolution lock awaits an RPC-dependent view update', () => {
+	const getFunctionSource = (name: string) => {
+		const start = confirmTransactionSource.indexOf(`async function ${ name }(`)
+		assert.notEqual(start, -1, name)
+		return confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start))
+	}
+	assert.doesNotMatch(getFunctionSource('resolveStoredPendingTransactionOrMessage'), /updateConfirmTransactionView|(?<!stepsAfterResolution\.push\(async \(\) => )await updateViewAfterPendingRequestRemoved/u)
+	assert.doesNotMatch(getFunctionSource('storeNetworkRefusal'), /updateConfirmTransactionView/u)
+	assert.doesNotMatch(getFunctionSource('showStoredStateAndRefreshView'), /await updateConfirmTransactionView/u)
+})
+
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {
 	assert.match(confirmTransactionSource, /resolveSafeConfirmation\(/u)
 	assert.match(confirmTransactionSource, /resolveSafeSignerReply\(/u)

@@ -1175,7 +1175,7 @@ function holdSafeValidation() {
 	return { reached: reached.promise, release: () => release.resolve(undefined) }
 }
 
-const wasWindowToldOfRefusal = () => browserMock.sentMessages.some((message) => message.method === 'popup_confirm_transaction_refusal_updated')
+const wasWindowToldOfStoredState = () => browserMock.sentMessages.some((message) => message.method === 'popup_confirm_transaction_stored_state_changed')
 
 test('a signed Gnosis Safe proposal that resumes after a switch back is refused, and the refusal clears without any RPC', async () => {
 	const { postedMessages } = await setUpTransactionApprovalTest(false)
@@ -1214,7 +1214,7 @@ test('a signed Gnosis Safe proposal that resumes after a switch back is refused,
 
 	// The installed network's block number has not been answered, and nothing was stored or forwarded.
 	assert.deepEqual((await getPendingTransaction()).approvalStatus, { status: 'WaitingForUser' })
-	assert.equal(wasWindowToldOfRefusal(), true)
+	assert.equal(wasWindowToldOfStoredState(), true)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 	installedServices.release()
@@ -1233,7 +1233,7 @@ test('an unsigned Gnosis Safe proposal refused after a network switch tells the 
 	validation.release()
 
 	assert.equal(await resolution, false)
-	assert.equal(wasWindowToldOfRefusal(), true)
+	assert.equal(wasWindowToldOfStoredState(), true)
 	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
@@ -1261,6 +1261,101 @@ for (const action of ['reject', 'noResponse'] as const) {
 		assert.equal(resolutionOutcome, 'answered')
 		assert.deepEqual(pendingBeforeRpcAnswers, [])
 		assert.equal(rejectionsBeforeRpcAnswers.length, 1)
+		assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+	})
+}
+
+// Whether a resolution answered while an RPC is held, which a resolution that awaits a view update under its lock does not.
+const answersWithoutTheRpc = async (resolution: Promise<unknown>) => await Promise.race([resolution.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500))])
+
+const getRejections = (postedMessages: readonly unknown[]) => postedMessages.filter((message) => isRecord(message) && isRecord(message.error) && message.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST)
+
+test('a valid approval reaches the wallet while the block number is unanswered, after the window was told it waits for the signer', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const stalled = createSuspendedServices('eth_blockNumber')
+	const toldToWindow: { readonly status: unknown, readonly forwarded: number }[] = []
+	browserMock.setRuntimeSendMessageHandler(async (message) => {
+		if (message.method === 'popup_confirm_transaction_stored_state_changed') toldToWindow.push({ status: (await getPendingTransaction()).approvalStatus.status, forwarded: getForwardedSignerRequests(postedMessages).length })
+	})
+
+	const approval = approveRequest(websiteTabConnections, stalled.ethereum, stalled.tokenPriceService)
+	const answered = await answersWithoutTheRpc(approval)
+	const forwarded = getForwardedSignerRequests(postedMessages).length
+	browserMock.setRuntimeSendMessageHandler(undefined)
+	stalled.release()
+	await approval
+
+	assert.equal(answered, true)
+	assert.equal(forwarded, 1)
+	assert.deepEqual(toldToWindow, [{ status: 'WaitingForSigner', forwarded: 0 }])
+})
+
+test('closing the window during a valid approval delivers the rejection while the block number is unanswered', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const stalled = createSuspendedServices('eth_blockNumber')
+
+	const approval = approveRequest(websiteTabConnections, stalled.ethereum, stalled.tokenPriceService)
+	const closing = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'noResponse', uniqueRequestIdentifier } })
+	const answered = await answersWithoutTheRpc(closing)
+	const rejections = getRejections(postedMessages).length
+	const pending = await modules.getPendingTransactionsAndMessages()
+	stalled.release()
+	await Promise.all([approval, closing])
+
+	assert.equal(answered, true)
+	assert.equal(rejections, 1)
+	assert.deepEqual(pending, [])
+})
+
+test('an interrupted forward shows its error, and closing the window delivers the rejection, while the block number is unanswered', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const stalled = createSuspendedServices('eth_blockNumber')
+
+	const approval = modules.resolvePendingTransactionOrMessage(stalled.ethereum, stalled.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+	const answered = await answersWithoutTheRpc(approval)
+	const status = (await getPendingTransaction()).approvalStatus.status
+	const closing = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'noResponse', uniqueRequestIdentifier } })
+	const closed = await answersWithoutTheRpc(closing)
+	const rejections = getRejections(postedMessages).length
+	stalled.release()
+	await Promise.all([approval, closing])
+
+	assert.equal(answered, true)
+	assert.equal(status, 'SignerError')
+	assert.equal(closed, true)
+	assert.equal(rejections, 1)
+})
+
+for (const safeReturn of ['blocked', 'error'] as const) {
+	test(`a Gnosis Safe ${ safeReturn } return shows its status, and closing the window delivers the rejection, while the block number is unanswered`, async () => {
+		const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+		const { safePending } = await setUpSafeProposal()
+		// Gnosis Safe validation reads the block number itself, which belongs under the lock, so the error used here is the one found before any RPC: a proposal with no signer.
+		const { safeSignerAddress: _safeSignerAddress, ...safeTransactionWithoutSigner } = safePending.safeTransaction
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safeReturn === 'error' ? { ...safePending, safeTransaction: safeTransactionWithoutSigner, approvalStatus: { status: 'WaitingForSigner' } } : safePending] })
+		const stalled = createSuspendedServices('eth_blockNumber')
+		browserMock.sentMessages.length = 0
+
+		const resolution = safeReturn === 'error'
+			? modules.resolvePendingTransactionOrMessage(stalled.ethereum, stalled.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: '0x1234', uniqueRequestIdentifier } })
+			: modules.resolvePendingTransactionOrMessage(stalled.ethereum, stalled.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: undefined, verificationError: 'The connected signer wallet is unavailable.' })
+		const answered = await answersWithoutTheRpc(resolution)
+		const status = (await getPendingTransaction()).approvalStatus.status
+		const told = wasWindowToldOfStoredState()
+		const closing = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'noResponse', uniqueRequestIdentifier } })
+		const closed = await answersWithoutTheRpc(closing)
+		const rejections = getRejections(postedMessages).length
+		stalled.release()
+		await Promise.all([resolution, closing])
+
+		assert.equal(answered, true)
+		assert.equal(status, 'SignerError')
+		assert.equal(told, true)
+		assert.equal(closed, true)
+		assert.equal(rejections, 1)
 		assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 	})
 }

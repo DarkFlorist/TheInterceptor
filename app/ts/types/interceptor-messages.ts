@@ -523,7 +523,7 @@ type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 const MessageToPopupSimple = funtypes.ReadonlyObject({
 	method: funtypes.Union(
 		funtypes.Literal('popup_chain_update'),
-		funtypes.Literal('popup_confirm_transaction_refusal_updated'),
+		funtypes.Literal('popup_confirm_transaction_stored_state_changed'),
 		funtypes.Literal('popup_confirm_transaction_simulation_started'),
 		funtypes.Literal('popup_accounts_update'),
 		funtypes.Literal('popup_addressBookEntriesChanged'),

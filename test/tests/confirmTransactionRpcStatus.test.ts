@@ -566,10 +566,10 @@ describe('confirm transaction rpc status bootstrap', () => {
 		assert.equal(dom.document.body.textContent?.includes('transaction after the chain change'), true)
 		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), false)
 
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction after a refusal update')] })
-		await act(() => { browser.dispatch({ role: 'confirmTransaction', method: 'popup_confirm_transaction_refusal_updated' }) })
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction after a stored change')] })
+		await act(() => { browser.dispatch({ role: 'confirmTransaction', method: 'popup_confirm_transaction_stored_state_changed' }) })
 		await new Promise((resolve) => setTimeout(resolve, 25))
-		assert.equal(dom.document.body.textContent?.includes('transaction after a refusal update'), true)
+		assert.equal(dom.document.body.textContent?.includes('transaction after a stored change'), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
