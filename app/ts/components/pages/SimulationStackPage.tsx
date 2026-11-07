@@ -396,7 +396,7 @@ export function SimulationStackPage() {
 	}
 
 	// This page is not tied to the requesting website's tab, so it cannot know whether that website has a signer available.
-	const requestingWebsiteSignerAvailable = undefined
+	const requestingWebsiteSignerAvailability = 'unknown'
 	const currentResults = simVisResults.value
 	const shouldBlurSimulationContent = simulationResultState.value === 'invalid' || simulationUpdatingState.value === 'failed'
 	const simulationErrorText = currentResults.kind === 'simulated' && currentResults.value.visualizedSimulationState.success === false
@@ -408,7 +408,7 @@ export function SimulationStackPage() {
 			{ !isFreshHomeDataLoaded.value ? <>
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-				<NetworkWithoutRpcError rpcNetwork = { rpcNetwork.value } simulationMode = { simulationMode.value } signerAvailable = { requestingWebsiteSignerAvailable }/>
+				<NetworkWithoutRpcError rpcNetwork = { rpcNetwork.value } simulationMode = { simulationMode.value } signerAvailability = { requestingWebsiteSignerAvailability }/>
 				<CenterToPageTextSpinner/>
 			</> : <>
 				{ stackModeActive.value ? <SimulationStackToolbar
@@ -423,7 +423,7 @@ export function SimulationStackPage() {
 				<div class = 'simulation-stack-page-body'>
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-					<NetworkWithoutRpcError rpcNetwork = { rpcNetwork.value } simulationMode = { simulationMode.value } signerAvailable = { requestingWebsiteSignerAvailable }/>
+					<NetworkWithoutRpcError rpcNetwork = { rpcNetwork.value } simulationMode = { simulationMode.value } signerAvailability = { requestingWebsiteSignerAvailability }/>
 					<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
 					{ !stackModeActive.value ?
 						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Select simulation mode or a Gnosis Safe to view a transaction stack.' } /></article>

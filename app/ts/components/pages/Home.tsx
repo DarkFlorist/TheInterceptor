@@ -909,7 +909,7 @@ export function Home(param: HomeParams) {
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
-	const tabSignerAvailable = useComputed(() => param.tabState.value !== undefined && !isSignerMissing(param.tabState.value.signerName))
+	const tabSignerAvailability = useComputed(() => isSignerMissing(param.tabState.value?.signerName ?? 'NoSignerDetected') ? 'missing' : 'available')
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const modeActiveAddress = useModeActiveAddress(param)
@@ -970,7 +970,7 @@ export function Home(param: HomeParams) {
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
-		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } signerAvailable = { tabSignerAvailable.value }/>
+		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } signerAvailability = { tabSignerAvailability.value }/>
 
 		<FirstCard
 			isActiveAddressChanging = { param.isActiveAddressChanging }

@@ -1653,14 +1653,14 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 	const interceptorDisabledText = 'Signer only is not a supported network. The Interceptor is disabled while you are using Signer only.'
 	const configureRpcText = 'Signer only has no configured RPC. Select or configure an RPC for Signer only.'
 
-	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName']) {
+	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName'] | undefined) {
 		const dom = installDomMock()
 		try {
 			await act(() => {
 				render(h(Home, createHomeParams({
 					rpcNetwork: new Signal<RpcNetwork | undefined>(networkWithoutRpc),
 					simulationMode: new Signal(simulationMode),
-					tabState: new Signal<TabState | undefined>({
+					tabState: new Signal<TabState | undefined>(signerName === undefined ? undefined : {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
@@ -1688,6 +1688,12 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 
 	test('does not claim the Interceptor is disabled on a network without an RPC when signing mode has no signer', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(false, 'NoSignerDetected')
+		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(configureRpcText), true)
+	})
+
+	test('treats a missing tab state as having no signer on a network without an RPC in signing mode', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, undefined)
 		assert.equal(text.includes('The Interceptor is disabled'), false)
 		assert.equal(text.includes(configureRpcText), true)
 	})

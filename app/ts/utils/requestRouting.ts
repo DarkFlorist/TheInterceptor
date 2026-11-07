@@ -15,11 +15,20 @@ export function isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork: Pick<RpcNe
 	return rpcNetwork.httpsRpc === undefined && isForwardingRequestsToSigner(routingState)
 }
 
-// Describe a network without an Interceptor RPC to match its request routing; signerAvailable is undefined when the caller cannot tell whether the requesting website has a signer.
-export function getNetworkWithoutRpcWarning(rpcNetwork: Pick<RpcNetwork, 'httpsRpc' | 'name'>, simulationMode: boolean, signerAvailable: boolean | undefined) {
-	if (rpcNetwork.httpsRpc !== undefined) return undefined
-	const mayBypassInterceptor = isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable: signerAvailable ?? true })
-	if (!mayBypassInterceptor) return `${ rpcNetwork.name } has no configured RPC. Select or configure an RPC for ${ rpcNetwork.name }.`
-	if (signerAvailable === undefined) return `${ rpcNetwork.name } has no configured RPC. Until one is configured, the Interceptor cannot simulate requests on ${ rpcNetwork.name }; in signing mode with a connected wallet they go to the wallet directly.`
-	return `${ rpcNetwork.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.name }.`
+type KnownSignerAvailability = 'available' | 'missing'
+
+// 'unknown' is for callers that cannot tell whether the requesting website has a signer, such as pages not tied to a website's tab.
+export type SignerAvailability = KnownSignerAvailability | 'unknown'
+
+type KnownSignerNetworkWithoutRpcWarningState = { readonly kind: 'none' } | { readonly kind: 'noRpcNeedsConfig' } | { readonly kind: 'noRpcBypassToSigner' }
+
+export type NetworkWithoutRpcWarningState = KnownSignerNetworkWithoutRpcWarningState | { readonly kind: 'noRpcMayBypass' }
+
+export function getNetworkWithoutRpcWarningState(rpcNetwork: Pick<RpcNetwork, 'httpsRpc'>, simulationMode: boolean, signerAvailability: KnownSignerAvailability): KnownSignerNetworkWithoutRpcWarningState
+export function getNetworkWithoutRpcWarningState(rpcNetwork: Pick<RpcNetwork, 'httpsRpc'>, simulationMode: boolean, signerAvailability: SignerAvailability): NetworkWithoutRpcWarningState
+export function getNetworkWithoutRpcWarningState(rpcNetwork: Pick<RpcNetwork, 'httpsRpc'>, simulationMode: boolean, signerAvailability: SignerAvailability): NetworkWithoutRpcWarningState {
+	if (rpcNetwork.httpsRpc !== undefined) return { kind: 'none' }
+	// An unknown signer cannot be ruled out, so requests may bypass the Interceptor wherever an available signer would receive them.
+	if (signerAvailability === 'unknown') return { kind: isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable: true }) ? 'noRpcMayBypass' : 'noRpcNeedsConfig' }
+	return { kind: isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable: signerAvailability === 'available' }) ? 'noRpcBypassToSigner' : 'noRpcNeedsConfig' }
 }

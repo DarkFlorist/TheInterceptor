@@ -1,8 +1,9 @@
 import type { Signal } from '@preact/signals'
 import type { RpcNetwork } from '../../types/rpc.js'
 import type { RpcConnectionStatus } from '../../types/user-interface-types.js'
-import { getNetworkWithoutRpcWarning } from '../../utils/requestRouting.js'
+import { getNetworkWithoutRpcWarningState, type SignerAvailability } from '../../utils/requestRouting.js'
 import { getRpcWarningState, shouldShowRpcWarningCountdown } from '../../utils/rpcConnectionUi.js'
+import { assertNever } from '../../utils/typescript.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { ErrorComponent } from './Error.js'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
@@ -47,13 +48,17 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 type NetworkWithoutRpcErrorParams = {
 	rpcNetwork: RpcNetwork | undefined
 	simulationMode: boolean
-	// undefined when the page cannot tell whether the requesting website has a signer available
-	signerAvailable: boolean | undefined
+	signerAvailability: SignerAvailability
 }
 
-export function NetworkWithoutRpcError({ rpcNetwork, simulationMode, signerAvailable }: NetworkWithoutRpcErrorParams) {
+export function NetworkWithoutRpcError({ rpcNetwork, simulationMode, signerAvailability }: NetworkWithoutRpcErrorParams) {
 	if (rpcNetwork === undefined) return <></>
-	const warning = getNetworkWithoutRpcWarning(rpcNetwork, simulationMode, signerAvailable)
-	if (warning === undefined) return <></>
-	return <ErrorComponent text = { warning }/>
+	const warningState = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, signerAvailability)
+	switch (warningState.kind) {
+		case 'none': return <></>
+		case 'noRpcNeedsConfig': return <ErrorComponent text = { `${ rpcNetwork.name } has no configured RPC. Select or configure an RPC for ${ rpcNetwork.name }.` }/>
+		case 'noRpcMayBypass': return <ErrorComponent text = { `${ rpcNetwork.name } has no configured RPC. Until one is configured, the Interceptor cannot simulate requests on ${ rpcNetwork.name }; in signing mode with a connected wallet they go to the wallet directly.` }/>
+		case 'noRpcBypassToSigner': return <ErrorComponent text = { `${ rpcNetwork.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.name }.` }/>
+		default: return assertNever(warningState)
+	}
 }
