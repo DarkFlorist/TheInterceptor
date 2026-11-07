@@ -20,7 +20,8 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 			type: 'Transaction',
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
-				signedTransaction,
+				// A stacked Safe proposal's hash is its safeTxHash (createSafeExecutionPreSimulationTransaction).
+				signedTransaction: { ...signedTransaction, hash: localTransaction.safeTxHash },
 				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
@@ -73,7 +74,8 @@ test('extension Safe stack export and import roundtrip leaves the local stack un
 			type: 'Transaction',
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
-				signedTransaction,
+				// A stacked Safe proposal's hash is its safeTxHash (createSafeExecutionPreSimulationTransaction).
+				signedTransaction: { ...signedTransaction, hash: localTransaction.safeTxHash },
 				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
@@ -102,7 +104,8 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 			type: 'Transaction',
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
-				signedTransaction,
+				// A stacked Safe proposal's hash is its safeTxHash (createSafeExecutionPreSimulationTransaction).
+				signedTransaction: { ...signedTransaction, hash: localTransaction.safeTxHash },
 				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
@@ -131,7 +134,7 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				transactionIdentifier: secondTransaction.transactionIdentifier,
-				signedTransaction,
+				signedTransaction: { ...signedTransaction, hash: secondTransaction.safeTxHash },
 				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: secondTransaction,
 			},
@@ -415,7 +418,7 @@ test('extension Safe stack export preserves and includes already executed transa
 			type: 'Transaction' as const,
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
-				signedTransaction,
+				signedTransaction: { ...signedTransaction, hash: safeTransaction.safeTxHash },
 				transactionIdentifier: safeTransaction.transactionIdentifier,
 				safeTransaction,
 			},

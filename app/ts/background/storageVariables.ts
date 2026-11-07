@@ -9,7 +9,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { type GenericPendingRequestUpdate, OWNED_PENDING_REQUEST_FIELDS, type OwnedPendingRequestField, type PendingAccessRequests, type PendingRequestWithoutOwnedFields, type PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -67,7 +67,16 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+/**
+ * The store's contract for owned pending-request fields (OWNED_PENDING_REQUEST_FIELDS), which is deliberate: they survive every generic write, because a stale whole-request write, built from a snapshot read before them, must not lose or rewind them.
+ * A generic update has no way to write them: its types leave them out, so naming one does not compile, a request read earlier goes through withoutOwnedFields, and the store takes them from the stored request. updateOwnedPendingRequestField is their only writer, for one field at a time.
+ */
+function withStoredOwnedFields(stored: PendingTransactionOrSignableMessage, updated: PendingRequestWithoutOwnedFields, writtenField: OwnedPendingRequestField | undefined): PendingTransactionOrSignableMessage {
+	const storedFields = new Map(Object.entries(stored))
+	return { ...updated, ...Object.fromEntries(OWNED_PENDING_REQUEST_FIELDS.filter((field) => field !== writtenField).map((field) => [field, storedFields.get(field)])) }
+}
+
+async function updatePendingRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingRequestWithoutOwnedFields | undefined>, writtenField: OwnedPendingRequestField | undefined) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
@@ -75,9 +84,15 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 		if (found === undefined) return pendingTransactionsOrMessages
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, withStoredOwnedFields(found, updated, writtenField))
 	})
 }
+
+// Updates a pending request, except its owned fields.
+export const updatePendingTransactionOrMessage = async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingRequestWithoutOwnedFields) => Promise<GenericPendingRequestUpdate | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, undefined)
+
+// Updates a pending request as the owner of one of its owned fields, which it writes; the other owned field is kept as stored.
+export const updateOwnedPendingRequestField = async (uniqueRequestIdentifier: UniqueRequestIdentifier, field: OwnedPendingRequestField, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) => await updatePendingRequest(uniqueRequestIdentifier, update, field)
 
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
@@ -392,13 +407,22 @@ export async function addEnsLabelHash(label: string) {
 
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
-export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+// Updates the stack and returns what the update computed alongside it, such as the hash an appended transaction is stored under (appendTransactionToStack).
+export async function updateInterceptorTransactionStackWithResult<Result>(updateFunc: (prevStack: InterceptorTransactionStack) => { readonly stack: InterceptorTransactionStack, readonly result: Result }): Promise<Result> {
 	return await transactionStateSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
-		const interceptorTransactionStack = updateFunc(prevStack)
+		const { stack: interceptorTransactionStack, result } = updateFunc(prevStack)
 		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
+		assertNoAddedDuplicateTransactionHash(prevStack, interceptorTransactionStack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
-		return interceptorTransactionStack
+		return result
+	})
+}
+
+export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+	return await updateInterceptorTransactionStackWithResult((prevStack) => {
+		const stack = updateFunc(prevStack)
+		return { stack, result: stack }
 	})
 }
 
@@ -409,6 +433,21 @@ function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: Inte
 		.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.transactionIdentifier : undefined)
 		.filter((identifier): identifier is bigint => identifier !== undefined)
 	if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
+}
+
+// An update may keep duplicate hashes a stack stored before #1713 holds, but every transaction it adds (one whose identifier the previous stack lacks) needs a hash of its own, which appending through appendOperationsToStack gives it.
+function assertNoAddedDuplicateTransactionHash(previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack) {
+	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
+	const hashCounts = new Map<bigint, number>()
+	for (const operation of nextStack.operations) {
+		if (operation.type !== 'Transaction') continue
+		const hash = operation.preSimulationTransaction.signedTransaction.hash
+		hashCounts.set(hash, (hashCounts.get(hash) ?? 0) + 1)
+	}
+	const addsDuplicate = nextStack.operations.some((operation) => operation.type === 'Transaction'
+		&& !previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)
+		&& (hashCounts.get(operation.preSimulationTransaction.signedTransaction.hash) ?? 0) > 1)
+	if (addsDuplicate) throw new Error('duplicated transaction hashes')
 }
 
 type TransactionState = {
@@ -424,6 +463,7 @@ export async function updateTransactionState(updateFunc: (previousState: Transac
 		}
 		const updatedState = updateFunc(previousState)
 		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
+		assertNoAddedDuplicateTransactionHash(previousState.interceptorTransactionStack, updatedState.interceptorTransactionStack)
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),
 			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, updatedState.safeTransactionStacks),

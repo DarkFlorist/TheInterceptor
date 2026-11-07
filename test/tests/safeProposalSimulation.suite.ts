@@ -196,7 +196,8 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 			type: 'Transaction' as const,
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
-				signedTransaction,
+				// A stacked Safe proposal's hash is its safeTxHash (createSafeExecutionPreSimulationTransaction).
+				signedTransaction: { ...signedTransaction, hash: safeTransaction.safeTxHash },
 				transactionIdentifier: safeTransaction.transactionIdentifier,
 				safeTransaction,
 			},
@@ -283,7 +284,7 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 		false,
 		uniqueRequestIdentifier,
 		pendingTransaction.transactionToSimulate,
-		{
+		{ safeSigningRequest: {
 			safeAddress: activeAddress,
 			safeSignerAddress: recipientAddress,
 			safeVersion: '1.4.1',
@@ -291,7 +292,7 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 			safeTxHash,
 			safeTx,
 			executionGasLimit: 123_456n,
-		},
+		} },
 	)
 
 	assert.equal(popupVisualisation?.statusCode, 'success')

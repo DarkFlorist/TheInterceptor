@@ -20,7 +20,8 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { createResolutionContextWithServices, onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { beginStartupRecovery, finishCommittedRequestsOfClosedTab, resumeCommittedRequests, resumeRequest } from './requestResolution.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -32,10 +33,9 @@ import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
-import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
+import { type CommittedRequestFinisher, flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
-import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
+import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, isHandledBridgeRequestId } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
@@ -52,6 +52,11 @@ function getSimulationServices() {
 	if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
 	return simulationServicesOwner.getCurrent()
 }
+
+// The request resolution gets the simulation services only for its service-dependent steps, showing the confirmation queue in a window and settling a signer's result. Before the services exist those steps fail, and the request's finishing retries them, or startup recovery finishes the request once they exist; every other resolution step needs only storage and the browser.
+const resolutionContext = createResolutionContextWithServices(getSimulationServices, websiteTabConnections)
+// A reconnect flush finishes the requests whose replies it delivered.
+const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, connections) => await resumeRequest(uniqueRequestIdentifier, createResolutionContextWithServices(getSimulationServices, connections), { automatic: true })
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
 	await setRpcConnectionStatus(rpcConnectionStatus)
@@ -119,7 +124,8 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 		if (socketIdentifier.startsWith(`${ tabId }-`)) latestReceivedBridgeRequestIds.delete(socketIdentifier)
 	}
 	await removeTabState(tabId)
-	await removePendingTerminalRepliesForTab(tabId)
+	// The closed tab's committed requests are finished by the resolution layer, which needs no simulation services for it.
+	await finishCommittedRequestsOfClosedTab(tabId, resolutionContext)
 }))
 
 const manifestVersion = browser.runtime.getManifest().manifest_version
@@ -179,7 +185,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: rawMessage.requestId })
 					checkAndThrowRuntimeLastError()
 				})
-				if (!shouldHandleRequest) return
+				if (!shouldHandleRequest || !isHandledBridgeRequestId(rawMessage.requestId, rawMessage.method)) return
 				const { simulationServicesOwner } = await getConnectionInitializationPromise()
 				await pendingRequestLimiter.execute(async () => {
 					const request = {
@@ -215,7 +221,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		}
 	})
 	await connectionInitializationPromise
-	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
+	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port, finishCommittedRequest)
 	try {
 		const website = await websitePromise
 		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
@@ -295,18 +301,17 @@ async function startup() {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
 }
 
+beginStartupRecovery()
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
 		const { ethereum, tokenPriceService } = getSimulationServices()
 		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
-		await prunePendingTerminalRepliesForMissingTabs()
+		await resumeCommittedRequests(resolutionContext)
 	},
-	onFailure: (error) => {
-		reportLocalRecoveryBestEffort(error, {
-			source: 'pending_terminal_replies',
-			code: 'pending_terminal_state_startup_recovery_failed',
-			message: 'Retrying pending terminal state recovery without blocking background startup.',
-		})
+	onFailure: (error, retrying) => {
+		reportLocalRecoveryBestEffort(error, retrying
+			? { source: 'pending_terminal_replies', code: 'pending_terminal_state_startup_recovery_failed', message: 'Retrying pending terminal state recovery without blocking background startup.' }
+			: { source: 'pending_terminal_replies', code: 'pending_terminal_state_startup_recovery_gave_up', message: 'Stopped retrying pending terminal state recovery; the next user action or startup recovers the requests.' })
 	},
 })
 

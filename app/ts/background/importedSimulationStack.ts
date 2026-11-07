@@ -5,7 +5,7 @@ export type ImportedSimulationStackAdmission =
 	| { readonly admitted: true, readonly operations: readonly InterceptorStackOperation[] }
 	| { readonly admitted: false, readonly rejection: string }
 
-// Running a transaction through a Gnosis Safe assumes the Safe's owners approved it, which only a confirmation decides (isSimulationModeSafeExecution), so every imported transaction's executeThroughSafe is dropped: a file can never make Interceptor assume an owner approval. A simulation-mode Gnosis Safe stack therefore re-imports as ordinary transactions from the Safe, keeping their recorded hashes like any re-imported transaction (shared-hash cases are tracked in #1713).
+// Running a transaction through a Gnosis Safe assumes the Safe's owners approved it, which only a confirmation decides (isSimulationModeSafeExecution), so every imported transaction's executeThroughSafe is dropped: a file can never make Interceptor assume an owner approval. A simulation-mode Gnosis Safe stack therefore re-imports as ordinary transactions from the Safe, keeping their recorded hashes like any re-imported transaction unless a stacked transaction already has one (appendOperationsToStack).
 const withoutImportedGnosisSafeExecutions = (operations: readonly InterceptorStackOperation[]): readonly InterceptorStackOperation[] => operations.map((operation) => {
 	if (operation.type !== 'Transaction') return operation
 	const transaction = operation.preSimulationTransaction

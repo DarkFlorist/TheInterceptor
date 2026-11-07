@@ -3,28 +3,28 @@ import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
-import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
-import { Semaphore } from '../../utils/semaphore.js'
+import { toPreSimulationTransaction } from '../../simulation/services/simulationTransactionSigning.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../../utils/constants.js'
+import { type InterceptedRequestForward, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type PreSimulationTransaction, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStack, updateInterceptorTransactionStackWithResult, updateOwnedPendingRequestField, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { allocateSimulationHashReservation, appendAcceptedTransactionToStack, findStackOperation, getRequestStackIdentifier, isStackOperationOf, stacksTransactionOnAccept, withSimulationHashLock } from '../simulationStackHashes.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
+import { getQueuedTerminalReply } from '../terminalReplyDelivery.js'
+import { commitAndFinish, declineOrphanedRequestsAtStartup, declinePendingRequests, declineRequest, formRejectMessage, resetRequestRetryBudget, resolveRequestsOfClosedWindow, resumeRequest, submitSignerResult, toStackedTerminalReply, toTerminalReply, withResolutionClaim, type ResolutionContext, type ResolutionScope } from '../requestResolution.js'
+import { type PendingConfirmationLock, runConfirmationViewStep, withPendingConfirmationLock } from '../confirmationWindowLifecycle.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage, withoutOwnedFields } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
@@ -35,7 +35,7 @@ import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
-import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
+import { getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
@@ -48,10 +48,6 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-
-const pendingConfirmationSemaphore = new Semaphore(1)
-const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const NO_RESPONSE_RETRY_DELAY_MS = 50
 
 // Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
 async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
@@ -72,15 +68,6 @@ async function showSimulationStackChange(ethereum: EthereumClientService, tokenP
 			return
 		}
 		default: assertNever(simulationStack)
-	}
-}
-
-// Runs one step of the confirmation window work done after a request is resolved. A failing step is reported and does not skip the steps after it, so the window is still updated and closed.
-async function runConfirmationViewStep(step: () => Promise<unknown>) {
-	try {
-		await step()
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, { code: 'confirm_transaction_view_update_failed' })
 	}
 }
 
@@ -272,12 +259,11 @@ const getPendingTransactionOrMessageByidentifier = async (uniqueRequestIdentifie
 export const setGasLimitForTransaction = async (transactionIdentifier: bigint, gasLimit: bigint) => {
 	const pendingTransaction = (await getPendingTransactionsAndMessages()).find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === transactionIdentifier)
 	if (pendingTransaction === undefined) {
-		const theTransactionIsAlreadyInStack = (await getInterceptorTransactionStack()).operations.some((transaction) => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
+		const theTransactionIsAlreadyInStack = findStackOperation((await getInterceptorTransactionStack()).operations, { type: 'Transaction', transactionIdentifier }) !== undefined
 		if (!theTransactionIsAlreadyInStack) return undefined
 		await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 			return { operations: prevStack.operations.map((operation) => {
-				if (operation.type !== 'Transaction') return operation
-				if (operation.preSimulationTransaction.transactionIdentifier !== transactionIdentifier) return operation
+				if (operation.type !== 'Transaction' || !isStackOperationOf(operation, { type: 'Transaction', transactionIdentifier })) return operation
 				if (operation.preSimulationTransaction.originalRequestParameters.method !== 'eth_sendTransaction') return operation
 				const originalParams = operation.preSimulationTransaction.originalRequestParameters
 				const originalRequestParameters = modifyObject(originalParams, { params: [modifyObject(originalParams.params[0], { gas: gasLimit })] })
@@ -295,7 +281,63 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
+type SimulationServices = { readonly ethereum: EthereumClientService, readonly tokenPriceService: TokenPriceService }
+
+// #1650's order holds: the website's answer never waits for view work. Finishing commits and delivers the reply before it removes the request and updates its window (retried, per window); the simulation stack view is updated after that, best effort.
+async function commitReplyAndShowStackChange({ ethereum, tokenPriceService }: SimulationServices, request: PendingTransactionOrSignableMessage, terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange, context: ResolutionContext, scope: ResolutionScope) {
+	try {
+		return await commitAndFinish(request, terminalReply, context, scope)
+	} finally {
+		await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
+	}
+}
+
+// Settles a signer's result under the request's claim, for the request as stored now (SignerResultSettlement): a request that never finished simulating is answered as unprocessable; a Gnosis Safe owner signature is persisted with its proposal, or refused with the reason shown in the window; any other result is the website's reply. A request in simulation mode never went to a signer, so a result for it is ignored.
+async function settleSignerResult(services: SimulationServices, request: PendingTransactionOrSignableMessage, signerReply: string, context: ResolutionContext, scope: ResolutionScope) {
+	if (request.transactionOrMessageCreationStatus !== 'Simulated') return await commitReplyAndShowStackChange(services, request, toTerminalReply(request, formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')), 'unchanged', context, scope)
+	if (request.simulationMode) return false
+	const safeReply = await resolveSafeSignerReply(services.ethereum, request, signerReply)
+	if (safeReply.status === 'error') {
+		await updatePendingTransactionOrMessage(request.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
+			approvalStatus: safeReply.approvalStatus,
+		}))
+		await context.refreshConfirmationWindow()
+		return false
+	}
+	if (safeReply.status === 'success') return await commitReplyAndShowStackChange(services, request, toTerminalReply(request, { type: 'result', result: safeReply.result }), safeReply.simulationStack, context, scope)
+	return await commitReplyAndShowStackChange(services, request, toTerminalReply(request, { type: 'result', result: signerReply }), 'unchanged', context, scope)
+}
+
+// The context of a resolution, whose service-dependent steps get the simulation services when they run: the background's services may not exist yet, when getServices throws and the step is retried.
+export const createResolutionContextWithServices = (getServices: () => SimulationServices, websiteTabConnections: WebsiteTabConnections): ResolutionContext => ({
+	websiteTabConnections,
+	refreshConfirmationWindow: async () => {
+		const { ethereum, tokenPriceService } = getServices()
+		return await updateConfirmTransactionView(ethereum, tokenPriceService)
+	},
+	settleSignerResult: async (request, signerReply, context, scope) => await settleSignerResult(getServices(), request, signerReply, context, scope),
+})
+
+// The context of a resolution started with the simulation services at hand.
+export const createResolutionContext = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => createResolutionContextWithServices(() => ({ ethereum, tokenPriceService }), websiteTabConnections)
+
+// What accepting a simulation-mode transaction did: stacked it (or found it stacked), found its hash taken, or found the request resolved meanwhile.
+type AcceptedTransactionStacking = { readonly kind: 'stacked', readonly transaction: PreSimulationTransaction } | { readonly kind: 'hash-taken' } | { readonly kind: 'resolved' }
+
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+	// A user's action on the request gives its resolution a new retry budget; a signer's result is no user action.
+	if (confirmation.data.action !== 'signerIncluded') resetRequestRetryBudget(confirmation.data.uniqueRequestIdentifier)
+	return await resolvePendingRequest(ethereum, tokenPriceService, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections), confirmation, refreshedSafeSignerSelection)
+}
+
+async function resolvePendingRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resolutionContext: ResolutionContext, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
+	const { websiteTabConnections } = resolutionContext
+	// A reject and a closed window are one decline, with its own retries.
+	if (confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse') return await declineRequest(confirmation.data.uniqueRequestIdentifier, confirmation.data.action === 'reject' ? 'reject' : 'close', resolutionContext)
+	// A signer's result, the transaction hash or signature string it answered with, is stored with the request before any lookup that can fail, and settled under the request's claim (settleSignerResult).
+	if (confirmation.data.action === 'signerIncluded') return await submitSignerResult(confirmation.data.uniqueRequestIdentifier, funtypes.String.parse(confirmation.data.signerReply), resolutionContext)
+	// A request committed to a reply is only finished, whatever the action, so an accept never follows a delivered rejection. Checked before the pending request is looked up: a request whose finishing removed it but ran out of retries for its window update still has a committed reply to finish.
+	if (await getQueuedTerminalReply(confirmation.data.uniqueRequestIdentifier) !== undefined) return await resumeRequest(confirmation.data.uniqueRequestIdentifier, resolutionContext)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
 	if (
@@ -336,64 +378,23 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (safeResolution.status === 'refreshed') {
 		pendingTransactionOrMessage = safeResolution.pending
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => withoutOwnedFields(safeResolution.pending))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
 	}
 	pendingTransactionOrMessage = safeResolution.pending
 	if (safeResolution.pendingChanged) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => withoutOwnedFields(safeResolution.pending))
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
-		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
-		await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
-		await runConfirmationViewStep(async () => {
-			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-		})
-		await runConfirmationViewStep(async () => {
-			const confirmationQueueIsShown = await updateConfirmTransactionView(ethereum, tokenPriceService)
-			// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
-			const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
-			if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
-		})
-	}
-	const removePendingRequestAndUpdateView = async () => {
-		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		await updateViewAfterPendingRequestRemoved('unchanged')
-	}
-	// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
-	const removePendingRequestAndDeliverTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => {
-		await queueTerminalReply(terminalReply)
-		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		try {
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		} finally {
-			// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
-			await updateViewAfterPendingRequestRemoved(simulationStack)
-		}
-	}
-	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
-		if (message.type === 'result' && !('error' in message)) {
-			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-				return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
-			}
-			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
-		}
-		if (message.type === 'result') {
-			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
-		}
-		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-	}
-	if (confirmation.data.action === 'addToSafeStack') {
-		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
-		const safeReply = await persistUnsignedSafeTransaction(ethereum, pendingTransactionOrMessage)
+	const replyWith = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => await commitReplyAndShowStackChange({ ethereum, tokenPriceService }, pendingTransactionOrMessage, terminalReply, simulationStack, resolutionContext, {})
+	// The request as the Gnosis Safe resolution above left it, which adding it to its Gnosis Safe stack persists.
+	const requestAsReviewed = pendingTransactionOrMessage
+	// Every path that persists an outcome (a Gnosis Safe proposal, a forward to the signer, a stacked request; a signer's result, by submitSignerResult) or commits a reply runs under the request's resolution claim, which first finishes a committed request and runs the path only for one still pending and uncommitted. So a reject that won never sees a later success, and a reject arriving meanwhile is deferred to the claim's release, where the commitment wins.
+	if (confirmation.data.action === 'addToSafeStack') return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async (current) => {
+		if (current.approvalStatus.status === 'WaitingForSigner') return false
+		const safeReply = await persistUnsignedSafeTransaction(ethereum, requestAsReviewed)
 		if (safeReply.status === 'error') {
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
@@ -401,14 +402,14 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return false
 		}
-		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
+		if (safeReply.status === 'success') return await replyWith(toTerminalReply(pendingTransactionOrMessage, { type: 'result', result: safeReply.result }), safeReply.simulationStack)
 		return false
-	}
+	})
 	if (
 		confirmation.data.action === 'accept'
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
-	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
+	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -422,64 +423,56 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		}))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		return false
-	}
-	if (confirmation.data.action === 'noResponse') {
-		const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
-			...pendingTransactionOrMessage.originalRequestParameters,
-			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
-			uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier,
-		})
-		await removePendingRequestAndUpdateView()
-		return noResponseDelivery
-	}
-	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
-	if (confirmation.data.action === 'reject') return reply(formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'))
-	if (!pendingTransactionOrMessage.simulationMode) {
-		if (confirmation.data.action === 'signerIncluded') {
-			const safeReply = await resolveSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply)
-			if (safeReply.status === 'error') {
-				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
-					approvalStatus: safeReply.approvalStatus,
-				}))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
-				return false
+	})
+	// Only an accept of a simulated request in simulation mode is left: a reject, close or signer result was handled first, and an accept of an unsimulated request or one outside simulation mode returned above.
+	if (pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' || !pendingTransactionOrMessage.simulationMode) return false
+	// Accepting stacks the request and replies only if it wins the request's resolution (withResolutionClaim).
+	const simulatedPending = pendingTransactionOrMessage
+	return await withResolutionClaim(confirmation.data.uniqueRequestIdentifier, resolutionContext, async () => {
+		switch (simulatedPending.type) {
+			case 'SignableMessage': {
+				// A message an earlier accept already stacked before stopping is not stacked again.
+				await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => findStackOperation(prevStack.operations, getRequestStackIdentifier(simulatedPending)) !== undefined
+					? prevStack
+					: { operations: [...prevStack.operations, { type: 'Message' as const, signedMessageTransaction: simulatedPending.signedMessageTransaction }] })
+				return await replyWith(await toStackedTerminalReply(simulatedPending, { type: 'Message', signedMessageTransaction: simulatedPending.signedMessageTransaction }), 'changed')
 			}
-			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
-			return reply({ type: 'result', result: confirmation.data.signerReply })
+			case 'Transaction': {
+				// Stacked under the hash its preview showed, which the page gets; reserving it kept every other append off it. A request pending from before reservations reserves one now, stored first, so a repeated accept stacks the same hash.
+				const pendingTransaction = simulatedPending
+				const acceptance = await withSimulationHashLock(async () => {
+					const current = (await getPendingTransactionsAndMessages()).find((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, pendingTransaction.uniqueRequestIdentifier))
+					if (current?.type !== 'Transaction') return { kind: 'resolved' } satisfies AcceptedTransactionStacking
+					const allocatedReservation = current.simulationHashReservation === undefined && stacksTransactionOnAccept(current) ? await allocateSimulationHashReservation(pendingTransaction.transactionToSimulate, pendingTransaction.uniqueRequestIdentifier) : undefined
+					if (allocatedReservation !== undefined) await updateOwnedPendingRequestField(pendingTransaction.uniqueRequestIdentifier, 'simulationHashReservation', async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation: allocatedReservation } : request)
+					const transactionToStack = toPreSimulationTransaction(pendingTransaction.transactionToSimulate, current.simulationHashReservation ?? allocatedReservation)
+					return await updateInterceptorTransactionStackWithResult<AcceptedTransactionStacking>((prevStack: InterceptorTransactionStack) => {
+						// An accept repeated while the first one replies, or retried after it stacked the transaction, replies with the stacked hash again.
+						const alreadyStacked = findStackOperation(prevStack.operations, { type: 'Transaction', transactionIdentifier: pendingTransaction.transactionIdentifier })
+						if (alreadyStacked !== undefined) return { stack: prevStack, result: { kind: 'stacked', transaction: alreadyStacked.preSimulationTransaction } }
+						const stack = appendAcceptedTransactionToStack(prevStack, transactionToStack)
+						return stack === undefined ? { stack: prevStack, result: { kind: 'hash-taken' } } : { stack, result: { kind: 'stacked', transaction: transactionToStack } }
+					})
+				})
+				// Another accept, reject or close resolved the request while this one waited.
+				if (acceptance.kind === 'resolved') return false
+				if (acceptance.kind === 'hash-taken') {
+					await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
+						approvalStatus: { status: 'SignerError', code: METAMASK_ERROR_BLANKET_ERROR, message: 'A transaction on the simulation stack already uses this transaction\'s hash. Reject this request and send the transaction again.' },
+					}))
+					await updateConfirmTransactionView(ethereum, tokenPriceService)
+					return false
+				}
+				const { transaction } = acceptance
+				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
+				return await replyWith(await toStackedTerminalReply(simulatedPending, { type: 'Transaction', preSimulationTransaction: transaction }), 'changed')
+			}
+			default: assertNever(simulatedPending)
 		}
-		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-	}
-	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
-
-	switch (pendingTransactionOrMessage.type) {
-		case 'SignableMessage': {
-			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
-				...prevStack.operations,
-				{ type: 'Message' as const, signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }
-			] }))
-			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
-		}
-		case 'Transaction': {
-			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
-			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
-			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
-				...prevStack.operations,
-				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
-			] }))
-			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
-			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) }, 'changed')
-		}
-		default: assertNever(pendingTransactionOrMessage)
-	}
+	})
 }
 
-export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => { // check if user has closed the window on their own, if so, reject all signatures
-	const transactions = await getPendingTransactionsAndMessages()
-	const [firstTransaction] = transactions
-	if (firstTransaction === undefined || firstTransaction?.popupOrTabId.type !== popupOrTabs.type || firstTransaction.popupOrTabId.id !== popupOrTabs.id) return
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(transactions, ethereum, tokenPriceService, websiteTabConnections)
-}
+export const onCloseWindowOrTab = async (popupOrTabs: PopupOrTabId, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => await resolveRequestsOfClosedWindow(popupOrTabs, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections))
 
 export async function resolvePendingRequestsForMissingConfirmationWindows(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
@@ -494,42 +487,7 @@ export async function resolvePendingRequestsForMissingConfirmationWindows(ethere
 		}
 		if (confirmationWindowIsMissing) orphanedTransactions.push(transaction)
 	}
-	await resolveAllPendingTransactionsAndMessageAsNoResponse(orphanedTransactions, ethereum, tokenPriceService, websiteTabConnections)
-}
-
-const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions: readonly PendingTransactionOrSignableMessage[], ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
-	for (const transaction of transactions) {
-		try {
-			await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
-		} catch(e) {
-			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
-			schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
-		}
-	}
-}
-
-function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) {
-	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
-	if (pendingNoResponseRetryTimers.has(identifier)) return
-	const retryTimer = setTimeout(() => {
-		pendingNoResponseRetryTimers.delete(identifier)
-		void (async () => {
-			try {
-				await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: transaction.uniqueRequestIdentifier, action: 'noResponse' } })
-			} catch (error) {
-				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
-				schedulePendingNoResponseRetry(transaction, ethereum, tokenPriceService, websiteTabConnections)
-			}
-		})()
-	}, NO_RESPONSE_RETRY_DELAY_MS)
-	pendingNoResponseRetryTimers.set(identifier, retryTimer)
-}
-
-const formRejectMessage = (code: number, errorString: string) => {
-	return {
-		type: 'result' as const,
-		error: { code, message: errorString }
-	}
+	await declineOrphanedRequestsAtStartup(orphanedTransactions, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections))
 }
 
 const resolveInsufficientBalanceMessageForTransaction = async (
@@ -668,15 +626,22 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, ...simulationOptionsField, success: true }
 }
 
-const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
-	const pendingTransactions = await getPendingTransactionsAndMessages()
-	const [firstPendingTransaction] = pendingTransactions
-	if (firstPendingTransaction !== undefined) {
-		const alreadyOpenWindow = await getPopupOrTabById(firstPendingTransaction.popupOrTabId)
-		if (alreadyOpenWindow) return alreadyOpenWindow
-		await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingTransactions, ethereum, tokenPriceService, websiteTabConnections)
+// The transaction or message identifier of one request, unique even when a page reuses a request id: what is stacked for a request carries it, so finding it on the stack proves this request stacked it (rejectUnlessStacked, accepting again).
+const createRequestIdentity = (uniqueRequestIdentifier: UniqueRequestIdentifier) => EthereumQuantity.parse(keccak256(stringToBytes(`${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) }-${ crypto.randomUUID() }`)))
+
+const openConfirmationWindow = async () => await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
+// Called under the pending-confirmation lock (confirmationWindowLifecycle.ts). Requests whose window is gone are rejected as for a window the user closed, by resolutions that know the lock is held.
+const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, pendingConfirmationLock: PendingConfirmationLock) => {
+	// Each request is checked against its own window: requests whose window is gone are rejected, and a live confirmation window of another request is reused.
+	let liveWindow: Awaited<ReturnType<typeof getPopupOrTabById>>
+	const orphanedRequests: PendingTransactionOrSignableMessage[] = []
+	for (const pending of await getPendingTransactionsAndMessages()) {
+		const window = await getPopupOrTabById(pending.popupOrTabId)
+		if (window === undefined) orphanedRequests.push(pending)
+		else liveWindow ??= window
 	}
-	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
+	if (orphanedRequests.length > 0) await declinePendingRequests(orphanedRequests, createResolutionContext(ethereum, tokenPriceService, websiteTabConnections), { pendingConfirmationLock })
+	return liveWindow ?? await openConfirmationWindow()
 }
 
 export async function openConfirmTransactionDialogForMessage(
@@ -702,8 +667,7 @@ export async function openConfirmTransactionDialogForMessage(
 			? 'Select a Gnosis Safe signer for simulation before signing a message.'
 			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
 	}
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const messageIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
 		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
@@ -735,9 +699,11 @@ export async function openConfirmTransactionDialogForMessage(
 					safeMessageValidationDetails = isSafeMessageAccountMismatchFailure(error) ? error.safeSignerErrorDetails : undefined
 			}
 		}
-		await pendingConfirmationSemaphore.execute(async () => {
-			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
+		await withPendingConfirmationLock(async (pendingConfirmationLock) => {
+			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections, pendingConfirmationLock)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
+			// A request id that is already pending, a replay or a reused id, gets no second confirmation: everything keyed by the id would mix the two, and the pending request answers the id.
+			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return
 
 			const pendingMessage = {
 				type: 'SignableMessage' as const,
@@ -797,8 +763,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const transactionIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
@@ -845,15 +810,17 @@ export async function openConfirmTransactionDialogForTransaction(
 		)
 		: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
-	const outcome = await pendingConfirmationSemaphore.execute(async () => {
+	const outcome = await withPendingConfirmationLock(async (pendingConfirmationLock) => {
 		const finalizedSafePreparation = await safePreparation.finalize(
 			await transactionToSimulatePromise,
 			request.uniqueRequestIdentifier.requestSocket.tabId,
 		)
 		try {
 			const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
-			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
+			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections, pendingConfirmationLock)
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
+			// A request id that is already pending, a replay or a reused id, gets no second confirmation: everything keyed by the id would mix the two, and the pending request answers the id.
+			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return { success: true }
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
 
 			const pendingTransaction = {
@@ -871,7 +838,12 @@ export async function openConfirmTransactionDialogForTransaction(
 				...(safeTransaction === undefined ? {} : { safeTransaction }),
 				...(pendingSafeFields ?? {}),
 			}
-			await appendPendingTransactionOrMessage(pendingTransaction)
+			// A transaction that accepting stacks reserves its hash once, as the request is stored, so the preview shows it; under the hash lock, so no other reservation or import takes it meanwhile.
+			const simulationHashReservation = await withSimulationHashLock(async () => {
+				const reservation = stacksTransactionOnAccept(pendingTransaction) && transactionToSimulate.success ? await allocateSimulationHashReservation(transactionToSimulate, request.uniqueRequestIdentifier) : undefined
+				await appendPendingTransactionOrMessage(reservation === undefined ? pendingTransaction : { ...pendingTransaction, simulationHashReservation: reservation })
+				return reservation
+			})
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
@@ -881,7 +853,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				simulationMode,
 				request.uniqueRequestIdentifier,
 				transactionToSimulate,
-				safeTransaction,
+				{ safeSigningRequest: safeTransaction, simulationHashReservation },
 			))
 			if (transactionToSimulate.success) {
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))

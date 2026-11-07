@@ -1,0 +1,82 @@
+import { createSaltSearch, findFreeSimulationSalt, type SimulationHashReservation, toPreSimulationTransaction, withSimulationSalt, withUniqueSimulationHash } from '../simulation/services/simulationTransactionSigning.js'
+import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
+import type { InterceptorStackOperation, InterceptorTransactionStack, PreSimulationTransaction, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
+import { Semaphore } from '../utils/semaphore.js'
+import { assertNever } from '../utils/typescript.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateOwnedPendingRequestField } from './storageVariables.js'
+
+// The one place that knows which stack operation belongs to which request or identifier. Identifiers are unique to a request (createRequestIdentity), so a match proves the request stacked the operation.
+export const isStackOperationOf = (operation: InterceptorStackOperation, identifier: TransactionOrMessageIdentifier) => {
+	switch (operation.type) {
+		case 'Transaction': return identifier.type === 'Transaction' && identifier.transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier
+		case 'Message': return identifier.type === 'Message' && identifier.messageIdentifier === operation.signedMessageTransaction.messageIdentifier
+		case 'TimeManipulation': return false
+		default: return assertNever(operation)
+	}
+}
+export const findStackOperation = <Identifier extends TransactionOrMessageIdentifier>(operations: readonly InterceptorStackOperation[], identifier: Identifier) => operations.find((operation): operation is Extract<InterceptorStackOperation, { readonly type: Identifier['type'] }> => isStackOperationOf(operation, identifier))
+// The identifier that the request's operation on the stack carries.
+export function getRequestStackIdentifier(request: PendingTransactionOrSignableMessage): TransactionOrMessageIdentifier {
+	switch (request.type) {
+		case 'Transaction': return { type: 'Transaction', transactionIdentifier: request.transactionIdentifier }
+		case 'SignableMessage': return { type: 'Message', messageIdentifier: request.signedMessageTransaction.messageIdentifier }
+		default: return assertNever(request)
+	}
+}
+
+const getTransactionHashes = (operations: readonly InterceptorStackOperation[]) => operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.signedTransaction.hash] : [])
+
+// Serializes each step that allocates hashes against the stack and the pending reservations together with its commit: reserving a confirmation's hash, accepting a confirmation and importing a stack. Its place in the lock order is defined in confirmationWindowLifecycle.ts.
+const simulationHashSemaphore = new Semaphore(1)
+export const withSimulationHashLock = async <Result>(allocateAndCommit: () => Promise<Result>) => await simulationHashSemaphore.execute(allocateAndCommit)
+
+// Whether accepting the request stacks its transaction, so it needs a reserved hash: a simulation-mode transaction other than a Gnosis Safe proposal, which is stacked under its safeTxHash.
+export const stacksTransactionOnAccept = (request: { readonly simulationMode: boolean, readonly safeTransaction?: unknown }) => request.simulationMode && request.safeTransaction === undefined
+
+// The hashes pending confirmations other than except hold: their reservations, and for one pending from before reservations, the hash accepting it would take. No other transaction may take them.
+export const getReservedTransactionHashes = (pending: readonly PendingTransactionOrSignableMessage[], except?: UniqueRequestIdentifier): ReadonlySet<bigint> => new Set(pending.flatMap((request) => {
+	if (request.type !== 'Transaction' || !stacksTransactionOnAccept(request)) return []
+	if (except !== undefined && doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, except)) return []
+	if (request.simulationHashReservation !== undefined) return [request.simulationHashReservation.hash]
+	if (!('transactionToSimulate' in request) || !request.transactionToSimulate.success) return []
+	return [toPreSimulationTransaction(request.transactionToSimulate, undefined).signedTransaction.hash]
+}))
+
+// Reserves the hash a confirmation's transaction keeps from then on: free on the stack and among the other pending confirmations' hashes. Run under withSimulationHashLock, together with storing the reservation.
+export const allocateSimulationHashReservation = async (transactionToSimulate: WebsiteCreatedEthereumTransaction, requestIdentifier: UniqueRequestIdentifier): Promise<SimulationHashReservation> => {
+	const takenHashes = new Set([...getTransactionHashes((await getInterceptorTransactionStack()).operations), ...getReservedTransactionHashes(await getPendingTransactionsAndMessages(), requestIdentifier)])
+	const unreserved = toPreSimulationTransaction(transactionToSimulate, undefined)
+	const salt = findFreeSimulationSalt(unreserved, takenHashes)
+	return { salt, hash: withSimulationSalt(unreserved, salt).signedTransaction.hash }
+}
+
+// The pending confirmation's reservation, reserved and stored now if its transaction formed successfully for the first time after it was opened, before its first preview is shown.
+export const ensureSimulationHashReservation = async (requestIdentifier: UniqueRequestIdentifier, transactionToSimulate: WebsiteCreatedEthereumTransaction) => await withSimulationHashLock(async () => {
+	const pending = (await getPendingTransactionsAndMessages()).find((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, requestIdentifier))
+	if (pending?.type !== 'Transaction' || !stacksTransactionOnAccept(pending)) return undefined
+	if (pending.simulationHashReservation !== undefined) return pending.simulationHashReservation
+	const simulationHashReservation = await allocateSimulationHashReservation(transactionToSimulate, requestIdentifier)
+	await updateOwnedPendingRequestField(requestIdentifier, 'simulationHashReservation', async (request) => request.type === 'Transaction' ? { ...request, simulationHashReservation } : request)
+	return simulationHashReservation
+})
+
+// Appends operations to the stack, giving each appended transaction, in order, a hash that no stacked transaction has and no pending confirmation holds (withUniqueSimulationHash). The stacked transactions keep theirs, even duplicates a stack stored before #1713 holds. Returns the operations as appended, whose hashes are the stored ones.
+export const appendOperationsToStack = (stack: InterceptorTransactionStack, operations: readonly InterceptorStackOperation[], reservedHashes: ReadonlySet<bigint>) => {
+	const takenHashes = new Set([...getTransactionHashes(stack.operations), ...reservedHashes])
+	const saltSearch = createSaltSearch()
+	const appended = operations.map((operation): InterceptorStackOperation => {
+		if (operation.type !== 'Transaction') return operation
+		const preSimulationTransaction = withUniqueSimulationHash(operation.preSimulationTransaction, takenHashes, saltSearch)
+		takenHashes.add(preSimulationTransaction.signedTransaction.hash)
+		return preSimulationTransaction === operation.preSimulationTransaction ? operation : { ...operation, preSimulationTransaction }
+	})
+	return { stack: { ...stack, operations: [...stack.operations, ...appended] }, appended }
+}
+
+// Appends an accepted confirmation's transaction under its reserved hash. Undefined if a stacked transaction already has that hash, which only a stack update that ignored reservations can cause.
+export const appendAcceptedTransactionToStack = (stack: InterceptorTransactionStack, transaction: PreSimulationTransaction): InterceptorTransactionStack | undefined => {
+	if (getTransactionHashes(stack.operations).includes(transaction.signedTransaction.hash)) return undefined
+	return { ...stack, operations: [...stack.operations, { type: 'Transaction', preSimulationTransaction: transaction }] }
+}

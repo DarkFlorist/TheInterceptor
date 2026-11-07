@@ -81,7 +81,7 @@ test('every decision whether the node runs a transaction as an executed call goe
 
 test('simulation stack import applies every imported-stack admission rule from one module', () => {
 	assert.match(popupMessageHandlersSource, /const admission = admitImportedSimulationStackOperations\(parsedRequest\.data\.interceptorSimulateStack\.operations\)/u)
-	assert.match(popupMessageHandlersSource, /\.\.\.prevStack\.operations, \.\.\.admission\.operations\]/u)
+	assert.match(popupMessageHandlersSource, /const importedOperations = admission\.operations\.map\(/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /preSimulationTransaction\.safeTransaction !== undefined|executeThroughSafe/u)
 	assert.doesNotMatch(safeTransactionConfirmationSource, /withoutImportedGnosisSafeExecutions/u)
 })

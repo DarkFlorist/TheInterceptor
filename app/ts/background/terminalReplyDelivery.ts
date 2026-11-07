@@ -1,115 +1,139 @@
-import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import type { InterceptedRequestForward, StoredTerminalReply } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
+import { createBoundedRetries } from '../utils/boundedRetry.js'
 import { reportLocalRecovery } from '../utils/errors.js'
-import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReply, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { commitPendingTerminalReply, forgetPendingTerminalReplyWindow, getPendingTerminalReplies, markPendingTerminalReplyDelivered, rememberPendingTerminalReplyWindow, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
-const terminalReplyReservations = new Set<string>()
-const completedTerminalReplies = new Set<string>()
+// Replies posted whose delivered mark is not stored yet: an attempt that finds one stores the mark instead of posting the reply again.
+const postedUnmarkedTerminalReplies = new Set<string>()
 const terminalReplySemaphore = new Semaphore(1)
-const terminalReplyFlushRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS = 50
+// The flush retries of each connection, keyed by its port rather than its socket, so a flush of a replaced port never touches the retries of the port that replaced it, and a new connection has its own budget.
+const terminalReplyFlushRetries = createBoundedRetries<browser.runtime.Port>({ baseDelayMs: 50, attemptLimit: 6 })
 
-async function finishPreviouslyDeliveredTerminalReply(identifier: string, message: InterceptedRequestForward) {
-	if (!completedTerminalReplies.has(identifier)) return false
-	await removePendingTerminalReply(message.uniqueRequestIdentifier)
-	completedTerminalReplies.delete(identifier)
+// The size of the in-memory delivery bookkeeping, which is empty whenever no delivery is in flight.
+export const getTerminalReplyBookkeepingSize = () => terminalReplyProductions.size + postedUnmarkedTerminalReplies.size + terminalReplyFlushRetries.getScheduledRetryCount()
+
+/**
+ * The durable terminal-reply queue entry is a request's only commitment to its terminal reply. queueTerminalReply stores it once (a request that has one keeps it); a delivery by any path, the resolution or a reconnect flush, posts it and marks it delivered, never deleting it while its request is pending; the entry is deleted last, once it is delivered and its request is no longer pending.
+ * Within a session a reply is posted once. A restart between posting it and storing its delivered mark posts it again; the page's provider ignores a reply to a request it has already settled or does not know, so the page still settles the request once.
+ */
+export async function queueTerminalReply(message: InterceptedRequestForward, confirmationWindow?: PopupOrTabId) {
+	return await terminalReplySemaphore.execute(async () => await commitPendingTerminalReply(confirmationWindow === undefined ? message : { ...message, confirmationWindow }))
+}
+
+// The reply committed for the request.
+export const getQueuedTerminalReply = async (uniqueRequestIdentifier: UniqueRequestIdentifier) => (await getPendingTerminalReplies()).find((reply) => doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
+
+const isRequestPending = async (uniqueRequestIdentifier: UniqueRequestIdentifier) => (await getPendingTransactionsAndMessages()).some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+
+// Under the terminal-reply lock: posts the entry unless it was posted already, and marks it delivered. Whether it is delivered.
+async function deliverEntry(websiteTabConnections: WebsiteTabConnections, entry: StoredTerminalReply) {
+	const identifier = getUniqueRequestIdentifierString(entry.uniqueRequestIdentifier)
+	if (entry.delivered !== true) {
+		if (!postedUnmarkedTerminalReplies.has(identifier)) {
+			const { delivered: _delivered, confirmationWindow: _confirmationWindow, ...reply } = entry
+			const delivery = replyToInterceptedRequest(websiteTabConnections, reply)
+			if (delivery !== true) return delivery
+			postedUnmarkedTerminalReplies.add(identifier)
+		}
+		await markPendingTerminalReplyDelivered(entry.uniqueRequestIdentifier)
+		postedUnmarkedTerminalReplies.delete(identifier)
+	}
 	return true
 }
 
-async function recordSuccessfulTerminalReplyDelivery(identifier: string, message: InterceptedRequestForward, keepCompletionMarker: boolean) {
-	completedTerminalReplies.add(identifier)
-	await removePendingTerminalReply(message.uniqueRequestIdentifier)
-	if (!keepCompletionMarker) completedTerminalReplies.delete(identifier)
-}
-
-export async function queueTerminalReply(message: InterceptedRequestForward) {
-	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
-	terminalReplyReservations.add(identifier)
-	try {
-		await terminalReplySemaphore.execute(async () => {
-			await appendPendingTerminalReply(message)
-		})
-	} catch (error) {
-		terminalReplyReservations.delete(identifier)
-		throw error
-	}
-}
-
+// Delivers the reply committed for the message's request, if it is not delivered yet. True when it is delivered, or there is none.
 export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
 	if (existingProduction !== undefined) return await existingProduction
-	const production = (async () => {
-		const deliver = async () => await terminalReplySemaphore.execute(async () => {
-			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
-			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
-			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
-			return delivery
-		})
-		return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, deliver)
-	})()
+	const deliver = async () => await terminalReplySemaphore.execute(async () => {
+		const entry = await getQueuedTerminalReply(message.uniqueRequestIdentifier)
+		return entry === undefined ? true : await deliverEntry(websiteTabConnections, entry)
+	})
+	const production = attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, deliver)
 	terminalReplyProductions.set(identifier, production)
 	try {
 		return await production
 	} finally {
 		if (terminalReplyProductions.get(identifier) === production) terminalReplyProductions.delete(identifier)
-		terminalReplyReservations.delete(identifier)
 	}
 }
 
-export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
-	await queueTerminalReply(message)
-	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
-}
+// Finishes a committed request (requestResolution.ts), which is what deletes a delivered entry: a flush is given it by its caller, the composition root.
+export type CommittedRequestFinisher = (uniqueRequestIdentifier: UniqueRequestIdentifier, websiteTabConnections: WebsiteTabConnections) => Promise<unknown>
 
-export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	return await terminalReplySemaphore.execute(async () => {
-		const pendingReplies = await getPendingTerminalReplies()
-		let deliveredReplies = 0
-		for (const reply of pendingReplies) {
-			const replySocket = reply.uniqueRequestIdentifier.requestSocket
-			if (replySocket.tabId !== socket.tabId || replySocket.connectionName !== socket.connectionName) continue
-			const identifier = getUniqueRequestIdentifierString(reply.uniqueRequestIdentifier)
-			if (completedTerminalReplies.has(identifier)) {
-				await removePendingTerminalReply(reply.uniqueRequestIdentifier)
-				continue
-			}
-			if (replyToInterceptedRequest(websiteTabConnections, reply) !== true) continue
-			await recordSuccessfulTerminalReplyDelivery(identifier, reply, terminalReplyProductions.has(identifier) || terminalReplyReservations.has(identifier))
-			deliveredReplies += 1
-		}
-		return deliveredReplies
+// Records the window that shows the entry's request, unless the entry has one, under the terminal-reply lock.
+export async function attachTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationWindow: PopupOrTabId) {
+	await terminalReplySemaphore.execute(async () => {
+		if ((await getQueuedTerminalReply(uniqueRequestIdentifier))?.confirmationWindow === undefined) await rememberPendingTerminalReplyWindow(uniqueRequestIdentifier, confirmationWindow)
 	})
 }
 
-export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) {
-	const socketIdentifier = websiteSocketToString(socket)
-	const existingRetryTimer = terminalReplyFlushRetryTimers.get(socketIdentifier)
-	if (existingRetryTimer !== undefined) {
-		clearTimeout(existingRetryTimer)
-		terminalReplyFlushRetryTimers.delete(socketIdentifier)
-	}
+export async function forgetTerminalReplyWindow(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await terminalReplySemaphore.execute(async () => await forgetPendingTerminalReplyWindow(uniqueRequestIdentifier))
+}
+
+// The last step of finishing a request, and the only deletion of an entry: under the terminal-reply lock, it deletes the stored entry once it is delivered (or its requesting tab is gone, so it cannot be), its window was updated, and its request is no longer pending.
+export async function retireTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier, requestingTabGone: boolean) {
+	await terminalReplySemaphore.execute(async () => {
+		const entry = await getQueuedTerminalReply(uniqueRequestIdentifier)
+		if (entry === undefined || (entry.delivered !== true && !requestingTabGone) || entry.confirmationWindow !== undefined || await isRequestPending(uniqueRequestIdentifier)) return
+		await removePendingTerminalReply(uniqueRequestIdentifier)
+		// A reply retired undelivered, because its tab is gone, may have been posted without its delivered mark: its posted marker goes with the entry. Coalesced delivery attempts (terminalReplyProductions) clear themselves when they settle.
+		postedUnmarkedTerminalReplies.delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
+	})
+}
+
+// Delivers the socket's undelivered replies, then finishes their requests with the given finisher.
+export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, finishCommittedRequest: CommittedRequestFinisher) {
+	const { deliveredReplies, delivered } = await terminalReplySemaphore.execute(async () => {
+		let deliveredReplies = 0
+		const delivered: UniqueRequestIdentifier[] = []
+		for (const entry of await getPendingTerminalReplies()) {
+			const replySocket = entry.uniqueRequestIdentifier.requestSocket
+			if (replySocket.tabId !== socket.tabId || replySocket.connectionName !== socket.connectionName) continue
+			const newlyDelivered = entry.delivered !== true && !postedUnmarkedTerminalReplies.has(getUniqueRequestIdentifierString(entry.uniqueRequestIdentifier))
+			if (await deliverEntry(websiteTabConnections, entry) !== true) continue
+			delivered.push(entry.uniqueRequestIdentifier)
+			if (newlyDelivered) deliveredReplies += 1
+		}
+		return { deliveredReplies, delivered }
+	})
+	for (const uniqueRequestIdentifier of delivered) await finishCommittedRequest(uniqueRequestIdentifier, websiteTabConnections)
+	return deliveredReplies
+}
+
+// Flushes a newly connected port's replies, the external trigger that gives the connection a new retry budget: a failed flush is retried with backoff (50 ms, doubling) while the same port stays connected, up to a limit, then reported as given up until the port reconnects.
+export async function flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, finishCommittedRequest: CommittedRequestFinisher) {
+	terminalReplyFlushRetries.reset(port)
+	return await flushConnectedPort(websiteTabConnections, socket, port, finishCommittedRequest)
+}
+
+async function flushConnectedPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port, finishCommittedRequest: CommittedRequestFinisher): Promise<number> {
 	try {
-		return await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket)
+		const deliveredReplies = await flushPendingTerminalRepliesForSocket(websiteTabConnections, socket, finishCommittedRequest)
+		terminalReplyFlushRetries.reset(port)
+		return deliveredReplies
 	} catch (error) {
-		await reportLocalRecovery(error, {
-			source: 'pending_terminal_replies',
-			code: 'pending_terminal_reply_socket_flush_failed',
-			message: 'Retrying terminal reply delivery while the website connection remains active.',
+		await terminalReplyFlushRetries.retryAfterFailure(port, () => {
+			if (websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.port === port) void flushConnectedPort(websiteTabConnections, socket, port, finishCommittedRequest)
+			else terminalReplyFlushRetries.reset(port)
+		}, async (retrying) => {
+			// A port out of retries is not flushed again, so its entry goes: the next connection is a new port.
+			if (!retrying) terminalReplyFlushRetries.reset(port)
+			await reportLocalRecovery(error, retrying
+				? { source: 'pending_terminal_replies', code: 'pending_terminal_reply_socket_flush_failed', message: 'Retrying terminal reply delivery while the website connection remains active.' }
+				: { source: 'pending_terminal_replies', code: 'pending_terminal_reply_socket_flush_gave_up', message: 'Stopped retrying terminal reply delivery until the website connection reconnects.' })
 		})
-		const retryTimer = setTimeout(() => {
-			terminalReplyFlushRetryTimers.delete(socketIdentifier)
-			const currentPort = websiteTabConnections.get(socket.tabId)?.connections[socketIdentifier]?.port
-			if (currentPort !== port) return
-			void flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
-		}, TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS)
-		terminalReplyFlushRetryTimers.set(socketIdentifier, retryTimer)
 		return 0
 	}
 }
