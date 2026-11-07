@@ -25,13 +25,13 @@ export async function getCodeOrError(ethereum: EthereumClientService, requestAbo
 	const identifiedAddress = await identifyAddress(ethereum, requestAbortController, address)
 	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress.address }(${ identifiedAddress.name }) contains code or not.` }
 }
-export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
+export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState): Promise<readonly string[]> {
 	const transferInfo = parseTransaction(transaction)
-	if (transferInfo === undefined) return
-	if (transaction.to === null) return
-	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return
-	if (!ADDITIONAL_BAD_TRANSFER_TARGETS.has(transferInfo.arguments.to)) return
-	if (!hasKnownCommonTokenMetadata(transaction.to)) return
+	if (transferInfo === undefined) return []
+	if (transaction.to === null) return []
+	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return []
+	if (!ADDITIONAL_BAD_TRANSFER_TARGETS.has(transferInfo.arguments.to)) return []
+	if (!hasKnownCommonTokenMetadata(transaction.to)) return []
 	const to = await identifyAddress(ethereum, requestAbortController, transferInfo.arguments.to)
-	return `Attempt to send tokens to a contract (${ to.name }) that cannot receive such tokens`
+	return [`Attempt to send tokens to a contract (${ to.name }) that cannot receive such tokens`]
 }
