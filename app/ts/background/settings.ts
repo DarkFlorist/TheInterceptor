@@ -5,7 +5,8 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { getRpcList, getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { removeRpcNetworkCredentialsForExport, restoreRpcNetworkCredentialsForImport } from '../utils/rpcUrlCredentials.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -272,7 +273,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
-			rpcNetwork: settings.activeRpcNetwork,
+			rpcNetwork: removeRpcNetworkCredentialsForExport(settings.activeRpcNetwork),
 			simulationMode: settings.simulationMode,
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
@@ -304,7 +305,8 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	} else {
 		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
-			rpcNetwork: exportedSetings.settings.rpcNetwork,
+			// Exports leave RPC URL credentials out, so this device's RPC list is the only place they can be restored from.
+			rpcNetwork: restoreRpcNetworkCredentialsForImport(exportedSetings.settings.rpcNetwork, await getRpcList()),
 			activeSimulationAddress: exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.activeSigningSafeAddress : undefined,

@@ -15,9 +15,10 @@ import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
 import { AsyncStatusIcon } from './AsyncAction.js'
-import { parseRpcFormData } from '../../utils/rpcFormData.js'
+import { getRpcFormMode, parseRpcFormData, type RpcFormMode } from '../../utils/rpcFormData.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import { ErrorComponent } from './Error.js'
+import { redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
 
 type RpcProbeResult = {
 	chainId: bigint
@@ -33,13 +34,13 @@ const ConfigureRpcContext = createContext<ConfigureRpcContext | undefined>(undef
 
 const throwImprovedError = (error: unknown, url: string, fallbackMessage: string) => {
 	const message = error instanceof Error ? error.message : undefined
-	if (message?.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean https://${ url }?`)
+	if (message?.startsWith('unsupported protocol')) throw new Error(`Unsupported protocol, did you mean ${ redactRpcUrlCredentials(`https://${ url }`) }?`)
 	if (isBrowserFetchTransportError(error)) throw new Error('Failed to connect to the RPC.')
 	if (!(error instanceof Error)) throw new Error(fallbackMessage)
 	throw error
 }
 
-const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
+export const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 	const { value: rpcQuery, waitFor, reset: resetRpcQuery } = useAsyncState<RpcProbeResult>()
 
 	const checkServerAvailability = async (url: string) => {
@@ -97,6 +98,7 @@ const RpcQueryProvider = ({ children }: { children: ComponentChildren }) => {
 		}
 	}
 
+	// Probe requests go through the request handler, so a URL whose credentials cannot be sent safely fails here with getRpcFetchTarget's error, which the URL field reports.
 	const queryRpcInfo = (url: string) => waitFor(async () => {
 		const network = await checkServerAvailability(url.trim())
 		await validateEthSimulateSupport(url.trim())
@@ -189,7 +191,8 @@ export async function completeRpcFormMutation(mutation: () => Promise<void>, onS
 	onSuccess()
 }
 
-const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
+export const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
+	const formMode = getRpcFormMode(defaultValues)
 	const confirmRemoval = useSignal(false)
 	const { rpcQuery, resetRpcQuery } = useQueryRpc()
 	const { value: mutationState, waitFor: waitForMutation } = useAsyncState<void>()
@@ -227,7 +230,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 				case 'save':
 					void waitForMutation(async () => await completeRpcFormMutation(async () => {
-						const parsedData = parseRpcFormData(new FormData(form))
+						const parsedData = parseRpcFormData(new FormData(form), formMode)
 						if (!parsedData.success) throw new Error(parsedData.message)
 						await onSave(parsedData.value)
 					}, () => completeForm(form)))
@@ -271,7 +274,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 			<main class = 'grid' style = '--gap-y: 0.5rem'>
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
 				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0' >
-					<RpcUrlField { ...(defaultValues?.httpsRpc !== undefined ? { defaultValue: defaultValues.httpsRpc } : {}) } />
+					<RpcUrlField formMode = { formMode } />
 					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
 					<TextInput label = 'Currency Name *' name = 'currencyName' defaultValue = { currencyNameDefault.value } style = '--area: 7 / span 1' required />
@@ -309,10 +312,13 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 
 const RPC_URL_FETCH_DEBOUNCE = 600
 
-const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
+// Renders the URL the form mode saves: an editable `httpsRpc` field when adding, and the stored URL redacted, read-only, and without a form name when editing.
+const RpcUrlField = ({ formMode }: { formMode: RpcFormMode }) => {
 	const { rpcQuery, queryRpcInfo } = useQueryRpc()
 	const inputRef = useRef<HTMLInputElement>(null)
 	const timeout = useSignal<ReturnType<typeof setTimeout> | undefined>(undefined)
+	const isEditing = formMode.kind === 'edit'
+	const displayedStoredRpcUrl = formMode.kind === 'edit' ? redactRpcUrlCredentials(formMode.storedRpcUrl) : undefined
 
 	const deferredQueryAnRpcUrl = (url: string) => {
 		if (timeout.value) clearTimeout(timeout.value)
@@ -327,7 +333,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		if (!inputRef.current) return
 		switch (rpcQuery.value.state) {
 			case 'inactive':
-				if (defaultValue) inputRef.current.setCustomValidity('')
+				if (isEditing) inputRef.current.setCustomValidity('')
 				return
 			case 'pending':
 				inputRef.current.setCustomValidity('')
@@ -342,7 +348,7 @@ const RpcUrlField = ({ defaultValue }: { defaultValue?: string }) => {
 		}
 	})
 
-	return <TextInput ref = { inputRef } label = 'RPC URL *' name = 'httpsRpc' defaultValue = { defaultValue } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <AsyncStatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { defaultValue === undefined } readOnly = { defaultValue !== undefined } />
+	return <TextInput ref = { inputRef } label = 'RPC URL *' name = { isEditing ? undefined : 'httpsRpc' } defaultValue = { displayedStoredRpcUrl } onInput = { (e) => deferredQueryAnRpcUrl(e.currentTarget.value) } statusIcon = { <AsyncStatusIcon state = { rpcQuery.value.state } /> } style = '--area: 1 / span 2' required autoComplete = 'off' autoFocus = { !isEditing } readOnly = { isEditing } />
 }
 
 const Trash = () => (
