@@ -17,7 +17,6 @@ import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_
 import { confirmedSignerOwnership, createDeferredSignal, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import { Transaction } from 'micro-eth-signer'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { PASSTHROUGH_STATE } from '../../app/ts/types/visualizer-types.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 
 const networkA = {
