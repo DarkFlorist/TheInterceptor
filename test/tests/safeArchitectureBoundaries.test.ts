@@ -27,8 +27,19 @@ test('nothing under the resolution lock awaits an RPC-dependent view update', ()
 		return confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start))
 	}
 	assert.doesNotMatch(getFunctionSource('resolveStoredPendingTransactionOrMessage'), /updateConfirmTransactionView|(?<!stepsAfterResolution\.push\(async \(\) => )await updateViewAfterPendingRequestRemoved/u)
-	assert.doesNotMatch(getFunctionSource('storeNetworkRefusal'), /updateConfirmTransactionView/u)
+	assert.doesNotMatch(getFunctionSource('refuseOnNetwork'), /updateConfirmTransactionView/u)
 	assert.doesNotMatch(getFunctionSource('showStoredStateAndRefreshView'), /await updateConfirmTransactionView/u)
+	// Showing what is stored only reads it, so a status has one owner and not also every window update.
+	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage|reevaluateStoredNetworkRefusals|storeNetworkRefusal/u, view)
+})
+
+test('only the requested-network rule writes a network refusal', async () => {
+	const backgroundDirectory = new URL('../../app/ts/background/', import.meta.url).pathname
+	const writers: string[] = []
+	for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: backgroundDirectory })) {
+		if (/status: 'NetworkRefusal'/u.test(await Bun.file(`${ backgroundDirectory }${ file }`).text())) writers.push(file)
+	}
+	assert.deepEqual(writers, ['transactionNetwork.ts'])
 })
 
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {

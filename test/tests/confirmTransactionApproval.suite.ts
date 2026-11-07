@@ -7,9 +7,10 @@ import { createDeferredValue, createTestSimulationServicesOwner } from './backgr
 import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
+import { reevaluateStoredNetworkRefusals } from '../../app/ts/background/transactionNetwork.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
-import { METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 
 const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 const socket = uniqueRequestIdentifier.requestSocket
@@ -71,8 +72,7 @@ async function expectApprovalToBeInvalidated(websiteTabConnections: TransactionT
 	assert.equal(await approveRequest(websiteTabConnections, ethereum, tokenPriceService), false)
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 	const pending = await getPendingTransaction()
-	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
-	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
 }
 
 // Services for another network that record their RPC requests, so a test can tell whether a transaction preview was produced on that network.
@@ -275,7 +275,7 @@ const getStoredApprovalStatus = async () => (await getPendingTransaction()).appr
 
 const getRefusalMessage = async () => {
 	const approvalStatus = await getStoredApprovalStatus()
-	return approvalStatus.status === 'SignerError' ? approvalStatus.message : undefined
+	return approvalStatus.status === 'NetworkRefusal' ? approvalStatus.message : undefined
 }
 
 // Records the stored approval status at each chain update, which is what a confirmation window reads from storage when that message reaches it.
@@ -341,7 +341,7 @@ test('a refusal stays while the check still refuses, and approving again still s
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 
 	// The client of the requested network alone does not lift it: the active network has to match too.
-	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	await reevaluateStoredNetworkRefusals(simulator.ethereum)
 	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 })
@@ -349,11 +349,38 @@ test('a refusal stays while the check still refuses, and approving again still s
 test('an error reported by the wallet is not lifted by the requested network, even with the same error code', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const walletError = { status: 'SignerError' as const, code: METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN, message: 'The wallet is not connected to this chain.' }
+	const walletError = { status: 'SignerError' as const, code: 4901, message: 'The wallet is not connected to this chain.' }
 	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: walletError }))
 
-	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	await reevaluateStoredNetworkRefusals(simulator.ethereum)
 	assert.deepEqual(await getStoredApprovalStatus(), walletError)
+})
+
+test('a window update shows a stored refusal without changing it, and the next simulation refresh re-evaluates it', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
+
+	// A settings import writes the network without reporting a chain change.
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+
+	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
+})
+
+test('a Gnosis Safe signer refresh leaves a stored network refusal to its owner', async () => {
+	await setUpTransactionApprovalTest(false)
+	const { safePending } = await setUpSafeProposal()
+	const refusal = { status: 'NetworkRefusal' as const, message: NETWORK_CHANGED_REFUSAL }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...safePending, approvalStatus: refusal }] })
+
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
+
+	assert.deepEqual(await getStoredApprovalStatus(), refusal)
 })
 
 test('updating the confirmation window never refuses a request that was not refused', async () => {
@@ -379,6 +406,28 @@ test('a confirmation stored by an older version is told so, and its refusal neve
 	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
+})
+
+test('a delivery that does not finish holds no lock over the stored confirmations', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { publishConfirmationView } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const deliveryStarted = createDeferredValue<undefined>()
+	const releaseDelivery = createDeferredValue<undefined>()
+	browserMock.setRuntimeSendMessageHandler(async (message) => {
+		if (message.method !== 'popup_update_confirm_transaction_dialog_pending_transactions') return
+		deliveryStarted.resolve(undefined)
+		await releaseDelivery.promise
+	})
+
+	const publishing = publishConfirmationView({ currentBlockNumber: 1n, rpcConnectionStatus: undefined, visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() })
+	await deliveryStarted.promise
+	const written = await Promise.race([storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } })).then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500))])
+	releaseDelivery.resolve(undefined)
+	assert.equal(await publishing, true)
+	browserMock.setRuntimeSendMessageHandler(undefined)
+
+	assert.equal(written, true)
 })
 
 test('a push whose read overlaps a write reaches the windows before that write is announced', async () => {
@@ -520,8 +569,7 @@ test('a raw transaction signed for another network is not added to the simulatio
 	assert.equal(await approveRequest(websiteTabConnections), false)
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 	const pending = await getPendingTransaction()
-	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
-	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
 })
 
 test('a legacy raw transaction without a chain id never becomes a pending confirmation', async () => {
@@ -1041,8 +1089,7 @@ test('a network switch while a signing-mode approval is suspended keeps the tran
 	assert.equal(await approval, false)
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 	const pending = await getPendingTransaction()
-	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
-	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
 })
 
 test('a network switch while a simulation-mode approval is suspended keeps the transaction out of the simulation stack', async () => {
@@ -1071,8 +1118,7 @@ test('a network switch while a simulation-mode approval is suspended keeps the t
 	assert.equal(await approval, false)
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 	const pending = await getPendingTransaction()
-	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
-	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
 })
 
 test('a Gnosis Safe proposal is only stored in the Gnosis Safe stack of its own network', async () => {
@@ -1104,8 +1150,7 @@ test('a Gnosis Safe proposal is only stored in the Gnosis Safe stack of its own 
 	const expectNotStored = async () => {
 		assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 		const pending = await getPendingTransaction()
-		if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected a rejected Gnosis Safe proposal, got ${ pending.approvalStatus.status }`)
-		assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+		assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
 	}
 
 	// A network without an Interceptor RPC is active, while the client of the requested network is still installed.
@@ -1387,8 +1432,7 @@ test('a network switch while a Gnosis Safe proposal is validated keeps it out of
 		assert.equal(await resolution, false, persistence.data.action)
 		assert.deepEqual(await modules.getSafeTransactionStacks(), [], persistence.data.action)
 		const pending = await getPendingTransaction()
-		if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected a rejected Gnosis Safe proposal, got ${ pending.approvalStatus.status }`)
-		assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN, persistence.data.action)
+		assert.equal(pending.approvalStatus.status, 'NetworkRefusal', persistence.data.action)
 	}
 })
 
@@ -1412,8 +1456,7 @@ test('a network switch while the website connection is re-established keeps the 
 	assert.equal(disconnectedPort.getPostAttempts(), 1)
 	assert.deepEqual(getForwardedSignerRequests(replacementPortMessages), [])
 	const pending = await getPendingTransaction()
-	if (pending.approvalStatus.status !== 'SignerError') throw new Error(`Expected an invalidated approval, got ${ pending.approvalStatus.status }`)
-	assert.equal(pending.approvalStatus.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
 })
 
 test('every guarded write and delivery starts in the same synchronous step as its network check', async () => {
@@ -1470,13 +1513,13 @@ test('a network switch right after the network was read keeps the guarded stack 
 
 	await switchNetworkAfterNetworkRead(1)
 	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
-	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.status, 'NetworkRefusal')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 
 	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 	await switchNetworkAfterNetworkRead(1)
 	const stateUpdate = await updateTransactionStateOnRequestedNetwork(simulator.ethereum, pendingTransaction, (previousState) => ({ ...previousState, safeTransactionStacks: [createSafeStackFixture([])] }))
-	assert.equal(stateUpdate.committed ? undefined : stateUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(stateUpdate.committed ? undefined : stateUpdate.refusal.status, 'NetworkRefusal')
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
@@ -1487,7 +1530,7 @@ test('a network switch right after the network was read keeps the first delivery
 	await switchNetworkAfterNetworkRead(1)
 	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
 
-	assert.equal(forwarding.committed ? undefined : forwarding.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(forwarding.committed ? undefined : forwarding.refusal.status, 'NetworkRefusal')
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
@@ -1510,7 +1553,7 @@ test('a network switch right after the network was read keeps the retried delive
 	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
 
 	assert.equal(disconnectedPort.getPostAttempts(), 1)
-	assert.equal(forwarding.committed ? undefined : forwarding.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(forwarding.committed ? undefined : forwarding.refusal.status, 'NetworkRefusal')
 	assert.deepEqual(getForwardedSignerRequests(replacementPortMessages), [])
 })
 
@@ -1535,7 +1578,7 @@ test('a network write still running when the network was read keeps the guarded 
 	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
 	await networkSwitch
 
-	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.status, 'NetworkRefusal')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 })
 
@@ -1583,7 +1626,7 @@ test('a repair of a corrupt active network still running when the network is rea
 	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
 	await repairingRead
 
-	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.code, METAMASK_ERROR_NOT_CONNECTED_TO_APPROPRIATE_CHAIN)
+	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.status, 'NetworkRefusal')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 })
 

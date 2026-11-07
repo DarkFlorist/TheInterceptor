@@ -12,13 +12,13 @@ import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTran
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { type TransactionNetworkError, updateTransactionStateOnRequestedNetwork } from './transactionNetwork.js'
+import { type NetworkRefusal, updateTransactionStateOnRequestedNetwork } from './transactionNetwork.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
 	| { readonly status: 'success', readonly result: string, readonly simulationStack: SimulationStackChange }
 	| { readonly status: 'error', readonly approvalStatus: SafeSignerErrorStatus }
-	| { readonly status: 'networkRefusal', readonly refusal: TransactionNetworkError }
+	| { readonly status: 'networkRefusal', readonly refusal: NetworkRefusal }
 
 const signerError = (message: string): SafeSignerReplyResolution => ({
 	status: 'error',

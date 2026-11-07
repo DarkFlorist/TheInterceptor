@@ -97,11 +97,9 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 		status: funtypes.Union(funtypes.Literal('SignerError')),
 		code: funtypes.Number,
 		message: funtypes.String,
-	}).And(funtypes.ReadonlyPartial({
-		safeSignerErrorDetails: SafeSignerErrorDetails,
-		// Marks a refusal of the requested-network check, which is kept only while that check still refuses. A wallet can report the same error code, so the code cannot tell them apart.
-		networkRefusal: funtypes.Literal(true),
-	})),
+	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
+	// The Interceptor's own refusal under the requested-network check, kept only while that check still refuses, unlike a SignerError, which the wallet or the signing flow reported and which stays until the next approval. Only transactionNetwork.ts writes it.
+	funtypes.ReadonlyObject({ status: funtypes.Literal('NetworkRefusal'), message: funtypes.String }),
 )
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>

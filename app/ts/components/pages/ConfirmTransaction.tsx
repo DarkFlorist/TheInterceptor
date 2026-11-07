@@ -563,6 +563,11 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
+	if (current.approvalStatus.status === 'NetworkRefusal') return <div style = 'display: grid'>
+		<div style = { margins }>
+			<ErrorComponent text = { current.approvalStatus.message } />
+		</div>
+	</div>
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorComponent text = { current.approvalStatus.message } />

@@ -723,7 +723,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			})
 			await race.blockNumberReached
 			await race.settle()
-			assert.equal((await race.getStoredApprovalStatus())?.status, 'SignerError')
+			assert.equal((await race.getStoredApprovalStatus())?.status, 'NetworkRefusal')
 
 			await race.switchBack()
 			assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
@@ -759,7 +759,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const race = await setUpApprovalOnOtherNetwork(false)
 		const { approvals, reachedWallet } = await approveTwiceOnOtherNetwork(race)
 		await approvals
-		assert.equal((await race.getStoredApprovalStatus())?.status, 'SignerError')
+		assert.equal((await race.getStoredApprovalStatus())?.status, 'NetworkRefusal')
 
 		await race.switchBack()
 		assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
