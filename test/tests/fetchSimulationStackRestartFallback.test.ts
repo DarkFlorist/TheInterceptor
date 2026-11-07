@@ -10,7 +10,7 @@ const dialogWindowId = 52
 const newDialogWindowId = 53
 const openWindowIds = new Set<number>()
 const windowRemovedListeners = new Set<(id: number) => void>()
-let beforeWindowRemoved: ((id: number) => Promise<void>) | undefined
+let afterWindowRemoved: ((id: number) => Promise<void>) | undefined
 
 function installBrowserMock() {
 	Object.defineProperty(globalThis, 'browser', {
@@ -50,8 +50,8 @@ function installBrowserMock() {
 					return openWindowIds.has(id) ? { id } : undefined
 				},
 				async remove(id: number) {
-					await beforeWindowRemoved?.(id)
 					openWindowIds.delete(id)
+					await afterWindowRemoved?.(id)
 					for (const listener of windowRemovedListeners) listener(id)
 				},
 				onRemoved: {
@@ -71,6 +71,7 @@ const backgroundUtilsPromise = import('../../app/ts/background/backgroundUtils.j
 
 const socket = { tabId: 9, connectionName: 17n }
 const uniqueRequestIdentifier = { requestId: 30, requestSocket: socket }
+const newRequestIdentifier = { requestId: 31, requestSocket: socket }
 const stateOverrides = { '0x0000000000000000000000000000000000000001': { balance: 5n } }
 
 function createSnapshot(): SimulationStackSnapshot {
@@ -143,7 +144,7 @@ async function setUpStoredRequestWithoutPendingWaiter(postedMessages: unknown[])
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	openWindowIds.clear()
 	windowRemovedListeners.clear()
-	beforeWindowRemoved = undefined
+	afterWindowRemoved = undefined
 	openWindowIds.add(dialogWindowId)
 	const { setFetchSimulationStackRequestPromise } = await storageVariablesPromise
 	await setFetchSimulationStackRequestPromise({
@@ -172,6 +173,28 @@ function getOnlyPostedMessage(postedMessages: unknown[]) {
 	return message
 }
 
+// Keeps the old dialog's close pending until a new request has stored itself, so anything the resolution does after the close runs with the new request in the slot
+async function startNewRequestWhenOldDialogCloses() {
+	const { openFetchSimulationStackDialog } = await fetchSimulationStackPromise
+	const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
+	let newRequest: ReturnType<typeof openFetchSimulationStackDialog> | undefined
+	afterWindowRemoved = async (id: number) => {
+		if (id !== dialogWindowId || newRequest !== undefined) return
+		newRequest = openFetchSimulationStackDialog(createSnapshot(), true, new Map(), newRequestIdentifier, { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }, { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined })
+		while ((await getFetchSimulationStackRequestPromise())?.popupOrTabId.id !== newDialogWindowId) await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+	return () => {
+		if (newRequest === undefined) throw new Error('Expected a new request to open its dialog while the old dialog was closing')
+		return newRequest
+	}
+}
+
+function assertUserRejectedReply(message: object) {
+	assert.equal('result' in message, false)
+	if (!('error' in message) || typeof message.error !== 'object' || message.error === null || !('code' in message.error)) throw new Error('Expected the website to receive an error reply')
+	assert.equal(message.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+}
+
 describe('fetch simulation stack confirmation after a background restart', () => {
 	test('rejecting replies with the user-rejected error and does not share the simulation stack', async () => {
 		const postedMessages: unknown[] = []
@@ -181,10 +204,7 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 
 		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false))
 
-		const message = getOnlyPostedMessage(postedMessages)
-		assert.equal('result' in message, false)
-		if (!('error' in message) || typeof message.error !== 'object' || message.error === null || !('code' in message.error)) throw new Error('Expected the website to receive an error reply')
-		assert.equal(message.error.code, METAMASK_ERROR_USER_REJECTED_REQUEST)
+		assertUserRejectedReply(getOnlyPostedMessage(postedMessages))
 		assert.equal(await getFetchSimulationStackRequestPromise(), undefined)
 		assert.equal(openWindowIds.has(dialogWindowId), false)
 	})
@@ -208,23 +228,47 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 	test('a dialog opened while the restarted request closes its dialog can still be closed to reject its own request', async () => {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
-		const { resolveFetchSimulationStackRequest, openFetchSimulationStackDialog } = await fetchSimulationStackPromise
-		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
-		const newRequestIdentifier = { requestId: 31, requestSocket: socket }
-		let newRequest: ReturnType<typeof openFetchSimulationStackDialog> | undefined
-		beforeWindowRemoved = async (id: number) => {
-			if (id !== dialogWindowId || newRequest !== undefined) return
-			newRequest = openFetchSimulationStackDialog(createSnapshot(), true, new Map(), newRequestIdentifier, { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }, { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined })
-			while ((await getFetchSimulationStackRequestPromise())?.popupOrTabId.id !== newDialogWindowId) await new Promise((resolve) => setTimeout(resolve, 0))
-		}
+		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const getNewRequest = await startNewRequestWhenOldDialogCloses()
 
 		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false))
-		if (newRequest === undefined) throw new Error('Expected a new request to open its dialog while the old dialog was closing')
+		const newRequest = getNewRequest()
 		assert.equal(openWindowIds.has(newDialogWindowId), true)
 
 		await browser.windows.remove(newDialogWindowId)
 		const newRequestResult = await Promise.race([newRequest, new Promise<'unresolved'>((resolve) => setTimeout(() => resolve('unresolved'), 200))])
 		if (newRequestResult === 'unresolved') throw new Error('Closing the new dialog did not resolve its request')
 		assert.equal(newRequestResult.outcome, 'rejected')
+	})
+
+	test('a request stored while the old dialog closes stays stored', async () => {
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
+		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
+		const getNewRequest = await startNewRequestWhenOldDialogCloses()
+
+		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false))
+
+		assert.equal((await getFetchSimulationStackRequestPromise())?.uniqueRequestIdentifier.requestId, newRequestIdentifier.requestId)
+
+		await browser.windows.remove(newDialogWindowId)
+		await getNewRequest()
+	})
+
+	test('concurrent confirmations answer the website once, with the first decision', async () => {
+		const postedMessages: unknown[] = []
+		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
+		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
+
+		await Promise.all([
+			resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false)),
+			resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(true)),
+		])
+
+		assertUserRejectedReply(getOnlyPostedMessage(postedMessages))
+		assert.equal(await getFetchSimulationStackRequestPromise(), undefined)
+		assert.equal(openWindowIds.has(dialogWindowId), false)
 	})
 })
