@@ -6,12 +6,13 @@ import { act } from 'preact/test-utils'
 import { type GovernanceVoteInputParameters, MessageToPopup, PopupMessage, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
-import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import { createPassthroughCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 
 let runtimeSendMessage = async (_message: unknown) => undefined
+let getRequesterTab = async () => undefined
 const runtimeMessageListeners: Array<(message: unknown) => unknown> = []
 
 function installBrowser() {
@@ -39,7 +40,7 @@ function installBrowser() {
 			},
 			tabs: {
 				async query() { return [] },
-				async get() { return undefined },
+				get: async () => await getRequesterTab(),
 				async update() { return undefined },
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
@@ -71,6 +72,7 @@ installBrowser()
 
 afterEach(() => {
 	runtimeSendMessage = async (_message: unknown) => undefined
+	getRequesterTab = async () => undefined
 	runtimeMessageListeners.splice(0, runtimeMessageListeners.length)
 })
 
@@ -78,6 +80,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/components/pages/AddNewAddress.js'),
 		...await import('../../app/ts/components/pages/ChangeChain.js'),
+		...await import('../../app/ts/components/pages/FetchSimulationStack.js'),
 		...await import('../../app/ts/components/pages/InterceptorAccess.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GovernanceVoteVisualizer.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GnosisSafeVisualizer.js'),
@@ -378,7 +381,7 @@ function createGnosisSafeMessageFixture(messageIdentifier: bigint): VisualizedPe
 	}
 }
 
-function createChangeChainMessage() {
+function createChangeChainMessage(requestId = 99) {
 	return {
 		role: 'all' as const,
 		method: 'popup_ChangeChainRequest' as const,
@@ -390,7 +393,7 @@ function createChangeChainMessage() {
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: {
-					requestId: 99,
+					requestId,
 					requestSocket: {
 						tabId: 1,
 						connectionName: '0x1',
@@ -625,6 +628,83 @@ describe('popup async action UI', () => {
 			assert.equal(chainDialogRequest === undefined, false)
 			dom.restore()
 		})
+
+	test('a change-chain click answers the shown request when a newer request replaces it during the focus wait', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const focusWait = createDeferred<undefined>()
+		getRequesterTab = async () => await focusWait.promise
+		const sentRequestIds: unknown[] = []
+		runtimeSendMessage = async (message) => {
+			const parsed = PopupMessage.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_changeChainDialog') sentRequestIds.push(parsed.value.data.uniqueRequestIdentifier.requestId)
+			return undefined
+		}
+		await act(() => { render(h(modules.ChangeChain, {}), dom.document.body) })
+		await act(async () => { await emitRuntimeMessage(createChangeChainMessage(99)) })
+		const changeChainButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Change chain'))
+		if (changeChainButton === undefined) throw new Error('Expected chain change confirm button to render')
+
+		await act(async () => {
+			await clickElement(changeChainButton)
+			await settleAsyncUpdates()
+		})
+		await act(async () => { await emitRuntimeMessage(createChangeChainMessage(100)) })
+		await act(async () => {
+			focusWait.resolve(undefined)
+			await settleAsyncUpdates()
+		})
+
+		assert.deepEqual(sentRequestIds, [99])
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
+	for (const [buttonText, expectedAccept] of [['Allow', true], ['Don', false]] as const) test(`a fetch-stack ${ buttonText } click answers the shown request when a newer request replaces it during the focus wait`, async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const focusWait = createDeferred<undefined>()
+		getRequesterTab = async () => await focusWait.promise
+		const sentConfirmations: unknown[] = []
+		runtimeSendMessage = async (message) => {
+			const parsed = PopupMessage.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_fetchSimulationStackRequestConfirmation') sentConfirmations.push({ requestId: parsed.value.data.uniqueRequestIdentifier.requestId, accept: parsed.value.data.accept })
+			return undefined
+		}
+		const createFetchRequestMessage = (requestId: number) => serialize(MessageToPopup, {
+			role: 'all',
+			method: 'popup_fetchSimulationStackRequest',
+			data: {
+				website: { websiteOrigin: 'https://stack.example', icon: undefined, title: undefined },
+				popupOrTabId: { type: 'popup', id: 41 },
+				simulationOverlayEnabled: true,
+				simulationStackVersion: '2.0.0',
+				uniqueRequestIdentifier: { requestId, requestSocket: { tabId: 1, connectionName: 1n } },
+			},
+		})
+		await act(() => { render(h(modules.FetchSimulationStack, {}), dom.document.body) })
+		await act(async () => {
+			await emitRuntimeMessage(createFetchRequestMessage(99))
+			await emitRuntimeMessage(serialize(MessageToPopup, { role: 'all', method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: { ...createPassthroughCompleteVisualizedSimulation(3, 'done'), addressBookEntries: [] } } }))
+			await settleAsyncUpdates()
+		})
+		const button = collectElements(dom.document.body, 'button').find((candidate) => candidate.textContent?.startsWith(buttonText))
+		if (button === undefined) throw new Error('Expected fetch stack button to render')
+
+		await act(async () => {
+			await clickElement(button)
+			await settleAsyncUpdates()
+		})
+		await act(async () => { await emitRuntimeMessage(createFetchRequestMessage(100)) })
+		await act(async () => {
+			focusWait.resolve(undefined)
+			await settleAsyncUpdates()
+		})
+
+		assert.deepEqual(sentConfirmations, [{ requestId: 99, accept: expectedAccept }])
+		render(null, dom.document.body)
+		dom.restore()
+	})
 
 	test('shows ABI lookup progress and a missing-reply error in AddNewAddress', async () => {
 		const modules = await modulesPromise

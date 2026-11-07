@@ -13,7 +13,7 @@ import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
-let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
+let pendForUserReply: { uniqueRequestIdentifier: UniqueRequestIdentifier, reply: Future<ChainChangeConfirmation> } | undefined
 
 let chainChangeResolutionInProgress = false
 
@@ -27,7 +27,8 @@ export async function updateChainChangeViewWithPendingRequest() {
 
 export async function resolveChainChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
-		pendForUserReply.resolve(confirmation)
+		// A dialog from before a background restart stays open after its decision, so it can still confirm while a newer request is waiting. Only the request a confirmation answers may take it
+		if (doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, pendForUserReply.uniqueRequestIdentifier)) pendForUserReply.reply.resolve(confirmation)
 		return
 	}
 	await runExclusiveChainChangeResolution(async () => {
@@ -82,7 +83,8 @@ export const openChangeChainDialog = async (
 ) => {
 	if (openedDialog !== undefined || pendForUserReply || isSignerChainChangePending() || chainChangeResolutionInProgress) return userDeniedChange
 
-	pendForUserReply = new Future<ChainChangeConfirmation>()
+	const replyFuture = new Future<ChainChangeConfirmation>()
+	pendForUserReply = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, reply: replyFuture }
 
 	const onCloseWindowOrTab = async (popupOrTab: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject signature
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
@@ -123,7 +125,7 @@ export const openChangeChainDialog = async (
 				rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier),
 			)
 		}
-		const reply = await pendForUserReply
+		const reply = await replyFuture
 
 		// forward message to content script
 		const resolution = runExclusiveChainChangeResolution(async () => await resolve(simulationServicesOwner, websiteTabConnections, reply, simulationMode))
