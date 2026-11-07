@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
-import Hint from '../../app/ts/components/subcomponents/Hint.js'
+import Hint, { showHint } from '../../app/ts/components/subcomponents/Hint.js'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { installDomMock } from './domMock.js'
 
@@ -170,6 +170,62 @@ for (const isInsidePageHint of [false, true]) {
 }
 
 // The card stays mounted when its warning is removed, so its hint must be deactivated then rather than wait for an event inside the card that may never come.
+const countScrollListeners = (dom: ReturnType<typeof installDomMock>) => dom.document.eventListeners.get('scroll')?.size ?? 0
+
+describe('InlineCard warning cards on one page', () => {
+	test('register no scroll listener until one has a keyboard-focused explanation, and then only one', async () => {
+		const dom = installDomMock()
+		try {
+			const renderCards = (hasWarnings: boolean) => render(<Hint>
+				{ [1, 2, 3, 4, 5].map((index) => <InlineCard key = { index } icon = { () => <span>Token</span> } label = { `TKN${ index }` } warningMessage = { hasWarnings ? warningMessage : undefined } noCopy noExpandButtons />) }
+			</Hint>, dom.document.body)
+			await act(() => { renderCards(true) })
+			assert.equal(countScrollListeners(dom), 0)
+
+			const [firstSign] = findElementsByClass(dom.document.body, 'inline-card-warning-sign')
+			if (firstSign?.dispatchEvent === undefined) throw new Error('warning signs were not rendered')
+			await act(() => { firstSign.dispatchEvent?.(new Event('mouseover', { bubbles: true })) })
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) })
+			assert.deepEqual(findDisplayedHintTexts(dom), [warningMessage])
+			assert.equal(countScrollListeners(dom), 0)
+			await act(() => { firstSign.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+
+			await act(() => {
+				firstSign.focus?.()
+				firstSign.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+			})
+			assert.equal(countScrollListeners(dom), 1)
+
+			// Removing the warning dismisses the explanation, and its listener with it.
+			await act(() => { renderCards(false) })
+			assert.deepEqual(findDisplayedHintTexts(dom), [])
+			assert.equal(countScrollListeners(dom), 0)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+})
+
+// A descendant such as CopyToClipboard asks for a hint with a bubbling event, which the card's hint and the page's Hint can both see.
+for (const cardWarning of [warningMessage, undefined]) {
+	test(`shows a hint a descendant of a card ${ cardWarning === undefined ? 'without' : 'with' } a warning asks for once inside a page Hint`, async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><InlineCard icon = { () => <span class = 'card-icon'>Token</span> } label = 'TKN' warningMessage = { cardWarning } noCopy noExpandButtons /></Hint>, dom.document.body)
+			})
+			const [cardIcon] = findElementsByClass(dom.document.body, 'card-icon')
+			if (cardIcon?.dispatchEvent === undefined) throw new Error('card icon was not rendered')
+			await act(() => { showHint(cardIcon, { content: 'Copied', delay: 60_000, x: 0, y: 0 }) })
+			assert.deepEqual(findDisplayedHintTexts(dom), ['Copied'])
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+}
+
 describe('InlineCard whose warning is removed while the card stays mounted', () => {
 	const renderCard = (dom: ReturnType<typeof installDomMock>, warning: string | undefined) => act(() => {
 		render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = { warning } noCopy noExpandButtons />, dom.document.body)

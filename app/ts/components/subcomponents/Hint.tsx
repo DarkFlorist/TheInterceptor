@@ -76,19 +76,21 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			toolTipTimeoutIdRef.current = null
 		}
 
-		const displayHint = (hintContent: string, hintAnchor: HintAnchor, tooltipOwner: Element | undefined) => {
+		// Captured on the document because the element that scrolls is an ancestor of the container, and scroll events do not bubble.
+		const scrollEventTarget = containerElement.ownerDocument
+
+		const displayHint = (hintContent: string, hintAnchor: HintAnchor | undefined, tooltipOwner: Element | undefined) => {
 			content.value = hintContent
 			anchor.value = hintAnchor
 			displayedTooltipOwnerRef.current = tooltipOwner
+			// Listens only while it shows a keyboard-focused tooltip: one element has focus at a time, so however many containers a page renders, at most one runs on each scroll.
+			if (tooltipOwner !== undefined && tooltipOwner === getKeyboardFocusedTooltipElement()) scrollEventTarget.addEventListener('scroll', followKeyboardFocusedTooltip, { capture: true, passive: true })
+			else scrollEventTarget.removeEventListener('scroll', followKeyboardFocusedTooltip, { capture: true })
 		}
 
-		const hideHint = () => {
-			content.value = ''
-			anchor.value = undefined
-			displayedTooltipOwnerRef.current = undefined
-		}
+		const hideHint = () => { displayHint('', undefined, undefined) }
 
-		// An element that is removed, or that Preact reuses for content without this tooltip, fires no mouseout or focusout, so every pointer and focus event Hint listens to first dismisses a tooltip its element no longer carries. A copy message has no owner, so its own timer still decides when it ends.
+		// An element that is removed, or that Preact reuses for content without this tooltip, fires no mouseout or focusout, so every pointer, focus and scroll event Hint listens to first dismisses a tooltip its element no longer carries. A copy message has no owner, so its own timer still decides when it ends.
 		const dismissAbandonedTooltip = () => {
 			const tooltipOwner = displayedTooltipOwnerRef.current
 			if (tooltipOwner === undefined) return
@@ -173,6 +175,8 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 			if (!('delay' in detail) || typeof detail.delay !== 'number' || !Number.isFinite(detail.delay) || detail.delay < 0) return
 			if (!('x' in detail) || typeof detail.x !== 'number' || !('y' in detail) || typeof detail.y !== 'number') return
 
+			// The innermost container claims the event, so a hint requested inside a card that hosts its own hint is not shown by the page's container as well.
+			event.stopPropagation()
 			cancelPendingHintTimeouts()
 			displayHint(detail.content, pointAnchor(detail.x, detail.y), undefined)
 			copyMessageTimeoutIdRef.current = setTimeout(() => {
@@ -207,6 +211,7 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 
 		// Moves the tooltip of the keyboard-focused element along with it. It is kept rather than dismissed because tabbing to an element outside the view scrolls it into view, and that scroll event arrives after focusin. A hovered tooltip needs no handling: scrolling moves its element from under the pointer, which ends it through mouseout.
 		const followKeyboardFocusedTooltip = () => {
+			dismissAbandonedTooltip()
 			const tooltipOwner = displayedTooltipOwnerRef.current
 			if (tooltipOwner !== undefined && tooltipOwner === getKeyboardFocusedTooltipElement()) showTooltipAtElement(tooltipOwner)
 		}
@@ -218,9 +223,6 @@ export function useHintContainer(attribute: string | undefined, template: ((cont
 		containerElement.addEventListener('focusin', focusin)
 		containerElement.addEventListener('focusout', focusout)
 		containerElement.addEventListener(showHintEventName, show)
-		// Captured on the document because the element that scrolls is an ancestor of the container, and scroll events do not bubble.
-		const scrollEventTarget = containerElement.ownerDocument
-		scrollEventTarget.addEventListener('scroll', followKeyboardFocusedTooltip, { capture: true, passive: true })
 
 		return () => {
 			cancelPendingHintTimeouts()

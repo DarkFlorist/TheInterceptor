@@ -42,6 +42,8 @@ const focusWithKeyboard = (element: TestNode | undefined) => {
 	element?.dispatchEvent?.(new Event('focusin', { bubbles: true }))
 }
 
+const countScrollListeners = (dom: ReturnType<typeof installDomMock>) => dom.document.eventListeners.get('scroll')?.size ?? 0
+
 const setBoundingClientRect = (element: TestNode, bounds: { left: number, top: number, width: number, height: number }) => {
 	Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => ({ ...bounds, right: bounds.left + bounds.width, bottom: bounds.top + bounds.height, x: bounds.left, y: bounds.top }) })
 }
@@ -114,10 +116,8 @@ describe('Hint lifecycle', () => {
 			assert.equal(scheduledTimers.length, 2)
 			const timersAtUnmount = [...scheduledTimers]
 
-			assert.equal(dom.document.eventListeners.get('scroll')?.size, 1)
 			await act(() => { render(null, dom.document.body) })
 			assert.equal(timersAtUnmount.every((timerId) => clearedTimers.includes(timerId)), true)
-			assert.equal(dom.document.eventListeners.get('scroll')?.size, 0)
 
 			scheduledTimers = []
 			showHint(button, { content: 'After unmount', delay: 60_000, x: 0, y: 0 })
@@ -447,6 +447,54 @@ describe('Hint lifecycle', () => {
 		}
 	})
 
+	test('listens for scrolling only while it shows a keyboard-focused tooltip', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<Hint><span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span></Hint>, dom.document.body)
+			})
+			const focusableTooltip = findElement(dom.document.body, 'span')
+			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
+			assert.equal(countScrollListeners(dom), 0)
+
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			assert.equal(countScrollListeners(dom), 1)
+			await act(() => {
+				focusableTooltip.blur?.()
+				focusableTooltip.dispatchEvent?.(new Event('focusout', { bubbles: true }))
+			})
+			assert.equal(countScrollListeners(dom), 0)
+
+			await act(() => { focusWithKeyboard(focusableTooltip) })
+			assert.equal(countScrollListeners(dom), 1)
+			await act(() => { render(null, dom.document.body) })
+			assert.equal(countScrollListeners(dom), 0)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('stops listening for scrolling at the first scroll after the keyboard-focused element is removed', async () => {
+		const dom = installDomMock()
+		try {
+			const renderTooltip = (isTooltipShown: boolean) => render(<Hint>
+				{ isTooltipShown ? <span data-tooltip = 'Focused explanation' tabIndex = { 0 }>Warning</span> : <></> }
+			</Hint>, dom.document.body)
+			await act(() => { renderTooltip(true) })
+			await act(() => { focusWithKeyboard(findElement(dom.document.body, 'span')) })
+			await act(() => { renderTooltip(false) })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
+
+			await act(() => { dom.document.dispatchEvent(new Event('scroll')) })
+			assert.equal(findDisplayedHintText(dom), undefined)
+			assert.equal(countScrollListeners(dom), 0)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('leaves a hovered tooltip at the pointer when the page scrolls while another element has keyboard focus', async () => {
 		const dom = installDomMock()
 		const restoreViewportSize = installViewportSize(400, 600)
@@ -466,9 +514,15 @@ describe('Hint lifecycle', () => {
 			assert.equal(findDisplayedHintText(dom), 'Hovered tooltip')
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '310px')
 
+			assert.equal(countScrollListeners(dom), 0)
 			await act(() => { dom.document.dispatchEvent(new Event('scroll')) })
 			assert.equal(findDisplayedHintText(dom), 'Hovered tooltip')
 			assert.equal(findElementByClass(dom.document.body, 'preact-hint')?.style?.['top'], '310px')
+
+			// The pointer leaving returns the explanation to the focused element, which is followed again.
+			await act(() => { otherTooltip.dispatchEvent?.(new Event('mouseout', { bubbles: true })) })
+			assert.equal(findDisplayedHintText(dom), 'Focused explanation')
+			assert.equal(countScrollListeners(dom), 1)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -486,6 +540,7 @@ describe('Hint lifecycle', () => {
 			if (focusableTooltip?.dispatchEvent === undefined) throw new Error('tooltip target was not rendered')
 			await act(() => { focusWithKeyboard(focusableTooltip) })
 			await act(() => { showHint(focusableTooltip, { content: 'Copied', delay: 60_000, x: 0, y: 0 }) })
+			assert.equal(countScrollListeners(dom), 0)
 
 			await act(() => { dom.document.dispatchEvent(new Event('scroll')) })
 			assert.equal(findDisplayedHintText(dom), 'Copied')
