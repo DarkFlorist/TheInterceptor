@@ -176,6 +176,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
+		safeFlow: { kind: 'ordinary' as const },
 		popupVisualisation: {
 			statusCode: 'failed' as const,
 			data: {

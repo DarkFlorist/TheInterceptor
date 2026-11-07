@@ -13,6 +13,8 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -587,9 +589,13 @@ export const pendingTransaction = {
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
 		popupVisualisation,
+		safeFlow: { kind: 'ordinary' },
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
 	} as const
+
+// The Gnosis Safe transaction of a pending transaction that is a created Safe proposal.
+export const getPendingSafeProposal = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' ? getCreatedSafeProposal(pending.safeFlow) : undefined
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()

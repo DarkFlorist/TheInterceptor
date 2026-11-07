@@ -390,7 +390,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
-				safeTransaction = { safeFlow.pending.safeTransaction }
+				safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 				addressMetaData = { addressMetaData }
 				rpcNetwork = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.simulationState.rpcNetwork : undefined }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -463,10 +463,10 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
 
-				<SafeExecutionSimulationNotice simulationOptions = { simTx.simulationOptions }/>
+				<SafeExecutionSimulationNotice transaction = { simTx }/>
 
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
-					safeTransaction = { safeFlow.pending.safeTransaction }
+					safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 					addressMetaData = { addressMetaData.value }
 					rpcNetwork = { rpcNetwork.value }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -1092,11 +1092,11 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeTransaction.messageReview } /> : <></> }
+							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.messageReview } /> : <></> }
 							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
-									narrowSummary = { `Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
+									narrowSummary = { `Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }` }
 									close = { () => undefined }
 								/>
 								: <></>

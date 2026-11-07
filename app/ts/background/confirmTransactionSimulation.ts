@@ -61,7 +61,7 @@ export async function refreshConfirmTransactionSimulation(
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput
-				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
+				: appendTransactionsToInput(simulationInput, [preSimulationTransaction])
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}

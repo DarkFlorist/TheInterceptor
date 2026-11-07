@@ -14,7 +14,7 @@ import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from '../safe/safeErrors.js'
 import { getCurrentSafeEntry, getCurrentSafeEntryAndAddressBookEntries, getSafeMessageCoSignContext, handleSafeExecutionRefreshFailure, refreshSafeExecutionSignerSelection, refreshSafeSignerSelection, SAFE_SIGNER_SELECTION_ERROR_CODE, type SafeMessageCoSignContext } from './safeSignerSelectionRefresh.js'
-import { getSafeFlowSignerAddress, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
+import { createCreatedSafeProposalSafeFlow, getSafeFlowSignerAddress, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export { SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeSignerSelectionRefresh.js'
 
@@ -204,10 +204,10 @@ async function assertSafeProposalReviewPrerequisites(
 ) {
 	const pending = flow.pending
 	if (pending.simulationMode) return undefined
-	if (pending.safeTransaction.reviewedSafeState === undefined) {
+	if (pending.safeFlow.safeTransaction.reviewedSafeState === undefined) {
 		throw createSafeSignerSelectionFailure('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 	}
-	await getCurrentSafeEntry(ethereum, pending.safeTransaction.safeAddress)
+	await getCurrentSafeEntry(ethereum, pending.safeFlow.safeTransaction.safeAddress)
 	return undefined
 }
 
@@ -241,7 +241,7 @@ async function refreshSafeProposalNonce(
 ) {
 	const pending = flow.pending
 	if (pending.simulationMode) return undefined
-	const currentRequest = pending.safeTransaction
+	const currentRequest = pending.safeFlow.safeTransaction
 	const safeState = await getSafeContractState(ethereum, currentRequest.safeAddress)
 	if (currentRequest.reviewedSafeState === undefined) throw createSafeSignerSelectionFailure('The reviewed Gnosis Safe state is unavailable.')
 	assertSafeContractStateUnchanged(currentRequest.reviewedSafeState, safeState)
@@ -255,7 +255,7 @@ async function refreshSafeProposalNonce(
 	const precedingPendingCount = (await getPendingTransactionsAndMessages()).filter((candidate) => {
 		const candidateFlow = getSafePendingFlow(candidate)
 		if (candidateFlow?.kind !== 'proposal') return false
-		const candidateRequest = candidateFlow.pending.safeTransaction
+		const candidateRequest = candidateFlow.pending.safeFlow.safeTransaction
 		return candidateRequest.safeAddress === currentRequest.safeAddress
 			&& candidateRequest.safeTx.domain.chainId === ethereum.getChainId()
 			&& candidateRequest.safeTx.message.nonce >= firstUncommittedNonce
@@ -283,7 +283,7 @@ async function refreshSafeProposalNonce(
 		},
 		firstUncommittedNonce,
 	)
-	return modifyObject(pending, { safeTransaction: { ...refreshedSafeRequest, ...(currentRequest.messageReview !== undefined ? { messageReview: currentRequest.messageReview } : {}) } })
+	return modifyObject(pending, { safeFlow: createCreatedSafeProposalSafeFlow({ ...refreshedSafeRequest, ...(currentRequest.messageReview !== undefined ? { messageReview: currentRequest.messageReview } : {}) }) })
 }
 
 function getSafeSignerFacingRequest(
@@ -300,12 +300,12 @@ function getSafeSignerFacingRequest(
 			],
 		}
 	}
-	if (flow.kind !== 'proposal' || flow.pending.safeTransaction.safeSignerAddress === undefined) return undefined
+	if (flow.kind !== 'proposal' || flow.pending.safeFlow.safeTransaction.safeSignerAddress === undefined) return undefined
 	return {
 		method: 'eth_signTypedData_v4',
 		params: [
-			flow.pending.safeTransaction.safeSignerAddress,
-			getSafeTxSignerFacingTypedData(flow.pending.safeTransaction.safeTx),
+			flow.pending.safeFlow.safeTransaction.safeSignerAddress,
+			getSafeTxSignerFacingTypedData(flow.pending.safeFlow.safeTransaction.safeTx),
 		],
 	}
 }
@@ -392,7 +392,7 @@ async function resolveSafeProposalConfirmation(
 		!flow.pending.simulationMode
 		&& selectedSigner !== undefined
 		&& (
-			flow.pending.safeTransaction.safeSignerAddress !== selectedSigner
+			flow.pending.safeFlow.safeTransaction.safeSignerAddress !== selectedSigner
 			|| flow.pending.approvalStatus.status === 'SignerError' && flow.pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
 		)
 	) {

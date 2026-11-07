@@ -198,7 +198,7 @@ describe('EthereumClientService eth_simulateV1 serialization', () => {
 		for (const variant of getSignedTransactionVariants()) {
 			const prepared = await service.prepareEthSimulateV1Input([{
 				stateOverrides: {},
-				transactions: [{ signedTransaction: variant.signedTransaction }],
+				transactions: [{ signedTransaction: variant.signedTransaction, executedCallAuthorized: false }],
 				signedMessages: [],
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,

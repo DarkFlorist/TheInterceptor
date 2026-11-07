@@ -15,7 +15,7 @@ import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, 
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
+import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
 
@@ -56,7 +56,7 @@ async function refreshSafeTransactionSignerSelection(
 	selectedSigner: bigint,
 ) {
 	const pending = flow.pending
-	const executionGasLimit = pending.safeTransaction.executionGasLimit ?? (
+	const executionGasLimit = pending.safeFlow.safeTransaction.executionGasLimit ?? (
 		'transactionToSimulate' in pending && pending.transactionToSimulate.success
 			? pending.transactionToSimulate.transaction.gas
 			: undefined
@@ -65,27 +65,27 @@ async function refreshSafeTransactionSignerSelection(
 	try {
 		const safeTransaction = await createSafeTransactionSigningRequest(
 			ethereum,
-			pending.safeTransaction.safeAddress,
+			pending.safeFlow.safeTransaction.safeAddress,
 			selectedSigner,
 			{
-				to: pending.safeTransaction.safeTx.message.to,
-				value: pending.safeTransaction.safeTx.message.value,
-				input: pending.safeTransaction.safeTx.message.data,
-				operation: pending.safeTransaction.safeTx.message.operation,
+				to: pending.safeFlow.safeTransaction.safeTx.message.to,
+				value: pending.safeFlow.safeTransaction.safeTx.message.value,
+				input: pending.safeFlow.safeTransaction.safeTx.message.data,
+				operation: pending.safeFlow.safeTransaction.safeTx.message.operation,
 				gas: executionGasLimit,
 			},
-			pending.safeTransaction.safeTx.message.nonce,
+			pending.safeFlow.safeTransaction.safeTx.message.nonce,
 		)
-		const reviewedSafeState = pending.safeTransaction.reviewedSafeState
+		const reviewedSafeState = pending.safeFlow.safeTransaction.reviewedSafeState
 		if (reviewedSafeState === undefined || safeTransaction.reviewedSafeState === undefined) {
 			throw createSafeContractValidationFailure('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 		}
 		assertSafeContractStateUnchanged(reviewedSafeState, safeTransaction.reviewedSafeState)
-		return { safeTransaction: { ...safeTransaction, ...(pending.safeTransaction.messageReview !== undefined ? { messageReview: pending.safeTransaction.messageReview } : {}) }, approvalStatus: { status: 'WaitingForUser' as const } }
+		return { safeFlow: createCreatedSafeProposalSafeFlow({ ...safeTransaction, ...(pending.safeFlow.safeTransaction.messageReview !== undefined ? { messageReview: pending.safeFlow.safeTransaction.messageReview } : {}) }), approvalStatus: { status: 'WaitingForUser' as const } }
 	} catch (error) {
 		if (!isSafeOwnerValidationFailure(error)) throw error
 		return {
-			safeTransaction: pending.safeTransaction,
+			safeFlow: pending.safeFlow,
 			approvalStatus: createSafeSignerErrorStatus(
 				getErrorMessage(error) ?? 'Select a current Gnosis Safe owner in the signer wallet before signing.',
 				SAFE_SIGNER_SELECTION_ERROR_CODE,
@@ -179,13 +179,13 @@ export async function refreshSafeExecutionSignerSelection(
 ): Promise<PendingTransactionOrSignableMessage | undefined> {
 	const pending = flow.pending
 	if (pending.simulationMode) return undefined
-	const originalRequest = pending.safeExecutionOriginalRequestParameters
-	const reviewedSafeState = pending.safeExecutionReviewedSafeState
+	const originalRequest = pending.safeFlow.safeExecutionOriginalRequestParameters
+	const reviewedSafeState = pending.safeFlow.safeExecutionReviewedSafeState
 	if (reviewedSafeState === undefined) throw createSafeContractValidationFailure('Review this Gnosis Safe execution again so its current owner and threshold state can be verified.')
 	const safeAddress = originalRequest.params[0].from
 	if (safeAddress === undefined) throw createSafeContractValidationFailure('The original Gnosis Safe execution request is missing its Gnosis Safe address.')
 	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
-	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, selectedSigner ?? pending.safeExecutionSignerAddress)
+	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, selectedSigner ?? pending.safeFlow.safeExecutionSignerAddress)
 	if (refreshedRoute === undefined) throw createSafeContractValidationFailure('The configured Gnosis Safe execution route is no longer available.')
 	assertSafeContractStateUnchanged(reviewedSafeState, refreshedRoute.safeState)
 	if (selectedSigner === undefined && (
@@ -195,8 +195,7 @@ export async function refreshSafeExecutionSignerSelection(
 	return modifyObject(pending, {
 		activeAddress: refreshedRoute.executor,
 		originalRequestParameters: refreshedRoute.transactionParams,
-		safeExecutionSignerAddress: refreshedRoute.executor,
-		safeExecutionReviewedSafeState: refreshedRoute.safeState,
+		safeFlow: modifyObject(pending.safeFlow, { safeExecutionSignerAddress: refreshedRoute.executor, safeExecutionReviewedSafeState: refreshedRoute.safeState }),
 		approvalStatus: { status: 'WaitingForUser' as const },
 	})
 }
@@ -296,13 +295,13 @@ export async function refreshSafeSignerSelection(
 function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
 	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
 	switch (flow.kind) {
-		case 'directExecution': return flow.pending.safeExecutionSignerAddress !== selectedSigner
+		case 'directExecution': return flow.pending.safeFlow.safeExecutionSignerAddress !== selectedSigner
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
 		case 'proposal': return (
 			flow.pending.approvalStatus.status === 'WaitingForUser'
 			|| flow.pending.approvalStatus.status === 'SignerError' && flow.pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
 		) && (
-			flow.pending.safeTransaction.safeSignerAddress !== selectedSigner
+			flow.pending.safeFlow.safeTransaction.safeSignerAddress !== selectedSigner
 			|| flow.pending.approvalStatus.status === 'SignerError'
 		)
 	}
@@ -329,8 +328,7 @@ function mergeSafeSignerSelectionRefresh(
 	if (currentFlow.kind === 'directExecution' && refreshedFlow.kind === 'directExecution') return modifyObject(currentFlow.pending, {
 		activeAddress: refreshedFlow.pending.activeAddress,
 		originalRequestParameters: refreshedFlow.pending.originalRequestParameters,
-		safeExecutionSignerAddress: refreshedFlow.pending.safeExecutionSignerAddress,
-		safeExecutionReviewedSafeState: refreshedFlow.pending.safeExecutionReviewedSafeState,
+		safeFlow: refreshedFlow.pending.safeFlow,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 		...refreshedFlow.pending.transactionOrMessageCreationStatus === 'Simulated' || refreshedFlow.pending.transactionOrMessageCreationStatus === 'FailedToSimulate'
 			? {
@@ -341,7 +339,7 @@ function mergeSafeSignerSelectionRefresh(
 			: {},
 	})
 	if (currentFlow.kind === 'proposal' && refreshedFlow.kind === 'proposal') return modifyObject(currentFlow.pending, {
-		safeTransaction: refreshedFlow.pending.safeTransaction,
+		safeFlow: refreshedFlow.pending.safeFlow,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
 	return current
@@ -386,16 +384,16 @@ function pendingSafeRefreshBaseMatches(
 			&& areSafeContractStateSnapshotsEqual(currentSnapshot.reviewedSafeState, baseSnapshot.reviewedSafeState)
 	}
 	if (currentFlow.kind === 'directExecution' && refreshBaseFlow.kind === 'directExecution') {
-		return areSafeExecutionSignerRequestsEqual(currentFlow.pending.safeExecutionOriginalRequestParameters, refreshBaseFlow.pending.safeExecutionOriginalRequestParameters)
+		return areSafeExecutionSignerRequestsEqual(currentFlow.pending.safeFlow.safeExecutionOriginalRequestParameters, refreshBaseFlow.pending.safeFlow.safeExecutionOriginalRequestParameters)
 			&& currentFlow.pending.originalRequestParameters.method === 'eth_sendTransaction'
 			&& refreshBaseFlow.pending.originalRequestParameters.method === 'eth_sendTransaction'
 			&& areSafeExecutionSignerRequestsEqual(currentFlow.pending.originalRequestParameters, refreshBaseFlow.pending.originalRequestParameters)
-			&& currentFlow.pending.safeExecutionSignerAddress === refreshBaseFlow.pending.safeExecutionSignerAddress
-			&& areSafeContractStateSnapshotsEqual(currentFlow.pending.safeExecutionReviewedSafeState, refreshBaseFlow.pending.safeExecutionReviewedSafeState)
+			&& currentFlow.pending.safeFlow.safeExecutionSignerAddress === refreshBaseFlow.pending.safeFlow.safeExecutionSignerAddress
+			&& areSafeContractStateSnapshotsEqual(currentFlow.pending.safeFlow.safeExecutionReviewedSafeState, refreshBaseFlow.pending.safeFlow.safeExecutionReviewedSafeState)
 	}
 	if (currentFlow.kind !== 'proposal' || refreshBaseFlow.kind !== 'proposal') return false
-	const currentSafeTransaction = currentFlow.pending.safeTransaction
-	const baseSafeTransaction = refreshBaseFlow.pending.safeTransaction
+	const currentSafeTransaction = currentFlow.pending.safeFlow.safeTransaction
+	const baseSafeTransaction = refreshBaseFlow.pending.safeFlow.safeTransaction
 	return currentSafeTransaction.safeAddress === baseSafeTransaction.safeAddress
 		&& currentSafeTransaction.safeTxHash === baseSafeTransaction.safeTxHash
 		&& currentSafeTransaction.safeSignerAddress === baseSafeTransaction.safeSignerAddress

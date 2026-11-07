@@ -190,10 +190,7 @@ describe('simulate delay editor', () => {
 				type: 'Transaction',
 				preSimulationTransaction: {
 					...tx1,
-					simulationOptions: {
-						requiredChainId: 2n,
-						simulateWithZeroBaseFee: true,
-					},
+					simulationOptions: { requiredChainId: 2n },
 				},
 			}],
 		}))
