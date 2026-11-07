@@ -1,11 +1,12 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
+import * as funtypes from 'funtypes'
 import { initSig } from 'micro-eth-signer/utils.js'
-import { tryRecoverAddress } from '../../app/ts/background/personalEcRecoverClassification.js'
 import { RecoverableMessageSignature } from '../../app/ts/types/JsonRpc-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, hashMessage, privateKeyToAccount, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
+import { tryRecoverAddress } from '../../app/ts/utils/ethereumRecovery.js'
 
 const CURVE_ORDER = secp256k1.Point.Fn.ORDER
 
@@ -23,11 +24,41 @@ const getSignatureRecoveringToInfinity = (hashScalar: bigint, flipParity = false
 	return { r, s: 1n, yParity: flipParity ? 1 - yParity : yParity }
 }
 
-describe('tryRecoverAddress', () => {
-	test('shares one secp256k1 implementation with the micro-eth-signer recovery', () => {
-		assert.ok(initSig({ r: 1n, s: 1n }, 0) instanceof secp256k1.Signature)
+const PackageDependencies = funtypes.ReadonlyObject({ dependencies: funtypes.ReadonlyRecord(funtypes.String, funtypes.String) })
+const getCurvesDependencyVersion = async (packageJsonPath: string) => PackageDependencies.parse(await Bun.file(new URL(packageJsonPath, import.meta.url)).json()).dependencies['@noble/curves']
+
+const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+const getAppSourcesMatching = async (importPattern: RegExp) => {
+	const matchingSources: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory })) {
+		if (importPattern.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) matchingSources.push(file)
+	}
+	return matchingSources
+}
+
+// tryRecoverAddress checks a signature on the direct @noble/curves and recovers it through micro-eth-signer's, so the two must be one copy of the library.
+describe('@noble/curves version coupling with micro-eth-signer', () => {
+	test('package.json pins @noble/curves to the exact version micro-eth-signer depends on, so upgrading micro-eth-signer must bump both', async () => {
+		const requiredVersion = await getCurvesDependencyVersion('../../node_modules/micro-eth-signer/package.json')
+		assert.equal(await getCurvesDependencyVersion('../../package.json'), requiredVersion, `micro-eth-signer depends on @noble/curves ${ requiredVersion }: set the same exact version in package.json so tryRecoverAddress and recoverAddress stay on one copy of the library.`)
 	})
 
+	test('the direct @noble/curves and micro-eth-signer resolve to one copy of the library', () => {
+		assert.ok(initSig({ r: 1n, s: 1n }, 0) instanceof secp256k1.Signature, 'Two @noble/curves copies are installed: align package.json with the version micro-eth-signer depends on and reinstall.')
+	})
+})
+
+describe('ethereumRecovery import boundaries', () => {
+	test('only ethereumRecovery.ts imports @noble/curves in app code', async () => {
+		assert.deepEqual(await getAppSourcesMatching(/from '@noble\/curves/u), ['utils/ethereumRecovery.ts'])
+	})
+
+	test('only the personal_ecRecover handler imports ethereumRecovery, so the ethereumPrimitives barrel does not ship it to every page', async () => {
+		assert.deepEqual(await getAppSourcesMatching(/from '[^']*ethereumRecovery\.js'/u), ['background/personalEcRecoverRpc.ts'])
+	})
+})
+
+describe('tryRecoverAddress', () => {
 	test('recovers the signer of a valid signature', async () => {
 		assert.deepEqual(await tryRecoverAddress({ hash: messageHash, signature: await signHello() }), { type: 'recovered', address: account.address })
 	})
