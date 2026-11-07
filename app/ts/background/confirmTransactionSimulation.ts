@@ -20,6 +20,13 @@ import { getInterceptorTransactionStack, getTabState } from './storageVariables.
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
+let latestConfirmationRunId = 0
+// Every confirmation simulation run gets a new id, which a refresh that finishes later uses to tell the run it worked on from a newer one; stored timestamps keep only whole seconds, so they cannot. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards.
+function getNextConfirmationRunId() {
+	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
+	return latestConfirmationRunId
+}
+
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -36,6 +43,7 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		confirmationRunId: getNextConfirmationRunId(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)

@@ -211,7 +211,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	assert.match(changedOwnersProposal.approvalStatus.message, /owner set changed/u)
 
 	fakeSafeContract.owners = []
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -1264,7 +1264,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.match(staleExecution.approvalStatus.message, /Gnosis Safe execution could not be prepared/u)
 
 	fakeSafeContract.nonce -= 1n
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -1286,7 +1286,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.match(changedOwnersExecution.approvalStatus.message, /owner set changed/u)
 
 	fakeSafeContract.owners = [existingOwnerAddress, safeSignerAddress, alternateSignerAddress]
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))

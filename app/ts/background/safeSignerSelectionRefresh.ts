@@ -13,7 +13,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessageInstance } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -347,6 +347,17 @@ function mergeSafeSignerSelectionRefresh(
 	return current
 }
 
+// Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
+export async function persistSafeConfirmationRefresh(refreshed: PendingTransactionOrSignableMessage) {
+	let persisted = false
+	await updatePendingTransactionOrMessageInstance(refreshed, async (current) => {
+		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
+		persisted = true
+		return mergeSafeSignerSelectionRefresh(current, refreshed)
+	})
+	return persisted
+}
+
 type RefreshDirectSafeExecutionSimulation = (
 	pending: PendingTransactionOrSignableMessage,
 ) => Promise<PendingTransactionOrSignableMessage>
@@ -418,7 +429,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		refreshResult = await handleSafeSignerSelectionRefreshFailure(error, undefined, 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
-	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		// Do not overwrite a cancellation, another completed refresh, or changed review data while the owner lookup was pending.
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
 			|| current.approvalStatus.status !== 'SignerError' || current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
@@ -472,7 +483,7 @@ export async function refreshAndPersistSafeSignerSelection(
 		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
-	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+	await updatePendingTransactionOrMessageInstance(pending, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current

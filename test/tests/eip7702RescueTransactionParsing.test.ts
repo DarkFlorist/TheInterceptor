@@ -278,6 +278,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		simulationMode: true,
 		activeAddress: transactionToSimulate.transaction.from,
 		created: transactionToSimulate.created,
+		instanceId: 'raw pending transaction',
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
 		transactionToSimulate,
 		website: transactionToSimulate.website,

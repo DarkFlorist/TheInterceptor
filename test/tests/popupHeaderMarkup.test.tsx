@@ -290,6 +290,7 @@ describe('popup header markup', () => {
 			simulationMode: false,
 			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 			created: personalSignRequest.created,
+			instanceId: 'popup header pending message',
 			website,
 			activeAddress: fromEntry.address,
 			approvalStatus: { status: 'SignerError', code: -32603, message },
@@ -317,6 +318,7 @@ describe('popup header markup', () => {
 			simulationMode: false,
 			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 			created: personalSignRequest.created,
+			instanceId: 'popup header pending message',
 			website,
 			activeAddress: fromEntry.address,
 			approvalStatus: {
@@ -362,6 +364,7 @@ describe('popup header markup', () => {
 			simulationMode: false,
 			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 			created: personalSignRequest.created,
+			instanceId: 'popup header pending message',
 			website,
 			activeAddress: fromEntry.address,
 			approvalStatus: {
