@@ -652,7 +652,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					: await resolveInsufficientBalanceMessageForTransaction(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas, balancePromise)
 				return {
 					...extraParams,
-					error: insufficientBalanceMessage === undefined ? estimateGas.error : { ...estimateGas.error, message: insufficientBalanceMessage },
+					error: insufficientBalanceMessage === undefined ? estimateGas.error : { ...estimateGas.error, insufficientBalanceMessage },
 					success: false,
 				}
 			}

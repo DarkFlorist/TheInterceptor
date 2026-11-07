@@ -12,6 +12,10 @@ const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathn
 const safeSourceFiles: string[] = []
 for await (const file of new Bun.Glob('*.ts').scan({ cwd: safeSourceDirectory, absolute: true })) safeSourceFiles.push(file)
 const safeSources = await Promise.all(safeSourceFiles.map(async (file) => await Bun.file(file).text()))
+const simulationSourceDirectory = new URL('../../app/ts/simulation/', import.meta.url).pathname
+const simulationSourceFiles: string[] = []
+for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: simulationSourceDirectory, absolute: true })) simulationSourceFiles.push(file)
+const simulationSources = await Promise.all(simulationSourceFiles.map(async (file) => await Bun.file(file).text()))
 
 test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', () => {
 	assert.match(backgroundSource, /import \{ getSafeModeRpcPolicyReply \} from '\.\.\/safe\/safeRequestPolicy\.js'/u)
@@ -95,6 +99,11 @@ test('Gnosis Safe confirmation takes its request-shape policy from the Safe doma
 
 test('the Gnosis Safe domain layer does not import background orchestration', () => {
 	for (const safeSource of safeSources) assert.doesNotMatch(safeSource, /from '\.\.\/background\//u)
+})
+
+test('the simulation layer imports neither the Gnosis Safe layer, which imports it, nor the popup\'s pending request model', () => {
+	assert.ok(simulationSources.length > 0)
+	for (const simulationSource of simulationSources) assert.doesNotMatch(simulationSource, /from '(?:\.\.\/)+(?:safe\/|types\/accessRequest\.js')/u)
 })
 
 test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
