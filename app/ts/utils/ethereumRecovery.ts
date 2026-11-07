@@ -1,6 +1,6 @@
 // Curve checks for personal_ecRecover, which need more than recoverAddress reports. Import this file directly: a re-export through ethereumPrimitives would ship it to every extension page, because bundling cannot drop its top-level curve access, and only the background handler uses it.
+
 // Version coupling: @noble/curves is pinned to the exact version micro-eth-signer depends on, so these checks and recoverAddress run on one copy of the library. tryRecoverAddress.test.ts fails and names the required version when they differ, so a micro-eth-signer upgrade has to bump @noble/curves with it and cannot leave two copies behind.
-// secp256k1.Point's BASE, Fn and Fp are public @noble/curves API: they are declared on its exported point constructor type and shown in its README.
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { bytesToNumberBE } from '@noble/curves/utils.js'
 import { concatBytes } from '@noble/hashes/utils'
@@ -9,6 +9,7 @@ import { recoverAddress } from './ethereumSigning.js'
 
 type SignatureParts = { readonly r: bigint, readonly s: bigint, readonly yParity: number }
 
+// secp256k1.Point's BASE, Fn and Fp are public @noble/curves API: they are declared on its exported point constructor type and shown in its README.
 const { BASE: GENERATOR_POINT, Fn: SCALAR_FIELD, Fp: COORDINATE_FIELD } = secp256k1.Point
 
 // r is the x-coordinate of the signing nonce point on y^2 = x^3 + 7, so it names a curve point only if x^3 + 7 is a nonzero square mod p (Euler's criterion; secp256k1 has no point with y = 0).
