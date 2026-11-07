@@ -7,11 +7,15 @@ import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.j
 import { replyToInterceptedRequest } from './messageSending.js'
 import { proceedOnRequestedNetwork, type RequestedNetworkCommit, type NetworkRefusal } from './transactionNetwork.js'
 
-// Forwards a request to the signer like replyToInterceptedRequestAfterManifestV2Reconnect, but calls the requested-network check in the same synchronous step as every delivery attempt, including the retry after a Manifest V2 reconnect, which can outlast a network switch. A refused attempt ends the delivery and its refusal is returned.
-export async function forwardToSignerOnRequestedNetwork(websiteTabConnections: WebsiteTabConnections, ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward): Promise<RequestedNetworkCommit<boolean | undefined>> {
+export type PendingRequestCommit<T> = { readonly stored: false } | { readonly stored: true, readonly result: T }
+
+// Forwards a request to the signer like replyToInterceptedRequestAfterManifestV2Reconnect, but calls the requested-network check in the same synchronous step as every delivery attempt, including the retry after a Manifest V2 reconnect, which can outlast a network switch. A refused attempt ends the delivery and its refusal is returned. Every attempt is a commit of its own, as a rejection can arrive during the wait for a reconnect, and an attempt on a request that is no longer stored ends the delivery with nothing posted.
+export async function forwardToSignerOnRequestedNetwork(websiteTabConnections: WebsiteTabConnections, ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, message: InterceptedRequestForward, commitIfStillPending: <T>(commit: () => Promise<T>) => Promise<PendingRequestCommit<T>>): Promise<RequestedNetworkCommit<boolean | undefined>> {
 	const refusals: NetworkRefusal[] = []
 	const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, async () => {
-		const attempt = await proceedOnRequestedNetwork(ethereum, pending, () => replyToInterceptedRequest(websiteTabConnections, message))
+		const committed = await commitIfStillPending(async () => await proceedOnRequestedNetwork(ethereum, pending, () => replyToInterceptedRequest(websiteTabConnections, message)))
+		if (!committed.stored) return undefined
+		const attempt = committed.result
 		if (attempt.committed) return attempt.result
 		refusals.push(attempt.refusal)
 		// Only a false result makes the reconnect helper retry, so a refused attempt ends the delivery.

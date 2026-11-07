@@ -1186,10 +1186,15 @@ test('a signer reply after a network switch is still delivered to the website', 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.result === transactionHash), true)
 })
 
+// For calling the forwarder directly, with a request nothing can reject meanwhile.
+const commitWithoutRejection = async <T>(commit: () => Promise<T>) => ({ stored: true as const, result: await commit() })
+
 // A Gnosis Safe proposal requested on the fake network with the wallet's signature for it, and a Safe that accepts it.
 async function setUpSafeProposal() {
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeSignerAddresses: [safeTestOwnerAddress] })])
+	await modules.updateTabState(socket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress, signerChain: fakeRpcNetwork.chainId }))
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
 	const safePending = {
@@ -1405,6 +1410,141 @@ for (const safeReturn of ['blocked', 'error'] as const) {
 	})
 }
 
+const getRepliesToRequest = (postedMessages: readonly unknown[], requestId: number) => postedMessages.filter((message) => isRecord(message) && message.requestId === requestId && ('error' in message || 'result' in message) && message.type !== 'forwardToSigner')
+
+const cancelRequest = async (websiteTabConnections: TransactionTestConnections, action: 'reject' | 'noResponse', identifier = uniqueRequestIdentifier) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	method: 'popup_confirmDialog',
+	data: action === 'reject' ? { action, errorString: undefined, uniqueRequestIdentifier: identifier } : { action, uniqueRequestIdentifier: identifier },
+})
+
+for (const action of ['reject', 'noResponse'] as const) {
+	for (const preparing of ['accept', 'addToSafeStack', 'signerIncluded'] as const) {
+		test(`${ action } during the Gnosis Safe validation of ${ preparing } answers the website at once, and the preparation then stores and forwards nothing`, async () => {
+			const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+			const { safePending, signature } = await setUpSafeProposal()
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...safePending, approvalStatus: { status: preparing === 'signerIncluded' ? 'WaitingForSigner' : 'WaitingForUser' } }] })
+			const validation = holdSafeValidation()
+
+			const resolution = preparing === 'accept'
+				? modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+				: modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: preparing === 'signerIncluded' ? { action: preparing, signerReply: signature, uniqueRequestIdentifier } : { action: preparing, uniqueRequestIdentifier } })
+			await validation.reached
+			const cancellation = cancelRequest(websiteTabConnections, action)
+			const answered = await answersWithoutTheRpc(cancellation)
+			const rejections = getRejections(postedMessages).length
+			const pending = await modules.getPendingTransactionsAndMessages()
+			validation.release()
+			await Promise.all([resolution, cancellation])
+
+			assert.equal(answered, true)
+			assert.equal(rejections, 1)
+			assert.deepEqual(pending, [])
+			assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+			assert.equal(getRepliesToRequest(postedMessages, uniqueRequestIdentifier.requestId).length, 1)
+			assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+		})
+	}
+}
+
+test('a Gnosis Safe approval that nothing cancels reaches the wallet after its validation', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { safePending } = await setUpSafeProposal()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
+	const validation = holdSafeValidation()
+
+	const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+	await validation.reached
+	validation.release()
+
+	assert.equal(await resolution, true)
+	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+})
+
+test('a rejection after the status change but before the post keeps the request from the wallet', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	let cancellation: Promise<unknown> | undefined
+	browserMock.setRuntimeSendMessageHandler(async (message) => {
+		if (message.method !== 'popup_confirm_transaction_stored_state_changed' || cancellation !== undefined) return
+		cancellation = cancelRequest(websiteTabConnections, 'noResponse')
+		await cancellation
+	})
+
+	await approveRequest(websiteTabConnections)
+	browserMock.setRuntimeSendMessageHandler(undefined)
+	await cancellation
+
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+	assert.equal(getRejections(postedMessages).length, 1)
+	assert.equal(getRepliesToRequest(postedMessages, uniqueRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('an approval whose final commit wins gives the only reply, and the rejection waiting for that commit finds nothing to do', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(true)
+	await requestTransaction(websiteTabConnections, true)
+	const commitReached = createDeferredValue<undefined>()
+	const releaseCommit = createDeferredValue<undefined>()
+	browserMock.setStorageSetHandler(async (items, write) => {
+		if ('interceptorTransactionStack' in items) {
+			commitReached.resolve(undefined)
+			await releaseCommit.promise
+		}
+		write()
+	})
+
+	const approval = approveRequest(websiteTabConnections)
+	await commitReached.promise
+	const cancellation = cancelRequest(websiteTabConnections, 'reject')
+	const rejectionWaited = !(await answersWithoutTheRpc(cancellation))
+	releaseCommit.resolve(undefined)
+	await Promise.all([approval, cancellation])
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.equal(rejectionWaited, true)
+	assert.equal(getRejections(postedMessages).length, 0)
+	assert.equal(getRepliesToRequest(postedMessages, uniqueRequestIdentifier.requestId).length, 1)
+	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('a final commit that wins keeps WaitingForSigner, and a rejection then behaves as it does for any forwarded request', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+
+	assert.equal(await approveRequest(websiteTabConnections), true)
+	assert.equal((await getPendingTransaction()).approvalStatus.status, 'WaitingForSigner')
+	await cancelRequest(websiteTabConnections, 'reject')
+
+	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+	assert.equal(getRejections(postedMessages).length, 1)
+	assert.equal(getRepliesToRequest(postedMessages, uniqueRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
+test('closing a window answers every request sharing it while the block number and a Gnosis Safe validation are unanswered', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { safePending } = await setUpSafeProposal()
+	const secondIdentifier = { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending, { ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForUser' }, uniqueRequestIdentifier: secondIdentifier, transactionIdentifier: 2n }] })
+	const { onCloseWindowOrTab } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const stalled = createSuspendedServices('eth_blockNumber')
+	const validation = holdSafeValidation()
+	const approval = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'addToSafeStack', uniqueRequestIdentifier } })
+	await validation.reached
+
+	const closing = onCloseWindowOrTab(safePending.popupOrTabId, stalled.ethereum, stalled.tokenPriceService, websiteTabConnections)
+	await answersWithoutTheRpc(closing)
+	const rejections = getRejections(postedMessages).map((message) => isRecord(message) ? message.requestId : undefined)
+	stalled.release()
+	validation.release()
+	await Promise.all([approval, closing])
+
+	assert.deepEqual(rejections, [uniqueRequestIdentifier.requestId, secondIdentifier.requestId])
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
 test('a network switch while a Gnosis Safe proposal is validated keeps it out of the Gnosis Safe stack', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	const { safePending, signature } = await setUpSafeProposal()
@@ -1486,7 +1626,7 @@ test('every guarded write and delivery starts in the same synchronous step as it
 	let postedAfterCheckWork: boolean | undefined
 	const port = createWebsitePort(socket, 0, [], () => { postedAfterCheckWork = checkWorkRan })
 	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
-	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingWithWorkAfterCheck(async () => { checkWorkRan = true }), { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingWithWorkAfterCheck(async () => { checkWorkRan = true }), { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
 	await workAfterCheck
 	assert.deepEqual(forwarding, { committed: true, result: true })
 	assert.equal(postedAfterCheckWork, false)
@@ -1528,7 +1668,7 @@ test('a network switch right after the network was read keeps the first delivery
 	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/requestedNetworkForwarding.js')
 
 	await switchNetworkAfterNetworkRead(1)
-	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
 
 	assert.equal(forwarding.committed ? undefined : forwarding.refusal.status, 'NetworkRefusal')
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
@@ -1550,7 +1690,7 @@ test('a network switch right after the network was read keeps the retried delive
 
 	// The first attempt reads the network once and fails on the disconnected port; the retry after the reconnect reads it again.
 	await switchNetworkAfterNetworkRead(2)
-	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier })
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
 
 	assert.equal(disconnectedPort.getPostAttempts(), 1)
 	assert.equal(forwarding.committed ? undefined : forwarding.refusal.status, 'NetworkRefusal')
