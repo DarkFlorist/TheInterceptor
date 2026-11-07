@@ -7,6 +7,15 @@ import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/t
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { alwaysWrite } from '../../app/ts/utils/largeStateStore.js'
+
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async (services: Parameters<typeof import('../../app/ts/background/networkTransitionLock.js').readNetworkSnapshotForServices>[0]) => {
+	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: services.ethereum.getRpcEntry() })
+	return await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices(services)
+}
 
 type RuntimeMessage = {
 	method?: string
@@ -160,7 +169,9 @@ async function loadModules() {
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
-		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
+		setPopupVisualisationState: storageVariables.setPopupVisualisationState,
+		computeConfirmationVisualisation: popupVisualisationUpdater.computeConfirmationVisualisation,
+		createUnavailableVisualisation: popupVisualisationUpdater.createUnavailableVisualisation,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
@@ -384,7 +395,7 @@ function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) 
 }
 
 describe('SafeTx confirm transaction metadata', () => {
-	test('uses the stored visualisation when a confirmation refresh fails unexpectedly', async () => {
+	test('shows the unavailable visualisation, not the stored one, when a confirmation refresh fails unexpectedly', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const fakeRpcNetwork: RpcEntry = {
@@ -403,24 +414,25 @@ describe('SafeTx confirm transaction metadata', () => {
 			async jsonRpcRequest() { throw new Error('RPC should not be called') },
 		}, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
-		const storedVisualisation = await modules.getPopupVisualisationState()
+		// The stored result may come from a refresh of another network or stack, so the failed refresh must not show it.
+		const { results: storedVisualisation } = await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 }, alwaysWrite)
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 
-		const result = await modules.refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, {
-			async update() { throw refreshError },
-			async getStored() { return storedVisualisation },
+		const result = await modules.computeConfirmationVisualisation((await readNetworkState({ ethereum, tokenPriceService })).simulation, {
+			async compute() { throw refreshError },
 			async reportError(error) {
 				reportedError = error
 				return undefined
 			},
 		})
 
-		assert.equal(result, storedVisualisation)
+		assert.notEqual(result.simulationId, storedVisualisation.simulationId)
+		assert.deepEqual(result, modules.createUnavailableVisualisation())
 		assert.equal(reportedError, refreshError)
 	})
 
-	test('still updates confirmation metadata when visualisation refresh falls back', async () => {
+	test('still updates confirmation metadata with the unavailable visualisation when the visualisation refresh fails', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const fakeRpcNetwork: RpcEntry = {
@@ -452,15 +464,14 @@ describe('SafeTx confirm transaction metadata', () => {
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
-		const storedVisualisation = { ...await modules.getPopupVisualisationState(), simulationId: 77 }
+		await modules.setPopupVisualisationState({ ...await modules.getPopupVisualisationState(), simulationId: 77 }, alwaysWrite)
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
 		let reportCalls = 0
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
+		await modules.refreshPopupConfirmTransactionMetadata(await readNetworkState({ ethereum, tokenPriceService }), undefined, {
 			visualisation: {
-				async update() { throw refreshError },
-				async getStored() { return storedVisualisation },
+				async compute() { throw refreshError },
 				async reportError(error) {
 					reportCalls += 1
 					reportedError = error
@@ -472,8 +483,10 @@ describe('SafeTx confirm transaction metadata', () => {
 		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog')
 		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog update')
 		const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
-		if (!isRecord(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
-		assert.equal(visualizedSimulatorState.simulationId, 77)
+		if (!isRecord(visualizedSimulatorState)) throw new Error('Missing visualisation in confirm transaction dialog update')
+		assert.notEqual(visualizedSimulatorState.simulationId, 77)
+		assert.equal(visualizedSimulatorState.simulationUpdatingState, 'failed')
+		assert.equal(visualizedSimulatorState.simulationResultState, 'invalid')
 		assert.equal(reportedError, refreshError)
 		assert.equal(reportCalls, 1)
 	})
@@ -520,10 +533,12 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(await readNetworkState({ ethereum, tokenPriceService }), undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
-		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
+		// The confirmation computes its own stack visualisation and leaves the shared one, which follows the latest stack, alone.
+		assert.equal((await modules.getPopupVisualisationState()).simulationId, 0)
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_simulation_state_changed'), false)
 		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 
@@ -569,7 +584,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.updateConfirmTransactionView(ethereum, tokenPriceService)
+		await modules.updateConfirmTransactionView(await readNetworkState({ ethereum, tokenPriceService }))
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 	})

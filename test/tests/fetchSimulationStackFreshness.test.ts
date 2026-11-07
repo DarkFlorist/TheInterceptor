@@ -80,6 +80,7 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 		simulateWithZeroBaseFee: false,
 	}]
 	return {
+		activeAddressMadeRich: undefined,
 		simulationInput: { kind: 'simulated', value: simulationInput },
 		simulationState: {
 			kind: 'simulated',
@@ -105,6 +106,25 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 }
 
 describe('fetch simulation stack freshness', () => {
+	test('remembers a rejection for the stack the dialog opened with, without a confirmation-time snapshot', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		popupWindowExists = false
+		const modules = await modulesPromise
+		const initialSnapshot = createSnapshot(5n)
+		const socket = { tabId: 9, connectionName: 21n }
+		const website = { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }
+		const params = { method: 'interceptor_getSimulationStack' as const, params: ['2.0.0' as const] }
+		const uniqueRequestIdentifier = { requestId: 30, requestSocket: socket }
+		const request = { method: params.method, params: params.params, uniqueRequestIdentifier }
+		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, request, socket)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		const windowsCreated = popupWindowCreationCount
+		await modules.rejectFetchSimulationStackRequest(new Map(), { method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: false, simulationStackVersion: '2.0.0', uniqueRequestIdentifier } })
+		assert.ok('error' in await firstRequest)
+		assert.ok('error' in await modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, { ...request, uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 31 } }, socket))
+		assert.equal(popupWindowCreationCount, windowsCreated)
+	})
+
 	test('returns and fingerprints the confirmation-time snapshot', async () => {
 		for (const key of Object.keys(storageState)) delete storageState[key]
 		popupWindowExists = false

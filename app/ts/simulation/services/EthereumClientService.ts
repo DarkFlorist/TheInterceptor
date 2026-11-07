@@ -136,6 +136,7 @@ export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
+	private retired = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
@@ -152,6 +153,12 @@ export class EthereumClientService {
 
 	public readonly getRpcEntry = () => this.rpcEntry
 
+	// A new name, currency or explorer for the same endpoint: this client keeps serving it, so work in flight and snapshots of this network stay valid.
+	public readonly updateRpcEntryMetadata = (rpcEntry: RpcEntry) => {
+		if (rpcEntry.httpsRpc !== this.rpcEntry.httpsRpc || rpcEntry.chainId !== this.rpcEntry.chainId) throw new Error('Only the metadata of an installed RPC entry can be updated')
+		this.rpcEntry = rpcEntry
+	}
+
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
@@ -161,11 +168,17 @@ export class EthereumClientService {
 		if ((Date.now() - this.cachedBlock.timestamp.getTime()) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE * 1000) return undefined
 		return this.cachedBlock
 	}
-	public cleanup = () => this.setBlockPolling(false)
+	// Retiring is permanent: requests that captured this client keep its RPC methods, but its block polling never restarts.
+	public cleanup = () => {
+		this.retired = true
+		this.setBlockPolling(false)
+	}
 
 	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
+	public readonly isRetired = () => this.retired
 
 	public readonly setBlockPolling = (enabled: boolean) => {
+		if (enabled && this.retired) return
 		if (enabled && this.cacheRefreshTimer === undefined) {
 			const now = Date.now()
 

@@ -1,9 +1,9 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
+import type { Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
@@ -21,7 +21,7 @@ import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
-import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
+import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
@@ -39,45 +39,6 @@ export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabCo
 			if (connection.websiteOrigin !== websiteOrigin) continue
 			connection.wantsToConnect = false
 		}
-	}
-}
-
-const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
-
-function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
-	const socketIdentifier = websiteSocketToString(socket)
-	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, (unscopedConnectionEventSuppressionCounts.get(socketIdentifier) ?? 0) + 1)
-	return socketIdentifier
-}
-
-function decrementUnscopedConnectionEventSuppression(socketIdentifier: string) {
-	const previousCount = unscopedConnectionEventSuppressionCounts.get(socketIdentifier)
-	if (previousCount === undefined || previousCount <= 1) {
-		unscopedConnectionEventSuppressionCounts.delete(socketIdentifier)
-		return
-	}
-	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, previousCount - 1)
-}
-
-function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
-	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
-}
-
-export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
-	}
-}
-
-export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return await action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
 	}
 }
 
@@ -104,35 +65,6 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
-}
-
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
-		}
-	}
-}
-export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
-			const activeAddress = await getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
-				type: 'result' as const,
-				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress.address] : []
-			})
-		}
-	}
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {

@@ -8,6 +8,7 @@ import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -379,7 +380,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		})
 
-		const simulationInput = await modules.getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		const executionTimestamp = new Date('2024-01-02T00:00:00.000Z')
 		const executionStateOverrides = {
 			'0x0000000000000000000000000000000000000001': { code: new Uint8Array([1, 2, 3]) },
@@ -578,11 +579,12 @@ describe('Gnosis Safe stack simulation', () => {
 		})
 
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
-		const simulationInput = await modules.getCurrentSimulationInput()
-		assert.equal(simulationInput.length, seedStack ? 1 : 0)
-		assert.equal(simulationInput[0]?.transactions.length, seedStack ? 1 : undefined)
+		const network = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService })
+		const snapshot = modules.requireSimulationSnapshot(network.simulation)
+		assert.equal(snapshot.simulationStateInput.length, seedStack ? 1 : 0)
+		assert.equal(snapshot.simulationStateInput[0]?.transactions.length, seedStack ? 1 : undefined)
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, simulationInput, ethereum, tokenPriceService)
+		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, network)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
 

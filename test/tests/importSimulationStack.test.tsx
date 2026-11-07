@@ -6,6 +6,7 @@ import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
@@ -77,6 +78,9 @@ installBrowser()
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/background/activeSettings.js'),
+		...await import('../../app/ts/background/networkTransition.js'),
+		...await import('../../app/ts/background/networkTransitionLock.js'),
 		...await import('../../app/ts/components/pages/ImportSimulationStack.js'),
 	}
 }
@@ -103,7 +107,9 @@ const exportPayload = {
 }
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
+// Serves the default network, which the empty test storage selects.
 const expectedInfrastructureEthereum = {
+	getRpcEntry: () => DEFAULT_RPCS[0],
 	getBlock: async () => { throw NEW_BLOCK_ABORT },
 }
 
@@ -296,7 +302,9 @@ describe('import simulation stack', () => {
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
 		storageState.simulationMode = true
 		let exportedSimulationInput: unknown
+		const { activeRpcNetwork } = await (await import('../../app/ts/background/settings.js')).getSettings()
 		const ethereum = {
+			getRpcEntry: () => activeRpcNetwork,
 			async getBlockNumber() { return 1n },
 			async ethSimulateV1Input(simulationInput: unknown) {
 				exportedSimulationInput = simulationInput
@@ -304,7 +312,7 @@ describe('import simulation stack', () => {
 			},
 		}
 
-		const reply = await modules.requestInterceptorSimulationInput(ethereum as never)
+		const reply = await modules.requestInterceptorSimulationInput(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService: {} }))
 
 		assert.equal(reply.ok, true)
 		if (!reply.ok) throw new Error(reply.message)

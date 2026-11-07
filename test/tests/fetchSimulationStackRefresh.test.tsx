@@ -187,7 +187,7 @@ const BACKGROUND_SIMULATION_REQUESTS = new Set(['popup_readyAndListening', 'popu
 async function dispatchToBackground(message: unknown) {
 	const method = getMessageMethod(message)
 	if (method === undefined || !BACKGROUND_SIMULATION_REQUESTS.has(method)) return undefined
-	return await popupMessageHandler(new Map(), simulationServicesOwner, message, await getSettings(), async () => undefined)
+	return await popupMessageHandler(new Map(), simulationServicesOwner, message, async () => undefined)
 }
 
 // Stands in for the home popup or simulation stack page: it answers the open-consumer probe and keeps each published state.
@@ -281,7 +281,7 @@ describe('FetchSimulationStack simulation refreshes', () => {
 		try {
 			await harness.openFetchSimulationStack()
 			resetMessageCounts()
-			// Mirrors the simulation-mode new-block handler in background-startup.ts.
+			// Mirrors the simulation-mode new-block handler in newBlockHandling.ts.
 			await act(async () => { await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService) })
 			await settleMessageFlow()
 			assert.deepEqual(messageCounts, { simulationStatePublishes: 1, ethSimulateV1Requests: 1 })

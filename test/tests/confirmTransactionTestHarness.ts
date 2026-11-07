@@ -140,6 +140,13 @@ export function createBrowserMock() {
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
 		},
+		// Network and website access changes refresh request blocking; these flows have no blocked requests to check.
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
+		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
 	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
@@ -594,6 +601,9 @@ export const pendingTransaction = {
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
+	// The active network is the shared simulator's, as it is for installed services, so snapshots read in these flows can be simulated on it.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: fakeRpcNetwork })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }

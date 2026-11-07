@@ -8,6 +8,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 type Listener = () => void
 type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -140,6 +141,8 @@ export async function loadModules() {
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
+		...await import('../../app/ts/background/networkTransition.js'),
+		...await import('../../app/ts/background/networkTransitionLock.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
@@ -193,27 +196,23 @@ export async function waitForPortMessageCount(messages: readonly PortMessage[], 
 	}
 }
 
+const DEFAULT_ACTIVE_RPC = DEFAULT_RPCS.find((rpc) => rpc.primary) ?? DEFAULT_RPCS[0]
+
 export function createEthereumWithGetBlockCounter(
 	getBlockCalls: { count: number },
 	{
 		initialBlockPolling = true,
 		getCodeResult,
 		getStorageAtResult,
+		rpcEntry = DEFAULT_ACTIVE_RPC,
 	}: {
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
+		// A network read pairs this client with the settings only if it serves them, so the default is the network settings default to, and tests that select another pass the network the client serves.
+		readonly rpcEntry?: RpcEntry
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
-		name: 'Test RPC',
-		chainId: 1n,
-		httpsRpc: 'http://127.0.0.1:8545',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		primary: true,
-		minimized: false,
-	}
 	let blockPolling = initialBlockPolling
 	const ethereum = new Proxy(
 		new EthereumClientService(
@@ -263,3 +262,6 @@ export function createTestSimulationServicesOwner(initial: { ethereum: EthereumC
 		reset: network => { current = reset === undefined ? current : reset(network); return current },
 	}
 }
+
+// An owner that keeps the given services installed, for confirmation flows that need one but never switch networks.
+export const fixedServicesOwner = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService) => createTestSimulationServicesOwner({ ethereum, tokenPriceService })

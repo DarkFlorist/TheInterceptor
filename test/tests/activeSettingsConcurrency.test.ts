@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
+import { alwaysWrite } from '../../app/ts/utils/largeStateStore.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { getReadServices } from '../../app/ts/background/networkTransitionLock.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -87,8 +89,9 @@ describe('active settings concurrency', () => {
 	test('a selection queued behind an endpoint reset uses the installed services', async () => {
 		installBrowserMock()
 		const { activateAddressSelection, changeActiveAddressAndChain, getSettings } = await loadModules()
+		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://installed.example' }
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: rpcNetwork })
 		const owner = createTestSimulationServicesOwner(original, () => installed)
 		let oldReads = 0
 		let installedReads = 0
@@ -106,7 +109,6 @@ describe('active settings concurrency', () => {
 			}
 			return await originalSend(message)
 		}
-		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://installed.example' }
 		const safe: SafeEntry = { type: 'safe', name: 'Queued Safe', address: 3n, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		const first = changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork })
 		try {
@@ -165,10 +167,12 @@ describe('active settings concurrency', () => {
 
 	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
 		const { runtimeMessages } = installBrowserMock()
-		const { activateAddressSelection, getSettings } = await loadModules()
+		const { activateAddressSelection, getSettings, readNetworkSnapshot } = await loadModules()
 		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(services)
 		const previousVisualisation = { ...await getPopupVisualisationState(), simulationId: 42 }
-		await setPopupVisualisationState(previousVisualisation)
+		await setPopupVisualisationState(previousVisualisation, alwaysWrite)
 		const originalSet = browser.storage.local.set.bind(browser.storage.local)
 		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
 		const failure = new Error(`Injected ${ failurePoint } failure`)
@@ -188,9 +192,8 @@ describe('active settings concurrency', () => {
 			},
 		})
 		try {
-			const services = createEthereumWithGetBlockCounter({ count: 0 })
 			const network = (await getSettings()).activeRpcNetwork
-			const transition = activateAddressSelection(createTestSimulationServicesOwner(services), new Map(), { type: 'signer', address: firstAddress.address }, {
+			const transition = activateAddressSelection(owner, new Map(), { type: 'signer', address: firstAddress.address }, {
 				simulationMode: failurePoint === 'stack storage', signerAddress: firstAddress.address, promptForAccessesIfNeeded: false,
 				...(failurePoint === 'stack storage' ? { rpcNetwork: { ...network, chainId: network.chainId + 1n } } : {}),
 			})
@@ -208,11 +211,13 @@ describe('active settings concurrency', () => {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })
 		}
+		// A stack that could not be cleared stays unfinished until the next lock holder clears it once storage works again.
+		await readNetworkSnapshot(owner)
 	})
 
 	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
+		const { activateAddressSelection, getSettings, getSigningAddressPreferences, readNetworkSnapshot, updateUserAddressBookEntries } = await loadModules()
 		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
 		await updateUserAddressBookEntries(() => [firstAddress, safe])
@@ -220,9 +225,16 @@ describe('active settings concurrency', () => {
 		const services = createEthereumWithGetBlockCounter(counter)
 		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://failed-install.example' }
 		const failure = new Error('Injected provider reset failure')
-		await assert.rejects(activateAddressSelection(createTestSimulationServicesOwner({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService }, () => { throw failure }), new Map(), { type: 'addressBookEntry', entry: safe }, {
+		let providerInstallationFails = true
+		const owner = createTestSimulationServicesOwner({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService }, (network) => {
+			if (providerInstallationFails) throw failure
+			return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network })
+		})
+		await assert.rejects(activateAddressSelection(owner, new Map(), { type: 'addressBookEntry', entry: safe }, {
 			simulationMode: false, signerAddress: firstAddress.address, rpcNetwork, promptForAccessesIfNeeded: false,
 		}), error => error === failure)
+		// While the provider cannot be installed, no lock holder may proceed with the committed network; they reject with an error that names the unfinished network change.
+		await assert.rejects(readNetworkSnapshot(owner), (error: unknown) => error instanceof Error && error.message.startsWith('An earlier network change committed its settings but could not finish applying them') && error.message.endsWith(failure.message))
 		assert.equal((await getSettings()).activeSigningSafeAddress, safe.address)
 		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress: firstAddress.address, selection: 'safe', safeAddress: safe.address, chainId: safe.chainId }])
 		const visualisation = await getPopupVisualisationState()
@@ -232,6 +244,8 @@ describe('active settings concurrency', () => {
 		assert.equal(counter.count, 0, 'Failure handling must not simulate on the old provider')
 		assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), true)
 		assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
+		providerInstallationFails = false
+		assert.deepEqual(getReadServices(await readNetworkSnapshot(owner)).ethereum.getRpcEntry(), rpcNetwork)
 	})
 
 	test('settles an address change that prompts for access alongside an approval that selects another address', async () => {
@@ -474,7 +488,7 @@ describe('active settings concurrency', () => {
 
 	test.each(['direct', 'selection'])('completes access UI after a persisted %s transition throws', async (entryPoint) => {
 		installBrowserMock()
-		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getTabState, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getTabState, readNetworkSnapshot, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
@@ -485,7 +499,11 @@ describe('active settings concurrency', () => {
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://replacement.invalid' }
 		const failure = new Error('Service reset failed after settings persisted')
-		const failReset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw failure })
+		let resetFails = true
+		const failReset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, (network) => {
+			if (resetFails) throw failure
+			return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network })
+		})
 		const transition = entryPoint === 'direct'
 			? changeActiveAddressAndChain(failReset, connections, { simulationMode: true, activeAddress: selectedAddress.address, rpcNetwork })
 			: activateAddressSelection(failReset, connections, { type: 'addressBookEntry', entry: selectedAddress }, { simulationMode: true, signerAddress: undefined, rpcNetwork })
@@ -502,6 +520,9 @@ describe('active settings concurrency', () => {
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)
 			}
+			// The committed network keeps its unfinished installation until a lock holder can install it.
+			resetFails = false
+			await readNetworkSnapshot(failReset)
 		}
 	})
 })

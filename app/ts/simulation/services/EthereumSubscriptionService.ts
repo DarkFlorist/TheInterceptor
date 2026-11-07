@@ -49,16 +49,17 @@ const isSameWebsiteSocket = (left: WebsiteSocket, right: WebsiteSocket) => left.
 const filterChangesScope = {}
 const runFilterChangeSerially = createScopedKeyedSerialExecutor<typeof filterChangesScope, string>()
 
+// A network change retires the client before websites hear of the new chain, and the client's blocks describe the replaced network from then on. Each send first checks this with no await in between, so a retired client publishes nothing more for this block and the next block of the installed client carries on.
 export async function sendSubscriptionMessagesForNewBlock(
 	blockNumber: bigint,
 	ethereumClientService: EthereumClientService,
 	isSimulation: boolean,
 	websiteTabConnections: WebsiteTabConnections,
-	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
+	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState | undefined>,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
 	let liveBlockPromise: Promise<Awaited<ReturnType<EthereumClientService['getBlock']>>> | undefined
-	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
+	let simulationStatePromise: Promise<ResolvedExecutionSimulationState | undefined> | undefined
 	let simulatedBlocksPromise: Promise<readonly NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>[]> | undefined
 	const getLiveBlock = async () => {
 		if (liveBlockPromise === undefined) liveBlockPromise = ethereumClientService.getBlock(undefined, blockNumber, false)
@@ -72,7 +73,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		if (simulatedBlocksPromise !== undefined) return await simulatedBlocksPromise
 		simulatedBlocksPromise = (async () => {
 			const simulationState = await getCachedSimulationState()
-			if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
+			if (simulationState === undefined || simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
 			const simulationInput = { kind: 'simulated' as const, value: simulationState.value.simulationStateInput }
 			const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationInput)
 			const simulatedBlocks = []
@@ -93,6 +94,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		switch (subscriptionOrFilter.type) {
 			case 'newHeads': {
 				const newBlock = await getLiveBlock()
+				if (ethereumClientService.isRetired()) return
 
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 					type: 'result',
@@ -102,7 +104,9 @@ export async function sendSubscriptionMessagesForNewBlock(
 				})
 
 				if (isSimulation) {
-					for (const simulatedBlock of await getSimulatedBlocks()) {
+					const simulatedBlocks = await getSimulatedBlocks()
+					if (ethereumClientService.isRetired()) return
+					for (const simulatedBlock of simulatedBlocks) {
 						// post our simulated blocks on top (reorg them)
 						sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 							type: 'result',
