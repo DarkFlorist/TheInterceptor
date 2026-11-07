@@ -49,6 +49,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
+import type { SimulationServices } from '../../simulation/serviceLifecycle.js'
 import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, reevaluateStoredNetworkRefusals, type TransactionNetworkError, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
@@ -291,11 +292,15 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-async function invalidateTransactionApproval(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: TransactionNetworkError) {
+// The refusal is the verdict of the approval's own services, but the window is shown what approving would do now, as a queued approval can outlive a network switch. The installed services are read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows.
+async function invalidateTransactionApproval(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: TransactionNetworkError) {
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
+	const { ethereum, tokenPriceService } = getInstalledServices()
 	await updateConfirmTransactionView(ethereum, tokenPriceService)
 	return false
 }
+
+type GetInstalledServices = () => Pick<SimulationServices, 'ethereum' | 'tokenPriceService'>
 
 const pendingTransactionOrMessageResolutionScope = {}
 const serializePendingTransactionOrMessageResolution = createScopedKeyedSerialExecutor<typeof pendingTransactionOrMessageResolutionScope, string>()
@@ -313,19 +318,19 @@ async function resolvePendingTransactionOrMessageSerially<T>(uniqueRequestIdenti
 type SafeSignerRefreshAtApproval = { readonly selection: RefreshedSafeSignerSelection, readonly confirmationRun: ConfirmationRunId }
 
 // Forwarding to the signer only posts the request, so the lock is not held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited.
-export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, safeRebuildRun?: ConfirmationRunId) {
+export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection, safeRebuildRun?: ConfirmationRunId, getInstalledServices: GetInstalledServices = () => ({ ethereum, tokenPriceService })) {
 	const safeSignerRefresh = refreshedSafeSignerSelection === undefined ? undefined : { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun ?? reserveConfirmationRun() }
-	return await resolvePendingTransactionOrMessageSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage) => await resolveStoredPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, safeSignerRefresh))
+	return await resolvePendingTransactionOrMessageSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage) => await resolveStoredPendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, getInstalledServices, safeSignerRefresh))
 }
 
-async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, safeSignerRefresh?: SafeSignerRefreshAtApproval) {
+async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, getInstalledServices: GetInstalledServices, safeSignerRefresh?: SafeSignerRefreshAtApproval) {
 	let pendingTransactionOrMessage = storedPendingTransactionOrMessage
 	if (confirmation.data.action === 'accept' || confirmation.data.action === 'addToSafeStack') {
 		// A request that was already forwarded can only be completed by the signer's reply, so it is not approved or added to a Gnosis Safe stack again.
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
 		// Checked before the Gnosis Safe refresh below, which rebuilds the transaction with this client, and before a proposal is stored in this client's Gnosis Safe stack.
 		const networkApprovalError = pendingTransactionOrMessage.type === 'Transaction' ? await getTransactionNetworkApprovalError(ethereum, pendingTransactionOrMessage) : undefined
-		if (networkApprovalError !== undefined) return await invalidateTransactionApproval(ethereum, tokenPriceService, confirmation.data.uniqueRequestIdentifier, networkApprovalError)
+		if (networkApprovalError !== undefined) return await invalidateTransactionApproval(getInstalledServices, confirmation.data.uniqueRequestIdentifier, networkApprovalError)
 	}
 	if (
 		confirmation.data.action === 'accept'
@@ -442,7 +447,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		// The forwarded parameters carry no chain id, so the network is checked once more right before every attempt to post the request to the wallet.
 		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-		if (!forwarding.committed) return await invalidateTransactionApproval(ethereum, tokenPriceService, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
+		if (!forwarding.committed) return await invalidateTransactionApproval(getInstalledServices, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
 		if (forwarding.result) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -499,7 +504,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
-			if (!addition.committed) return await invalidateTransactionApproval(ethereum, tokenPriceService, confirmation.data.uniqueRequestIdentifier, addition.refusal)
+			if (!addition.committed) return await invalidateTransactionApproval(getInstalledServices, confirmation.data.uniqueRequestIdentifier, addition.refusal)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) }, 'changed')
 		}
