@@ -1,4 +1,4 @@
-import { type Permit2SignatureTransfer, type VisualizedPersonalSignRequest, type VisualizedPersonalSignRequestPermit2SignatureTransfer, getPermit2SignatureTransferKind, parsePermit2SignatureTransfer } from '../../types/personal-message-definitions.js'
+import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../types/personal-message-definitions.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { addressString } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
@@ -11,8 +11,8 @@ function getPermitTokenLabel(entry: AddressBookEntry) {
 	return addressString(entry.address)
 }
 
-function getPermit2SignatureTransferName(data: VisualizedPersonalSignRequestPermit2SignatureTransfer, transfer: Permit2SignatureTransfer) {
-	if (getPermit2SignatureTransferKind(transfer).isBatch) return 'Permit2 batch transfer'
+function getPermit2SignatureTransferName(data: VisualizedPersonalSignRequestPermit2SignatureTransfer) {
+	if (data.isBatch) return 'Permit2 batch transfer'
 	const [permitted] = data.permitted
 	return permitted === undefined ? 'Permit2 transfer' : `${ getPermitTokenLabel(permitted.token) } Permit2 transfer`
 }
@@ -76,16 +76,8 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 			to: data.spender
 		}
 		case 'Permit2SignatureTransfer': {
-			const transfer = parsePermit2SignatureTransfer(data.message)
-			// Names no token or spender, as they could not be confirmed against what is signed.
-			if (transfer === undefined) return {
-				title: 'Malformed Permit2 transfer',
-				signingAction: 'Sign malformed Permit2 transfer',
-				simulationAction: 'Simulate malformed Permit2 transfer',
-				rejectAction: 'Reject malformed Permit2 transfer',
-			}
 			// The integrator defined witness type name is deliberately kept out of the title, as the dapp could name it to look harmless.
-			const name = getPermit2SignatureTransferName(data, transfer)
+			const name = getPermit2SignatureTransferName(data)
 			return {
 				title: name,
 				signingAction: `Sign ${ name }`,

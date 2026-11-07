@@ -211,6 +211,10 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				type: 'Permit2SignatureTransfer' as const,
 				// `parsed` drops the witness and its struct types, so every rendering of the signed payload comes from the original request like the generic EIP-712 path.
 				message: namedParams.param,
+				isBatch: transferKind.isBatch,
+				chainId: parsed.domain.chainId,
+				nonce: parsed.message.nonce,
+				deadline: parsed.message.deadline,
 				account,
 				permitted: await promiseAllMapAbortSafe(transferKind.permitted, async (permission) => ({ ...permission, token: await identifyPermitToken(ethereumClientService, requestAbortController, permission.token) })),
 				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),

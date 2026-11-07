@@ -242,12 +242,6 @@ export function getPermit2SignatureTransferKind(permit: Permit2SignatureTransfer
 	}
 }
 
-// Parses the fields Permit2 defines out of the full signed typed data. Returns undefined when they cannot be read, so callers show an error instead of a card that may not match what is signed.
-export function parsePermit2SignatureTransfer(signedTypedData: EIP712Message) {
-	const parsed = Permit2SignatureTransfer.safeParse(signedTypedData)
-	return parsed.success ? parsed.value : undefined
-}
-
 // Permit2 itself defines these SignatureTransfer fields, while the integrator names the witness field, for example `witness` in UniswapX.
 const permit2SignatureTransferFieldNames: readonly string[] = ['permitted', 'spender', 'nonce', 'deadline']
 
@@ -606,8 +600,12 @@ export const VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.In
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('Permit2SignatureTransfer'),
-		// Stays the full signed payload so the witness and its struct types survive, and the typed fields are derived at the point of use with `parsePermit2SignatureTransfer` so there is one representation to keep in sync. That function is already the single decision on whether the transfer is readable, and the title, card and extra details each only choose their own output for it, so a shared wrapper would not be simpler.
+		// Raw only because the integrator defined witness and its struct types have no runtime type. Every field below is derived from it once in `craftPersonalSignPopupMessage`, so consumers read those fields and never parse this.
 		message: EIP712Message,
+		isBatch: funtypes.Boolean,
+		chainId: NonHexBigInt,
+		nonce: NonHexBigInt,
+		deadline: NonHexBigInt,
 		// Single token transfers are listed as a one element array so single and batch transfers render the same way.
 		permitted: funtypes.ReadonlyArray(Permit2TokenPermissionsWithAddressBookEntry),
 		spender: AddressBookEntry,

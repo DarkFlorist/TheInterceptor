@@ -10,7 +10,7 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
-import { parsePermit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
+import { Permit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
 import { getMessageAndDomainHash } from '../../app/ts/utils/eip712.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor } from './data/eip712Data.js'
@@ -364,6 +364,13 @@ describe('Permit2 signature requests', () => {
 		assert.deepEqual(Object.keys(visualized.message.message), ['permitted', 'spender', 'witness', 'nonce', 'deadline'])
 	})
 
+	test('falls back to the generic EIP712 view when a transfer is valid typed data but not a Permit2 message', async () => {
+		const otherDomain = JSON.parse(permit2TransferFromMessage)
+		otherDomain.domain.name = 'NotPermit2'
+		const visualized = await visualizeTypedData(JSON.stringify(otherDomain))
+		assert.deepEqual({ type: visualized.type, isValidMessage: visualized.isValidMessage }, { type: 'EIP712', isValidMessage: true })
+	})
+
 	test('classifies every SignatureTransfer primary type the same way for token grouping, witness lookup and naming', async () => {
 		const expectedKinds = [
 			{ typedData: permit2TransferFromMessage, primaryType: 'PermitTransferFrom', isBatch: false, hasWitness: false, tokenCount: 1 },
@@ -374,9 +381,9 @@ describe('Permit2 signature requests', () => {
 		for (const { typedData, ...expected } of expectedKinds) {
 			const visualized = await visualizeTypedData(typedData)
 			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-			const transfer = parsePermit2SignatureTransfer(visualized.message)
-			if (transfer === undefined) throw new Error('Expected message to parse as a Permit2 transfer')
+			const transfer = Permit2SignatureTransfer.parse(visualized.message)
 			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(transfer)
+			assert.equal(visualized.isBatch, isBatch)
 			assert.deepEqual({ primaryType: transfer.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
 			assert.deepEqual(visualized.permitted.map(({ token, amount }) => ({ token: token.address, amount })), permitted)
 			assert.equal(visualized.witness !== undefined, hasWitness)
@@ -398,6 +405,10 @@ describe('Permit2 signature requests', () => {
 			const storedRequest = JSON.parse(JSON.stringify(VisualizedPersonalSignRequestPermit2SignatureTransfer.serialize(visualized)))
 			const receivedRequest = VisualizedPersonalSignRequestPermit2SignatureTransfer.parse(storedRequest)
 			assert.deepEqual(receivedRequest.message, signedPayload)
+			// Components only read these stored fields, so they must match the signed payload and survive storage.
+			const transfer = Permit2SignatureTransfer.parse(signedPayload)
+			const expectedFields = { isBatch: getPermit2SignatureTransferKind(transfer).isBatch, chainId: transfer.domain.chainId, nonce: transfer.message.nonce, deadline: transfer.message.deadline }
+			for (const { isBatch, chainId, nonce, deadline } of [visualized, receivedRequest]) assert.deepEqual({ isBatch, chainId, nonce, deadline }, expectedFields)
 			assertIncludesAll(await renderSignatureCardText(receivedRequest), ['Allow', 'To Spend', 'Nonce: ', 'Signature expires in: '])
 		}
 	})
@@ -407,26 +418,29 @@ describe('Permit2 signature requests', () => {
 		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
 		assert.equal(Object.keys(visualized.message.message).includes('witness'), true)
 		assert.equal(Object.keys(visualized.message.types).includes('ExclusiveDutchOrder'), true)
-		const transfer = parsePermit2SignatureTransfer(visualized.message)
-		if (transfer === undefined) throw new Error('Expected message to parse as a Permit2 transfer')
+		const transfer = Permit2SignatureTransfer.parse(visualized.message)
 		assert.equal(Object.keys(transfer.message).includes('witness'), false)
 		assert.equal(Object.keys(transfer.types).includes('ExclusiveDutchOrder'), false)
 	})
 
-	test('shows an error and no transfer details when message cannot be read as a Permit2 transfer', async () => {
-		const visualized = await visualizeTypedData(permit2UniswapXWitnessTransferFromMessage)
-		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-		const malformed = { ...visualized, message: EIP712Message.parse(permit2Message) }
-		assert.deepEqual(identifySignature(malformed), {
-			title: 'Malformed Permit2 transfer',
-			signingAction: 'Sign malformed Permit2 transfer',
-			simulationAction: 'Simulate malformed Permit2 transfer',
-			rejectAction: 'Reject malformed Permit2 transfer',
-		})
-
-		const text = await renderSignatureCardText(malformed)
-		assertIncludesAll(text, ['Malformed Permit2 transfer request.', `Domain Hash: ${ malformed.domainHash }`, `Message Hash: ${ malformed.messageHash }`])
-		for (const transferDetail of ['Allow', 'To Spend', 'witness data', 'Verifying contract:', 'Nonce:', 'Signature expires in:']) assert.equal(text.includes(transferDetail), false, transferDetail)
+	test('marks a Permit2 transfer that breaks its own EIP-712 types as invalid instead of showing a transfer card', async () => {
+		const modifyTypedData = (typedData: string, modify: (malformed: ReturnType<typeof JSON.parse>) => void) => {
+			const malformed = JSON.parse(typedData)
+			modify(malformed)
+			return JSON.stringify(malformed)
+		}
+		const malformedRequests = [
+			modifyTypedData(permit2TransferFromMessage, (malformed) => { delete malformed.message.deadline }),
+			modifyTypedData(permit2TransferFromMessage, (malformed) => { malformed.message.nonce = 'not a number' }),
+			modifyTypedData(permit2TransferFromMessage, (malformed) => { malformed.message.spender = 'not an address' }),
+			modifyTypedData(permit2UniswapXWitnessTransferFromMessage, (malformed) => { delete malformed.message.witness }),
+		]
+		for (const malformedRequest of malformedRequests) {
+			const visualized = await visualizeTypedData(malformedRequest)
+			assert.deepEqual({ type: visualized.type, isValidMessage: visualized.isValidMessage, quarantine: visualized.quarantine }, { type: 'NotParsed', isValidMessage: false, quarantine: true })
+			const text = await renderSignatureCardText(visualized)
+			for (const transferDetail of ['Allow', 'To Spend', 'witness data', 'Verifying contract:', 'Nonce:', 'Signature expires in:']) assert.equal(text.includes(transferDetail), false, transferDetail)
+		}
 	})
 
 	test('shows no gas fee on signatures, which do not spend gas', async () => {
