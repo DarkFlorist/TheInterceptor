@@ -1,6 +1,5 @@
-function injectScript(_content: string) {
+function injectPageWorldScripts() {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
-	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
 
 	const checkAndThrowRuntimeLastError = () => {
 		const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox returns `null` when there is no error
@@ -12,11 +11,12 @@ function injectScript(_content: string) {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
+		const pageWorldProviderScriptPath = '[[pageWorldProviderScriptPath]]'
 		const scriptTag = document.createElement('script')
-		scriptTag.setAttribute('async', 'false')
-		if (_content === '[[injected.ts]]') scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
-		else scriptTag.textContent = _content
+		scriptTag.async = false
+		scriptTag.src = browser.runtime.getURL(pageWorldProviderScriptPath)
 		container.insertBefore(scriptTag, container.children[1])
+		;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
 		container.removeChild(scriptTag)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
@@ -24,4 +24,4 @@ function injectScript(_content: string) {
 	}
 }
 
-injectScript('[[injected.ts]]')
+injectPageWorldScripts()

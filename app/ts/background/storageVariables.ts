@@ -299,6 +299,8 @@ export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUn
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)
+// Runs operation while no address book read-modify-write is in flight, for writers that replace the stored entries wholesale.
+export const withUserAddressBookEntriesLock = async <T>(operation: () => Promise<T>) => await userAddressBookEntriesSemaphore.execute(operation)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
