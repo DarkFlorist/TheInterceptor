@@ -11,6 +11,7 @@ type TestDomNode = {
 	readonly parentNode?: TestDomNode | null
 	readonly childNodes?: readonly TestDomNode[]
 	readonly textContent?: string | null
+	readonly attributes?: Record<string, string | undefined>
 	readonly l?: Record<string, (event: unknown) => unknown>
 }
 
@@ -197,6 +198,83 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 					simulationConductedTimestamp: created,
 				},
 			},
+		},
+	}
+}
+
+// A plain transfer that simulated successfully, so the window renders its real approve button.
+async function makeSimulatedPendingTransaction(approvalStatus: { readonly status: 'WaitingForUser' | 'WaitingForSigner' }) {
+	const { getNativeTokenErc20 } = await import('../../app/ts/background/metadataUtils.js')
+	const failed = makeUnexpectedSimulationFailurePendingTransaction('unused')
+	const { transactionToSimulate, created, website, originalRequestParameters, transactionIdentifier, uniqueRequestIdentifier } = failed
+	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const sender = { type: 'contact' as const, name: 'Sender', address: 0x1111111111111111111111111111111111111111n, entrySource: 'User' as const, chainId: 1n }
+	const recipient = { type: 'contact' as const, name: 'Recipient', address: 0x2222222222222222222222222222222222222222n, entrySource: 'User' as const, chainId: 1n }
+	return {
+		...failed,
+		approvalStatus,
+		popupVisualisation: {
+			statusCode: 'success' as const,
+			data: {
+				activeAddress: sender.address,
+				simulationMode: false,
+				simulationStartedTimestamp: created,
+				uniqueRequestIdentifier,
+				transactionToSimulate,
+				signerName: 'MetaMask' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
+				addressBookEntries: [sender, recipient, getNativeTokenErc20(rpcNetwork)],
+				tokenPriceEstimates: [],
+				namedTokenIds: [],
+				simulationState: { success: true as const, simulationStateInput: [], simulatedBlocks: [], blockNumber: 123n, blockTimestamp: created, baseFeePerGas: 1n, simulationConductedTimestamp: created, rpcNetwork },
+				visualizedSimulationState: {
+					success: true as const,
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [{
+							website,
+							created,
+							parsedInputData: { type: 'NonParsed' as const, input: new Uint8Array() },
+							transactionIdentifier,
+							originalRequestParameters,
+							tokenBalancesAfter: [],
+							tokenPriceEstimates: [],
+							tokenPriceQuoteToken: undefined,
+							gasSpent: 21_000n,
+							realizedGasPrice: 1n,
+							quarantine: false,
+							quarantineReasons: [],
+							transactionStatus: 'Transaction Succeeded' as const,
+							transaction: { ...transactionToSimulate.transaction, from: sender, to: recipient, rpcNetwork, hash: 1n },
+							events: [],
+						}],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 0n, deltaUnit: 'Seconds' as const },
+					}],
+				},
+			},
+		},
+	}
+}
+
+// Holds every read of the stored pending transactions, each with the value storage had when it was made, until the test releases it.
+function holdStoredPendingTransactionReads() {
+	const { local } = globalThis.browser.storage
+	const read = local.get.bind(local)
+	const heldReads: (() => void)[] = []
+	Object.defineProperty(local, 'get', {
+		configurable: true,
+		value: async (keys: Parameters<typeof read>[0]) => {
+			const stored = await read(keys)
+			if (!(Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages'))) return stored
+			await new Promise<void>((resolve) => { heldReads.push(resolve) })
+			return stored
+		},
+	})
+	return {
+		get count() { return heldReads.length },
+		release: async (index: number) => {
+			heldReads[index]?.()
+			await new Promise((resolve) => setTimeout(resolve, 25))
 		},
 	}
 }
@@ -480,6 +558,78 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await dispatchChainUpdate()
 		assert.equal(dom.document.body.textContent?.includes('transaction after the chain change'), true)
 		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), false)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('a chain-change read that a newer push overtook does not re-enable approval', async () => {
+		const dom = installDomMock()
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		const browser = installBrowserMock()
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const push = async (status: 'WaitingForUser' | 'WaitingForSigner') => {
+			const pendingTransaction = await makeSimulatedPendingTransaction({ status })
+			await act(() => {
+				browser.dispatch({
+					role: 'all',
+					...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+						method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+						data: { pendingTransactionAndSignableMessages: [pendingTransaction], currentBlockNumber: 124n, rpcConnectionStatus: undefined },
+					}),
+				})
+			})
+			await new Promise((resolve) => setTimeout(resolve, 25))
+		}
+		const isApprovalDisabled = () => {
+			const approveButton = collectElements(dom.document.body, 'button').find((button) => button.attributes?.class?.includes('dialog-action-button') === true && !button.attributes.class.includes('is-danger'))
+			if (approveButton === undefined) throw new Error('Expected the approve button')
+			return approveButton.attributes?.disabled !== undefined
+		}
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await push('WaitingForUser')
+		assert.equal(isApprovalDisabled(), false)
+
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [await makeSimulatedPendingTransaction({ status: 'WaitingForUser' })] })
+		const reads = holdStoredPendingTransactionReads()
+		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
+		assert.equal(reads.count, 1)
+
+		await push('WaitingForSigner')
+		await act(async () => { await reads.release(0) })
+		assert.equal(dom.document.body.textContent?.includes('Waiting for'), true)
+		assert.equal(isApprovalDisabled(), true)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('of two overlapping chain-change reads only the later one is shown', async () => {
+		const dom = installDomMock()
+		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		const browser = installBrowserMock()
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction before the chain changes')] })
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await new Promise((resolve) => setTimeout(resolve, 25))
+		const reads = holdStoredPendingTransactionReads()
+
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction of the first read')] })
+		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction of the second read')] })
+		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
+		assert.equal(reads.count, 2)
+
+		await act(async () => { await reads.release(1) })
+		await act(async () => { await reads.release(0) })
+		assert.equal(dom.document.body.textContent?.includes('transaction of the second read'), true)
+		assert.equal(dom.document.body.textContent?.includes('transaction of the first read'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})

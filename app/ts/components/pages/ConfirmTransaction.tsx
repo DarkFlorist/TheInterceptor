@@ -803,6 +803,8 @@ export function ConfirmTransaction() {
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
+	// Counts pending data pushes and chain-change storage reads, so a storage read can tell that newer data arrived while it ran.
+	const latestPendingDataUpdate = useSignal(0)
 
 	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
@@ -824,10 +826,12 @@ export function ConfirmTransaction() {
 		}
 	}
 
-	// The background updates stored network refusals before it reports a chain change, and storage answers without waiting for the RPC of the new network.
+	// The background updates stored network refusals before it reports a chain change, and storage answers without waiting for the RPC of the new network. A push or a later read that arrives during the read is newer than its result, so the result is dropped: it could otherwise re-enable approval of a request that is already waiting for the signer.
 	const showStoredPendingTransactions = async () => {
+		latestPendingDataUpdate.value += 1
+		const thisRead = latestPendingDataUpdate.value
 		const pendingTransactions = await hydratePendingTransactionsFromStorage()
-		if (pendingTransactions.length > 0) applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+		if (thisRead === latestPendingDataUpdate.value && pendingTransactions.length > 0) applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 	}
 
 	const applyNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus, priority: number) => {
@@ -897,6 +901,7 @@ export function ConfirmTransaction() {
 				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
+				latestPendingDataUpdate.value += 1
 				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 			}
 			return false
