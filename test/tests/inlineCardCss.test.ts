@@ -31,6 +31,16 @@ describe('inline card action layout CSS', () => {
 		assert.match(inlineCardCss, /\n\t\.inline-card-warning-sign \{[^}]*cursor: help;/)
 	})
 
+	// The card renders its Tooltip and its shown hint beside the signs, so sibling selectors would tie the signs' spacing to where those render.
+	test('spaces the warning signs without depending on the elements around them', async () => {
+		const inlineCardCss = await readInlineCardCss()
+		const warningSignRule = inlineCardCss.match(/\n\t\.inline-card-warning-sign \{(.*?)\n\t\}/su)
+		assert.ok(warningSignRule)
+		assert.match(warningSignRule[1], /\n\t\tmargin-right: 0\.25em;/)
+		assert.match(warningSignRule[1], /&\[aria-hidden\] \{ margin-left: 0\.25em \}/)
+		assert.doesNotMatch(warningSignRule[1], /\+ \*|\* \+/)
+	})
+
 	test('reveals the action overlay for focused copy and edit buttons but not for a focused warning sign', async () => {
 		const inlineCardCss = await readInlineCardCss()
 		assert.doesNotMatch(inlineCardCss, /:focus-within > &/)

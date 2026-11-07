@@ -413,10 +413,10 @@ header:has(form[role='search']) h1 {
 	.inline-card-warning-sign {
 		color: var(--status-alert-text-color); /* bright yellow */
 		cursor: help;
+		margin-right: 0.25em;
 
-		/* The trailing sign is followed by the card's Tooltip popover, so it keeps the right margin it had when both signs were alerts */
-		&:has(+ *) { margin-right: 0.25em }
-		&:is(* + .inline-card-warning-sign) { margin-left: 0.25em }
+		/* The trailing sign is the aria-hidden one; matching it directly keeps these margins independent of what the card renders around its signs */
+		&[aria-hidden] { margin-left: 0.25em }
 	}
 }
 

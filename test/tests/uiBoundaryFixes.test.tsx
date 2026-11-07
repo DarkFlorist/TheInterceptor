@@ -9,7 +9,7 @@ import { render } from 'preact'
 import { act } from 'preact/test-utils'
 import { findChainEntryByName, findRpcEntryByIdentityKey, getRpcEntryLabel } from '../../app/ts/components/subcomponents/ChainSelector.js'
 import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu.js'
-import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
+import { InlineCard, WARNING_TOOLTIP_ATTRIBUTE } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { hasValidTimePickerValue, parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
@@ -348,8 +348,8 @@ describe('UI boundary fixes', () => {
 
 			const warningSigns = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('class') === 'inline-card-warning-sign')
 			assert.equal(warningSigns.length, 2)
-			// Each sign's own Hint shows data-warning-tooltip; carrying no data-tooltip keeps a page Hint from showing the explanation a second time.
-			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-warning-tooltip') === 'Token warning details'), true)
+			// The card's own hint shows the warning attribute; carrying no data-tooltip keeps a page Hint from showing the explanation a second time.
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.(WARNING_TOOLTIP_ATTRIBUTE) === 'Token warning details'), true)
 			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === null), true)
 			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === ''), true)
 			const [leadingSign, trailingSign] = warningSigns

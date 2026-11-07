@@ -5,6 +5,9 @@ import { useHintContainer } from './Hint.js'
 import { CopyIcon, EditIcon } from './icons.js'
 import { Tooltip, type TooltipConfig } from './Tooltip.js'
 
+// Carries a card's warning explanation on its signs, and is what the card's hint watches.
+export const WARNING_TOOLTIP_ATTRIBUTE = 'data-warning-tooltip'
+
 type InlineCardProps = {
 	icon: () => JSX.Element
 	label: string
@@ -23,7 +26,7 @@ type InlineCardProps = {
 export const InlineCard = (props: InlineCardProps) => {
 	const tooltip = useSignal<TooltipConfig | undefined>(undefined)
 	// The card hosts its own hint because this anti-phishing explanation must appear wherever the card renders, and pages such as the simulation stack have no Hint around it. The card element itself is the warning hint's container rather than a Hint wrapped around the card or around each sign: a wrapper only around warned cards would change the depth of .inline-card in selectors such as .safe-signer-option-address > .inline-card, and a Hint per sign would show the explanation twice while the leading sign has focus and the pointer is over the trailing sign. It watches data-warning-tooltip, which a page Hint ignores, and only while the card has a warning, so removing the warning also dismisses an open explanation and cards without one listen to nothing.
-	const warningHint = useHintContainer('data-warning-tooltip', undefined, props.warningMessage !== undefined)
+	const warningHint = useHintContainer(WARNING_TOOLTIP_ATTRIBUTE, undefined, props.warningMessage !== undefined)
 
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		event.stopPropagation()
@@ -86,7 +89,6 @@ export const InlineCard = (props: InlineCardProps) => {
 			</span>
 			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { true } /> : <></> }
 			<Tooltip config = { tooltip } />
-			{ /* Last, after the Tooltip, so a shown hint is never the sibling right before or after a warning sign that the warning sign margin rules match on */ }
 			{ warningHint.hint }
 		</span>
 	)
@@ -103,7 +105,7 @@ const WarningSign = ({ message, isTrailingSign }: WarningSignProps) => {
 	return <span
 		class = 'inline-card-warning-sign'
 		role = { isTrailingSign ? undefined : 'alert' }
-		data-warning-tooltip = { message }
+		{ ...{ [WARNING_TOOLTIP_ATTRIBUTE]: message } }
 		title = ''
 		aria-label = { isTrailingSign ? undefined : message }
 		aria-hidden = { isTrailingSign ? true : undefined }
