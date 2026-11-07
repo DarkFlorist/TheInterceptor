@@ -132,25 +132,30 @@ export const getCurrentSimulationInput = async () => {
 	return await readSimulationInput(await getAddressesbeingMadeRich(settings), settings)
 }
 
-// Recapture contract: the selection and rich addresses are fixed at capture. simulationStateInput is the only field built from the others, and only recaptureSimulationStack rebuilds it, from the stack stored at that moment. A snapshot says nothing about the current selection, so a refresh confirms with snapshotMatchesSelection that it still applies before acting on it.
+// What a refresh holds while it waits: the selection and rich addresses, fixed at capture. It has no input because the stack can change during any wait, so nothing can simulate a snapshot without calling buildSimulationInput first. It says nothing about the current selection either, so a refresh confirms with snapshotMatchesSelection that it still applies before acting on it.
 export type SimulationSnapshot = SimulationSelection & {
-	readonly simulationStateInput: SimulationStateInput
-	// The addresses rather than their count, because recapturing rebuilds the input's balance overrides from them.
+	// The addresses rather than their count, because building the input needs them for its balance overrides.
 	readonly richAddresses: readonly bigint[]
 }
 
-// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
+// The stack as read under a snapshot, and the only thing that can be simulated. Build it where it is used and never keep it across a wait; only the network is kept beside the input, because that decides whether it can be simulated at all.
+export type BuiltSimulationInput = Pick<SimulationSelection, 'activeRpcNetwork'> & {
+	readonly simulationStateInput: SimulationStateInput
+}
+
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
 	const settings = await getSettings()
 	const { simulationMode, activeSigningSafeAddress, activeRpcNetwork } = settings
-	const richAddresses = await getAddressesbeingMadeRich(settings)
-	return { simulationMode, activeSigningSafeAddress, activeRpcNetwork, simulationStateInput: await readSimulationInput(richAddresses, settings), richAddresses }
+	return { simulationMode, activeSigningSafeAddress, activeRpcNetwork, richAddresses: await getAddressesbeingMadeRich(settings) }
 }
 
-// Rebuilds the input from the stack stored now, under the snapshot's own selection and rich addresses.
-export async function recaptureSimulationStack(snapshot: SimulationSnapshot): Promise<SimulationSnapshot> {
-	return { ...snapshot, simulationStateInput: await readSimulationInput(snapshot.richAddresses, snapshot) }
+// Reads the stack stored now, under the snapshot's selection and rich addresses. An unreadable stack must abort before publishing any fallback.
+export async function buildSimulationInput(snapshot: SimulationSnapshot): Promise<BuiltSimulationInput> {
+	return { activeRpcNetwork: snapshot.activeRpcNetwork, simulationStateInput: await readSimulationInput(snapshot.richAddresses, snapshot) }
 }
+
+// For work that simulates straight away, with no wait for a snapshot to outlive.
+export const buildCurrentSimulationInput = async () => await buildSimulationInput(await captureSimulationSnapshot())
 
 // Metadata edits keep a selection: only the endpoint and the stack context decide what a snapshot simulates.
 export const snapshotMatchesSelection = (snapshot: SimulationSnapshot, selection: SimulationSelection) => (
@@ -158,15 +163,15 @@ export const snapshotMatchesSelection = (snapshot: SimulationSnapshot, selection
 	&& activeStackContextsEqual(getActiveStackContext(snapshot), getActiveStackContext(selection))
 )
 
-export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
+export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: Pick<SimulationSelection, 'activeRpcNetwork'>) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum
 )
 
-export async function getUpdatedSimulationState(ethereum: EthereumClientService, snapshot: SimulationSnapshot) {
-	const provider = getSimulationProviderForSnapshot(ethereum, snapshot)
+export async function getUpdatedSimulationState(ethereum: EthereumClientService, builtInput: BuiltSimulationInput) {
+	const provider = getSimulationProviderForSnapshot(ethereum, builtInput)
 	if (provider === undefined) return PASSTHROUGH_STATE
 	try {
-		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(snapshot.simulationStateInput, provider))
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(builtInput.simulationStateInput, provider))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		await reportUnexpectedError(error, { code: 'simulation_state_refresh_failed' })
@@ -177,10 +182,10 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const snapshot = await captureSimulationSnapshot()
+	const builtInput = await buildCurrentSimulationInput()
 	return {
-		simulationInput: toResolvedSimulationInput(snapshot.simulationStateInput),
-		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
+		simulationInput: toResolvedSimulationInput(builtInput.simulationStateInput),
+		simulationState: await getUpdatedSimulationState(ethereum, builtInput),
 	}
 }
 
@@ -392,7 +397,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
-		const simulationState = await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
+		const simulationState = await getUpdatedSimulationState(ethereumClientService, await buildCurrentSimulationInput())
 		if (simulationState.kind === 'passthrough') throw new Error('Failed to fetch simulation state for Gnosis Safe transaction.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
 		const resolvedSimulationState = simulationState.value

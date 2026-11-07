@@ -5,7 +5,7 @@ import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from 
 import { getPopupVisualisationState, setPopupVisualisationState } from '../../app/ts/background/storageVariables.js'
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { Future } from '../../app/ts/utils/future.js'
-import { captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
+import { buildSimulationInput, captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { queuePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
@@ -93,7 +93,7 @@ test('a refresh skipped as unchanged does not stop an earlier refresh from finis
 		simulationUpdatingState: 'updating',
 		simulationState: toResolvedSimulationState({
 			success: true,
-			simulationStateInput: currentSnapshot.simulationStateInput,
+			simulationStateInput: (await buildSimulationInput(currentSnapshot)).simulationStateInput,
 			simulatedBlocks: [],
 			blockNumber: await ethereum.getBlockNumber(undefined),
 			blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
@@ -444,4 +444,58 @@ test('a queue entry for a previously selected endpoint publishes nothing after a
 		fixture.releaseAll()
 		restoreSendMessage()
 	}
+})
+
+test('a queue entry publishes a stack edit made after it was queued, even when the stack it was queued with is unchanged', async () => {
+	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork })
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
+	// A finished visualisation of the stack the entry is queued with, so only an input built after the edit shows anything to do.
+	const queuedSnapshot = await captureSimulationSnapshot()
+	await setPopupVisualisationState({
+		...createPassthroughCompleteVisualizedSimulation(7, 'done', queuedSnapshot.richAddresses.length),
+		simulationState: toResolvedSimulationState({
+			success: true,
+			simulationStateInput: (await buildSimulationInput(queuedSnapshot)).simulationStateInput,
+			simulatedBlocks: [],
+			blockNumber: await ethereum.getBlockNumber(undefined),
+			blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			baseFeePerGas: 1n,
+			simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
+			rpcNetwork: fakeRpcNetwork,
+		}),
+		visualizedSimulationState: { success: true, visualizedBlocks: [] },
+	})
+
+	const entryProbesConsumer = new Future<void>()
+	const releaseEntry = new Future<void>()
+	let consumerProbes = 0
+	const originalSendMessage = browser.runtime.sendMessage
+	browser.runtime.sendMessage = async message => {
+		if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') {
+			// Only the entry finds a consumer open, so the accept below edits the stack without refreshing it.
+			const isEntry = consumerProbes++ === 0
+			if (isEntry) {
+				entryProbesConsumer.resolve(undefined)
+				await releaseEntry
+			}
+			return { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: isEntry } }
+		}
+		return await originalSendMessage(message)
+	}
+	try {
+		const queueEntry = queuePopupSimulationRefresh({ ethereum, tokenPriceService })
+		await entryProbesConsumer
+		await modules.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+		assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+		releaseEntry.resolve(undefined)
+		await queueEntry
+	} finally {
+		releaseEntry.resolve(undefined)
+		browser.runtime.sendMessage = originalSendMessage
+	}
+
+	const stored = await getPopupVisualisationState()
+	if (stored.simulationState.kind !== 'simulated') throw new Error('Expected a simulated visualisation')
+	assert.deepEqual(stored.simulationState.value.simulationStateInput.map((block) => block.transactions.length), [1])
 })

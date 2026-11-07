@@ -7,7 +7,7 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, recaptureSimulationStack, snapshotMatchesSelection, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { buildSimulationInput, captureSimulationSnapshot, getSimulationProviderForSnapshot, snapshotMatchesSelection, type BuiltSimulationInput, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -84,11 +84,12 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		}
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
-		// Only decides whether to skip: the stack can change while this check awaits, so it is never what gets executed.
 		const checkedSnapshot = snapshot ?? await captureSimulationSnapshot()
-		const provider = getSimulationProviderForSnapshot(ethereum, checkedSnapshot)
+		// Only decides whether to skip, because the stack can change while this check awaits. It is built even when nothing can skip, so an unreadable stack stops the refresh before it cancels or invalidates anything.
+		const checkedInput = await buildSimulationInput(checkedSnapshot)
+		const provider = getSimulationProviderForSnapshot(ethereum, checkedInput)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
-			const currentSimulationInput = await getCurrentSimulationStateInput(provider, checkedSnapshot)
+			const currentSimulationInput = await getCurrentSimulationStateInput(provider, checkedInput)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
 				popupVisualisation.simulationState.value.simulationStateInput,
@@ -107,7 +108,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const visualizedSimulatorState = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating', simulationResultState: 'invalid' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
-		// Execution reads the stack inside the semaphore; a supplied snapshot (the interactive queue) fixes only the selection and rich addresses. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself.
+		// Execution builds its input inside the semaphore; a supplied snapshot (the interactive queue) fixes only the selection and rich addresses. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself.
 		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, snapshot)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
@@ -154,10 +155,11 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const popupVisualisation = await getPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
 			// The stack can change while a refresh waits, including after a supplied snapshot was captured: stack edits refresh directly, and onlyIfNotAlreadyUpdating edits skip their refresh while this one runs.
-			const capturedSnapshot = snapshot === undefined ? await captureSimulationSnapshot() : await recaptureSimulationStack(snapshot)
-			// The selection can change after this refresh committed, including between the read above and this check.
+			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
+			const builtInput = await buildSimulationInput(capturedSnapshot)
+			// The selection can change after this refresh committed, including between the reads above and this check.
 			if (!await refreshMatchesCurrentSelection(ethereum, capturedSnapshot)) return
-			const simulationState = await getUpdatedSimulationState(ethereum, capturedSnapshot)
+			const simulationState = await getUpdatedSimulationState(ethereum, builtInput)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
 			const numberOfAddressesMadeRich = capturedSnapshot.richAddresses.length
 			if (simulationState.kind === 'passthrough') {
@@ -207,9 +209,9 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 	}
 }
 
-async function getCurrentSimulationStateInput(ethereum: EthereumClientService, snapshot: SimulationSnapshot) {
+async function getCurrentSimulationStateInput(ethereum: EthereumClientService, builtInput: BuiltSimulationInput) {
 	return {
-		simulationStateInput: snapshot.simulationStateInput,
+		simulationStateInput: builtInput.simulationStateInput,
 		rpcNetwork: ethereum.getRpcEntry(),
 		blockNumber: await ethereum.getBlockNumber(undefined),
 	}
