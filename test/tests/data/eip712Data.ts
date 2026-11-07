@@ -1853,11 +1853,11 @@ const permit2SignatureTransferTypes = (permittedType: string, witnessType?: { na
 	...(witnessType === undefined ? [] : [witnessType]),
 ]
 
-const usdcAddress = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+export const usdcAddress = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'
 const wethAddress = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 export const uniswapUniversalRouter = '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad'
-const maxUint256 = '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+export const maxUint256 = '115792089237316195423570985008687907853269984665640564039457584007913129639935'
 export const permit2Signer = '0x7a16ff8270133f063aab6c9977183d9e72835428'
 export const uniswapXExclusiveDutchOrderReactor = '0x6000da47483062a0d734ba3dc7576ce6a0b645c4'
 
@@ -2037,5 +2037,58 @@ export const permit2WitnessTransferFromWitnessNotLastMessage = JSON.stringify({
 		witness: { value: '1' },
 		nonce: '0',
 		deadline: '1700000000',
+	},
+})
+
+const eip2612DomainTypes = [
+	{ name: 'name', type: 'string' },
+	{ name: 'version', type: 'string' },
+	{ name: 'chainId', type: 'uint256' },
+	{ name: 'verifyingContract', type: 'address' },
+]
+
+// Shaped like the USDC permit that dapps send through viem or ethers, which encode the chain ID as a JSON number and the uint256 message fields as decimal strings.
+export const eip2612UsdcPermitMessage = JSON.stringify({
+	types: {
+		EIP712Domain: eip2612DomainTypes,
+		Permit: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'spender', type: 'address' },
+			{ name: 'value', type: 'uint256' },
+			{ name: 'nonce', type: 'uint256' },
+			{ name: 'deadline', type: 'uint256' },
+		],
+	},
+	primaryType: 'Permit',
+	domain: { name: 'USD Coin', version: '2', chainId: 1, verifyingContract: usdcAddress },
+	message: {
+		owner: permit2Signer,
+		spender: uniswapUniversalRouter,
+		value: '1000000000',
+		nonce: '3',
+		deadline: '1700000000',
+	},
+})
+
+// Dai's permit predates EIP-2612 and signs a different `Permit` struct, so it has to be shown as a generic EIP-712 message.
+export const daiPermitMessage = JSON.stringify({
+	types: {
+		EIP712Domain: eip2612DomainTypes,
+		Permit: [
+			{ name: 'holder', type: 'address' },
+			{ name: 'spender', type: 'address' },
+			{ name: 'nonce', type: 'uint256' },
+			{ name: 'expiry', type: 'uint256' },
+			{ name: 'allowed', type: 'bool' },
+		],
+	},
+	primaryType: 'Permit',
+	domain: { name: 'Dai Stablecoin', version: '1', chainId: 1, verifyingContract: '0x6b175474e89094c44da98b954eedeac495271d0f' },
+	message: {
+		holder: permit2Signer,
+		spender: uniswapUniversalRouter,
+		nonce: 0,
+		expiry: 1700000000,
+		allowed: true,
 	},
 })
