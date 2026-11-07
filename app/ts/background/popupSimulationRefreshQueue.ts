@@ -6,6 +6,7 @@ import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.j
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { publishUnavailableSimulationVisualisation, updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
+import { getReadServices } from './networkTransitionLock.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
@@ -83,12 +84,12 @@ export async function queuePopupSimulationRefresh(simulation: SimulationRead, { 
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.
 	const revision = block === undefined ? Symbol('uncached block') : stringifyJSONWithBigInts([
-		getPopupVisualisationFingerprint(snapshot.simulationStateInput, snapshot.services.ethereum.getRpcEntry(), block.number),
+		getPopupVisualisationFingerprint(snapshot.simulationStateInput, getReadServices(snapshot).ethereum.getRpcEntry(), block.number),
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,
 		// A refresh read before a later network change is discarded when it runs, so a refresh of the same network read after the change, even with the same client and input, must not join it.
 		snapshot.networkChangeGeneration,
 	])
-	return await refreshRevision({ ...snapshot.services, invalidateOldState, revision, snapshot })
+	return await refreshRevision({ ...getReadServices(snapshot), invalidateOldState, revision, snapshot })
 }

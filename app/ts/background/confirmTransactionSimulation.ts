@@ -14,6 +14,7 @@ import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, type SimulationSnapshot, visualizeSimulatorState } from './simulationUpdating.js'
 import { getTabState } from './storageVariables.js'
+import { getReadServices } from './networkTransitionLock.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
@@ -26,7 +27,7 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	const { ethereum, tokenPriceService } = simulation.services
+	const { ethereum, tokenPriceService } = getReadServices(simulation)
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,

@@ -7,7 +7,8 @@ import type { SimulationServices, SimulationServicesReader } from '../simulation
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import { buildSimulationStateInput, readSimulationInputSources, type NetworkRead, type SimulationRead, type SimulationReadIdentity, type SimulationSnapshotSources, type UnavailableSimulation } from './simulationUpdating.js'
+import type { NetworkRead, SimulationRead, SimulationReadIdentity, UnavailableSimulation } from './simulationUpdating.js'
+import { buildSimulationStateInput, readSimulationInputSources, type SimulationSnapshotSources } from './simulationInputBuilding.js'
 import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationStateInput } from '../types/visualizer-types.js'
@@ -58,13 +59,27 @@ async function retryUnfinishedNetworkChange() {
 	return unfinishedNetworkChangeFailure
 }
 
-// Only this module holds the value, so only its reads can build the two types below: a consumer that receives one cannot have paired its parts itself.
+// Only this module holds the value, so only its reads have the types below. A copy of a read can still keep the marker, which is why its services are not a field.
 const readUnderNetworkLock: unique symbol = Symbol('read under the network transition lock')
 
-// One read's stack, with the services it simulates on. Consumers take this value instead of a client next to a snapshot, so they cannot simulate a stack on another network's client. Built only here, which stamps the committed network change generation and derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources. The input is built under the lock, not where it is used: a later read outside the lock could pair this network with another network's stack, and one under the lock cannot run inside the visualisation semaphore, which a transition takes while holding the lock.
+// The services of each read, kept here rather than on the read: a copy of a read is another object, so it has none, and no code can give a read other services.
+const servicesOfReads = new WeakMap<NetworkRead | SimulationSnapshot, SimulationServices>()
+
+// The services a read was built with. A copied or hand-built read throws, because nothing says which network its parts describe.
+export const getReadServices = (read: NetworkRead | SimulationSnapshot) => {
+	const services = servicesOfReads.get(read)
+	if (services === undefined) throw new Error('Only a read made under the network transition lock has services')
+	return services
+}
+
+const withServices = <Read extends NetworkRead | SimulationSnapshot>(read: Read, services: SimulationServices) => {
+	servicesOfReads.set(read, services)
+	return read
+}
+
+// One read's stack, which simulates on the services getReadServices returns for it. Consumers take this value instead of a client next to a snapshot, so they cannot simulate a stack on another network's client. Built only here, which stamps the committed network change generation and derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources. The input is built under the lock, not where it is used: a later read outside the lock could pair this network with another network's stack, and one under the lock cannot run inside the visualisation semaphore, which a transition takes while holding the lock.
 export type SimulationSnapshot = SimulationReadIdentity & {
 	readonly kind: 'loaded'
-	readonly services: SimulationServices
 	readonly simulationStateInput: SimulationStateInput
 	readonly numberOfAddressesMadeRich: number
 	// The active address among the rich addresses; 1.0.x simulation stack replies list its funding as a transaction.
@@ -77,16 +92,15 @@ export type SimulationSnapshot = SimulationReadIdentity & {
 // Settings, services and the simulation read with them, all describing one network. Handlers take this one value, so they cannot pair services with another read's settings.
 export type NetworkSnapshot = NetworkRead & { readonly readUnderNetworkLock: typeof readUnderNetworkLock }
 
-const buildSimulationSnapshot = (settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack, simulationStateInput: SimulationStateInput, services: SimulationServices): SimulationSnapshot => ({
+const buildSimulationSnapshot = (settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack, simulationStateInput: SimulationStateInput, services: SimulationServices): SimulationSnapshot => withServices({
 	...getSimulationReadIdentity(settings),
 	kind: 'loaded',
-	services,
 	simulationStateInput,
 	numberOfAddressesMadeRich: sources.richAddresses.length,
 	activeAddressMadeRich: sources.activeAddressMadeRich,
 	interceptorTransactionStack,
 	readUnderNetworkLock,
-})
+}, services)
 
 // Only lock holders read this, so no network change commits between reading the settings and stamping the generation.
 const getSimulationReadIdentity = (settings: Settings): SimulationReadIdentity => ({
@@ -124,11 +138,11 @@ async function captureNetworkSnapshot(getServices: () => SimulationServices): Pr
 	const settings = await getSettings()
 	const pairSimulationWith = await readSimulation(settings)
 	const services = getServices()
-	return { settings, simulation: pairSimulationWith(services), services, readUnderNetworkLock }
+	return withServices({ settings, simulation: pairSimulationWith(services), readUnderNetworkLock }, services)
 }
 
 const buildNetworkSnapshot = (settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack, services: SimulationServices): NetworkSnapshot => (
-	{ settings, simulation: buildSimulationSnapshot(settings, sources, interceptorTransactionStack, buildSimulationStateInput(settings, sources, interceptorTransactionStack), services), services, readUnderNetworkLock }
+	withServices({ settings, simulation: buildSimulationSnapshot(settings, sources, interceptorTransactionStack, buildSimulationStateInput(settings, sources, interceptorTransactionStack), services), readUnderNetworkLock }, services)
 )
 
 // The snapshot builders, handed only to tasks that hold the lock: they read storage without taking it, so outside the lock they could pair one network's settings or stack with a later network's generation.

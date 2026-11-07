@@ -12,6 +12,7 @@ import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/se
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
 import { readNetworkSnapshotForPendingRequest } from './networkTransitionLock.js'
+import { getReadServices } from './networkTransitionLock.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
@@ -21,7 +22,7 @@ const popupMessageHandlers = {
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupSnapshotMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
+		const { ethereum, tokenPriceService } = getReadServices(context.network)
 		return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, request)
 	}),
 	popup_refreshSimulation: popupSnapshotMessageHandler('popup_refreshSimulation', async (context) => {
@@ -50,15 +51,15 @@ const popupMessageHandlers = {
 	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)),
 	popup_forceSetGasLimitForTransaction: popupMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => await forceSetGasLimitForTransaction(context.simulationServicesOwner, request)),
 	popup_changePreSimulationBlockTimeManipulation: popupSnapshotMessageHandler('popup_changePreSimulationBlockTimeManipulation', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
+		const { ethereum, tokenPriceService } = getReadServices(context.network)
 		return await changePreSimulationBlockTimeManipulation(ethereum, tokenPriceService, request)
 	}),
 	popup_setTransactionOrMessageBlockTimeManipulator: popupSnapshotMessageHandler('popup_setTransactionOrMessageBlockTimeManipulator', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
+		const { ethereum, tokenPriceService } = getReadServices(context.network)
 		return await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, request)
 	}),
 	popup_requestMakeMeRichData: popupSnapshotMessageHandler('popup_requestMakeMeRichData', async (context) => {
-		const { ethereum } = context.network.services
+		const { ethereum } = getReadServices(context.network)
 		return await requestMakeMeRichList(ethereum, context.simulationAbortController)
 	}),
 	popup_requestActiveAddresses: popupMessageHandler('popup_requestActiveAddresses', async () => await requestActiveAddresses()),
@@ -74,19 +75,19 @@ const popupMessageHandlers = {
 		return await requestInterceptorSimulationInput(context.network)
 	}),
 	popup_importSimulationStack: popupSnapshotMessageHandler('popup_importSimulationStack', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
+		const { ethereum, tokenPriceService } = getReadServices(context.network)
 		return await importSimulationStack(ethereum, tokenPriceService, request)
 	}),
 	popup_requestSafeStackExport: popupSnapshotMessageHandler('popup_requestSafeStackExport', async (context) => {
-		const { ethereum } = context.network.services
+		const { ethereum } = getReadServices(context.network)
 		return await requestSafeStackExport(ethereum)
 	}),
 	popup_importSafeStack: popupSnapshotMessageHandler('popup_importSafeStack', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
+		const { ethereum, tokenPriceService } = getReadServices(context.network)
 		return await importSafeStack(ethereum, tokenPriceService, request)
 	}),
 	popup_requestCompleteVisualizedSimulation: popupSnapshotMessageHandler('popup_requestCompleteVisualizedSimulation', async (context) => {
-		const { ethereum, tokenPriceService } = context.network.services
+		const { ethereum, tokenPriceService } = getReadServices(context.network)
 		return await requestCompleteVisualizedSimulation(ethereum, tokenPriceService)
 	}),
 	popup_requestSimulationMetadata: popupSnapshotMessageHandler('popup_requestSimulationMetadata', async (context) => {

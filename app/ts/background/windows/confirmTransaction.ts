@@ -50,6 +50,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
+import { getReadServices } from '../networkTransitionLock.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -123,7 +124,7 @@ async function refreshDirectSafeExecutionSimulation(
 }
 
 export async function refreshPendingSafeSignerSelectionErrors(network: NetworkSnapshot, tabId: number) {
-	const { ethereum } = network.services
+	const { ethereum } = getReadServices(network)
 	const tabState = await getTabState(tabId)
 	const refreshedSelection = {
 		selectedSigner: getWalletSelectedAccount(tabState),
@@ -226,7 +227,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 
 export async function updateConfirmTransactionView(network: NetworkRead) {
 	try {
-		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(network.services.ethereum.getBlockNumber(undefined))
+		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(getReadServices(network).ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
@@ -299,7 +300,7 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesReader, network: NetworkRead, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
-	const { ethereum } = network.services
+	const { ethereum } = getReadServices(network)
 	// After this confirmation appends to the stack, later view updates use the snapshot read with that append.
 	let current = network
 	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current)
@@ -357,7 +358,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
 		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
 		// Reads current when it runs: after an append, these are the services and snapshot read with that append.
-		await runConfirmationViewStep(async () => await showSimulationStackChange(current.services, simulationStack))
+		await runConfirmationViewStep(async () => await showSimulationStackChange(getReadServices(current), simulationStack))
 		await runConfirmationViewStep(async () => {
 			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
 		})
@@ -480,7 +481,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 				pendingTransactionOrMessage.simulationChainId,
 			)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
-			current = appended
+			current = appended.network
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
 		}
 		case 'Transaction': {
@@ -489,7 +490,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 			const appended = await appendToActiveSimulationStack(simulationServicesOwner, { type: 'Transaction', preSimulationTransaction: transaction }, pendingTransactionOrMessage.simulationChainId)
 			if (appended === undefined) return await keepPendingAfterNetworkChange()
 			if (appended.stackedOperation.type !== 'Transaction') throw new Error('The stacked operation of this transaction is not a transaction.')
-			current = appended
+			current = appended.network
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(appended.stackedOperation.preSimulationTransaction.signedTransaction.hash) }, 'changed')
 		}
@@ -616,7 +617,7 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 }
 
 export const formEthSendTransaction = async(simulation: SimulationSnapshot, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
-	const { ethereum: ethereumClientService } = simulation.services
+	const { ethereum: ethereumClientService } = getReadServices(simulation)
 	const paidByExecutor = gasPayment !== 'transaction-sender'
 	const simulationState = simulationMode || paidByExecutor
 		? await getUpdatedSimulationState(simulation)
@@ -725,7 +726,7 @@ export async function openConfirmTransactionDialogForMessage(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const { ethereum: ethereumClientService } = network.services
+	const { ethereum: ethereumClientService } = getReadServices(network)
 	const transactionParams = confirmation.parameters
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
@@ -835,7 +836,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const { ethereum: ethereumClientService } = requestNetwork.services
+	const { ethereum: ethereumClientService } = getReadServices(requestNetwork)
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
@@ -853,7 +854,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
 	}
 	// Only when reconciliation removed executed Gnosis Safe operations from storage is the request's stack out of date; it is then re-read and simulated as it is now, provided no network change committed since the request was admitted. Otherwise the request stays on the network it was admitted on, even if a switch committed during preparation.
-	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkSnapshotForServices(requestNetwork.services) : requestNetwork
+	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkSnapshotForServices(getReadServices(requestNetwork)) : requestNetwork
 	if (!continuesStackContext(requestNetwork, network)) {
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The active network changed while the Interceptor prepared this request. Send it again.')
 	}

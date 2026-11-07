@@ -6,6 +6,7 @@ import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import { alwaysWrite } from '../../app/ts/utils/largeStateStore.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { getReadServices } from '../../app/ts/background/networkTransitionLock.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -244,7 +245,7 @@ describe('active settings concurrency', () => {
 		assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), true)
 		assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 		providerInstallationFails = false
-		assert.deepEqual((await readNetworkSnapshot(owner)).services.ethereum.getRpcEntry(), rpcNetwork)
+		assert.deepEqual(getReadServices(await readNetworkSnapshot(owner)).ethereum.getRpcEntry(), rpcNetwork)
 	})
 
 	test('settles an address change that prompts for access alongside an approval that selects another address', async () => {

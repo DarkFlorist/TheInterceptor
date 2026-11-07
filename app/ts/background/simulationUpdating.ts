@@ -4,24 +4,22 @@ import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkCha
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type InterceptorTransactionStack, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
-import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
+import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getWethForChainId } from './settings.js'
+import { getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -36,110 +34,9 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
+import { getActiveStackContext } from '../utils/activeStackContext.js'
 export type { NetworkSnapshot, SimulationSnapshot } from './networkTransitionLock.js'
-import type { NetworkSnapshot, SimulationSnapshot } from './networkTransitionLock.js'
-
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
-	if (addressesToMakeRich.length === 0) return {}
-	return Object.fromEntries(
-		addressesToMakeRich.map(currentAddress => {
-			const addressKey = addressString(currentAddress)
-			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
-		})
-	)
-}
-
-const getRichAddresses = async (settings: Settings, activeAddressMadeRich: bigint | undefined) => {
-	if (!settings.simulationMode) return []
-	const makeRichAddressList = await getFixedAddressRichList()
-	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...activeAddressMadeRich === undefined ? [] : [activeAddressMadeRich]]
-}
-
-// Storage state besides the settings and the stack that simulation input is built from.
-type SimulationInputSources = {
-	readonly richAddresses: readonly bigint[]
-	readonly preSimulationBlockTimeManipulation: BlockTimeManipulation
-}
-
-// A snapshot also records which of the rich addresses is the active one.
-export type SimulationSnapshotSources = SimulationInputSources & { readonly activeAddressMadeRich: bigint | undefined }
-
-export async function readSimulationInputSources(settings: Settings): Promise<SimulationSnapshotSources> {
-	const [activeAddressMadeRich, preSimulationBlockTimeManipulation] = await Promise.all([getAddressToMakeRich(settings), getPreSimulationBlockTimeManipulation()])
-	return { richAddresses: await getRichAddresses(settings, activeAddressMadeRich), activeAddressMadeRich, preSimulationBlockTimeManipulation }
-}
-
-// Builds the input without reading storage, so callers decide when every source was read.
-export function buildSimulationStateInput(settings: Settings, sources: SimulationInputSources, stack: InterceptorTransactionStack): SimulationStateInput {
-	const inputBlocks: SimulationStateInputBlock[] = []
-	let currentBlockTransactions: PreSimulationTransaction[] = []
-	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(sources.richAddresses)
-	let previousBlockTimeManipulation = settings.simulationMode ? sources.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-	let currentBlockSimulateWithZeroBaseFee = false
-
-	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
-		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
-			transactions: currentBlockTransactions,
-			signedMessages: currentBlockSignedMessages,
-			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
-		})
-		previousBlockTimeManipulation = blockTimeManipulation
-		currentBlockSignedMessages = []
-		currentBlockStateOverrides = {}
-		currentBlockTransactions = []
-		currentBlockSimulateWithZeroBaseFee = false
-	}
-
-	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
-	for (const operation of operations) {
-		switch(operation.type) {
-			case 'Transaction': {
-				const simulationOptions = operation.preSimulationTransaction.simulationOptions
-				if (
-					simulationOptions?.requiredChainId !== undefined
-					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
-				) break
-				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
-				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSimulateWithZeroBaseFee = simulateWithZeroBaseFee
-				currentBlockTransactions.push(operation.preSimulationTransaction)
-				break
-			}
-			case 'Message': {
-				if (currentBlockTransactions.length > 0) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSignedMessages.push(operation.signedMessageTransaction)
-				break
-			}
-			case 'TimeManipulation': {
-				pushBlock(operation.blockTimeManipulation)
-				break
-			}
-			default: assertNever(operation)
-		}
-	}
-	if (
-		currentBlockTransactions.length > 0
-		|| currentBlockSignedMessages.length > 0
-		|| Object.keys(currentBlockStateOverrides).length > 0
-	) {
-		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
-			transactions: currentBlockTransactions,
-			signedMessages: currentBlockSignedMessages,
-			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
-		})
-	}
-	return inputBlocks
-}
+import { getReadServices, type NetworkSnapshot, type SimulationSnapshot } from './networkTransitionLock.js'
 
 // What every simulation read knows, also without a stack: these come from the settings and the lock, not from the stack.
 export type SimulationReadIdentity = {
@@ -169,15 +66,14 @@ export const requireSimulationSnapshot = (simulation: SimulationRead) => {
 	return simulation
 }
 
-// One read's settings, services and simulation. Only NetworkSnapshot, which the lock module alone builds, promises that the services serve those settings; this looser type is what work on an already pending request takes, because its dialog and reply must work while a network change cannot install its services.
+// One read's settings and simulation; getReadServices returns its services. Only NetworkSnapshot, which the lock module alone builds, promises that those services serve the settings; this looser type is what work on an already pending request takes, because its dialog and reply must work while a network change cannot install its services.
 export type NetworkRead = {
 	readonly settings: Settings
 	readonly simulation: SimulationRead
-	readonly services: SimulationServices
 }
 
 // The client that simulates the snapshot; a signer-only network is not simulated, so it has none.
-export const getSimulationProviderForSnapshot = (snapshot: SimulationSnapshot) => isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : snapshot.services.ethereum
+export const getSimulationProviderForSnapshot = (snapshot: SimulationSnapshot) => isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : getReadServices(snapshot).ethereum
 
 // Passthrough here means only that this network is not simulated or that the simulation could not be fetched. Services of another network cannot reach this function: their read has no snapshot.
 export async function getUpdatedSimulationState(snapshot: SimulationSnapshot) {
@@ -297,7 +193,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 }
 
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, network: NetworkSnapshot): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
-	const { ethereum, tokenPriceService } = network.services
+	const { ethereum, tokenPriceService } = getReadServices(network)
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
@@ -382,7 +278,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 }
 
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, network: NetworkSnapshot): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
-	const { ethereum: ethereumClientService, tokenPriceService } = network.services
+	const { ethereum: ethereumClientService, tokenPriceService } = getReadServices(network)
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// One snapshot provides both the stack state and the input the meta-transaction is appended to.
@@ -454,7 +350,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 
 // Adds metadata to the stored visualisation with the client of the refresh's snapshot. Returning undefined from the storage callback writes nothing, so a refresh whose network was replaced, or whose client does not serve the stored visualisation, leaves storage as it is; the storage update checks the generation again immediately before it starts the write. The checks are synchronous and need no transition lock.
 export const updateSimulationMetadata = async (snapshot: SimulationSnapshot, requestAbortController: AbortController | undefined) => {
-	const { ethereum } = snapshot.services
+	const { ethereum } = getReadServices(snapshot)
 	const networkIsActive = () => snapshotNetworkIsActive(snapshot)
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (!networkIsActive()) return undefined

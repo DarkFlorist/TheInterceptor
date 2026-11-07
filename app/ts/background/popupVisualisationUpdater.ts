@@ -17,6 +17,7 @@ import { getPopupVisualisationState, setPopupVisualisationState } from './storag
 import { alwaysWrite } from '../utils/largeStateStore.js'
 import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import { readNetworkSnapshotForServices } from './networkTransitionLock.js'
+import { getReadServices } from './networkTransitionLock.js'
 
 let abortController = new AbortController()
 
@@ -201,7 +202,7 @@ const CONFIRMATION_VISUALISATION_ID = 0
 
 // Serialized with the shared refreshes, but neither cancellable by them nor stored. Returns undefined when the visualisation could not be fetched; unexpected errors propagate.
 export async function computeSnapshotVisualisation(snapshot: SimulationSnapshot) {
-	const { ethereum, tokenPriceService } = snapshot.services
+	const { ethereum, tokenPriceService } = getReadServices(snapshot)
 	return await updateSimulationVisualisationSemaphore.execute(async () => {
 		const simulationState = await getUpdatedSimulationState(snapshot)
 		try {
@@ -222,7 +223,7 @@ async function refreshStoredVisualisation(readSnapshot: ReadRefreshSnapshot, abo
 	try {
 		const capturedSnapshot = await readSnapshot()
 		if (capturedSnapshot === undefined) return undefined
-		const { ethereum, tokenPriceService } = capturedSnapshot.services
+		const { ethereum, tokenPriceService } = getReadServices(capturedSnapshot)
 		return await updateSimulationVisualisationSemaphore.execute(async () => {
 			if (abortController?.signal.aborted) return undefined
 			// A replaced network cannot have its stack simulated; the refresh that follows the change publishes that network's result.

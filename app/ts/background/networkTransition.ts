@@ -13,8 +13,9 @@ import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from 
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
-import { type NetworkSnapshot, readSimulationInputSources, type SimulationRead } from './simulationUpdating.js'
-import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask } from './networkTransitionLock.js'
+import type { SimulationRead } from './simulationUpdating.js'
+import { readSimulationInputSources } from './simulationInputBuilding.js'
+import { completeUnfinishedNetworkChange, type LockedNetworkReads, type NetworkSnapshot, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
@@ -91,7 +92,7 @@ const isSameStackOperation = (stacked: InterceptorStackOperation, operation: Int
 }
 
 // A confirmed simulation operation joins the stack only while the chain it was simulated on is still active in simulation mode. Returns the stacked operation with the settings, stack snapshot and services read under the same lock, or undefined if that network went away.
-export async function appendToActiveSimulationStack(simulationServicesOwner: SimulationServicesReader, operation: InterceptorStackOperation, simulatedChainId: bigint | undefined): Promise<(NetworkSnapshot & { readonly stackedOperation: InterceptorStackOperation }) | undefined> {
+export async function appendToActiveSimulationStack(simulationServicesOwner: SimulationServicesReader, operation: InterceptorStackOperation, simulatedChainId: bigint | undefined): Promise<({ readonly network: NetworkSnapshot, readonly stackedOperation: InterceptorStackOperation }) | undefined> {
 	return await runNetworkTransition(async (reads) => {
 		const settings = await getSettings()
 		if (!settings.simulationMode) return undefined
@@ -104,7 +105,7 @@ export async function appendToActiveSimulationStack(simulationServicesOwner: Sim
 			: { operations: [...previousStack.operations, operation] })
 		// The confirmation reports the stacked operation, which an earlier attempt may have prepared differently.
 		const stackedOperation = interceptorTransactionStack.operations.find((stacked) => isSameStackOperation(stacked, operation)) ?? operation
-		return { ...reads.buildNetworkSnapshot(settings, sources, interceptorTransactionStack, simulationServicesOwner.getCurrent()), stackedOperation }
+		return { network: reads.buildNetworkSnapshot(settings, sources, interceptorTransactionStack, simulationServicesOwner.getCurrent()), stackedOperation }
 	})
 }
 

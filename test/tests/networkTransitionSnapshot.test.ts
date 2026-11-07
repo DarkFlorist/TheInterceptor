@@ -18,6 +18,7 @@ import { confirmedSignerOwnership, createDeferredSignal, createPort, installBrow
 import { Transaction } from 'micro-eth-signer'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
+import { getReadServices } from '../../app/ts/background/networkTransitionLock.js'
 
 const networkA = {
 	name: 'Network A',
@@ -467,7 +468,7 @@ async function assertCommittedNetworkBEffects(
 ) {
 	const snapshot = await modules.readNetworkSnapshot(owner)
 	assert.deepEqual(snapshot.settings.activeRpcNetwork, networkB)
-	assert.deepEqual(snapshot.services.ethereum.getRpcEntry(), networkB)
+	assert.deepEqual(getReadServices(snapshot).ethereum.getRpcEntry(), networkB)
 	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, expectedStackLength)
 	assert.deepEqual(getChainChangedResults(), ['0xa'])
 	return snapshot
@@ -1316,7 +1317,9 @@ describe('network transition snapshot', () => {
 			assert.deepEqual(getChainChangedResults(), [])
 			// While the repair keeps failing, the uncleared stack of A is not admitted as B's: the read still serves B's settings and services, and its simulation names the unfinished network change rather than reporting the bare write failure as its own.
 			if (failures === 3) {
-				const { settings, simulation, services } = await modules.readNetworkSnapshot(owner)
+				const network = await modules.readNetworkSnapshot(owner)
+				const { settings, simulation } = network
+				const services = getReadServices(network)
 				assert.equal(settings.activeRpcNetwork.chainId, networkB.chainId)
 				assert.equal(services.ethereum.getRpcEntry().chainId, networkB.chainId)
 				assert.equal(simulation.kind, 'unavailable')
@@ -1920,7 +1923,9 @@ describe('network transition snapshot', () => {
 		const switchToNetwork = async (rpcNetwork: RpcNetwork) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: rpcNetwork.httpsRpc !== undefined, rpcNetwork, promptForAccessesIfNeeded: false })
 		try {
 			const generationBefore = getCommittedNetworkChangeGeneration()
-			const { services, simulation } = await modules.readNetworkSnapshot(owner)
+			const network = await modules.readNetworkSnapshot(owner)
+			const { simulation } = network
+			const services = getReadServices(network)
 			const obsoleteRefresh = queuePopupSimulationRefresh(simulation)
 			await firstProbeSent.promise
 			await switchToNetwork(signerOnlyB)
@@ -1954,7 +1959,9 @@ describe('network transition snapshot', () => {
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		try {
 			// With an empty stack only the made-rich address is simulated, so the stored input matches the snapshot's and the fingerprints agree.
-			const { services, simulation } = await modules.readNetworkSnapshot(owner)
+			const network = await modules.readNetworkSnapshot(owner)
+			const { simulation } = network
+			const services = getReadServices(network)
 			await updatePopupVisualisationForSnapshot(simulation, { invalidateOldState: true })
 			const completed = await modules.getPopupVisualisationState()
 			assert.equal(completed.simulationState.kind, 'simulated')
@@ -1986,14 +1993,14 @@ describe('network transition snapshot', () => {
 		const { websiteTabConnections } = createApprovedConnection(modules.websiteSocketToString)
 		try {
 			const before = await modules.readNetworkSnapshot(owner)
-			const client = before.services.ethereum
+			const client = getReadServices(before).ethereum
 			const editedNetwork = { ...networkA, primary: true, currencyName: 'Edited ether', currencyTicker: 'EDIT' }
 
 			if (saved !== 'only the list') await modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: editedNetwork, promptForAccessesIfNeeded: false })
 			await setNewRpcList(owner, websiteTabConnections, { method: 'popup_set_rpc_list', data: [{ ...editedNetwork, primary: true }] })
 
 			const after = await modules.readNetworkSnapshot(owner)
-			assert.equal(after.services.ethereum, client)
+			assert.equal(getReadServices(after).ethereum, client)
 			assert.equal(client.getRpcEntry().currencyName, 'Edited ether')
 			assert.equal(client.getRpcEntry().currencyTicker, 'EDIT')
 			assert.equal(after.settings.activeRpcNetwork.currencyTicker, 'EDIT')
@@ -2008,6 +2015,33 @@ describe('network transition snapshot', () => {
 			assert.equal(simulated.value.rpcNetwork.currencyTicker, 'EDIT')
 		} finally {
 			retireAll()
+		}
+	})
+
+	test('a copy of a read has no services, so it cannot simulate on other services', async () => {
+		const { modules } = await createApprovedSimulationDapp()
+		const { getUpdatedSimulationState, requireSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { updatePopupVisualisationForSnapshot } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const otherServices = createNetworkServices(networkA)
+		try {
+			const network = await modules.readNetworkSnapshot(owner)
+			const snapshot = requireSimulationSnapshot(network.simulation)
+			const copiedSnapshot = { ...snapshot, services: otherServices }
+
+			await assert.rejects(getUpdatedSimulationState(copiedSnapshot), /Only a read made under the network transition lock has services/u)
+			assert.throws(() => getReadServices({ ...network, services: otherServices }), /Only a read made under the network transition lock has services/u)
+			assert.equal((await updatePopupVisualisationForSnapshot(copiedSnapshot)).simulationResultState, 'invalid')
+			assert.deepEqual(otherServices.requests, [])
+			assert.deepEqual(getSimulateV1Requests(getInstalled()), [])
+
+			assert.equal(getReadServices(network).ethereum, getInstalled().ethereum)
+			assert.equal(getReadServices(snapshot).ethereum, getInstalled().ethereum)
+			assert.equal((await getUpdatedSimulationState(snapshot)).kind, 'simulated')
+		} finally {
+			retireAll()
+			otherServices.ethereum.cleanup()
 		}
 	})
 
@@ -2067,7 +2101,7 @@ describe('network transition snapshot', () => {
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		const observedPairs: { readonly settingsChainId: bigint, readonly servicesChainId: bigint }[] = []
 		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async (context) => {
-			observedPairs.push({ settingsChainId: context.network.settings.activeRpcNetwork.chainId, servicesChainId: context.network.services.ethereum.getChainId() })
+			observedPairs.push({ settingsChainId: context.network.settings.activeRpcNetwork.chainId, servicesChainId: getReadServices(context.network).ethereum.getChainId() })
 		})
 		const context: PopupMessageDispatcherContext = {
 			websiteTabConnections: new Map(),
@@ -2226,7 +2260,7 @@ describe('network transition snapshot', () => {
 
 			assert.equal((await modules.importSettings(owner, websiteTabConnections, importRequest)).data.success, true)
 			const afterRetry = await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
-			assert.equal(afterRetry.services, afterFailure.services)
+			assert.equal(getReadServices(afterRetry), getReadServices(afterFailure))
 			assert.equal(installed.length, 2)
 		} finally {
 			retireAll()
@@ -2312,7 +2346,7 @@ describe('network transition snapshot', () => {
 
 			await switchSignerToNetworkB()
 			const afterRetry = await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
-			assert.equal(afterRetry.services, afterFailure.services)
+			assert.equal(getReadServices(afterRetry), getReadServices(afterFailure))
 			assert.equal(installed.length, 2)
 		} finally {
 			retireAll()
@@ -2336,7 +2370,7 @@ describe('network transition snapshot', () => {
 
 			await switchToNetworkB()
 			const afterRetry = await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
-			assert.equal(afterRetry.services, afterFailure.services)
+			assert.equal(getReadServices(afterRetry), getReadServices(afterFailure))
 			assert.equal(installed.length, 2)
 		} finally {
 			retireAll()

@@ -26,7 +26,7 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, requireSimulationSnapshot } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { type NetworkSnapshot, readNetworkSnapshot } from './networkTransitionLock.js'
+import { getReadServices, type NetworkSnapshot, readNetworkSnapshot } from './networkTransitionLock.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -85,7 +85,8 @@ type LiveNetworkRpcFlows = ReturnType<typeof createLiveNetworkRpcFlows>
 
 async function handleRPCRequest(admitted: AdmittedRpcRequest, liveNetworkFlows: LiveNetworkRpcFlows): Promise<RPCReply> {
 	const { network, context, websiteTabConnections, socket, website, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, activeSafeSigner } = admitted
-	const { settings, simulation, services: { ethereum } } = network
+	const { settings, simulation } = network
+	const { ethereum } = getReadServices(network)
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
@@ -522,13 +523,13 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const network = await readNetworkSnapshot(simulationServicesOwner)
-		const { settings, services } = network
+		const { settings } = network
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 		let rpcContext: RpcRequestContext = { request }
 		if (request.method === 'safe_apps_request') {
-			const admission = await prepareSafeAppsRequest(services.ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+			const admission = await prepareSafeAppsRequest(getReadServices(network).ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 			if (admission.kind === 'reply') return replyToInterceptedRequest(websiteTabConnections, admission.reply)
 			rpcContext = admission.context
 		}
