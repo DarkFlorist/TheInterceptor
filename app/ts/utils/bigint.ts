@@ -84,12 +84,15 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	return result
 }
 
+// The one JSON encoding of bigints and bytes, for use inside a JSON.stringify replacer. Reviewed-result ids hash this encoding, so changing it changes every id.
+export const encodeBigIntOrBytesForJson = (value: unknown): unknown => {
+	if (typeof value === 'bigint') return `0x${ value.toString(16) }`
+	if (value instanceof Uint8Array) return dataStringWith0xStart(value)
+	return value
+}
+
 export function stringifyJSONWithBigInts(value: unknown, space?: string | number): string {
-	return JSON.stringify(value, (_key, value) => {
-		if (typeof value === 'bigint') return `0x${ value.toString(16) }`
-		if (value instanceof Uint8Array) return '0x' + Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('')
-		return value
-	}, space)
+	return JSON.stringify(value, (_key, nested: unknown) => encodeBigIntOrBytesForJson(nested), space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {

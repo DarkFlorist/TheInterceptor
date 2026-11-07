@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createAcceptConfirmation, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -25,15 +25,12 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 	for (const connectionCase of connectionCases) {
 		browserMock.sentMessages.length = 0
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
-			...pendingTransaction,
+			...withSimulatedTransactionResult(pendingTransaction),
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		})
+		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, await createAcceptConfirmation())
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 
@@ -748,13 +745,11 @@ async function assertConfirmationViewFailureWasReported() {
 }
 
 test('approving a simulated transaction answers the website before the window cleanup, whose failure is reported', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult(pendingTransaction)] })
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}))
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
@@ -806,10 +801,7 @@ test('approving a simulated message signature answers the website before the win
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
 	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}))
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
@@ -829,6 +821,7 @@ test('approving a simulated message signature answers the website before the win
 })
 
 test('a request the website sends while the previous window is still being cleaned up opens its own window and the previous window is closed', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult(pendingTransaction)] })
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const previousWindow = pendingTransaction.popupOrTabId
 	// The mock browser opens every new window with id 99.
@@ -847,10 +840,7 @@ test('a request the website sends while the previous window is still being clean
 		nextRequestOutcome = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)
 	})
 
-	const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	})
+	const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation())
 
 	assert.equal(delivered, true)
 	assert.deepEqual(nextRequestOutcome, { type: 'doNotReply' })
