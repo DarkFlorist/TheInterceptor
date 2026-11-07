@@ -3,7 +3,6 @@ import { beforeEach, describe, test } from 'bun:test'
 
 const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
-let storageReadError: Error | undefined
 
 Object.defineProperty(globalThis, 'browser', {
 	configurable: true,
@@ -12,7 +11,6 @@ Object.defineProperty(globalThis, 'browser', {
 		storage: {
 			local: {
 				get: async (keys: string | readonly string[]) => {
-					if (storageReadError !== undefined) throw storageReadError
 					const requestedKeys = Array.isArray(keys) ? keys : [keys]
 					return Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
 				},
@@ -26,13 +24,12 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 
 describe('local storage codecs', () => {
 	beforeEach(() => {
 		for (const key of Object.keys(storedItems)) delete storedItems[key]
 		writes.length = 0
-		storageReadError = undefined
 	})
 
 	test('serializes only present active-address properties, including explicit clears', async () => {
@@ -60,14 +57,5 @@ describe('local storage codecs', () => {
 
 		storedItems.activeSigningAddress = 'not-an-address'
 		await assert.rejects(browserStorageLocalGet('activeSigningAddress'))
-	})
-
-	test('reports pending-item validation failures without absorbing storage read failures', async () => {
-		storedItems.pendingTransactionsAndMessages = 'corrupt'
-		const invalidResult = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
-		assert.equal(invalidResult.success, false)
-
-		storageReadError = new Error('Storage temporarily unavailable')
-		await assert.rejects(browserStorageLocalGet2Result('pendingTransactionsAndMessages'), /Storage temporarily unavailable/)
 	})
 })

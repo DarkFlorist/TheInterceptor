@@ -1,6 +1,5 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import ts from 'typescript'
 import * as simulationFacade from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import * as simulationTransactionSigning from '../../app/ts/simulation/services/simulationTransactionSigning.js'
@@ -126,54 +125,9 @@ test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('__proto__'), false)
 })
 
-// Every identifier or string in the extension source with one of these exact names, mapped to the files using it. Comments do not count.
-async function findFilesUsingNames(names: ReadonlySet<string>) {
-	const filesByName = new Map([...names].map((name) => [name, new Set<string>()]))
-	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
-	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) {
-		const scriptKind = path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
-		const sourceFile = ts.createSourceFile(path, await Bun.file(`${ appSourceDirectory }${ path }`).text(), ts.ScriptTarget.Latest, false, scriptKind)
-		const visit = (node: ts.Node) => {
-			if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) filesByName.get(node.text)?.add(path)
-			ts.forEachChild(node, visit)
-		}
-		visit(sourceFile)
-	}
-	return filesByName
-}
-
-test('the terminal reply outbox, the pending requests and their named writers appear only in their allowed files', async () => {
-	const outboxOwner = 'background/pendingTerminalReplies.ts'
-	const pendingRequestsOwner = 'background/storageVariables.ts'
-	const allowedFilesByName = new Map([
-		// The key itself, however a write would name it: only its schema in storageUtils and its owner.
-		['pendingTerminalReplies', [outboxOwner, 'utils/storageUtils.ts']],
-		// The one write able to store the outbox together with the pending requests.
-		['browserStorageLocalSetTerminalRepliesWithPendingRequests', [outboxOwner, 'utils/storageUtils.ts']],
-		// The only way to run a write under the pending-request lock, which must stay the outbox's single write.
-		['applyPendingRequestInstanceDecision', [outboxOwner, pendingRequestsOwner]],
-		// The pending-requests key: its schema, its owner, the combined write, and a read in the confirmation page. This limits where the exact name appears; a direct browser.storage.local.set of it in an allowed file would still pass.
-		['pendingTransactionsAndMessages', [outboxOwner, pendingRequestsOwner, 'utils/storageUtils.ts', 'components/pages/ConfirmTransaction.tsx']],
-		// The only other write of the pending-requests schema group, which holds no other key.
-		['browserStorageLocalSet2', [pendingRequestsOwner, 'utils/storageUtils.ts']],
-	])
-	const filesByName = await findFilesUsingNames(new Set(allowedFilesByName.keys()))
-	for (const [name, allowedFiles] of allowedFilesByName) {
-		assert.deepEqual([...(filesByName.get(name) ?? [])].sort(), [...allowedFiles].sort(), name)
-	}
-})
-
-test('every pending request decision in storageVariables.ts writes through writePendingRequests', async () => {
-	const path = new URL('../../app/ts/background/storageVariables.ts', import.meta.url).pathname
-	const sourceFile = ts.createSourceFile(path, await Bun.file(path).text(), ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
-	const writeArguments: string[] = []
-	const visit = (node: ts.Node) => {
-		if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'applyPendingRequestInstanceDecision') writeArguments.push(node.arguments[2]?.getText(sourceFile) ?? 'missing')
-		ts.forEachChild(node, visit)
-	}
-	visit(sourceFile)
-	assert.notEqual(writeArguments.length, 0)
-	assert.deepEqual(new Set(writeArguments), new Set(['writePendingRequests']))
+// Known debt, not permitted architecture: the page reads pending requests from storage outside the message protocol. This fails once the read is gone, and readPendingRequestsForConfirmationPage goes with it.
+test('known debt: the confirmation page still hydrates pending requests from storage', () => {
+	assert.match(confirmTransactionPageSource, /readPendingRequestsForConfirmationPage\(\)/u)
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {

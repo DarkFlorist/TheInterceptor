@@ -14,6 +14,7 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -292,7 +293,7 @@ export async function loadModules() {
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		signerReply: providerMessageHandlers.signerReply,
 		ethAccountsReply: providerMessageHandlers.ethAccountsReply,
-		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		seedPendingRequestStorage,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
@@ -602,7 +603,7 @@ export const pendingTransaction = {
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 export function createDisconnectedPort() {

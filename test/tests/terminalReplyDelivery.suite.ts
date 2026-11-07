@@ -9,7 +9,7 @@ import { activeAddress, browserMock, bytes32String, createDisconnectedPort, crea
 
 // Production stores a terminal reply only together with a decision on the pending request it answers, so each reply here gets a request under its id. Queueing keeps that request pending, as a popup-close rejection does until it is delivered, so one reply can be queued more than once.
 const REPLY_REQUEST_INSTANCE_ID = 'instance answered by the terminal reply'
-const storePendingRequestsFor = async (...replies: readonly InterceptedRequestForward[]) => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: replies.map((reply) => ({ ...pendingTransaction, instanceId: REPLY_REQUEST_INSTANCE_ID, uniqueRequestIdentifier: reply.uniqueRequestIdentifier })) })
+const storePendingRequestsFor = async (...replies: readonly InterceptedRequestForward[]) => await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: replies.map((reply) => ({ ...pendingTransaction, instanceId: REPLY_REQUEST_INSTANCE_ID, uniqueRequestIdentifier: reply.uniqueRequestIdentifier })) })
 
 async function queueReplyToStoredRequest(reply: InterceptedRequestForward) {
 	const instance = { uniqueRequestIdentifier: reply.uniqueRequestIdentifier, instanceId: REPLY_REQUEST_INSTANCE_ID }
@@ -40,7 +40,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 
 	for (const connectionCase of connectionCases) {
 		browserMock.sentMessages.length = 0
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForUser' },
@@ -89,7 +89,7 @@ test('reject and result replies remain durable after their pending request is re
 	]
 
 	for (const terminalReply of terminalReplies) {
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [terminalReply.transaction] })
 		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], terminalReply.name)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1, terminalReply.name)
@@ -126,7 +126,7 @@ test('terminal replies are persisted before removing the pending rejection or re
 	try {
 		for (const terminalReply of terminalReplies) {
 			delete browserMock.storageState.pendingTerminalReplies
-			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
+			await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [terminalReply.transaction] })
 			let signalPersistenceStarted: (() => void) | undefined
 			const persistenceStarted = new Promise<void>((resolve) => { signalPersistenceStarted = resolve })
 			let releasePersistence: (() => void) | undefined
@@ -179,7 +179,7 @@ test('MV2 popup close rejects its captured requests without deleting a concurren
 		uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 3 },
 		transactionIdentifier: 3n,
 	}
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -238,7 +238,7 @@ test('popup close keeps the pending request when durable rejection enqueue fails
 			wantsToConnect: true,
 		},
 	} }]])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -290,7 +290,7 @@ test('popup close retries outbox cleanup without reposting after direct delivery
 			wantsToConnect: true,
 		},
 	} }]])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -339,7 +339,7 @@ test('MV2 reconnect cleanup failure retries without reposting the rejection', as
 			wantsToConnect: true,
 		},
 	} }]])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -403,7 +403,7 @@ test('startup recovery rejects orphaned requests and preserves requests with liv
 		popupOrTabId: { type: 'popup' as const, id: livePopupId },
 		uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 },
 	}
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction, livePendingTransaction] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [pendingTransaction, livePendingTransaction] })
 	browserMock.setLiveWindowIds([livePopupId])
 
 	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
@@ -414,13 +414,13 @@ test('startup recovery rejects orphaned requests and preserves requests with liv
 	if (!isRecord(rejection) || !isRecord(rejection.error)) throw new Error('missing startup orphan rejection')
 	assert.equal(rejection.error.code, 4001)
 
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	browserMock.setLiveWindowIds([])
 })
 
 test('startup recovery removes the unreachable rejection created for an orphaned request from a missing tab', async () => {
 	delete browserMock.storageState.pendingTerminalReplies
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [pendingTransaction] })
 	browserMock.setLiveTabIds([])
 	browserMock.setLiveWindowIds([])
 
@@ -447,7 +447,7 @@ test('popup-close rejection remains queued after reconnect timeout and flushes o
 			wantsToConnect: true,
 		},
 	} }]])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -818,7 +818,7 @@ test('rejecting a transaction answers the website before the window cleanup, who
 })
 
 test('approving a simulated message signature answers the website before the window cleanup, whose failure is reported', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const message = '0x68656c6c6f'
 	// Simulation mode signs for addresses it holds no key for, such as the default active address, with the mock private key 2.
@@ -898,7 +898,7 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	await modules.updateSafeTransactionStacks(() => [])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus,

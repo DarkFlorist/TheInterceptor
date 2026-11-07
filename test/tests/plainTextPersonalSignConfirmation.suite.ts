@@ -27,7 +27,7 @@ const openPlainTextPersonalSign = async (simulationMode: boolean, postedMessages
 			wantsToConnect: true,
 		},
 	} }]])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, simulationMode, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
 
 	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
@@ -260,7 +260,7 @@ const duplicateIdError = { type: 'result', error: { code: -32600, message: 'A re
 const walletDependentMessage = '5369676e20616c6c206173736574732061776179'
 
 test('refuses a second request under a pending request id, so the reviewed message, its warnings and the forwarded request stay together', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const { signerAddress, requestSignature, decide, getPendingMessages } = createPersonalSignRequester(postedMessages)
 	assert.deepEqual(await requestSignature(walletDependentMessage, -2), { type: 'doNotReply' })
@@ -279,7 +279,7 @@ test('refuses a second request under a pending request id, so the reviewed messa
 })
 
 test('accepts a request id again once the request pending under it is resolved', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const postedMessages: unknown[] = []
 	const { requestSignature, decide, getPendingMessages } = createPersonalSignRequester(postedMessages)
 	assert.deepEqual(await requestSignature(walletDependentMessage, -3), { type: 'doNotReply' })
@@ -294,7 +294,7 @@ test('accepts a request id again once the request pending under it is resolved',
 })
 
 test('flags a 0x-prefixed message with invalid hex digits, shows it as written without a hash and requires an acknowledgement', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const { requestSignature } = createPersonalSignRequester([])
 	// A permissive hex converter could sign this as the bytes 0x686900 while a strict wallet signs its text.
 	const malformedHexMessage = '0x6869zz'
@@ -319,7 +319,7 @@ const blockWithUserFacingError = async (requestId: number) => {
 
 for (const { branch, reply, fromReplacedConnection } of signerReplyCases) {
 	test(`a signer reply (${ branch }) for a request the user has not approved resolves and resets nothing`, async () => {
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 		const postedMessages: unknown[] = []
 		const { requestSignature, sendSignerReply } = createPersonalSignRequester(postedMessages)
 		assert.deepEqual(await requestSignature(plainTextMessage, -5), { type: 'doNotReply' })
@@ -333,7 +333,7 @@ for (const { branch, reply, fromReplacedConnection } of signerReplyCases) {
 	})
 
 	test(`a signer reply (${ branch }) for a forwarded request leaves a newer request under the reused request id untouched`, async () => {
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 		const postedMessages: unknown[] = []
 		const { requestSignature, decide, getPendingMessages, sendSignerReply, closeConfirmationPopup } = createPersonalSignRequester(postedMessages)
 		assert.deepEqual(await requestSignature(plainTextMessage, -6), { type: 'doNotReply' })
@@ -353,7 +353,7 @@ for (const { branch, reply, fromReplacedConnection } of signerReplyCases) {
 	})
 
 	test(`a signer reply (${ branch }) still resolves the forwarded request under its request id`, async () => {
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 		const postedMessages: unknown[] = []
 		const { requestSignature, decide, getPendingMessages, sendSignerReply } = createPersonalSignRequester(postedMessages)
 		assert.deepEqual(await requestSignature(plainTextMessage, -7), { type: 'doNotReply' })

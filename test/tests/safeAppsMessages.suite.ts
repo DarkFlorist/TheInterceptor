@@ -18,7 +18,7 @@ async function prepareMessageReview(data = typedData(), review = { text: origina
 	fakeSafeContract.messageHash = BigInt(hashTypedData(data))
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [selectedSigner], activeSigningAddress: selectedSigner, signerChain: fakeRpcNetwork.chainId }))
 	const socket = uniqueRequestIdentifier.requestSocket

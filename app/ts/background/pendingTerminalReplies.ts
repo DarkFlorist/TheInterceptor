@@ -2,10 +2,14 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSetTerminalRepliesWithPendingRequests } from '../utils/storageUtils.js'
-import { applyPendingRequestInstanceDecision, type DecidePendingRequestInstance, type PendingRequestInstance } from './storageVariables.js'
+import { browserStorageLocalSafeParseGet, browserStorageLocalSet, serializeBrowserStorageLocalItems } from '../utils/storageUtils.js'
+import { type DecidePendingRequestInstance, type PendingRequestInstance, writePendingRequestsWithTerminalReplies } from './storageVariables.js'
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
+const outboxLockIsHeld: unique symbol = Symbol('outboxLockIsHeld')
+
+// The outbox contents to store with a pending request decision. The private symbol means only this module can build one, which it does while holding the outbox lock, so the outbox's read-modify-write cannot race a flush.
+export type PendingTerminalRepliesWrite = { readonly [outboxLockIsHeld]: true, readonly storedItems: ReturnType<typeof serializeBrowserStorageLocalItems> }
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
@@ -28,15 +32,12 @@ async function updatePendingTerminalReplies(update: (pendingReplies: readonly In
 	})
 }
 
-// Stores the reply and the decision on the pending request instance it answers in one storage write, and neither when the decision leaves the instance 'unchanged'. This module owns the outbox key, so it holds the outbox lock and builds that write itself; the pending-request side only computes the new pending requests. The outbox is read before the pending-request lock is taken, so that lock only spans its own read and the write.
+// Stores the reply and the decision on the pending request instance it answers in one storage write, and neither when the decision leaves the instance 'unchanged'. This module decides the outbox's contents under its lock; storageVariables.ts makes the write because the pending-request lock is private to it. The outbox is read before that lock is taken, so that lock only spans its own read and the write.
 export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
 		const otherReplies = (await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
-		const pendingTerminalReplies = [...otherReplies, reply]
-		// This module writes the pending-requests key here because this is the one write that has to commit a reply and its decision together, and the pending-request lock stays private to storageVariables.ts, so the write runs there as an injected write.
-		return await applyPendingRequestInstanceDecision(instance, decide, async (pendingTransactionsAndMessages) => {
-			await browserStorageLocalSetTerminalRepliesWithPendingRequests(pendingTerminalReplies, pendingTransactionsAndMessages)
-		})
+		const storedItems = serializeBrowserStorageLocalItems({ pendingTerminalReplies: [...otherReplies, reply] })
+		return await writePendingRequestsWithTerminalReplies({ [outboxLockIsHeld]: true, storedItems }, instance, decide)
 	})
 }
 

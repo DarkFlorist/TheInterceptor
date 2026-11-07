@@ -37,7 +37,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '.
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
+import { readPendingRequestsForConfirmationPage } from '../../background/storageVariables.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -79,10 +79,6 @@ async function bootstrapConfirmTransactionDialog(
 		if (hasLoadedPendingTransaction()) return
 		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
 	}
-}
-
-async function hydratePendingTransactionsFromStorage() {
-	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
@@ -927,7 +923,7 @@ export function ConfirmTransaction() {
 			}
 			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 		}
-		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
+		void readPendingRequestsForConfirmationPage().then((pendingTransactions) => {
 			if (cancelled || pendingTransactions.length === 0) return
 			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
 		})

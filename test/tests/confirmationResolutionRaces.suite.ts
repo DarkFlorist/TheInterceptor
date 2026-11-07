@@ -11,7 +11,7 @@ const SIGNED_TRANSACTION_HASH = `0x${ '11'.repeat(32) }`
 const OLD_SIGNATURE = `0x${ '22'.repeat(65) }`
 
 async function startPageConnection(messagesPostedToPage: unknown[], onMessagePostedToPage?: (message: unknown) => void) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	browserMock.setLiveWindowIds([99])
 	browserMock.setLiveTabIds([99])
 	const socket = pageRequestIdentifier.requestSocket
@@ -143,7 +143,7 @@ type SimulatedVisualisation = Awaited<ReturnType<typeof getOnlySimulatedVisualis
 
 // Stores the pending transaction with its visualisation data changed, keeping everything else as stored.
 async function storeVisualisationData({ pending, visualisation }: SimulatedVisualisation, data: SimulatedVisualisation['visualisation']['data']) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...pending, popupVisualisation: { ...visualisation, data } }] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{ ...pending, popupVisualisation: { ...visualisation, data } }] })
 }
 
 // Clears the visualised address book entries of the stored run, so a test can see whether a metadata refresh stored its re-visualisation of that run.
@@ -272,7 +272,7 @@ test('a wallet reply arriving over another connection in the same tab does not r
 async function replaceWithNewInstance(reviewed: Awaited<ReturnType<typeof getOnlyPendingRequest>>, replacementGas: bigint) {
 	if (reviewed.type !== 'Transaction' || reviewed.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Expected a pending eth_sendTransaction')
 	const originalRequestParameters = { ...reviewed.originalRequestParameters, params: [{ ...reviewed.originalRequestParameters.params[0], gas: replacementGas }] as const }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...reviewed, instanceId: 'replacement instance', originalRequestParameters }] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{ ...reviewed, instanceId: 'replacement instance', originalRequestParameters }] })
 	return await getOnlyPendingRequest()
 }
 

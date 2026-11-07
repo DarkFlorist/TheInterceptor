@@ -7,6 +7,7 @@ import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/t
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -158,7 +159,7 @@ async function loadModules() {
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
-		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		seedPendingRequestStorage,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
 		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
 		serialize: wireTypes.serialize,
@@ -451,7 +452,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			activeRpcNetwork: fakeRpcNetwork,
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
 		const storedVisualisation = { ...await modules.getPopupVisualisationState(), simulationId: 77 }
 		const refreshError = new Error('Unexpected visualizer failure')
 		let reportedError: unknown
@@ -516,7 +517,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			activeRpcNetwork: fakeRpcNetwork,
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
-		await modules.browserStorageLocalSet2({
+		await modules.seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
@@ -565,7 +566,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			activeRpcNetwork: fakeRpcNetwork,
 			userAddressBookEntriesV3: modules.defaultActiveAddresses,
 		})
-		await modules.browserStorageLocalSet2({
+		await modules.seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 

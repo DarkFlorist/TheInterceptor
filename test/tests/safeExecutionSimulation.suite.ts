@@ -400,7 +400,7 @@ function createRecordingSimulator() {
 }
 
 async function openSimulationModeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(

@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDomMock } from './domMock.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
@@ -241,7 +242,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const browser = installBrowserMock()
 		const dom = installDomMock()
 		const [
-			{ browserStorageLocalSet, browserStorageLocalSet2 },
+			{ browserStorageLocalSet },
 			{ defaultActiveAddresses, defaultRpcs },
 			{ setRpcConnectionStatus },
 			{ updateConfirmTransactionView },
@@ -273,7 +274,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			makeCurrentAddressRich: false,
 			fixedAddressRichList: [],
 		})
-		await browserStorageLocalSet2({
+		await seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [makePendingTransaction()],
 		})
 		await setRpcConnectionStatus({
@@ -449,14 +450,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 			return undefined
 		})
 		const [
-			{ browserStorageLocalSet2 },
 			{ ConfirmTransaction },
 		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 		])
 
-		await browserStorageLocalSet2({
+		await seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('Failed to decode ABI data')],
 		})
 
@@ -482,14 +481,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 			return undefined
 		})
 		const [
-			{ browserStorageLocalSet2 },
 			{ ConfirmTransaction },
 		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 		])
 
-		await browserStorageLocalSet2({
+		await seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('execution reverted')],
 		})
 
