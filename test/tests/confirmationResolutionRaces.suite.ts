@@ -456,6 +456,7 @@ async function assertEveryStorageWriteKeepsReplyAndRequestConsistent(resolve: ()
 	const statesAfterEachWrite: { readonly replyIsQueued: boolean, readonly approvalStatus: string | undefined }[] = []
 	browserMock.setStorageSetHandler(async (_items, writeStoredItems) => {
 		writeStoredItems()
+		// getPendingTransactionsAndMessages takes the pending-request lock only to recover corrupt data, so reading here while a write holds that lock cannot deadlock.
 		const [pending] = await modules.getPendingTransactionsAndMessages()
 		statesAfterEachWrite.push({ replyIsQueued: (await modules.getPendingTerminalReplies()).length > 0, approvalStatus: pending?.approvalStatus.status })
 	})
