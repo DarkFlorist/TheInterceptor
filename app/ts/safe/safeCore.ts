@@ -153,23 +153,32 @@ export function assertSafeContractStateUnchanged(reviewedState: SafeContractStat
 	}
 }
 
+// The one read of a Safe's owners and threshold, for every path that needs them. The calls and their decoding are separate so a caller can run them with its other reads and still decode in its own order.
+const callSafeOwnership = async (ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint) => await Promise.all([
+	callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
+	callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
+])
+
+const decodeSafeOwnership = ([ownersResult, thresholdResult]: Awaited<ReturnType<typeof callSafeOwnership>>) => ({
+	owners: decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult).map((owner) => BigInt(owner)),
+	threshold: decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult),
+})
+
 export async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<SafeContractState> {
 	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
 	if (code.length === 0) throw createSafeContractValidationFailure('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
-	const [versionResult, nonceResult, ownersResult, thresholdResult] = await Promise.all([
+	const [versionResult, nonceResult, ownershipResults] = await Promise.all([
 		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'VERSION', []), blockNumber),
 		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'nonce', []), blockNumber),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
+		callSafeOwnership(ethereum, safeAddress, blockNumber),
 	])
 	const version = decodeFunctionOutput(SAFE_ABI, 'VERSION', versionResult)
 	const nonce = decodeFunctionOutput(SAFE_ABI, 'nonce', nonceResult)
-	const owners = decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult)
-	const threshold = decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult)
+	const { owners, threshold } = decodeSafeOwnership(ownershipResults)
 	if (!SUPPORTED_SAFE_VERSIONS.some((supportedVersion) => supportedVersion === version)) {
 		throw createSafeContractValidationFailure(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_SAFE_VERSIONS.join(', ') }.`)
 	}
-	return { version, nonce, owners: owners.map((owner) => BigInt(owner)), threshold }
+	return { version, nonce, owners, threshold }
 }
 
 export async function getSafeContractState(ethereum: EthereumClientService, safeAddress: EthereumAddress): Promise<SafeContractState> {
@@ -184,25 +193,16 @@ export async function getSafeContractSnapshot(ethereum: EthereumClientService, s
 // Nodes report a revert as code 3, or with their own code and the word in the message. Any other JSON-RPC error says nothing about the contract.
 const isExecutionRevert = (error: unknown) => error instanceof JsonRpcResponseError && (error.code === 3 || /revert/iu.test(error.message))
 
-const readSafeOwnership = async (ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint) => {
-	const [ownersResult, thresholdResult] = await Promise.all([
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
-	])
-	return {
-		owners: decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult).map((owner) => BigInt(owner)),
-		threshold: decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult),
-	}
-}
-
-// A page's SafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. VERSION is not read: this only previews, and Safes outside SUPPORTED_SAFE_VERSIONS are in use. The active address counts as signer when it is the named Safe, because the user chose that Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
+// A page's SafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. The active address counts as signer when it is the named Safe, because the user chose that Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
 export async function assertSafeTxPreviewAllowed(ethereum: EthereumClientService, safeAddress: EthereumAddress, activeAddress: EthereumAddress, messageChainId: bigint | undefined) {
 	if (messageChainId !== undefined && messageChainId !== ethereum.getChainId()) throw createSafeContractValidationFailure(`No outcome is simulated: this message is for chain ${ messageChainId.toString() }, not the selected network.`)
 	const notSafeMessage = `No outcome is simulated: ${ checksummedAddress(safeAddress) } is not a Gnosis Safe on this network, so nothing could execute this message there.`
-	const ownership = await readSafeOwnership(ethereum, safeAddress, await ethereum.getBlockNumber(undefined)).catch((error: unknown) => {
+	// Unlike getSafeContractStateAtBlock, no VERSION or code is read: 1.1.1 and 1.5.0 Safes are in use and the preview only simulates, and an address without code fails the decode below.
+	const ownership = await callSafeOwnership(ethereum, safeAddress, await ethereum.getBlockNumber(undefined)).then(decodeSafeOwnership).catch((error: unknown) => {
 		if (isAbiDataDecodeError(error) || isExecutionRevert(error)) throw createSafeContractValidationFailure(notSafeMessage)
 		throw error
 	})
+	// A Safe's setup and owner changes keep its threshold between 1 and its owner count, so a reply outside that is not from a Safe.
 	if (ownership.threshold === 0n || ownership.threshold > BigInt(ownership.owners.length)) throw createSafeContractValidationFailure(notSafeMessage)
 	if (activeAddress !== safeAddress && !ownership.owners.includes(activeAddress)) throw createSafeOwnerValidationFailure(`No outcome is simulated: ${ checksummedAddress(activeAddress) } is not an owner of Gnosis Safe ${ checksummedAddress(safeAddress) }, so its signature could not execute this message.`)
 }
