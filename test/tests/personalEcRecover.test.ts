@@ -167,20 +167,16 @@ describe('personal_ecRecover recovery', () => {
 		}
 	})
 
-	test('keeps simulated signing and recovery decoding of an uppercase 0X prefix separate', async () => {
+	test('recovers a 0X-prefixed message the simulation signed to its simulated signer', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		// Simulated personal_sign signs '0X6869' as the bytes 0x6869, as on main.
 		const signedMessage = createSignedMessage(simulatedSigner, '0X6869', socket)
 		const simulatedSigning = await simulatePersonalSign(signedMessage.originalRequestParameters, simulatedSigner)
 		assert.equal(simulatedSigning.messageHash, hashMessage({ raw: '0x6869' }))
-		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
-		// Recovering with the canonical '0x6869' finds the stacked '0X6869' signing through the hash of the signed bytes.
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0X6869', simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
 		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
-		// Recovery reads '0X6869' as text like MetaMask, so it neither matches the stacked signing nor recovers the bytes 0x6869.
-		const textRecovery = await personalEcRecover(parsePersonalEcRecover(['0X6869', simulatedSigning.signature]), [signedMessage], websiteOrigin)
-		assert.ok(textRecovery.type === 'result' && 'result' in textRecovery)
-		assert.notEqual(textRecovery.result, simulatedSigner)
-		assert.notEqual(textRecovery.result, mockSimulationKeyAddress)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0x6869', simulatedSigning.signature]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+		// Signatures the simulation did not produce keep MetaMask's decoding, which reads '0X6869' as text.
 		const account = privateKeyToAccount(privateKey)
 		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0X6869', await account.signMessage({ message: '0X6869' })]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
 	})

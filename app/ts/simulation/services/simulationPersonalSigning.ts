@@ -10,9 +10,20 @@ const MOCK_SIMULATION_PRIVATE_KEY = 0x2n
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 
 // The bytes simulated personal_sign signs. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed.
-const getSimulatedPersonalSignBytes = (params: PersonalSignParams) => stringToUint8Array(params.params[0])
+const getSimulatedPersonalSignBytes = (message: string) => stringToUint8Array(message)
 
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getSimulatedPersonalSignBytes(params) })
+const hashSimulatedPersonalSignMessage = (message: string) => hashMessage({ raw: getSimulatedPersonalSignBytes(message) })
+
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashSimulatedPersonalSignMessage(params.params[0])
+
+// The hash simulated personal_sign signs for this message, or undefined when it cannot decode the message: then signing it throws too, so no simulated signature over it exists.
+export const tryGetSimulatedPersonalSignMessageHash = (message: string) => {
+	try {
+		return hashSimulatedPersonalSignMessage(message)
+	} catch {
+		return undefined
+	}
+}
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
@@ -27,7 +38,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
-			signature: await account.signMessage({ message: { raw: getSimulatedPersonalSignBytes(params) } }),
+			signature: await account.signMessage({ message: { raw: getSimulatedPersonalSignBytes(params.params[0]) } }),
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
