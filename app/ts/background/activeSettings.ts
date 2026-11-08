@@ -15,7 +15,7 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { reevaluateStoredNetworkRefusals } from './transactionNetwork.js'
+import { reevaluateStoredNetworkRefusalsBestEffort } from './transactionNetwork.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -134,8 +134,8 @@ async function runActiveSettingsChange(
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 			if (rpcChainChanged) {
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
-				// A chain change can decide whether a refused transaction may be approved again, so its stored refusal is updated before the windows are told. This reads no RPC, so a wallet's network switch is still acknowledged without waiting for one.
-				await reevaluateStoredNetworkRefusals(simulationServicesOwner.getCurrent().ethereum)
+				// The network write re-evaluated the stored refusals with the client installed at that time, and the client of the new network was installed since, so they are re-evaluated with it before the windows are told. This reads no RPC, so a wallet's network switch is still acknowledged without waiting for one, and a failure is reported without keeping the windows from learning of the switch.
+				await reevaluateStoredNetworkRefusalsBestEffort(simulationServicesOwner.getCurrent().ethereum)
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.

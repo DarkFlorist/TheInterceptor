@@ -2,7 +2,9 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
-import { readActiveNetworkSnapshot } from './activeNetworkStorage.js'
+import { reportUnexpectedError } from '../utils/errors.js'
+import { readActiveNetworkSnapshot, setAfterActiveNetworkWrite } from './activeNetworkStorage.js'
+import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPendingTransactionsAndMessages, updateInterceptorTransactionStack, updatePendingTransactionOrMessage, updateTransactionState } from './storageVariables.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
@@ -78,6 +80,23 @@ export async function reevaluateStoredNetworkRefusals(ethereum: EthereumClientSe
 		})
 	}
 	return refusalChanged
+}
+
+// Re-evaluates the stored refusals for a caller that goes on to tell the windows and websites of a network change, which a failure here must not stop: the failure is reported, and nothing is reported as changed.
+export async function reevaluateStoredNetworkRefusalsBestEffort(ethereum: EthereumClientService) {
+	try {
+		return await reevaluateStoredNetworkRefusals(ethereum)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'network_refusal_reevaluation_failed' })
+		return false
+	}
+}
+
+// Called once at background startup. Every write of the active network goes through writeActiveNetwork, and from then on each one re-evaluates the stored refusals with the installed client, so a network switch, a simulation mode change, a settings import and the startup repair all update them. A changed refusal is shown by telling the confirmation window to read the stored requests again.
+export function reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite(getInstalledEthereum: () => EthereumClientService) {
+	setAfterActiveNetworkWrite(async () => {
+		if (await reevaluateStoredNetworkRefusalsBestEffort(getInstalledEthereum())) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
+	})
 }
 
 // The one place a network refusal is stored. The refusal is the verdict of the services the approval captured, but what is stored says what approving would do now, as a resolution can outlive a network switch. The installed client is read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows.

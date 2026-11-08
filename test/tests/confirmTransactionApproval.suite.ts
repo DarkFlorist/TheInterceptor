@@ -7,7 +7,7 @@ import { createDeferredValue, createTestSimulationServicesOwner } from './backgr
 import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { reevaluateStoredNetworkRefusals } from '../../app/ts/background/transactionNetwork.js'
+import { reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite, reevaluateStoredNetworkRefusals } from '../../app/ts/background/transactionNetwork.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
@@ -22,6 +22,8 @@ const transactionParams = SendTransactionParams.parse({
 })
 
 async function setUpTransactionApprovalTest(simulationMode: boolean) {
+	// As at background startup, every write of the active network re-evaluates the stored network refusals with the installed client.
+	reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite(() => simulator.ethereum)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.browserStorageLocalSet({ simulationMode, activeRpcNetwork: fakeRpcNetwork })
 	const postedMessages: unknown[] = []
@@ -265,6 +267,8 @@ async function createNetworkSwitcher(requestedNetworkServices: Pick<typeof simul
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	const otherNetworkServices = createOtherNetworkServices()
 	const simulationServicesOwner = createTestSimulationServicesOwner(simulator, (network) => network.chainId === otherNetwork.chainId ? otherNetworkServices : requestedNetworkServices)
+	// As at background startup, the follow-up of a network write uses whichever client is installed at that time, which during a switch is still the one of the previous network.
+	reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite(() => simulationServicesOwner.getCurrent().ethereum)
 	return {
 		simulationServicesOwner,
 		switchNetwork: async (rpcNetwork: typeof fakeRpcNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork }),
@@ -324,6 +328,29 @@ test('lifting a refusal does not hold back the network change behind an RPC of t
 	await switchNetwork(fakeRpcNetwork)
 	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
 	suspended.release()
+})
+
+test('a network switch that fails to re-evaluate the stored refusals reports the failure and still tells the windows of the switch', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
+	await switchNetwork(otherNetwork)
+	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
+
+	// Storing the lifted refusal fails.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items) throw new Error('pending request storage unavailable')
+		writeStoredItems()
+	})
+	browserMock.sentMessages.length = 0
+	await withSilencedConsole(async () => await switchNetwork(fakeRpcNetwork))
+	browserMock.setStorageSetHandler(undefined)
+
+	const methods = browserMock.sentMessages.map((message) => message.method)
+	assert.ok(methods.includes('popup_UnexpectedErrorOccured'))
+	assert.ok(methods.includes('popup_chain_update'))
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 })
 
 test('a refusal stays while the check still refuses, and approving again still sends nothing', async () => {
@@ -408,7 +435,7 @@ test('re-evaluating a refusal never replaces a newer refusal stored while it ran
 	assert.deepEqual(await getStoredApprovalStatus(), newerRefusal)
 })
 
-test('a simulation refresh that ends early still tells the window that a refusal was lifted', async () => {
+test('a write of the active network tells the window that a refusal was lifted, also of a transaction behind a message', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestPersonalSign(websiteTabConnections)
 	const [message] = await modules.getPendingTransactionsAndMessages()
@@ -418,9 +445,8 @@ test('a simulation refresh that ends early still tells the window that a refusal
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [message, { ...pendingTransaction, uniqueRequestIdentifier: transactionIdentifier, approvalStatus: refusal }] })
 	browserMock.sentMessages.length = 0
 
-	// The first request is a message, so the refresh has no transaction to simulate and returns before any window update.
-	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
-	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[1]?.approvalStatus, { status: 'WaitingForUser' })
 	assert.equal(wasWindowToldOfStoredState(), true)
@@ -438,20 +464,26 @@ test('a Gnosis Safe execution rebuild leaves a stored network refusal to its own
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
 })
 
-test('a window update shows a stored refusal without changing it, and the next simulation refresh re-evaluates it', async () => {
+test('a window update shows a stored refusal without changing it, and the next write of the active network re-evaluates it', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
 	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 
-	// A settings import writes the network without reporting a chain change.
+	// Stored back without going through the background's writer, so nothing re-evaluates the refusal.
 	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
 	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
-
 	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+
+	// A simulation mode change writes the network through writeActiveNetwork, as a settings import and the startup repair do, without the chain change of a network switch.
+	browserMock.sentMessages.length = 0
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
+	assert.equal(wasWindowToldOfStoredState(), true)
 })
 
 test('a Gnosis Safe signer refresh leaves a stored network refusal to its owner', async () => {
@@ -1851,7 +1883,8 @@ test('an approval whose first network read is overtaken by a switch back to the 
 
 test('a repair of a corrupt active network still running when the network is read keeps the guarded write from committing', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
-	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	const { repairCorruptActiveNetwork } = await import('../../app/ts/background/activeNetworkStorage.js')
 	await setUpTransactionApprovalTest(false)
 	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
 	const repairStarted = createDeferredValue<undefined>()
@@ -1868,9 +1901,9 @@ test('a repair of a corrupt active network still running when the network is rea
 		writeStoredItems()
 	})
 
-	// Reading the corrupt active network starts its repair to the default network, which is held open while a valid network is selected.
+	// The startup repair of the corrupt active network to the default network is held open while a valid network is selected.
 	browserMock.storageState.activeRpcNetwork = { corrupt: true }
-	const repairingRead = withSilencedConsole(async () => await getSettings())
+	const repairingRead = withSilencedConsole(async () => await repairCorruptActiveNetwork())
 	await repairStarted.promise
 	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	// The repair completes right after the guarded write read the network.
@@ -1887,14 +1920,15 @@ test('a repair of a corrupt active network still running when the network is rea
 })
 
 test('a repair of a corrupt active network read before a network switch committed leaves the switched network stored', async () => {
-	const { changeSimulationMode, getSettings, defaultRpcs } = await import('../../app/ts/background/settings.js')
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	const { repairCorruptActiveNetwork } = await import('../../app/ts/background/activeNetworkStorage.js')
 	await setUpTransactionApprovalTest(false)
 	const networkWrites: unknown[] = []
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
 		if ('activeRpcNetwork' in items) networkWrites.push(items.activeRpcNetwork)
 		writeStoredItems()
 	})
-	// The settings read gets the corrupt network, and then waits before acting on it until a network switch has committed.
+	// The startup repair reads the corrupt network, and then waits before acting on it until a network switch has committed.
 	const corruptNetworkRead = createDeferredValue<undefined>()
 	const networkSwitchCommitted = createDeferredValue<undefined>()
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
@@ -1908,13 +1942,13 @@ test('a repair of a corrupt active network read before a network switch committe
 	})
 
 	browserMock.storageState.activeRpcNetwork = { corrupt: true }
-	const repairingRead = withSilencedConsole(async () => await getSettings())
+	const repairingRead = withSilencedConsole(async () => await repairCorruptActiveNetwork())
 	await corruptNetworkRead.promise
 	await changeSimulationMode({ simulationMode: false, rpcNetwork: otherNetwork })
 	networkSwitchCommitted.resolve(undefined)
 
-	// The stale read still reports the default network it read, but does not write it over the switch.
-	assert.equal((await repairingRead).activeRpcNetwork.chainId, defaultRpcs[0]?.chainId)
+	// The stale repair does not write the default network over the switch.
+	await repairingRead
 	assert.equal(networkWrites.length, 1)
 	assert.equal((await getSettings()).activeRpcNetwork.chainId, otherNetwork.chainId)
 })
@@ -1939,7 +1973,7 @@ test('a page context reads a corrupt active network without writing it, so a gua
 	})
 
 	browserMock.storageState.activeRpcNetwork = { corrupt: true }
-	const pageRead = withSilencedConsole(async () => await popupSettings.getActiveRpcNetworkWithoutRepair())
+	const pageRead = withSilencedConsole(async () => await popupSettings.getActiveRpcNetwork())
 	await backgroundSettings.changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 		const items = readStoredItems()
@@ -1955,14 +1989,19 @@ test('a page context reads a corrupt active network without writing it, so a gua
 	assert.equal((await backgroundSettings.getSettings()).activeRpcNetwork.chainId, fakeRpcNetwork.chainId)
 })
 
-test('a network snapshot reads only the active network, and a repair of a corrupt one makes it read again', async () => {
-	const { defaultRpcs } = await import('../../app/ts/background/settings.js')
-	const { readActiveNetworkSnapshot } = await import('../../app/ts/background/activeNetworkStorage.js')
+test('reading a corrupt active network never writes, and only the startup repair stores the default network, which makes an earlier read stale', async () => {
+	const { defaultRpcs, getSettings } = await import('../../app/ts/background/settings.js')
+	const { readActiveNetworkSnapshot, repairCorruptActiveNetwork } = await import('../../app/ts/background/activeNetworkStorage.js')
 	await setUpTransactionApprovalTest(false)
 	const keysRead: unknown[] = []
+	const networkWrites: unknown[] = []
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 		keysRead.push(keys)
 		return readStoredItems()
+	})
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('activeRpcNetwork' in items) networkWrites.push(items.activeRpcNetwork)
+		writeStoredItems()
 	})
 
 	const snapshot = await readActiveNetworkSnapshot()
@@ -1970,12 +2009,20 @@ test('a network snapshot reads only the active network, and a repair of a corrup
 	assert.equal(snapshot.activeRpcNetwork.chainId, fakeRpcNetwork.chainId)
 	assert.equal(snapshot.isStillCurrent(), true)
 
-	// The repair during the read writes the network, so that read is not current, but the next one is.
 	browserMock.storageState.activeRpcNetwork = { corrupt: true }
-	const repairedSnapshot = await withSilencedConsole(async () => await readActiveNetworkSnapshot())
+	const corruptSnapshot = await readActiveNetworkSnapshot()
+	assert.equal(corruptSnapshot.activeRpcNetwork.chainId, defaultRpcs[0]?.chainId)
+	assert.equal((await getSettings()).activeRpcNetwork.chainId, defaultRpcs[0]?.chainId)
+	assert.deepEqual(networkWrites, [])
+	assert.equal(corruptSnapshot.isStillCurrent(), true)
+
+	await withSilencedConsole(async () => await repairCorruptActiveNetwork())
+	assert.equal(networkWrites.length, 1)
+	assert.equal(corruptSnapshot.isStillCurrent(), false)
+	const repairedSnapshot = await readActiveNetworkSnapshot()
 	assert.equal(repairedSnapshot.activeRpcNetwork.chainId, defaultRpcs[0]?.chainId)
-	assert.equal(repairedSnapshot.isStillCurrent(), false)
-	const nextSnapshot = await readActiveNetworkSnapshot()
-	assert.equal(nextSnapshot.activeRpcNetwork.chainId, defaultRpcs[0]?.chainId)
-	assert.equal(nextSnapshot.isStillCurrent(), true)
+	assert.equal(repairedSnapshot.isStillCurrent(), true)
+	// A valid stored network is left alone.
+	await repairCorruptActiveNetwork()
+	assert.equal(networkWrites.length, 1)
 })

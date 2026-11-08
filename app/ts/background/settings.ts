@@ -5,8 +5,8 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { beginActiveNetworkRead, getActiveRpcNetworkOrRepairFromItems, writeActiveNetwork } from './activeNetworkStorage.js'
-import { getUseTabsInsteadOfPopup } from '../utils/pageSafeSettings.js'
+import { writeActiveNetwork } from './activeNetworkStorage.js'
+import { getActiveRpcNetworkFromItems, getUseTabsInsteadOfPopup } from '../utils/pageSafeSettings.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -46,7 +46,7 @@ type StartupStorageDefaults = {
 	signingAddressPreferences: SigningAddressPreferences
 }
 
-// This module is background-only; page contexts use pageSafeSettings.ts. Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, goes through writeActiveNetwork in activeNetworkStorage.ts, which counts it, so the active network is left out of these generic reads and their repair.
+// This module is background-only; page contexts use pageSafeSettings.ts. Every write of the active network, whether a network switch, a settings import or the repair of a corrupt stored value, goes through writeActiveNetwork in activeNetworkStorage.ts, which counts it, so the active network is left out of these generic reads and their repair: getSettings reads it through getActiveRpcNetworkFromItems, which never writes, and a corrupt one is repaired only at background startup. The other keys are still reset to their default here when corrupt, since no reader checks whether those are still current.
 type StartupStorageKeyOtherThanActiveNetwork = Exclude<keyof StartupStorageDefaults, 'activeRpcNetwork'>
 
 async function getParsedStorageValueOrDefaultFromItems<Key extends StartupStorageKeyOtherThanActiveNetwork>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -68,7 +68,6 @@ async function getParsedStorageValueOrDefault<Key extends StartupStorageKeyOther
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const isActiveNetworkReadStillCurrent = beginActiveNetworkRead()
 	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
 		'independentActiveSimulationAddress',
 		'activeSigningSafeAddress',
@@ -84,16 +83,15 @@ export async function getSettings() : Promise<Settings> {
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getActiveRpcNetworkOrRepairFromItems(storedItems, isActiveNetworkReadStillCurrent, defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
 		websiteAccessPromise,
-		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
+	const activeRpcNetwork = getActiveRpcNetworkFromItems(storedItems)
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
