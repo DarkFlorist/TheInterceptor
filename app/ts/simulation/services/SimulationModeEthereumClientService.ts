@@ -1151,31 +1151,31 @@ export const ethSimulateV1FromInput = async (
 	request: EthSimulateV1Params,
 ): Promise<EthSimulateV1Result> => {
 	const resolvedSimulationInput = getResolvedSimulationInputValue(simulationStateInput)
-	if (resolvedSimulationInput === undefined || isEmptySimulationInput(resolvedSimulationInput)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (resolvedSimulationInput === undefined || isEmptySimulationInput(resolvedSimulationInput)) return await ethereumClientService.ethSimulateV1PassthroughForWebsite(request, requestAbortController)
 
 	const parentBlockTag = getEthSimulateV1ParentBlockTag(request)
 	let shouldPrepareSimulationContext: boolean
 	try {
 		shouldPrepareSimulationContext = await shouldPrepareEthSimulateV1SimulationContextForBlockTag(ethereumClientService, requestAbortController, parentBlockTag)
 	} catch (error) {
-		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1PassthroughForWebsite(request, requestAbortController)
 		throw error
 	}
 	if (!shouldPrepareSimulationContext) {
-		return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		return await ethereumClientService.ethSimulateV1PassthroughForWebsite(request, requestAbortController)
 	}
 
 	let context: PreparedSimulationExecutionContext | undefined
 	try {
 		context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, resolvedSimulationInput)
 	} catch (error) {
-		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1PassthroughForWebsite(request, requestAbortController)
 		throw error
 	}
-	if (context === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (context === undefined) return await ethereumClientService.ethSimulateV1PassthroughForWebsite(request, requestAbortController)
 
 	const simulationPrefixBlockCount = getEthSimulateV1SimulationPrefixBlockCount(context, parentBlockTag)
-	if (simulationPrefixBlockCount === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (simulationPrefixBlockCount === undefined) return await ethereumClientService.ethSimulateV1PassthroughForWebsite(request, requestAbortController)
 	if (request.params[0].validation === true) throwEthSimulateV1ValidationWithSimulationStackError()
 
 	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
@@ -1188,7 +1188,7 @@ export const ethSimulateV1FromInput = async (
 		method: request.method,
 		params: [payload, context.parentBlock.number],
 	}
-	const result = await ethereumClientService.ethSimulateV1Request(prefixedRequest, requestAbortController)
+	const result = await ethereumClientService.ethSimulateV1PassthroughForWebsite(prefixedRequest, requestAbortController)
 	if (result.length < simulationPrefixBlockStateCalls.length) throw new Error('eth_simulateV1 returned fewer blocks than the prepared simulation prefix')
 	return withEthSimulateV1VisibleParentHash(
 		result.slice(simulationPrefixBlockStateCalls.length),

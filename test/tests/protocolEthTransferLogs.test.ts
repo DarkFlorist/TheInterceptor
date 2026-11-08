@@ -5,9 +5,10 @@ import type { BlockCalls, EthSimulateV1CallResult, StateOverrides } from '../../
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { prepareSafeDelegateStateOverrides } from '../../app/ts/safe/safeSimulation.js'
+import { createStorageReaderAccountOverride, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from '../../app/ts/simulation/storageReader.js'
 import { decodeFunctionDataStrict, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { addressString, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
-import { EIP7708_SYSTEM_ADDRESS, ETHEREUM_LOGS_LOGGER_ADDRESS, Multicall3ABI, TRANSFER_LOG } from '../../app/ts/utils/constants.js'
+import { SYSTEM_ADDRESS, ETHEREUM_LOGS_LOGGER_ADDRESS, Multicall3ABI, TRANSFER_LOG } from '../../app/ts/utils/constants.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../../app/ts/utils/ethereumByteCodes.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
@@ -26,7 +27,7 @@ const parentBlock = (() => {
 
 // The log a Sepolia node returned for a 1 attoeth transfer, reduced to the fields the types read. Captured in eth_simulateV1 with traceTransfers enabled.
 const createRpcLog = (overrides: { address?: bigint, topics?: readonly string[], data?: string } = {}) => ({
-	address: addressString(overrides.address ?? EIP7708_SYSTEM_ADDRESS),
+	address: addressString(overrides.address ?? SYSTEM_ADDRESS),
 	topics: overrides.topics ?? [TRANSFER_LOG, word(SENDER), word(RECEIVER)],
 	data: overrides.data ?? word(1n),
 	blockHash: word(0xa3n),
@@ -147,7 +148,7 @@ describe('protocol ETH transfer logs', () => {
 	test('reads the code at the block the simulation started from', async () => {
 		const node = createStubNode([createRpcLog()])
 		await simulateLogAddresses(node)
-		assert.deepEqual(node.getCodeRequests, [[EIP7708_SYSTEM_ADDRESS, 8443561n]])
+		assert.deepEqual(node.getCodeRequests, [[SYSTEM_ADDRESS, 8443561n]])
 	})
 
 	test('does not read code for a simulation without a candidate log', async () => {
@@ -162,35 +163,43 @@ describe('protocol ETH transfer logs', () => {
 		})
 
 		test('a Safe delegate simulation of a website chosen verifyingContract places code there, so logs from it are not ETH transfers', async () => {
-			const overrides = prepareSafeDelegateStateOverrides(EIP7708_SYSTEM_ADDRESS, new Uint8Array([0x60]))
-			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), overrides), [EIP7708_SYSTEM_ADDRESS])
+			const overrides = prepareSafeDelegateStateOverrides(SYSTEM_ADDRESS, new Uint8Array([0x60]))
+			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), overrides), [SYSTEM_ADDRESS])
 		})
 
 		test('a Compound timelock override keeps logs from the address out of the governance result', async () => {
 			const { ethereum } = createStubNode([createRpcLog()])
-			const blockStateCalls = [{ calls: [{ from: SENDER, to: EIP7708_SYSTEM_ADDRESS }], stateOverrides: { [addressString(EIP7708_SYSTEM_ADDRESS)]: { code: getCompoundGovernanceTimeLockMulticall() } } }]
+			const blockStateCalls = [{ calls: [{ from: SENDER, to: SYSTEM_ADDRESS }], stateOverrides: { [addressString(SYSTEM_ADDRESS)]: { code: getCompoundGovernanceTimeLockMulticall() } } }]
 			const result = await ethereum.ethSimulateV1(blockStateCalls, 8443561n, undefined)
-			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
+			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [SYSTEM_ADDRESS])
 		})
 
 		test('an override in another block of the request taints every block, because code persists across simulated blocks', async () => {
 			const node = createStubNode([createRpcLog()])
-			const codeOverride = { [addressString(EIP7708_SYSTEM_ADDRESS)]: { code: new Uint8Array([0x60]) } }
+			const codeOverride = { [addressString(SYSTEM_ADDRESS)]: { code: new Uint8Array([0x60]) } }
 			const { result } = await node.ethereum.simulatePrepared([createInputBlock(), createInputBlock(codeOverride)], 8443561n, undefined)
-			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
+			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [SYSTEM_ADDRESS])
 		})
 
 		test('an override key in checksum casing is still the system address', async () => {
 			const checksumCasedKey = '0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfE'
-			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), { [checksumCasedKey]: { code: new Uint8Array([0x60]) } }), [EIP7708_SYSTEM_ADDRESS])
+			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), { [checksumCasedKey]: { code: new Uint8Array([0x60]) } }), [SYSTEM_ADDRESS])
 		})
 
 		test('code at the address on chain means a contract may have written the log', async () => {
-			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()], '0x60')), [EIP7708_SYSTEM_ADDRESS])
+			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()], '0x60')), [SYSTEM_ADDRESS])
+		})
+
+		test('a storage reader relocating a precompile onto the address gives it no code, so a precompile there cannot have written the log', async () => {
+			const ecRecoverPrecompile = 0x1n
+			const storageReaderOverrides = { [addressString(ecRecoverPrecompile)]: createStorageReaderAccountOverride(true) }
+			assert.equal(STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS, SYSTEM_ADDRESS)
+			assert.deepEqual(Object.keys(storageReaderOverrides).map((address) => BigInt(address)), [ecRecoverPrecompile])
+			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), storageReaderOverrides), [ETHEREUM_LOGS_LOGGER_ADDRESS])
 		})
 
 		test('an override that gives the address no code leaves the node as the only author', async () => {
-			const noCode = { [addressString(EIP7708_SYSTEM_ADDRESS)]: { balance: 1n, code: new Uint8Array() } }
+			const noCode = { [addressString(SYSTEM_ADDRESS)]: { balance: 1n, code: new Uint8Array() } }
 			assert.deepEqual(await simulateLogAddresses(createStubNode([createRpcLog()]), noCode), [ETHEREUM_LOGS_LOGGER_ADDRESS])
 		})
 	})
@@ -207,7 +216,7 @@ describe('protocol ETH transfer logs', () => {
 		] as const
 		for (const [name, log] of notTransfers) {
 			test(`leaves a log with ${ name } alone`, async () => {
-				assert.deepEqual(await simulateLogAddresses(createStubNode([log])), [EIP7708_SYSTEM_ADDRESS])
+				assert.deepEqual(await simulateLogAddresses(createStubNode([log])), [SYSTEM_ADDRESS])
 			})
 		}
 
@@ -232,8 +241,8 @@ describe('protocol ETH transfer logs', () => {
 
 		test('a website asking for eth_simulateV1 gets the node reply unchanged', async () => {
 			const node = createStubNode([createRpcLog()])
-			const result = await node.ethereum.ethSimulateV1Request({ method: 'eth_simulateV1', params: [{ blockStateCalls: directSimulationCalls, traceTransfers: true }, 'latest'] }, undefined)
-			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
+			const result = await node.ethereum.ethSimulateV1PassthroughForWebsite({ method: 'eth_simulateV1', params: [{ blockStateCalls: directSimulationCalls, traceTransfers: true }, 'latest'] }, undefined)
+			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [SYSTEM_ADDRESS])
 			assert.equal(node.getCodeRequests.length, 0)
 		})
 	})
@@ -266,7 +275,7 @@ describe('protocol ETH transfer logs', () => {
 			const node = createStubNode([createRpcLog()])
 			await node.ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)
 			await node.ethereum.ethSimulateV1(directSimulationCalls, 8443560n, undefined)
-			assert.deepEqual(node.getCodeRequests, [[EIP7708_SYSTEM_ADDRESS, 8443561n], [EIP7708_SYSTEM_ADDRESS, 8443560n]])
+			assert.deepEqual(node.getCodeRequests, [[SYSTEM_ADDRESS, 8443561n], [SYSTEM_ADDRESS, 8443560n]])
 		})
 
 		test('failing never relabels a log, and is retried rather than remembered', async () => {

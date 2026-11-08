@@ -8,7 +8,7 @@ export const SUSHISWAP_V2_ROUTER_ADDRESS = 0xd9e1cE17f2641f24aE83637ab66a2cca9C3
 export const UNISWAP_V3_ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564n
 export const MULTICALL3 = 0xcA11bde05977b3631167028862bE2a173976CA11n // Contract for bundling bulk call transactions, deployed on every chain. https://github.com/mds1/multicall
 export const ETHEREUM_LOGS_LOGGER_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEn
-export const EIP7708_SYSTEM_ADDRESS = 0xfffffffffffffffffffffffffffffffffffffffen // Emits the protocol's ETH transfer logs once EIP-7708 is active. https://eips.ethereum.org/EIPS/eip-7708
+export const SYSTEM_ADDRESS = 0xfffffffffffffffffffffffffffffffffffffffen // The protocol's own sender, from EIP-4788. EIP-7708 also emits its ETH transfer logs from here. https://eips.ethereum.org/EIPS/eip-7708
 // export const UNISWAP_V3_NFT_ROUTER = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88n
 // export const SUSHISWAP_FACTORY_ADDRESS = 0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Acn
 

@@ -2,7 +2,7 @@ import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { ETH_SIMULATE_SUPPORT_PROBE, ethSimulateSupportProbeReturnedEthLog } from '../../app/ts/simulation/ethSimulateSupportProbe.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, EIP7708_SYSTEM_ADDRESS, TRANSFER_LOG } from '../../app/ts/utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, SYSTEM_ADDRESS, TRANSFER_LOG } from '../../app/ts/utils/constants.js'
 
 const word = (value: bigint) => `0x${ value.toString(16).padStart(64, '0') }`
 const createRpcLog = (address: bigint, from: bigint, to: bigint) => ({ address: addressString(address), topics: [TRANSFER_LOG, word(from), word(to)], data: word(1n), blockHash: word(0xa3n), blockNumber: '0x1', logIndex: '0x0' })
@@ -16,7 +16,7 @@ const getProbeCall = () => {
 }
 
 // EIP-7708 logs a value transfer "to a different account", and Sepolia nodes return no log for a self-transfer.
-const replyOfNodeWithEip7708 = ({ from, to }: ReturnType<typeof getProbeCall>) => createRpcReply(createSuccessfulCall(from === to ? [] : [createRpcLog(EIP7708_SYSTEM_ADDRESS, from, to)]))
+const replyOfNodeWithEip7708 = ({ from, to }: ReturnType<typeof getProbeCall>) => createRpcReply(createSuccessfulCall(from === to ? [] : [createRpcLog(SYSTEM_ADDRESS, from, to)]))
 const replyOfNodeWithTracerLogs = ({ from, to }: ReturnType<typeof getProbeCall>) => createRpcReply(createSuccessfulCall([createRpcLog(ETHEREUM_LOGS_LOGGER_ADDRESS, from, to)]))
 
 describe('eth_simulateV1 support probe', () => {
