@@ -31,10 +31,10 @@ const withEthLoggerAddress = (call: EthSimulateV1CallResult): EthSimulateV1CallR
 export const recogniseProtocolEthTransferLogs = async (
 	result: EthSimulateV1Result,
 	blockStateCalls: readonly BlockCalls[],
-	getSystemAddressCode: () => Promise<Uint8Array>,
+	systemAddressHasCode: () => Promise<boolean>,
 ): Promise<EthSimulateV1Result> => {
 	if (!hasProtocolEthTransferLog(result)) return result
 	if (overridesGiveSystemAddressCode(blockStateCalls)) return result
-	if ((await getSystemAddressCode()).length > 0) return result
+	if (await systemAddressHasCode()) return result
 	return result.map((block) => ({ ...block, calls: block.calls.map(withEthLoggerAddress) }))
 }

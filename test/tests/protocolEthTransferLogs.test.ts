@@ -49,16 +49,19 @@ const createRpcCall = (logs: readonly RpcLog[]) => ({ status: '0x1', returnData:
 const createStubNode = (transactionLogs: readonly RpcLog[], systemAddressCode = '0x', tokenBalanceReturnData = '0x') => {
 	const getCodeRequests: (readonly unknown[])[] = []
 	const getCodeFailure: { error: Error | undefined } = { error: undefined }
+	const getCodeGate: { opened: Promise<void> } = { opened: Promise.resolve() }
 	const balanceTargets: bigint[] = []
 	const handler = {
 		rpcUrl: 'https://stub.invalid',
 		clearCache: () => undefined,
 		getChainId: async () => 11155111n,
-		jsonRpcRequest: async (request: EthereumJsonRpcRequest) => {
+		jsonRpcRequest: async (request: EthereumJsonRpcRequest, requestAbortController?: AbortController) => {
 			switch (request.method) {
 				case 'eth_getBlockByNumber': return parentBlock
 				case 'eth_getCode':
 					getCodeRequests.push(request.params)
+					await getCodeGate.opened
+					if (requestAbortController?.signal.aborted === true) throw new Error('eth_getCode aborted')
 					if (getCodeFailure.error !== undefined) throw getCodeFailure.error
 					return systemAddressCode
 				case 'eth_simulateV1': {
@@ -81,7 +84,7 @@ const createStubNode = (transactionLogs: readonly RpcLog[], systemAddressCode = 
 			}
 		},
 	}
-	return { ethereum: new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Sepolia', chainId: 11155111n, httpsRpc: handler.rpcUrl, currencyName: 'Sepolia ETH', currencyTicker: 'SEETH', primary: true, minimized: true }), getCodeRequests, getCodeFailure, balanceTargets }
+	return { ethereum: new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Sepolia', chainId: 11155111n, httpsRpc: handler.rpcUrl, currencyName: 'Sepolia ETH', currencyTicker: 'SEETH', primary: true, minimized: true }), getCodeRequests, getCodeFailure, getCodeGate, balanceTargets }
 }
 
 const createInputBlock = (stateOverrides: StateOverrides = {}) => ({
@@ -166,7 +169,7 @@ describe('protocol ETH transfer logs', () => {
 		test('a Compound timelock override keeps logs from the address out of the governance result', async () => {
 			const { ethereum } = createStubNode([createRpcLog()])
 			const blockStateCalls = [{ calls: [{ from: SENDER, to: EIP7708_SYSTEM_ADDRESS }], stateOverrides: { [addressString(EIP7708_SYSTEM_ADDRESS)]: { code: getCompoundGovernanceTimeLockMulticall() } } }]
-			const result = await ethereum.recogniseEthTransfers(await ethereum.ethSimulateV1(blockStateCalls, 8443561n, undefined), blockStateCalls, 8443561n, undefined)
+			const result = await ethereum.ethSimulateV1(blockStateCalls, 8443561n, undefined)
 			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
 		})
 
@@ -215,11 +218,17 @@ describe('protocol ETH transfer logs', () => {
 	})
 
 	describe('entry points', () => {
-		test('recogniseEthTransfers serves the governance path, which simulates directly', async () => {
-			const { ethereum } = createStubNode([createRpcLog()])
-			const result = await ethereum.recogniseEthTransfers(await ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined), directSimulationCalls, 8443561n, undefined)
-			assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [ETHEREUM_LOGS_LOGGER_ADDRESS])
-		})
+		const internalEntryPoints = [
+			['ethSimulateV1, which the governance simulation and balance queries use', async (ethereum: EthereumClientService) => await ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)],
+			['simulate', async (ethereum: EthereumClientService) => await ethereum.simulate([createInputBlock()], 8443561n, undefined)],
+			['simulatePrepared', async (ethereum: EthereumClientService) => (await ethereum.simulatePrepared([createInputBlock()], 8443561n, undefined)).result],
+		] as const
+		for (const [name, simulateThrough] of internalEntryPoints) {
+			test(`${ name } recognises transfers`, async () => {
+				const result = await simulateThrough(createStubNode([createRpcLog()]).ethereum)
+				assert.deepEqual(getLogAddresses(result[0]?.calls[0]), [ETHEREUM_LOGS_LOGGER_ADDRESS])
+			})
+		}
 
 		test('a website asking for eth_simulateV1 gets the node reply unchanged', async () => {
 			const node = createStubNode([createRpcLog()])
@@ -239,20 +248,49 @@ describe('protocol ETH transfer logs', () => {
 			assert.equal(node.getCodeRequests.length, 1)
 		})
 
-		test('cannot fail a call that does not read logs', async () => {
+		test('is shared by simulations running at once', async () => {
 			const node = createStubNode([createRpcLog()])
-			node.getCodeFailure.error = new Error('eth_getCode unavailable')
-			const direct = await node.ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)
-			const prepared = await node.ethereum.simulate([createInputBlock()], 8443561n, undefined)
-			assert.deepEqual(getLogAddresses(direct[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
-			assert.deepEqual(getLogAddresses(prepared[0]?.calls[0]), [EIP7708_SYSTEM_ADDRESS])
-			assert.equal(node.getCodeRequests.length, 0)
+			await Promise.all([simulateLogAddresses(node), simulateLogAddresses(node), node.ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)])
+			assert.equal(node.getCodeRequests.length, 1)
 		})
 
-		test('failing never relabels a log', async () => {
+		test('is not repeated at that block, so a later call cannot fail on it', async () => {
+			const node = createStubNode([createRpcLog()])
+			await simulateLogAddresses(node)
+			node.getCodeFailure.error = new Error('eth_getCode unavailable')
+			assert.deepEqual(await simulateLogAddresses(node), [ETHEREUM_LOGS_LOGGER_ADDRESS])
+			assert.equal(node.getCodeRequests.length, 1)
+		})
+
+		test('is repeated for another block', async () => {
+			const node = createStubNode([createRpcLog()])
+			await node.ethereum.ethSimulateV1(directSimulationCalls, 8443561n, undefined)
+			await node.ethereum.ethSimulateV1(directSimulationCalls, 8443560n, undefined)
+			assert.deepEqual(node.getCodeRequests, [[EIP7708_SYSTEM_ADDRESS, 8443561n], [EIP7708_SYSTEM_ADDRESS, 8443560n]])
+		})
+
+		test('failing never relabels a log, and is retried rather than remembered', async () => {
 			const node = createStubNode([createRpcLog()])
 			node.getCodeFailure.error = new Error('eth_getCode unavailable')
 			await assert.rejects(simulateLogAddresses(node), /eth_getCode unavailable/)
+			node.getCodeFailure.error = undefined
+			assert.deepEqual(await simulateLogAddresses(node), [ETHEREUM_LOGS_LOGGER_ADDRESS])
+			assert.equal(node.getCodeRequests.length, 2)
+		})
+
+		test('an abandoned simulation does not cancel the read another simulation shares', async () => {
+			const node = createStubNode([createRpcLog()])
+			let openGate = () => {}
+			node.getCodeGate.opened = new Promise<void>((resolve) => { openGate = resolve })
+			const abandoned = new AbortController()
+			const abandonedSimulation = node.ethereum.simulatePrepared([createInputBlock()], 8443561n, abandoned)
+			const sharingSimulation = simulateLogAddresses(node)
+			while (node.getCodeRequests.length === 0) await new Promise((resolve) => setTimeout(resolve, 0))
+			abandoned.abort()
+			openGate()
+			await Promise.allSettled([abandonedSimulation])
+			assert.deepEqual(await sharingSimulation, [ETHEREUM_LOGS_LOGGER_ADDRESS])
+			assert.equal(node.getCodeRequests.length, 1)
 		})
 	})
 })
