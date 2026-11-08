@@ -2,10 +2,10 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { PASSTHROUGH_STATE } from '../../app/ts/types/visualizer-types.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../app/ts/utils/constants.js'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, type PortMessage } from './backgroundEthAccountsTestHarness.js'
 
-// With `portDisconnected`, every post attempt is still recorded in `messages` but fails the way a closed port does, so no reply is delivered.
-async function createApprovedSubscriberHarness({ portDisconnected = false }: { readonly portDisconnected?: boolean } = {}) {
+// `onPostMessage` runs after each post attempt is recorded in `messages`; throwing from it makes that post fail.
+async function createApprovedSubscriberHarness({ onPostMessage }: { readonly onPostMessage?: (message: PortMessage) => void } = {}) {
 	installBrowserMock()
 	const modules = await loadModules()
 	const { sendSubscriptionMessagesForNewBlock } = await import('../../app/ts/simulation/services/EthereumSubscriptionService.js')
@@ -18,7 +18,7 @@ async function createApprovedSubscriberHarness({ portDisconnected = false }: { r
 	await modules.updateEthereumSubscriptionsAndFilters(() => [])
 
 	const socket = { tabId: 1, connectionName: 0n }
-	const { port, messages } = createPort(socket.tabId, portDisconnected ? () => { throw new Error('Attempting to use a disconnected port object') } : undefined)
+	const { port, messages } = createPort(socket.tabId, onPostMessage)
 	const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 		[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
@@ -79,25 +79,23 @@ describe('background eth_subscribe', () => {
 		assert.equal(getBlockCalls.count, 0)
 	})
 
-	test('the eth_subscribe handler returns a plain-data reply with its follow-up beside it, and the follow-up runs after delivery', async () => {
+	test('the eth_subscribe handler returns a plain-data reply with its follow-up beside it and sends nothing itself', async () => {
 		const { messages, socket, websiteTabConnections } = await createApprovedSubscriberHarness()
 		const { subscribe } = await import('../../app/ts/background/simulationModeHandlers.js')
-		const { replyToInterceptedRequestWithFollowUp } = await import('../../app/ts/background/messageSending.js')
 
 		const { reply, afterReplyDelivered } = await subscribe(websiteTabConnections, socket, { method: 'eth_subscribe', params: ['syncing'] })
 		// structuredClone rejects functions the way postMessage does, so this fails if the reply ever carries a closure.
 		assert.deepEqual(structuredClone(reply), reply)
 		assert.deepEqual(messages, [])
 
-		assert.equal(replyToInterceptedRequestWithFollowUp(websiteTabConnections, { ...reply, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }, afterReplyDelivered), true)
+		afterReplyDelivered()
 		assert.deepEqual(summarizePortMessages(messages), [
-			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: reply.result },
 			{ method: 'syncing', requestId: undefined, subscription: reply.result, result: { subscription: reply.result, result: false } },
 		])
 	})
 
 	test('syncing subscribers get no initial notification when the subscription id reply was not delivered', async () => {
-		const { modules, messages, sendRequest } = await createApprovedSubscriberHarness({ portDisconnected: true })
+		const { modules, messages, sendRequest } = await createApprovedSubscriberHarness({ onPostMessage: () => { throw new Error('Attempting to use a disconnected port object') } })
 
 		await sendRequest(1, 'eth_subscribe', ['syncing'])
 		const [subscription] = await modules.getEthereumSubscriptionsAndFilters()
@@ -105,6 +103,22 @@ describe('background eth_subscribe', () => {
 		assert.deepEqual(summarizePortMessages(messages), [
 			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: subscription.subscriptionOrFilterId },
 		])
+	})
+
+	test('a failing initial notification is reported without sending a second reply to the answered eth_subscribe request', async () => {
+		const notificationFailure = 'Could not serialize the syncing notification'
+		const { modules, messages, sendRequest } = await createApprovedSubscriberHarness({ onPostMessage: (message) => { if (message.method === 'syncing') throw new Error(notificationFailure) } })
+		assert.equal(await modules.getLatestUnexpectedError(), undefined)
+
+		await sendRequest(1, 'eth_subscribe', ['syncing'])
+		const [subscription] = await modules.getEthereumSubscriptionsAndFilters()
+		if (subscription?.type !== 'syncing') throw new Error('syncing subscription was not stored')
+		const subscriptionId = subscription.subscriptionOrFilterId
+		assert.deepEqual(summarizePortMessages(messages), [
+			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: subscriptionId },
+			{ method: 'syncing', requestId: undefined, subscription: subscriptionId, result: { subscription: subscriptionId, result: false } },
+		])
+		assert.equal((await modules.getLatestUnexpectedError())?.data.message, notificationFailure)
 	})
 
 	test('unsupported subscription types get a single error reply', async () => {

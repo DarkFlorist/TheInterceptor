@@ -15,7 +15,7 @@ import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
-import { replyToInterceptedRequest, replyToInterceptedRequestWithFollowUp } from './messageSending.js'
+import { replyToInterceptedRequest } from './messageSending.js'
 import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
@@ -510,6 +510,26 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 }
 
 async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	const { replyDelivered, afterReplyDelivered } = await replyToContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+	// Follow-up messages, such as notifications for a subscription id the reply carries, only make sense to a page that received the reply.
+	if (replyDelivered === true && afterReplyDelivered !== undefined) await runAfterReplyDelivered(afterReplyDelivered)
+	return replyDelivered
+}
+
+// Runs outside replyToContentScriptMessage's error boundary, like block-driven subscription notifications: the request is already answered, so a failure here is only reported and never becomes a second reply.
+async function runAfterReplyDelivered(afterReplyDelivered: () => void) {
+	try {
+		afterReplyDelivered()
+	} catch (error: unknown) {
+		await reportUnexpectedError(error)
+	}
+}
+
+type ContentScriptMessageReply = { readonly replyDelivered: boolean | undefined, readonly afterReplyDelivered: (() => void) | undefined }
+const replyDeliveredWithoutFollowUp = (replyDelivered: boolean | undefined): ContentScriptMessageReply => ({ replyDelivered, afterReplyDelivered: undefined })
+
+// Sends the request's only reply, turning handling failures into an error reply. Follow-up work is returned instead of run, so its failures cannot reach this catch and send a second reply.
+async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
@@ -519,7 +539,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		let rpcContext: RpcRequestContext = { request }
 		if (request.method === 'safe_apps_request') {
 			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
-			if (admission.kind === 'reply') return replyToInterceptedRequest(websiteTabConnections, admission.reply)
+			if (admission.kind === 'reply') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, admission.reply))
 			rpcContext = admission.context
 		}
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
@@ -537,23 +557,23 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 			activeAddress.address,
 		)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		return replyToInterceptedRequestWithFollowUp(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }, afterReplyDelivered)
+		return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
+			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))
 		}
 		if (error instanceof JsonRpcResponseError) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() })
+			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() }))
 		}
 		await reportUnexpectedError(error)
-		return replyToInterceptedRequest(websiteTabConnections, {
+		return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result',
 			...getRequestWithDefinedParams(request),
 			error: {
 				code: 123456,
 				message: 'Unknown error'
 			},
-		})
+		}))
 	}
 }
 
