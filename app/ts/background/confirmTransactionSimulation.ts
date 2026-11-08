@@ -14,7 +14,7 @@ import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, visualizeSimulatorState } from './simulationUpdating.js'
 import { getTabState } from './storageVariables.js'
-import { type SimulationSnapshot } from './networkTransitionLock.js'
+import type { SimulationSnapshot } from './networkTransitionLock.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController

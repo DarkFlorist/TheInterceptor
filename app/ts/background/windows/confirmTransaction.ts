@@ -554,8 +554,8 @@ function schedulePendingNoResponseRetry(simulationServicesOwner: SimulationServi
 	pendingNoResponseRetryTimers.set(identifier, retryTimer)
 }
 
-// A re-read continues the request only if no network change committed since the request's snapshot, even one that returned to the same endpoint, and its stack context is the same.
-export const continuesStackContext = (requestNetwork: NetworkRead, currentNetwork: NetworkRead) => (
+// Whether a re-read may continue a request: no network change committed between the two reads, which the generation decides, and the stack context is the same, which the generation does not count because selecting a Gnosis Safe or toggling simulation mode keeps the network.
+export const readsShareNetworkAndStackContext = (requestNetwork: NetworkRead, currentNetwork: NetworkRead) => (
 	requestNetwork.simulation.networkChangeGeneration === currentNetwork.simulation.networkChangeGeneration
 	&& activeStackContextsEqual(getActiveStackContext(requestNetwork.settings), getActiveStackContext(currentNetwork.settings))
 )
@@ -854,7 +854,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	}
 	// Only when reconciliation removed executed Gnosis Safe operations from storage is the request's stack out of date; it is then re-read and simulated as it is now, provided no network change committed since the request was admitted. Otherwise the request stays on the network it was admitted on, even if a switch committed during preparation.
 	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkSnapshotForServices(requestNetwork.services) : requestNetwork
-	if (!continuesStackContext(requestNetwork, network)) {
+	if (!readsShareNetworkAndStackContext(requestNetwork, network)) {
 		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The active network changed while the Interceptor prepared this request. Send it again.')
 	}
 	// Checked before the request joins the confirmation queue, so a stack that cannot be read fails the request rather than leaving it pending.

@@ -32,7 +32,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { type NetworkSnapshot, type SimulationRead, type SimulationSnapshot } from './networkTransitionLock.js'
+import type { NetworkSnapshot, SimulationRead, SimulationSnapshot } from './networkTransitionLock.js'
 
 // The snapshot for work that uses the stack. There is no later read to fall back on, because that read could describe another network.
 export const requireSimulationSnapshot = (simulation: SimulationRead) => {
@@ -325,7 +325,7 @@ export const updateSimulationMetadata = async (snapshot: SimulationSnapshot, req
 		if (!networkIsActive()) return undefined
 		if (prevState.simulationState.kind === 'passthrough') return undefined
 		if (prevState.simulationState.value.success === false) return undefined
-		// The stored visualisation may already describe a network installed after these services were read; only its own network's client may add metadata to it.
+		// Not a network-change check, which networkIsActive makes: this compares where a stored result came from. The stored visualisation may describe a network installed after these services were read; only its own network's client may add metadata to it.
 		if (getRpcNetworkChange(prevState.simulationState.value.rpcNetwork, ethereum.getRpcEntry()).endpointChanged) return undefined
 		try {
 			const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(

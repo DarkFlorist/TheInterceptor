@@ -2088,18 +2088,18 @@ describe('network transition snapshot', () => {
 	test('a Gnosis Safe confirmation re-read continues its request only if no network change committed since, even one back to the same endpoint', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { continuesStackContext } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { readsShareNetworkAndStackContext } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		try {
 			const requestNetwork = await modules.readNetworkSnapshot(owner)
-			assert.equal(continuesStackContext(requestNetwork, await modules.readNetworkSnapshot(owner)), true)
+			assert.equal(readsShareNetworkAndStackContext(requestNetwork, await modules.readNetworkSnapshot(owner)), true)
 
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
 			const afterReturningToA = await modules.readNetworkSnapshot(owner)
 			assert.deepEqual(afterReturningToA.settings.activeRpcNetwork, requestNetwork.settings.activeRpcNetwork)
-			assert.equal(continuesStackContext(requestNetwork, afterReturningToA), false)
+			assert.equal(readsShareNetworkAndStackContext(requestNetwork, afterReturningToA), false)
 		} finally {
 			retireAll()
 		}

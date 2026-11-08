@@ -6,7 +6,7 @@ import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.j
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { publishUnavailableSimulationVisualisation, updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
-import { type SimulationRead, type SimulationSnapshot, type UnavailableSimulation } from './networkTransitionLock.js'
+import type { SimulationRead, SimulationSnapshot, UnavailableSimulation } from './networkTransitionLock.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }

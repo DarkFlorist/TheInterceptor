@@ -397,7 +397,7 @@ const blockNumber = 8443561n
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState))
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState), () => true)
 
 			const emittedBlockNumbers = postedMessages.flatMap((message) => {
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
@@ -441,7 +441,7 @@ const blockNumber = 8443561n
 			const staleSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, staleSocket)
 			const liveSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE, () => true)
 
 			const emittedBlockNumbers = postedMessages.flatMap((message) => {
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
@@ -489,7 +489,7 @@ const blockNumber = 8443561n
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => {
 				simulationStateRequests++
 				return toResolvedExecutionSimulationState(simulationState)
-			})
+			}, () => true)
 
 			assert.equal(simulationStateRequests, 1)
 			const emittedMessages = postedMessages.filter((message) => message.type === 'result' && 'method' in message && message.method === 'newHeads')

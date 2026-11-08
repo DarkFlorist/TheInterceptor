@@ -225,7 +225,10 @@ export function createEthereumWithGetBlockCounter(
 			get(target, property, receiver) {
 				if (property === 'isBlockPolling') return () => blockPolling
 				if (property === 'setBlockPolling') return (enabled: boolean) => {
+					// Like the real client, a retired one refuses to poll again.
+					if (enabled && target.isRetired()) return false
 					blockPolling = enabled
+					return enabled
 				}
 				if (property === 'getBlock') {
 					return async () => {

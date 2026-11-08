@@ -579,7 +579,7 @@ export async function refreshPopupConfirmTransactionMetadata(network: NetworkSna
 		}
 		case 'Transaction': {
 			if (first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode === 'failed') return
-			// Enriching a simulation through another chain's or endpoint's services would mix the two networks, so it waits for the transaction to be simulated again.
+			// This compares where the stored simulation came from, not whether the network changed. Enriching a simulation through another chain's or endpoint's services would mix the two networks, so it waits for the transaction to be simulated again.
 			if (getRpcNetworkChange(first.popupVisualisation.data.simulationState.rpcNetwork, ethereum.getRpcEntry()).endpointChanged) return
 			try {
 				const visualizedSimulationState = await visualizeSimulatorState(first.popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)

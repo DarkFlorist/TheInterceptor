@@ -270,6 +270,7 @@ function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 		},
 		setBlockPolling(enabled: boolean) {
 			blockPolling = enabled
+			return enabled
 		},
 		isRetired() {
 			return false
