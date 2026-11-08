@@ -57,6 +57,8 @@ function installBrowserMock() {
 			},
 		},
 	})
+	// webextension-polyfill refuses to load outside an extension unless chrome.runtime.id exists
+	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 }
 
 installBrowserMock()

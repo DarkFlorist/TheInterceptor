@@ -1,5 +1,4 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { Future } from '../../utils/future.js'
 import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
@@ -13,6 +12,7 @@ import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../typ
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
+import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
 export type SimulationStackSnapshot = {
@@ -25,7 +25,8 @@ type FetchSimulationStackReply = {
 	snapshot: SimulationStackSnapshot
 }
 
-let pendForUserReply: { uniqueRequestIdentifier: UniqueRequestIdentifier, reply: Future<FetchSimulationStackReply> } | undefined
+// Only this background instance's waiter: the stored request is the copy that survives a restart and feeds the dialog page, and openedDialog is the window, not the request
+let pendForUserReply: PendingDialogReply<FetchSimulationStackReply> | undefined
 
 let openedDialog: PopupOrTab | undefined 
 const MAX_DECISION_CACHE = 100
@@ -51,8 +52,8 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 
 export async function resolveFetchSimulationStackRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	if (pendForUserReply !== undefined) {
-		// A confirmation waits for its snapshot, so it can arrive after its dialog closed and a newer request started waiting. Only the request it answers may take it
-		if (doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, pendForUserReply.uniqueRequestIdentifier)) pendForUserReply.reply.resolve({ confirmation, snapshot })
+		// A confirmation waits for its snapshot, so it can arrive after its dialog closed and a newer request started waiting
+		pendForUserReply.tryResolve(confirmation.data.uniqueRequestIdentifier, { confirmation, snapshot })
 		return
 	}
 	const data = await getFetchSimulationStackRequestPromise()
@@ -117,8 +118,8 @@ export const openFetchSimulationStackDialog = async (
 ): Promise<FetchSimulationStackDialogResult> => {
 	if (openedDialog !== undefined || pendForUserReply) return getRejectedDialogResult(initialSnapshot)
 
-	const replyFuture = new Future<FetchSimulationStackReply>()
-	pendForUserReply = { uniqueRequestIdentifier, reply: replyFuture }
+	const pendingReply = createPendingDialogReply<FetchSimulationStackReply>(uniqueRequestIdentifier)
+	pendForUserReply = pendingReply
 	const rejectMessage = getRejectMessage(uniqueRequestIdentifier, params.params[0])
 	const onCloseWindowOrTab = async (popupOrTab: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject signature
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
@@ -154,7 +155,7 @@ export const openFetchSimulationStackDialog = async (
 		} else {
 			await resolveFetchSimulationStackRequest(initialSnapshot, websiteTabConnections, rejectMessage)
 		}
-		const reply = await replyFuture
+		const reply = await pendingReply.reply
 		await setFetchSimulationStackRequestPromise(undefined)
 		if (reply.confirmation.data.accept) {
 			return {
