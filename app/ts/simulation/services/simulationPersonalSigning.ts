@@ -11,9 +11,17 @@ const MOCK_SIMULATION_PRIVATE_KEY = 0x2n
 const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 
 // The bytes simulated personal_sign signs. The Interceptor signs these requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed. Stored messages carry no decoding version, so a signature handed out before this reading was adopted is rebuilt differently, and then recovers to the mock key's address, for the few messages the old reading signed differently: any two-character message such as '0x', '12' or 'hi', and digit strings or other forms that BigInt parsed. That is the limit: well-formed 0x hex reads the same, every other message failed to sign before, and simulated signatures are throwaway, so no version is kept.
-const getSimulatedPersonalSignBytes = (params: PersonalSignParams) => getMetaMaskPersonalSignMessageBytes(params.params[0])
+const getSimulatedPersonalSignBytes = (message: string) => getMetaMaskPersonalSignMessageBytes(message)
 
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: getSimulatedPersonalSignBytes(params) })
+const hashSimulatedPersonalSignMessage = (message: string) => hashMessage({ raw: getSimulatedPersonalSignBytes(message) })
+
+export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashSimulatedPersonalSignMessage(params.params[0])
+
+// Even-length hex with a 0x or 0X prefix, the only form whose signing decoding the signer lookup applies to a recovered message. Other messages match by their exact string or by MetaMask's reading, so recovering '12' keeps MetaMask's reading of it as text instead of finding a signing of the byte 0x12.
+const isEvenLengthHexMessage = (message: string) => /^0[xX](?:[0-9a-fA-F]{2})*$/u.test(message)
+
+// The hash simulated personal_sign signs for a hex message, decoded exactly as signing decodes it, or undefined when the message is not even-length hex.
+export const getSimulatedPersonalSignHashOfHexMessage = (message: string) => isEvenLengthHexMessage(message) ? hashSimulatedPersonalSignMessage(message) : undefined
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
@@ -28,7 +36,7 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 			return { signature, messageHash }
 		}
 		case 'personal_sign': return {
-			signature: await account.signMessage({ message: { raw: getSimulatedPersonalSignBytes(params) } }),
+			signature: await account.signMessage({ message: { raw: getSimulatedPersonalSignBytes(params.params[0]) } }),
 			messageHash: getMessageHashForPersonalSign(params)
 		}
 		default: assertNever(params)
