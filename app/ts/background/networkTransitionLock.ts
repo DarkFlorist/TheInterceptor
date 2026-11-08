@@ -58,8 +58,7 @@ async function retryUnfinishedNetworkChange() {
 	return unfinishedNetworkChangeFailure
 }
 
-// The reads this module builds are defined here, and nothing here imports the modules that use them, so the dependency runs one way.
-// What every simulation read knows, also without a stack: these come from the settings and the lock, not from the stack.
+// The reads this module builds are defined here, and nothing here imports the modules that use them, so the dependency runs one way. Below, what every simulation read knows, also without a stack: these come from the settings and the lock, not from the stack.
 export type SimulationReadIdentity = {
 	readonly activeRpcNetwork: RpcNetwork
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
