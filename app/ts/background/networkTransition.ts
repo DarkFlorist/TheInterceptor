@@ -13,9 +13,8 @@ import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from 
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
-import type { SimulationRead } from './simulationUpdating.js'
 import { readSimulationInputSources } from './simulationInputBuilding.js'
-import { completeUnfinishedNetworkChange, type LockedNetworkReads, type NetworkSnapshot, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask } from './networkTransitionLock.js'
+import { completeUnfinishedNetworkChange, type LockedNetworkReads, type NetworkSnapshot, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask, type SimulationRead } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
@@ -31,8 +30,11 @@ async function clearSimulationStackContext() {
 	}))
 }
 
-type NetworkChangeEffect = 'retireSnapshotsOfReplacedNetwork' | 'installServices' | 'clearStackForChangedChain' | 'notifyWebsitesOfChainChange' | 'notifyPopupsOfChainChange'
-const NETWORK_CHANGE_EFFECTS = ['retireSnapshotsOfReplacedNetwork', 'installServices', 'clearStackForChangedChain', 'notifyWebsitesOfChainChange', 'notifyPopupsOfChainChange'] as const
+// The effects a committed network change owes, in the one order both its first application and its repair use. The first application runs the transition's afterNetworkApplied between the two phases, so it publishes the committed settings before websites and popups hear of the chain; a repair has no such step and runs both phases at once.
+const NETWORK_APPLICATION_EFFECTS = ['retireSnapshotsOfReplacedNetwork', 'installServices', 'clearStackForChangedChain'] as const
+const NETWORK_CHANGE_NOTIFICATION_EFFECTS = ['notifyWebsitesOfChainChange', 'notifyPopupsOfChainChange'] as const
+const NETWORK_CHANGE_EFFECTS = [...NETWORK_APPLICATION_EFFECTS, ...NETWORK_CHANGE_NOTIFICATION_EFFECTS] as const
+type NetworkChangeEffect = typeof NETWORK_CHANGE_EFFECTS[number]
 
 type CommittedNetworkChange = {
 	readonly simulationServicesOwner: SimulationServicesOwner
@@ -74,10 +76,13 @@ async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: Ne
 	change.completedEffects.add(effect)
 }
 
+async function runNetworkChangeEffects(change: CommittedNetworkChange, effects: readonly NetworkChangeEffect[], updatedSettings: Settings) {
+	for (const effect of effects) await runNetworkChangeEffect(change, effect, updatedSettings)
+}
+
 // Retries the effects that have not succeeded in commit order against the committed settings, so websites hear of the chain only once its state is complete. While one still fails, the completed ones stay recorded in the change and this throws.
 async function completeNetworkChangeEffects(change: CommittedNetworkChange) {
-	const committedSettings = await getSettings()
-	for (const effect of NETWORK_CHANGE_EFFECTS) await runNetworkChangeEffect(change, effect, committedSettings)
+	await runNetworkChangeEffects(change, NETWORK_CHANGE_EFFECTS, await getSettings())
 }
 
 // The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
@@ -134,8 +139,7 @@ async function publishCommittedSettingsChange(reads: LockedNetworkReads, change:
 	const previousSettings = change.settingsBeforeTransition
 	const { endpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-	await runNetworkChangeEffect(change, 'notifyWebsitesOfChainChange', updatedSettings)
-	await runNetworkChangeEffect(change, 'notifyPopupsOfChainChange', updatedSettings)
+	await runNetworkChangeEffects(change, NETWORK_CHANGE_NOTIFICATION_EFFECTS, updatedSettings)
 	// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
 	const needsPopupRefresh = (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (endpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))
 	const popupRefresh = needsPopupRefresh ? (await reads.captureNetworkSnapshot(change.simulationServicesOwner.getCurrent)).simulation : undefined
@@ -159,10 +163,9 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 			if (await transition.writeSettings(settingsBeforeTransition) === 'unchanged') return undefined
 			const committedSettings = await getSettings()
 			try {
-				await runNetworkChangeEffect(change, 'retireSnapshotsOfReplacedNetwork', committedSettings)
-				await runNetworkChangeEffect(change, 'installServices', committedSettings)
-				await runNetworkChangeEffect(change, 'clearStackForChangedChain', committedSettings)
+				await runNetworkChangeEffects(change, NETWORK_APPLICATION_EFFECTS, committedSettings)
 			} finally {
+				// The phase boundary of NETWORK_CHANGE_EFFECTS.
 				await transition.afterNetworkApplied?.(committedSettings)
 			}
 			return await publishCommittedSettingsChange(reads, change, committedSettings)

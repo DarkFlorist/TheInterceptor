@@ -37,13 +37,22 @@ const readRuntimeImports = async (file: string) => {
 		.filter((imported) => imported !== undefined)
 }
 
-// The runtime import graph of every app module reachable from the given modules.
-const readRuntimeImportGraph = async (entryModules: readonly string[]) => {
+// Every module a file names in an import or export, including type-only ones, which leave no runtime edge but still say which module depends on which.
+const readAllImports = async (file: string) => {
+	const sourceFile = ts.createSourceFile(file, await Bun.file(file).text(), ts.ScriptTarget.ESNext, false)
+	return sourceFile.statements
+		.filter((statement): statement is (ts.ImportDeclaration | ts.ExportDeclaration) & { readonly moduleSpecifier: ts.StringLiteral } => (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier))
+		.map((statement) => resolveRelativeImport(file, statement.moduleSpecifier.text))
+		.filter((imported) => imported !== undefined)
+}
+
+// The import graph of every app module reachable from the given modules.
+const readImportGraph = async (entryModules: readonly string[], readImports: (file: string) => Promise<readonly string[]>) => {
 	const graph = new Map<string, readonly string[]>()
 	const pending = [...entryModules]
 	for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
 		if (graph.has(file)) continue
-		const imports = await readRuntimeImports(file)
+		const imports = await readImports(file)
 		graph.set(file, imports)
 		pending.push(...imports)
 	}
@@ -74,7 +83,7 @@ const findImportCycle = (graph: ReadonlyMap<string, readonly string[]>, module: 
 }
 
 test('network transitions and the popup visualisation layer do not import each other', async () => {
-	const graph = await readRuntimeImportGraph([networkTransition, networkTransitionLock, popupVisualisationUpdater, popupSimulationRefreshQueue])
+	const graph = await readImportGraph([networkTransition, networkTransitionLock, popupVisualisationUpdater, popupSimulationRefreshQueue], readRuntimeImports)
 	const modulesBelowTransitions = [popupVisualisationUpdater, popupSimulationRefreshQueue, networkTransitionLock]
 	// The transition module publishes failed visualisations, queues popup refreshes and runs in the lock; this also shows that the graph resolves its imports.
 	for (const module of modulesBelowTransitions) assert.ok(graph.get(networkTransition)?.includes(module), `networkTransition.ts imports ${ relative(sourceRoot, module) }`)
@@ -83,4 +92,14 @@ test('network transitions and the popup visualisation layer do not import each o
 		const cycle = findImportCycle(graph, module)
 		assert.equal(cycle, undefined, `runtime import cycle: ${ cycle?.join(' -> ') }`)
 	}
+})
+
+test('the lock module defines the reads, and depends on none of the modules that consume them', async () => {
+	const simulationUpdating = backgroundModule('simulationUpdating')
+	const graph = await readImportGraph([networkTransitionLock], readAllImports)
+	// Also through type-only imports, so that a value import added later along the same edge cannot form a load-order cycle.
+	const cycle = findImportCycle(graph, networkTransitionLock)
+	assert.equal(cycle, undefined, `import cycle, counting type-only imports: ${ cycle?.join(' -> ') }`)
+	assert.ok(!graph.has(simulationUpdating), 'networkTransitionLock.ts depends on simulationUpdating.ts')
+	assert.ok((await readAllImports(simulationUpdating)).includes(networkTransitionLock))
 })

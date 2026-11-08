@@ -1,12 +1,12 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { getSimulationProviderForSnapshot, type SimulationRead, type SimulationSnapshot, type UnavailableSimulation } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { publishUnavailableSimulationVisualisation, updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
-import { getReadServices } from './networkTransitionLock.js'
+import { getReadServices, type SimulationRead, type SimulationSnapshot, type UnavailableSimulation } from './networkTransitionLock.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }

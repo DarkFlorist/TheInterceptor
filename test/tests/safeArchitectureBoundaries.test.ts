@@ -7,6 +7,7 @@ const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/backgrou
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const networkTransitionSource = await Bun.file(new URL('../../app/ts/background/networkTransition.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const simulationInputBuildingSource = await Bun.file(new URL('../../app/ts/background/simulationInputBuilding.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
@@ -104,10 +105,10 @@ test('general simulation orchestration gets active stack policy from the shared 
 		assert.doesNotMatch(source, /from '\.\.\/safe\/safeStack\.js'/u)
 		assert.doesNotMatch(source, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
 	}
-	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(simulationInputBuildingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
 	assert.match(networkTransitionSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
-	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(simulationUpdatingSource, /if \(!settings\.simulationMode\) break/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /from '\.\.\/safe\/safeStack\.js'/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /if \(!settings\.simulationMode\) break/u)
 })
 
 test('the confirmation presentation imports shared Safe flow policy from the domain layer', () => {

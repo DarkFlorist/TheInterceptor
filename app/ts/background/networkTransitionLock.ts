@@ -7,7 +7,6 @@ import type { SimulationServices, SimulationServicesReader } from '../simulation
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import type { NetworkRead, SimulationRead, SimulationReadIdentity, UnavailableSimulation } from './simulationUpdating.js'
 import { buildSimulationStateInput, readSimulationInputSources, type SimulationSnapshotSources } from './simulationInputBuilding.js'
 import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -57,6 +56,34 @@ async function retryUnfinishedNetworkChange() {
 		unfinishedNetworkChangeFailure = new Error(`An earlier network change committed its settings but could not finish applying them: ${ getErrorMessage(error) ?? 'unknown error' }`)
 	}
 	return unfinishedNetworkChangeFailure
+}
+
+// The reads this module builds are defined here, and nothing here imports the modules that use them, so the dependency runs one way.
+// What every simulation read knows, also without a stack: these come from the settings and the lock, not from the stack.
+export type SimulationReadIdentity = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
+	// The committed network change this read was made after; a later change, even back to the same endpoint, makes it obsolete for the shared visualisation.
+	readonly networkChangeGeneration: number
+}
+
+// A simulation read whose stack or input sources failed, or whose stack an unfinished network change has not cleared. Settings and services do not depend on them, so only work that uses the stack fails, with this error.
+export type UnavailableSimulation = SimulationReadIdentity & {
+	readonly kind: 'unavailable'
+	readonly error: unknown
+}
+
+// A read for services the active network no longer uses. It has no stack, so nothing can simulate or publish for it.
+type ReplacedSimulation = SimulationReadIdentity & {
+	readonly kind: 'replaced'
+}
+
+export type SimulationRead = SimulationSnapshot | UnavailableSimulation | ReplacedSimulation
+
+// One read's settings and simulation; getReadServices returns its services. Only NetworkSnapshot, which the lock module alone builds, promises that those services serve the settings; this looser type is what work on an already pending request takes, because its dialog and reply must work while a network change cannot install its services.
+export type NetworkRead = {
+	readonly settings: Settings
+	readonly simulation: SimulationRead
 }
 
 // Only this module holds the value, so only its reads have the types below. A copy of a read can still keep the marker, which is why its services are not a field.

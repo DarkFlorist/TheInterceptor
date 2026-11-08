@@ -12,9 +12,9 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, type SimulationSnapshot, visualizeSimulatorState } from './simulationUpdating.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, visualizeSimulatorState } from './simulationUpdating.js'
 import { getTabState } from './storageVariables.js'
-import { getReadServices } from './networkTransitionLock.js'
+import { getReadServices, type SimulationSnapshot } from './networkTransitionLock.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController

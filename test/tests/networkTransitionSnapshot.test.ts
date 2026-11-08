@@ -1366,6 +1366,74 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a repair applies the network change effects in the order of a first application', async () => {
+		const { getCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
+		// Records each effect once it took place: the generation advance is seen at the next recorded step, the others as they happen.
+		const recordNetworkChange = async (installationFailuresBeforeSuccess: number) => {
+			installBrowserMock()
+			const modules = await loadModules()
+			await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+			await modules.updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+			await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+			const recording = createRecordingServicesOwner(networkA)
+			const events: string[] = []
+			const generationBefore = getCommittedNetworkChangeGeneration()
+			const record = (event: string) => {
+				if (!events.includes('snapshots retired') && getCommittedNetworkChangeGeneration() > generationBefore) events.push('snapshots retired')
+				events.push(event)
+			}
+			let remainingInstallationFailures = installationFailuresBeforeSuccess
+			const owner: SimulationServicesOwner = {
+				getCurrent: recording.owner.getCurrent,
+				reset: (rpcNetwork) => {
+					if (remainingInstallationFailures > 0) {
+						remainingInstallationFailures -= 1
+						record('installation failed')
+						throw new Error('Injected installation failure')
+					}
+					record('services installed')
+					return recording.owner.reset(rpcNetwork)
+				},
+			}
+			const socket = { tabId: 1, connectionName: 0n }
+			const { port } = createPort(socket.tabId)
+			const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }]])
+			const postMessage = port.postMessage.bind(port)
+			port.postMessage = (message) => {
+				if (message.method === 'chainChanged') record('websites told the chain')
+				postMessage(message)
+			}
+			const originalSet = browser.storage.local.set.bind(browser.storage.local)
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+				await originalSet(items)
+				if ('interceptorTransactionStack' in items) record('stack cleared')
+			} })
+			const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (message: unknown) => {
+				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_chain_update') record('popups told the chain')
+				return await originalSendMessage(message)
+			} })
+			try {
+				const change = modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+				if (installationFailuresBeforeSuccess === 0) await change
+				else await assert.rejects(change, /Injected installation failure/u)
+				// The next lock holder repairs what the failed transition left.
+				await modules.readNetworkSnapshot(owner)
+			} finally {
+				Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+				Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSendMessage })
+				recording.retireAll()
+			}
+			return events.filter((event) => event !== 'installation failed')
+		}
+
+		const firstApplication = await recordNetworkChange(0)
+		// The transition retries once inside the lock, so two failures leave the change to the repair of the next read.
+		const repaired = await recordNetworkChange(2)
+		assert.deepEqual(firstApplication, ['snapshots retired', 'services installed', 'stack cleared', 'websites told the chain', 'popups told the chain'])
+		assert.deepEqual(repaired, firstApplication)
+	})
+
 	test('a website notification that throws leaves the change unfinished, and its repair delivers the chain once', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
