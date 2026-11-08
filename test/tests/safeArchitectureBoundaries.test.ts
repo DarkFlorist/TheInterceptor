@@ -42,19 +42,22 @@ test('only the requested-network rule writes a network refusal', async () => {
 	assert.deepEqual(writers, ['transactionNetwork.ts'])
 })
 
-// A stored refusal depends on the stored active network and on the installed client. The network is only written through writeActiveNetwork, which re-evaluates the refusals after every write once background startup set its follow-up. The client of another network is only installed by a network switch in activeSettings.ts, after its write, so the switch re-evaluates with the new client. A refusal that is stored is re-evaluated by storeNetworkRefusal, as a switch may have finished while it was decided. Nothing else re-evaluates, so a view or a refresh never stands in for a missing trigger.
-test('only network writes, a network switch and the refusal store re-evaluate stored network refusals', async () => {
+// A stored refusal depends on the stored active network and on the installed client. The network is only written through writeActiveNetwork, which re-evaluates the refusals after every write once background startup set its follow-up. The client is only replaced through replaceInstalledSimulationServices, which re-evaluates with the new client, whether or not the stored chain changed. A refusal that is stored is re-evaluated by storeNetworkRefusal, as a switch may have finished while it was decided. Nothing else re-evaluates, so a view or a refresh never stands in for a missing trigger.
+test('only network writes, client replacements and the refusal store re-evaluate stored network refusals', async () => {
 	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
 	const callers = new Map<string, string[]>()
 	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
 		const source = await Bun.file(`${ appDirectory }${ file }`).text()
-		for (const name of ['reevaluateStoredNetworkRefusals', 'reevaluateStoredNetworkRefusalsBestEffort', 'setAfterActiveNetworkWrite', 'reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite', 'afterActiveNetworkWrite']) {
+		for (const name of ['reevaluateStoredNetworkRefusals', 'reevaluateStoredNetworkRefusalsBestEffort', 'reevaluateStoredNetworkRefusalsAndNotifyWindow', 'setAfterActiveNetworkWrite', 'reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite', 'afterActiveNetworkWrite', 'replaceInstalledSimulationServices', 'simulationServicesOwner\\.reset']) {
 			if (new RegExp(`(?<!function )\\b${ name }\\??\\.?\\(`, 'u').test(source)) callers.set(name, [...callers.get(name) ?? [], file])
 		}
 	}
 	assert.deepEqual(Object.fromEntries([...callers].map(([name, files]) => [name, files.toSorted()])), {
 		reevaluateStoredNetworkRefusals: ['background/transactionNetwork.ts'],
-		reevaluateStoredNetworkRefusalsBestEffort: ['background/activeSettings.ts', 'background/transactionNetwork.ts'],
+		reevaluateStoredNetworkRefusalsBestEffort: ['background/transactionNetwork.ts'],
+		reevaluateStoredNetworkRefusalsAndNotifyWindow: ['background/transactionNetwork.ts'],
+		replaceInstalledSimulationServices: ['background/activeSettings.ts', 'background/popupMessageHandlers/settings.ts'],
+		'simulationServicesOwner\\.reset': ['background/transactionNetwork.ts'],
 		setAfterActiveNetworkWrite: ['background/transactionNetwork.ts'],
 		reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite: ['background/background-startup.ts'],
 		afterActiveNetworkWrite: ['background/activeNetworkStorage.ts'],

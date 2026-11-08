@@ -1,4 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { RpcEntry } from '../types/rpc.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -92,11 +94,21 @@ export async function reevaluateStoredNetworkRefusalsBestEffort(ethereum: Ethere
 	}
 }
 
-// Called once at background startup. Every write of the active network goes through writeActiveNetwork, and from then on each one re-evaluates the stored refusals with the installed client, so a network switch, a simulation mode change, a settings import and the startup repair all update them. A changed refusal is shown by telling the confirmation window to read the stored requests again.
+// Re-evaluates the stored refusals with the given client, best effort, and tells the confirmation window to read the stored requests again if one changed.
+async function reevaluateStoredNetworkRefusalsAndNotifyWindow(ethereum: EthereumClientService) {
+	if (await reevaluateStoredNetworkRefusalsBestEffort(ethereum)) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
+}
+
+// Called once at background startup. Every write of the active network goes through writeActiveNetwork, and from then on each one re-evaluates the stored refusals with the installed client, so a network switch, a simulation mode change, a settings import and the startup repair all update them.
 export function reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite(getInstalledEthereum: () => EthereumClientService) {
-	setAfterActiveNetworkWrite(async () => {
-		if (await reevaluateStoredNetworkRefusalsBestEffort(getInstalledEthereum())) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
-	})
+	setAfterActiveNetworkWrite(async () => await reevaluateStoredNetworkRefusalsAndNotifyWindow(getInstalledEthereum()))
+}
+
+// The background's one way to replace the installed client. A refusal is decided against the client that would execute the transaction, which can change while the stored network stays the same, as when a settings import stored a network without installing its client and another endpoint of that network is selected later, so every replacement re-evaluates the stored refusals with the new client.
+export async function replaceInstalledSimulationServices(simulationServicesOwner: SimulationServicesOwner, rpcNetwork: RpcEntry) {
+	const services = simulationServicesOwner.reset(rpcNetwork)
+	await reevaluateStoredNetworkRefusalsAndNotifyWindow(services.ethereum)
+	return services
 }
 
 // The one place a network refusal is stored. The refusal is the verdict of the services the approval captured, but what is stored says what approving would do now, as a resolution can outlive a network switch. The installed client is read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows.

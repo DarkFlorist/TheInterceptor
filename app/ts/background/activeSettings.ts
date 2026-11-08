@@ -15,7 +15,7 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { reevaluateStoredNetworkRefusalsBestEffort } from './transactionNetwork.js'
+import { replaceInstalledSimulationServices } from './transactionNetwork.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -114,7 +114,7 @@ async function runActiveSettingsChange(
 					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
 					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
 						try {
-							simulationServicesOwner.reset(change.rpcNetwork)
+							await replaceInstalledSimulationServices(simulationServicesOwner, change.rpcNetwork)
 						} catch (error) {
 							// Only failed provider installation invalidates simulation output here.
 							await publishFailedPopupVisualisation()
@@ -134,8 +134,6 @@ async function runActiveSettingsChange(
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 			if (rpcChainChanged) {
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
-				// The network write re-evaluated the stored refusals with the client installed at that time, and the client of the new network was installed since, so they are re-evaluated with it before the windows are told. This reads no RPC, so a wallet's network switch is still acknowledged without waiting for one, and a failure is reported without keeping the windows from learning of the switch.
-				await reevaluateStoredNetworkRefusalsBestEffort(simulationServicesOwner.getCurrent().ethereum)
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.

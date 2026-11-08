@@ -353,6 +353,52 @@ test('a network switch that fails to re-evaluate the stored refusals reports the
 	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 })
 
+// A settings import stores the requested network without installing its client, so the refusal stays, as the installed client of the other network would still execute the transaction.
+async function refuseAndImportRequestedNetwork() {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const networkSwitcher = await createNetworkSwitcher()
+	await networkSwitcher.switchNetwork(otherNetwork)
+	const { ethereum, tokenPriceService } = networkSwitcher.simulationServicesOwner.getCurrent()
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
+	assert.equal(networkSwitcher.simulationServicesOwner.getCurrent().ethereum.getChainId(), otherNetwork.chainId)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+	browserMock.sentMessages.length = 0
+	return { postedMessages, ...networkSwitcher }
+}
+
+test('selecting another endpoint of the stored network after a settings import installs its client and lifts the refusal', async () => {
+	const { postedMessages, switchNetwork } = await refuseAndImportRequestedNetwork()
+
+	await switchNetwork({ ...fakeRpcNetwork, httpsRpc: 'https://other-endpoint.invalid' })
+
+	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
+	assert.equal(wasWindowToldOfStoredState(), true)
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+})
+
+test('an RPC list change that installs the client of the stored network lifts the refusal without writing the network', async () => {
+	const { postedMessages, simulationServicesOwner } = await refuseAndImportRequestedNetwork()
+	const networkWrites: unknown[] = []
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('activeRpcNetwork' in items) networkWrites.push(items.activeRpcNetwork)
+		writeStoredItems()
+	})
+
+	const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { getSettings } = await import('../../app/ts/background/settings.js')
+	await setNewRpcList(simulationServicesOwner, { method: 'popup_set_rpc_list', data: [fakeRpcNetwork, { ...otherNetwork, primary: true }] }, await getSettings())
+	browserMock.setStorageSetHandler(undefined)
+
+	assert.equal(simulationServicesOwner.getCurrent().ethereum.getChainId(), fakeRpcNetwork.chainId)
+	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
+	assert.equal(wasWindowToldOfStoredState(), true)
+	assert.deepEqual(networkWrites, [])
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+})
+
 test('a refusal stays while the check still refuses, and approving again still sends nothing', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)

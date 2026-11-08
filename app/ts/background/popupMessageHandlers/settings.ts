@@ -8,6 +8,7 @@ import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariabl
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, importSettingsAndAddressBook } from '../settings.js'
 import { getUseTabsInsteadOfPopup } from '../../utils/pageSafeSettings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { replaceInstalledSimulationServices } from '../transactionNetwork.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -52,5 +53,5 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	if (primary !== undefined) await replaceInstalledSimulationServices(simulationServicesOwner, primary)
 }
