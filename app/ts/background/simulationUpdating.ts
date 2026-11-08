@@ -32,7 +32,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getReadServices, type NetworkSnapshot, type SimulationRead, type SimulationSnapshot } from './networkTransitionLock.js'
+import { type NetworkSnapshot, type SimulationRead, type SimulationSnapshot } from './networkTransitionLock.js'
 
 // The snapshot for work that uses the stack. There is no later read to fall back on, because that read could describe another network.
 export const requireSimulationSnapshot = (simulation: SimulationRead) => {
@@ -42,7 +42,7 @@ export const requireSimulationSnapshot = (simulation: SimulationRead) => {
 }
 
 // The client that simulates the snapshot; a signer-only network is not simulated, so it has none.
-export const getSimulationProviderForSnapshot = (snapshot: SimulationSnapshot) => isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : getReadServices(snapshot).ethereum
+export const getSimulationProviderForSnapshot = (snapshot: SimulationSnapshot) => isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : snapshot.services.ethereum
 
 // Passthrough here means only that this network is not simulated or that the simulation could not be fetched. Services of another network cannot reach this function: their read has no snapshot.
 export async function getUpdatedSimulationState(snapshot: SimulationSnapshot) {
@@ -162,7 +162,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 }
 
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, network: NetworkSnapshot): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
-	const { ethereum, tokenPriceService } = getReadServices(network)
+	const { ethereum, tokenPriceService } = network.services
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
@@ -247,7 +247,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 }
 
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, network: NetworkSnapshot): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
-	const { ethereum: ethereumClientService, tokenPriceService } = getReadServices(network)
+	const { ethereum: ethereumClientService, tokenPriceService } = network.services
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// One snapshot provides both the stack state and the input the meta-transaction is appended to.
@@ -319,7 +319,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 
 // Adds metadata to the stored visualisation with the client of the refresh's snapshot. Returning undefined from the storage callback writes nothing, so a refresh whose network was replaced, or whose client does not serve the stored visualisation, leaves storage as it is; the storage update checks the generation again immediately before it starts the write. The checks are synchronous and need no transition lock.
 export const updateSimulationMetadata = async (snapshot: SimulationSnapshot, requestAbortController: AbortController | undefined) => {
-	const { ethereum } = getReadServices(snapshot)
+	const { ethereum } = snapshot.services
 	const networkIsActive = () => snapshotNetworkIsActive(snapshot)
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (!networkIsActive()) return undefined

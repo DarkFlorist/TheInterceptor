@@ -65,7 +65,6 @@ import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
-import { getReadServices } from './networkTransitionLock.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -171,7 +170,7 @@ export async function popupReadyAndListening(network: NetworkRead, websiteTabCon
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
-			const currentBlockNumber = await getReadServices(network).ethereum.getBlockNumber(undefined)
+			const currentBlockNumber = await network.services.ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			// Like later confirmation updates, the bootstrap shows the visualisation of its own snapshot, never one cached for another network or stack.
 			const visualizedSimulatorState = network.settings.simulationMode
@@ -535,7 +534,7 @@ type ConfirmTransactionMetadataDependencies = {
 
 export async function refreshPopupConfirmTransactionMetadata(network: NetworkSnapshot, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const { simulation } = network
-	const { ethereum, tokenPriceService } = getReadServices(network)
+	const { ethereum, tokenPriceService } = network.services
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
 	if (first === undefined) return
@@ -625,7 +624,7 @@ export async function refreshPopupConfirmTransactionMetadata(network: NetworkSna
 }
 
 export async function refreshPopupConfirmTransactionSimulation(network: NetworkSnapshot) {
-	const { ethereum } = getReadServices(network)
+	const { ethereum } = network.services
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const simulation = requireSimulationSnapshot(network.simulation)
@@ -859,7 +858,7 @@ const snapshotNetworkIsStillActive = async (snapshot: NetworkSnapshot) => await 
 
 // The home page reads settings when it is built, so it is built with the snapshot's client and sent only if no network change committed since the snapshot was read. Returns whether it was sent, so the caller can start over on the new network. Each attempt takes its generation just before it reads what it shows: a network change broadcasts a newer generation than the attempt it interrupts, which the popup would then drop, and generations keep the order of the reads, so an older page cannot replace a newer one.
 async function sendHomePageIfNetworkStillActive(snapshot: NetworkSnapshot, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>) {
-	const updatedPage = await buildHomePageUpdate(getReadServices(snapshot).ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() })
+	const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() })
 	// Nothing is awaited between this check and the broadcast, so no network change commits in between.
 	if (!await snapshotNetworkIsStillActive(snapshot)) return false
 	await sendPopupMessageToOpenWindows(updatedPage)
@@ -879,7 +878,7 @@ export async function refreshHomeData(
 		// The metadata, the wake-up and the home page all serve the services and settings of one snapshot. A network change that commits meanwhile starts the refresh over on the new network, so it wakes the newly installed client; each restart follows a committed change, so the refresh ends once switching stops.
 		for (;;) {
 			const snapshot = await readNetworkSnapshot(simulationServicesOwner)
-			const { ethereum, tokenPriceService } = getReadServices(snapshot)
+			const { ethereum, tokenPriceService } = snapshot.services
 			// Without a readable stack there is no metadata to add, and the home page still serves its settings.
 			if (snapshot.settings.simulationMode && snapshot.simulation.kind === 'loaded') await updateSimulationMetadata(snapshot.simulation, requestAbortController)
 			// The shared visualisation follows the latest stack, which a request accepted on the same network may have changed since this snapshot was read, so it reads its own snapshot under the transition lock; that snapshot's network checks keep these services from publishing for a replaced network.
@@ -1030,7 +1029,7 @@ export async function forceSetGasLimitForTransaction(simulationServicesOwner: Si
 	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
 	// The gas limit may belong to a stacked transaction, so read the stack after the write; the shared visualisation reads it again when its refresh runs.
 	const network = await readNetworkSnapshot(simulationServicesOwner)
-	const { ethereum, tokenPriceService } = getReadServices(network)
+	const { ethereum, tokenPriceService } = network.services
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 	await refreshPopupConfirmTransactionSimulation(network)
 }
@@ -1229,7 +1228,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 
 // The export describes the settings and stack captured with the services that prepare it.
 export async function requestInterceptorSimulationInput(network: NetworkSnapshot) {
-	const { ethereum: ethereumClientService } = getReadServices(network)
+	const { ethereum: ethereumClientService } = network.services
 	if (!network.settings.simulationMode) {
 		return {
 			method: 'popup_requestInterceptorSimulationInput' as const,
@@ -1318,7 +1317,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 }
 
 export async function requestSimulationMetadata(network: NetworkSnapshot) {
-	const { ethereum: ethereumClientService } = getReadServices(network)
+	const { ethereum: ethereumClientService } = network.services
 	const simulationState = network.settings.simulationMode ? await getUpdatedSimulationState(requireSimulationSnapshot(network.simulation)) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,

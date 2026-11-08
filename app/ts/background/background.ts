@@ -26,7 +26,7 @@ import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, requireSimulationSnapshot } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { getReadServices, type NetworkSnapshot, readNetworkSnapshot } from './networkTransitionLock.js'
+import { type NetworkSnapshot, readNetworkSnapshot } from './networkTransitionLock.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -86,7 +86,7 @@ type LiveNetworkRpcFlows = ReturnType<typeof createLiveNetworkRpcFlows>
 async function handleRPCRequest(admitted: AdmittedRpcRequest, liveNetworkFlows: LiveNetworkRpcFlows): Promise<RPCReply> {
 	const { network, context, websiteTabConnections, socket, website, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, activeSafeSigner } = admitted
 	const { settings, simulation } = network
-	const { ethereum } = getReadServices(network)
+	const { ethereum } = network.services
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
@@ -529,7 +529,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 		let rpcContext: RpcRequestContext = { request }
 		if (request.method === 'safe_apps_request') {
-			const admission = await prepareSafeAppsRequest(getReadServices(network).ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+			const admission = await prepareSafeAppsRequest(network.services.ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 			if (admission.kind === 'reply') return replyToInterceptedRequest(websiteTabConnections, admission.reply)
 			rpcContext = admission.context
 		}

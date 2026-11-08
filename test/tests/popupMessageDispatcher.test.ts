@@ -5,7 +5,6 @@ import type { PopupMessageDispatcherContext } from '../../app/ts/background/popu
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
-import { getReadServices } from '../../app/ts/background/networkTransitionLock.js'
 
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
@@ -225,10 +224,10 @@ describe('popup message dispatcher seams', () => {
 		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async snapshot => {
 			assert.equal('simulationServicesOwner' in snapshot, false)
 			assert.equal('resetSimulationState' in snapshot, false)
-			observed.push(getReadServices(snapshot.network))
+			observed.push(snapshot.network.services)
 			entered.resolve(undefined)
 			await release.promise
-			observed.push(getReadServices(snapshot.network))
+			observed.push(snapshot.network.services)
 		})
 		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
 		context.simulationServicesOwner.reset(network)
