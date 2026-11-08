@@ -1,5 +1,5 @@
 import { getInFlightConfirmationRunAbortController, refreshConfirmTransactionSimulation, reserveConfirmationRun } from './confirmTransactionSimulation.js'
-import { getConfirmationRunInputs, isConfirmationVisualisationCurrent } from './confirmationRun.js'
+import { getConfirmationRunInputs, isConfirmationVisualisationCurrent, mayStoreNewRun } from './confirmationRun.js'
 import type { ConfirmationRunId } from '../types/accessRequest.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -578,7 +578,8 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	// The network can also be written without a chain change being reported, by a settings import or a repair of a corrupt value, so each refresh re-evaluates stored refusals with the installed services it was started with. A changed refusal is shown at once, as the refresh below can end without updating the window.
 	if (await reevaluateStoredNetworkRefusals(ethereum)) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
 	const [firstTxn] = await getPendingTransactionsAndMessages()
-	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
+	// A transaction still being crafted or simulated is refreshed too, so a first run that was not stored because its inputs changed while it ran is redone from the stored inputs.
+	if (firstTxn === undefined || firstTxn.type !== 'Transaction') return
 	// The same transaction can do something else on another network, so after a network switch it keeps the preview of the network it was requested for. A client serves one network for its whole lifetime, so a refresh that passes this check only stores results from that network, even if the user switches networks while it runs.
 	if (!isEthereumClientOnTransactionChain(ethereum, firstTxn)) return
 	// Keep the simulation the user approved while the signer is handling the transaction.
@@ -591,14 +592,14 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			ethereum,
 			undefined,
 			firstTxn.activeAddress,
-			firstTxn.transactionToSimulate.website,
+			firstTxn.website,
 			firstTxn.originalRequestParameters,
 			firstTxn.created,
 			firstTxn.transactionIdentifier,
 			firstTxn.simulationMode,
 			getPendingTransactionGasPayment(firstTxn),
 		)
-		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.website, firstTxn.created, firstTxn.transactionIdentifier)
 	const refreshMessage = await refreshConfirmTransactionSimulation(
 		confirmationRun,
 		ethereum,
@@ -614,9 +615,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
-				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
-				// The run is stored onto the transaction as it is now, unless the transaction was approved meanwhile, is no longer the one the run was prepared from, or holds a later run.
-				if (transactionOrMessage.approvalStatus.status === 'WaitingForSigner' || getConfirmationRunInputs(transactionOrMessage) !== runInputs || !isConfirmationVisualisationCurrent(transactionOrMessage.popupVisualisation, refreshMessage, 'new run')) return transactionOrMessage
+				if (!mayStoreNewRun(transactionOrMessage, runInputs, refreshMessage)) return transactionOrMessage
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,

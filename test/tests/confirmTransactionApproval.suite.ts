@@ -1120,6 +1120,39 @@ test('the first simulation of a transaction approved before it finished keeps th
 	assert.equal(pending.popupVisualisation.data.simulationStartedTimestamp.getTime(), pendingTransaction.popupVisualisation.data.simulationStartedTimestamp.getTime())
 })
 
+test('the first simulation is not stored onto a transaction whose gas limit changed while it ran, and the next refresh simulates the stored gas limit', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const suspended = createSuspendedServices('eth_simulateV1')
+	const request = modules.openConfirmTransactionDialogForTransaction(suspended.ethereum, suspended.tokenPriceService, {
+		interceptorRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		method: transactionParams.method,
+		params: transactionParams.params,
+	}, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, website, websiteTabConnections)
+	await suspended.reached
+	while ((await modules.getPendingTransactionsAndMessages())[0]?.transactionOrMessageCreationStatus !== 'Simulating') await new Promise((resolve) => setTimeout(resolve, 5))
+	const simulating = (await modules.getPendingTransactionsAndMessages())[0]
+	if (simulating?.type !== 'Transaction') throw new Error('Missing transaction confirmation')
+
+	// Stored the way a gas limit edit or a Gnosis Safe signer change stores new inputs, without a run of its own.
+	const { setGasLimitForTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	await setGasLimitForTransaction(simulating.transactionIdentifier, 30_000n)
+	suspended.release()
+	await request
+
+	const afterFirstRun = (await modules.getPendingTransactionsAndMessages())[0]
+	assert.equal(afterFirstRun?.transactionOrMessageCreationStatus, 'Simulating')
+
+	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const pending = await getPendingTransaction()
+	assert.equal(getRequestedGasLimit(pending), 30_000n)
+	assert.equal(pending.transactionToSimulate.transaction.gas, 30_000n)
+	assert.equal(pending.popupVisualisation.data.transactionToSimulate.success ? pending.popupVisualisation.data.transactionToSimulate.transaction.gas : undefined, 30_000n)
+})
+
 test('a Gnosis Safe signer change on another network does not rebuild the proposal for that network', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestSafeProposal(websiteTabConnections)

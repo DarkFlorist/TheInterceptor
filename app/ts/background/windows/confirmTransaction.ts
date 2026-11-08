@@ -12,7 +12,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../confirmTransactionSimulation.js'
-import { isConfirmationVisualisationCurrent } from '../confirmationRun.js'
+import { getConfirmationRunInputs, mayStoreNewRun } from '../confirmationRun.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -889,6 +889,8 @@ export async function openConfirmTransactionDialogForTransaction(
 				...(safeTransaction === undefined ? {} : { safeTransaction }),
 				...(pendingSafeFields ?? {}),
 			}
+			// The inputs this run prepares the transaction from, so the run is not stored onto a transaction whose gas limit or Gnosis Safe signer changed while it ran.
+			const runInputs = getConfirmationRunInputs(pendingTransaction)
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
@@ -903,7 +905,11 @@ export async function openConfirmTransactionDialogForTransaction(
 				safeTransaction,
 			))
 			if (transactionToSimulate.success) {
-				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
+				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+					// A refresh may already have stored a preview, or the inputs may have changed, in which case this run's transaction is not shown.
+					if (transaction.type !== 'Transaction' || transaction.transactionOrMessageCreationStatus !== 'Crafting' || getConfirmationRunInputs(transaction) !== runInputs) return transaction
+					return { ...transaction, transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }
+				})
 				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			}
 			const popupVisualisation = await simulationResultsPromise
@@ -911,11 +917,8 @@ export async function openConfirmTransactionDialogForTransaction(
 			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 				if (transaction.type !== 'Transaction') return transaction
 				if (popupVisualisation === undefined) return transaction
-				// Keep the simulation the user approved while the signer is handling the transaction.
-				if (transaction.approvalStatus.status === 'WaitingForSigner') return transaction
-				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
-					if ('popupVisualisation' in transaction && !isConfirmationVisualisationCurrent(transaction.popupVisualisation, popupVisualisation, 'new run')) return transaction
-				}
+				// A run that is not stored leaves the transaction to the next refresh, which simulates it from its stored inputs.
+				if (!mayStoreNewRun(transaction, runInputs, popupVisualisation)) return transaction
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 			})
