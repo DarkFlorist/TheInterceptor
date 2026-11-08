@@ -58,7 +58,9 @@ const INTERNAL_PROVIDER_METHODS = [
 const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
 
 // A reply plus optional work that may only run once the page has it, e.g. notifications for a subscription id the reply carries; keeping the work beside the reply keeps RPCReply plain, serializable wire data. Only handleContentScriptMessage delivers these, right after handling: replies sent later (confirmation windows, MV2 reconnect retries, persisted terminal replies) answer requests whose handler returned doNotReply, so they never have follow-up work.
-type HandledRpcRequest = { readonly reply: RPCReply, readonly afterReplyDelivered: (() => void) | undefined }
+type HandledRpcRequest = { readonly reply: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
+// May be async, so its failures are caught whether it throws or rejects.
+type AfterReplyDelivered = () => void | Promise<void>
 const replyWithoutFollowUp = (reply: RPCReply): HandledRpcRequest => ({ reply, afterReplyDelivered: undefined })
 
 async function handleRPCRequest(
@@ -517,15 +519,15 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 }
 
 // Runs outside replyToContentScriptMessage's error boundary, like block-driven subscription notifications: the request is already answered, so a failure here is only reported and never becomes a second reply.
-async function runAfterReplyDelivered(afterReplyDelivered: () => void) {
+export async function runAfterReplyDelivered(afterReplyDelivered: AfterReplyDelivered) {
 	try {
-		afterReplyDelivered()
+		await afterReplyDelivered()
 	} catch (error: unknown) {
 		await reportUnexpectedError(error)
 	}
 }
 
-type ContentScriptMessageReply = { readonly replyDelivered: boolean | undefined, readonly afterReplyDelivered: (() => void) | undefined }
+type ContentScriptMessageReply = { readonly replyDelivered: boolean | undefined, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
 const replyDeliveredWithoutFollowUp = (replyDelivered: boolean | undefined): ContentScriptMessageReply => ({ replyDelivered, afterReplyDelivered: undefined })
 
 // Sends the request's only reply, turning handling failures into an error reply. Follow-up work is returned instead of run, so its failures cannot reach this catch and send a second reply.

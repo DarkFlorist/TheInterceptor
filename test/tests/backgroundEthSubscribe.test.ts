@@ -121,6 +121,23 @@ describe('background eth_subscribe', () => {
 		assert.equal((await modules.getLatestUnexpectedError())?.data.message, notificationFailure)
 	})
 
+	test('a rejecting async follow-up is reported without sending another reply', async () => {
+		const { modules, messages, socket, websiteTabConnections } = await createApprovedSubscriberHarness()
+		const { replyToInterceptedRequest } = await import('../../app/ts/background/messageSending.js')
+		const followUpFailure = 'Async follow-up failed'
+		assert.equal(await modules.getLatestUnexpectedError(), undefined)
+
+		assert.equal(replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'eth_subscribe', result: '0x1', uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }), true)
+		await modules.runAfterReplyDelivered(async () => {
+			await Promise.resolve()
+			throw new Error(followUpFailure)
+		})
+		assert.deepEqual(summarizePortMessages(messages), [
+			{ method: 'eth_subscribe', requestId: 1, subscription: undefined, result: '0x1' },
+		])
+		assert.equal((await modules.getLatestUnexpectedError())?.data.message, followUpFailure)
+	})
+
 	test('unsupported subscription types get a single error reply', async () => {
 		const { modules, messages, sendRequest } = await createApprovedSubscriberHarness()
 
