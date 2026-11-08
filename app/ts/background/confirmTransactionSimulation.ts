@@ -4,7 +4,6 @@ import { getSignedTransactionForSimulation } from '../simulation/services/simula
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
-import { appendProtocolRevertReasonHints } from '../simulation/revertReasonHints.js'
 import { getInterceptorTransactionCreationExplanation, getTransactionCreationFailureReason } from '../simulation/transactionCreationFailureReason.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
@@ -141,7 +140,7 @@ export async function refreshConfirmTransactionSimulation(
 			...info,
 			simulationStartedTimestamp,
 			transactionCreationFailureReason: getTransactionCreationFailureReasonWithAbis(recipientErrorAbis),
-			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(recipientErrorAbis, baseError, appendProtocolRevertReasonHints) : baseError.message },
+			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(recipientErrorAbis, baseError) : baseError.message },
 			simulationState: {
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()

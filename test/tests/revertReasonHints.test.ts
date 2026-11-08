@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { appendProtocolRevertReasonHints, appendRevertReasonHints, type RevertReasonHintProvider } from '../../app/ts/simulation/revertReasonHints.js'
+import type { RevertReasonHintProvider } from '../../app/ts/simulation/revertReasonHintProvider.js'
+import { appendProtocolRevertReasonHints, appendRevertReasonHints } from '../../app/ts/simulation/revertReasonHints.js'
 
 const createProvider = (protocolName: string, explanations: ReadonlyMap<string, string>): RevertReasonHintProvider => ({
 	protocolName,
@@ -27,5 +28,11 @@ describe('appendProtocolRevertReasonHints', () => {
 	test('applies the registered Uniswap V3 provider', () => {
 		expect(appendProtocolRevertReasonHints('STF')).toBe('STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed, usually due to insufficient token balance or allowance')
 		expect(appendProtocolRevertReasonHints('Ownable: caller is not the owner')).toBe('Ownable: caller is not the owner')
+	})
+
+	test('keeps providers independent of the registry that lists them', async () => {
+		const providerSource = await Bun.file(new URL('../../app/ts/simulation/uniswapV3RevertReasons.ts', import.meta.url)).text()
+		expect(providerSource).toContain(`from './revertReasonHintProvider.js'`)
+		expect(providerSource).not.toContain(`from './revertReasonHints.js'`)
 	})
 })

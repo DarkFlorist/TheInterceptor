@@ -2,7 +2,6 @@ import type { TransactionCreationError } from '../types/error.js'
 import type { AbiLike } from '../utils/abiRuntime.js'
 import { isInsufficientBalanceMessage } from '../utils/insufficientBalance.js'
 import { getFailureReasonForDisplay } from './failureReasons.js'
-import { appendProtocolRevertReasonHints } from './revertReasonHints.js'
 
 // The text older versions stored as the message of a Gnosis Safe's GS013. This is a record of that stored text, not the Safe layer's current wording, so it must not change when that wording does.
 const LEGACY_SAFE_CALL_REVERTED_MESSAGE = 'The Gnosis Safe\'s call reverted (GS013). The Safe does not pass on the call\'s own revert reason.'
@@ -18,4 +17,4 @@ export const getInterceptorTransactionCreationExplanation = (error: TransactionC
 }
 
 // The only derivation of the reason shown when a transaction fails to be created: an Interceptor explanation overrides the decoded revert reason.
-export const getTransactionCreationFailureReason = (errorAbis: readonly AbiLike[], error: TransactionCreationError) => getInterceptorTransactionCreationExplanation(error) ?? getFailureReasonForDisplay(errorAbis, error, appendProtocolRevertReasonHints)
+export const getTransactionCreationFailureReason = (errorAbis: readonly AbiLike[], error: TransactionCreationError) => getInterceptorTransactionCreationExplanation(error) ?? getFailureReasonForDisplay(errorAbis, error)

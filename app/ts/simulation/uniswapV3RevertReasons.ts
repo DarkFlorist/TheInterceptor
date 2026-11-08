@@ -1,4 +1,4 @@
-import type { RevertReasonHintProvider } from './revertReasonHints.js'
+import type { RevertReasonHintProvider } from './revertReasonHintProvider.js'
 
 // Source: https://docs.uniswap.org/contracts/v3/reference/error-codes plus the require strings in Uniswap/v3-core and Uniswap/v3-periphery.
 // Self-explanatory periphery strings that unrelated contracts also use, such as 'Transaction too old', 'Not approved' and 'Invalid token ID', are deliberately not attributed to Uniswap.

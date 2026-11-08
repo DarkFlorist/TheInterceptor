@@ -2,7 +2,6 @@ import { addressString } from '../utils/bigint.js'
 import type { NamedTokenId, ProtectorResults, SimulatedAndVisualizedTransaction, SimulatedTransaction, TokenPriceEstimate } from '../types/visualizer-types.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
-import { appendProtocolRevertReasonHints } from '../simulation/revertReasonHints.js'
 import { describeSafeExecutionFailure } from '../safe/safeExecutionFailure.js'
 import type { MaybeENSLabelHashes, MaybeENSNameHashes } from '../types/ens.js'
 import { assertNever } from '../utils/typescript.js'
@@ -150,7 +149,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 				? {
 					error: {
 						...simulatedTx.ethSimulateV1CallResult.error,
-						decodedErrorMessage: describeSafeExecutionFailure(simulatedTx.preSimulationTransaction, simulatedTx.ethSimulateV1CallResult, getFailureReasonForDisplay(availableAbis, simulatedTx.ethSimulateV1CallResult.error, appendProtocolRevertReasonHints)),
+						decodedErrorMessage: describeSafeExecutionFailure(simulatedTx.preSimulationTransaction, simulatedTx.ethSimulateV1CallResult, getFailureReasonForDisplay(availableAbis, simulatedTx.ethSimulateV1CallResult.error)),
 					},
 					transactionStatus: 'Transaction Failed',
 				}
