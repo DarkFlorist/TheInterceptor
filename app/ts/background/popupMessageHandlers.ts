@@ -1,4 +1,5 @@
-import { getConfirmationRunInputs, getInFlightConfirmationRunAbortController, isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from './confirmTransactionSimulation.js'
+import { getInFlightConfirmationRunAbortController, refreshConfirmTransactionSimulation, reserveConfirmationRun } from './confirmTransactionSimulation.js'
+import { getConfirmationRunInputs, isConfirmationVisualisationCurrent } from './confirmationRun.js'
 import type { ConfirmationRunId } from '../types/accessRequest.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -6,7 +7,8 @@ import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRi
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
+import { toPopupPendingTransactionOrSignableMessage } from '../utils/popupPendingRequest.js'
 import { isEthereumClientOnTransactionChain, reevaluateStoredNetworkRefusals } from './transactionNetwork.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
@@ -573,8 +575,8 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 
 // The run is reserved before anything is awaited, so overlapping refreshes are ordered by when they were requested; an entry that awaits before refreshing, such as a gas limit edit, reserves it itself and passes it in.
 export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, confirmationRun: ConfirmationRunId = reserveConfirmationRun()) {
-	// The network can also be written without a chain change being reported, by a settings import or a repair of a corrupt value, so each refresh re-evaluates stored refusals with the installed services it was started with.
-	await reevaluateStoredNetworkRefusals(ethereum)
+	// The network can also be written without a chain change being reported, by a settings import or a repair of a corrupt value, so each refresh re-evaluates stored refusals with the installed services it was started with. A changed refusal is shown at once, as the refresh below can end without updating the window.
+	if (await reevaluateStoredNetworkRefusals(ethereum)) await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	// The same transaction can do something else on another network, so after a network switch it keeps the preview of the network it was requested for. A client serves one network for its whole lifetime, so a refresh that passes this check only stores results from that network, even if the user switches networks while it runs.

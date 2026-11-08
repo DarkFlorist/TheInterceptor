@@ -15,7 +15,8 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, PopupSimulatedPendingTransaction as SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import { toPopupPendingTransactionOrSignableMessage } from '../../utils/popupPendingRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -81,8 +82,9 @@ async function bootstrapConfirmTransactionDialog(
 	}
 }
 
+// The window keeps what it is sent, so it keeps the same projection of what it reads from storage.
 async function hydratePendingTransactionsFromStorage() {
-	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
+	return ((await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []).map(toPopupPendingTransactionOrSignableMessage)
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {

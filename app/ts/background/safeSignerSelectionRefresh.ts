@@ -15,7 +15,7 @@ import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, 
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { isConfirmationVisualisationCurrent } from './confirmTransactionSimulation.js'
+import { isConfirmationVisualisationCurrent } from './confirmationRun.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
@@ -296,6 +296,8 @@ export async function refreshSafeSignerSelection(
 
 function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
 	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
+	// A rebuild stores its own approval status, and a network refusal is only changed by transactionNetwork.ts, so a refused request is rebuilt once the refusal is lifted. The persist step checks this again on the stored request.
+	if (flow.pending.approvalStatus.status === 'NetworkRefusal') return false
 	switch (flow.kind) {
 		case 'directExecution': return flow.pending.safeExecutionSignerAddress !== selectedSigner
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner

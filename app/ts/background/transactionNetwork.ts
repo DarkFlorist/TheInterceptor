@@ -63,15 +63,21 @@ export async function getTransactionNetworkApprovalError(ethereum: EthereumClien
 
 const getStoredNetworkRefusalMessage = ({ approvalStatus }: PendingTransactionOrSignableMessage) => approvalStatus.status === 'NetworkRefusal' ? approvalStatus.message : undefined
 
-// A refusal describes the network at the moment of the approval, so a stored one is replaced by what the same check says now, which lifts it once approving would work again. Only what the user is told changes: every approval runs the check itself whatever is stored, and a request that holds no refusal is never given one here. It reads only storage and the client's chain id, never an RPC.
+// A refusal describes the network at the moment of the approval, so a stored one is replaced by what the same check says now, which lifts it once approving would work again. Only what the user is told changes: every approval runs the check itself whatever is stored, and a request that holds no refusal is never given one here. The check runs on the stored request under the lock of its writers, so the write replaces exactly the refusal that was checked and never a newer one; it reads only storage and the client's chain id, never an RPC, and a network switch after it re-evaluates again. It tells whether any stored refusal changed, as the windows then need to read it.
 export async function reevaluateStoredNetworkRefusals(ethereum: EthereumClientService) {
+	let refusalChanged = false
 	for (const pending of await getPendingTransactionsAndMessages()) {
-		const storedMessage = getStoredNetworkRefusalMessage(pending)
-		if (pending.type !== 'Transaction' || storedMessage === undefined) continue
-		const refusal = await getTransactionNetworkApprovalError(ethereum, pending)
-		if (refusal?.message === storedMessage) continue
-		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => getStoredNetworkRefusalMessage(current) === undefined ? undefined : modifyObject(current, { approvalStatus: refusal ?? { status: 'WaitingForUser' as const } }))
+		if (pending.type !== 'Transaction' || getStoredNetworkRefusalMessage(pending) === undefined) continue
+		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+			const storedMessage = getStoredNetworkRefusalMessage(current)
+			if (current.type !== 'Transaction' || storedMessage === undefined) return undefined
+			const refusal = await getTransactionNetworkApprovalError(ethereum, current)
+			if (refusal?.message === storedMessage) return undefined
+			refusalChanged = true
+			return modifyObject(current, { approvalStatus: refusal ?? { status: 'WaitingForUser' as const } })
+		})
 	}
+	return refusalChanged
 }
 
 // The one place a network refusal is stored. The refusal is the verdict of the services the approval captured, but what is stored says what approving would do now, as a resolution can outlive a network switch. The installed client is read after the refusal is stored, so a switch that finished earlier is seen here, and one that starts later finds the refusal and re-evaluates it itself before it tells the windows.

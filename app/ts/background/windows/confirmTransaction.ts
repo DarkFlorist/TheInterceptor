@@ -11,7 +11,8 @@ import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphor
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../confirmTransactionSimulation.js'
+import { refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../confirmTransactionSimulation.js'
+import { isConfirmationVisualisationCurrent } from '../confirmationRun.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -23,7 +24,8 @@ import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { ConfirmationRunId, PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { toPopupPendingTransactionOrSignableMessage } from '../../utils/popupPendingRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
@@ -170,44 +172,6 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 	if (pendingStateChanged) await updateConfirmTransactionView(ethereum, tokenPriceService)
 }
 
-export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
-	switch (pending.type) {
-		case 'Transaction':
-			return pending
-		case 'SignableMessage': {
-			const base = {
-				type: pending.type,
-				popupOrTabId: pending.popupOrTabId,
-				originalRequestParameters: pending.originalRequestParameters,
-				simulationMode: pending.simulationMode,
-				uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
-				created: pending.created,
-				website: pending.website,
-				activeAddress: pending.activeAddress,
-				approvalStatus: pending.approvalStatus,
-			}
-			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
-			switch (transactionOrMessageCreationStatus) {
-				case 'Simulated':
-					return {
-						...base,
-						transactionOrMessageCreationStatus,
-						visualizedPersonalSignRequest: pending.visualizedPersonalSignRequest,
-					}
-				case 'Crafting':
-				case 'Simulating':
-					return {
-						...base,
-						transactionOrMessageCreationStatus,
-					}
-				default:
-					return assertNever(transactionOrMessageCreationStatus)
-			}
-		}
-		default:
-			return assertNever(pending)
-	}
-}
 
 // Sends the confirmation window what is stored at this moment. A push must never be older than the moment it is sent, or it could undo a later change, such as a refusal lifted by a network switch, after the window has read that change. So every caller finishes all its slow work first, and the stored confirmations are read here, under the lock of their writers, in the same step as the send. showPending adds what a caller has prepared but not stored.
 export async function publishConfirmationView(view: UpdateConfirmTransactionDialog['data'], showPending: (pending: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[] = (pending) => pending) {

@@ -3,12 +3,11 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization, PendingTransaction } from '../types/accessRequest.js'
+import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
-import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -36,21 +35,6 @@ const inFlightConfirmationRuns = new Map<string, InFlightConfirmationRun>()
 
 // The abort controller of the run in flight for the request, if any, for work that is outdated once a later run of that request starts.
 export const getInFlightConfirmationRunAbortController = (uniqueRequestIdentifier: UniqueRequestIdentifier) => inFlightConfirmationRuns.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))?.abortController
-
-type ConfirmationRunVisualisation = { readonly data: { readonly confirmationRunId: ConfirmationRunId } }
-
-// The one rule for whether a confirmation visualisation may be stored over the stored one. A new run, stored with the transaction it prepared, replaces the stored visualisation unless that came from a later run of the same background lifetime; a visualisation stored by another lifetime, before a restart or without a run id, never blocks a new run. A re-visualisation of a stored run's results, stored without a transaction, needs that very run to still be stored, so the visualisation stays paired with the transaction the run prepared. It answers which confirmation run is current, unlike the fingerprints in popupSimulationFingerprint.ts, which tell whether the inputs of the popup's own simulation changed.
-export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisualisation | undefined, candidate: ConfirmationRunVisualisation, candidateKind: 'new run' | 're-visualised run') {
-	if (stored === undefined) return candidateKind === 'new run'
-	const storedRun = stored.data.confirmationRunId
-	const candidateRun = candidate.data.confirmationRunId
-	const sameLifetime = candidateRun.lifetime === storedRun.lifetime
-	if (candidateKind === 're-visualised run') return sameLifetime && candidateRun.sequence === storedRun.sequence
-	return !sameLifetime || candidateRun.sequence >= storedRun.sequence
-}
-
-// What a new run prepares the transaction from. A run whose inputs changed while it ran, for example through a gas limit edit or a Gnosis Safe signer change, describes a transaction that is no longer stored, so it is not current whatever its run id.
-export const getConfirmationRunInputs = (pendingTransaction: PendingTransaction) => stringifyJSONWithBigInts([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction])
 
 export async function refreshConfirmTransactionSimulation(
 	confirmationRunId: ConfirmationRunId,

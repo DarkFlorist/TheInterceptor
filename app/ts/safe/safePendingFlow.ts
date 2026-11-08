@@ -23,7 +23,8 @@ export type SafeProposalFlow = {
 
 export type SafePendingFlow = DirectSafeExecutionFlow | SafeMessageCoSignFlow | SafeProposalFlow
 
-export function getSafeTransactionPendingFlow(pending: PendingTransaction): DirectSafeExecutionFlow | SafeProposalFlow | undefined {
+// Generic over the transaction's form, so the confirmation window, which receives the transaction without background bookkeeping, reads the same flow as the background.
+export function getSafeTransactionPendingFlow<Transaction extends Pick<PendingTransaction, 'safeExecutionOriginalRequestParameters' | 'safeTransaction'>>(pending: Transaction): { readonly kind: 'directExecution', readonly pending: Transaction & { readonly safeExecutionOriginalRequestParameters: SendTransactionParams } } | { readonly kind: 'proposal', readonly pending: Transaction & { readonly safeTransaction: SafeTransactionSigningRequest } } | undefined {
 	if (pending.safeExecutionOriginalRequestParameters !== undefined) {
 		return {
 			kind: 'directExecution',

@@ -25,6 +25,12 @@ test('the settings transition depends on the network rule but not on the confirm
 	assert.deepEqual(listReached([networkRuleModule], [settingsTransitionModule]), [])
 })
 
+// The rule for which confirmation run is current only reads the runs it is given, so the modules that store a visualisation share it without depending on the simulation code.
+test('the confirmation run rule is a leaf that the Gnosis Safe signer refresh uses without the simulation code', () => {
+	assert.deepEqual(getRuntimeDependencies(backgroundModule('confirmationRun.ts')).map((dependency) => path.relative(backgroundDirectory, dependency.module)), [path.join('..', 'utils', 'bigint.ts')])
+	assert.deepEqual(listReached([backgroundModule('safeSignerSelectionRefresh.ts')], [backgroundModule('confirmTransactionSimulation.ts')]), [])
+})
+
 // requestedNetworkForwarding.ts composes delivery with the requested-network rule, so neither side depends on the other.
 test('the transport depends on no network policy or storage, and the network rule on no delivery', () => {
 	// The transport already reaches settings and storage indirectly through backgroundUtils.ts, so for those only its own imports are checked.

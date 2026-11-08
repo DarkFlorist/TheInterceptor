@@ -356,6 +356,88 @@ test('an error reported by the wallet is not lifted by the requested network, ev
 	assert.deepEqual(await getStoredApprovalStatus(), walletError)
 })
 
+test('the confirmation window receives a transaction without the background bookkeeping stored with it', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	browserMock.sentMessages.length = 0
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	const stored = await getPendingTransaction()
+
+	const published = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)
+	if (!isRecord(published) || !isRecord(published.data) || !Array.isArray(published.data.pendingTransactionAndSignableMessages)) throw new Error('Nothing was published to the confirmation window')
+	const first: unknown = published.data.pendingTransactionAndSignableMessages[0]
+	if (!isRecord(first) || !isRecord(first.popupVisualisation) || !isRecord(first.popupVisualisation.data)) throw new Error('Missing published transaction')
+	assert.equal('requestedChainId' in first, false)
+	assert.equal('confirmationRunId' in first.popupVisualisation.data, false)
+	// Everything else reaches the window unchanged.
+	const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/utils/popupPendingRequest.js')
+	const { requestedChainId: _requestedChainId, popupVisualisation: storedVisualisation, ...storedRest } = stored
+	const { confirmationRunId: _confirmationRunId, ...storedData } = storedVisualisation.data
+	assert.deepEqual(toPopupPendingTransactionOrSignableMessage(stored), { ...storedRest, popupVisualisation: { ...storedVisualisation, data: storedData } })
+})
+
+test('re-evaluating a refusal never replaces a newer refusal stored while it ran', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
+	const readReached = createDeferredValue<undefined>()
+	const releaseRead = createDeferredValue<undefined>()
+	let holdNextNetworkRead = true
+	browserMock.setStorageGetHandler(async (keys, read) => {
+		const stored = read()
+		if (holdNextNetworkRead && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			holdNextNetworkRead = false
+			readReached.resolve(undefined)
+			await releaseRead.promise
+		}
+		return stored
+	})
+
+	// The re-evaluation checks the stored refusal and finds that approving would work, while a newer refusal is stored.
+	const reevaluation = reevaluateStoredNetworkRefusals(simulator.ethereum)
+	await readReached.promise
+	const newerRefusal = { status: 'NetworkRefusal' as const, message: 'A newer refusal.' }
+	const storing = storePendingTransaction((pending) => ({ ...pending, approvalStatus: newerRefusal }))
+	await new Promise((resolve) => setTimeout(resolve, 10))
+	releaseRead.resolve(undefined)
+	await Promise.all([reevaluation, storing])
+	browserMock.setStorageGetHandler(undefined)
+
+	assert.deepEqual(await getStoredApprovalStatus(), newerRefusal)
+})
+
+test('a simulation refresh that ends early still tells the window that a refusal was lifted', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestPersonalSign(websiteTabConnections)
+	const [message] = await modules.getPendingTransactionsAndMessages()
+	if (message === undefined) throw new Error('Missing message signing request')
+	const transactionIdentifier = { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 }
+	const refusal = { status: 'NetworkRefusal' as const, message: NETWORK_CHANGED_REFUSAL }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [message, { ...pendingTransaction, uniqueRequestIdentifier: transactionIdentifier, approvalStatus: refusal }] })
+	browserMock.sentMessages.length = 0
+
+	// The first request is a message, so the refresh has no transaction to simulate and returns before any window update.
+	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[1]?.approvalStatus, { status: 'WaitingForUser' })
+	assert.equal(wasWindowToldOfStoredState(), true)
+})
+
+test('a Gnosis Safe execution rebuild leaves a stored network refusal to its owner', async () => {
+	await openDirectSafeExecutionAwaitingSignerRefresh()
+	const refusal = { status: 'NetworkRefusal' as const, message: NETWORK_CHANGED_REFUSAL }
+	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: refusal }))
+	const before = await modules.getPendingTransactionsAndMessages()
+
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
+
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus, refusal)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
+})
+
 test('a window update shows a stored refusal without changing it, and the next simulation refresh re-evaluates it', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
@@ -620,7 +702,7 @@ test('a metadata refresh of an older simulation run keeps the newer run and gas 
 const isLaterRunOfSameLifetime = (run: ConfirmationRunId, earlier: ConfirmationRunId) => run.lifetime === earlier.lifetime && run.sequence > earlier.sequence
 
 test('a confirmation visualisation is stored over one of an earlier run of its lifetime or of another lifetime, and a re-visualisation only over its own run', async () => {
-	const { isConfirmationVisualisationCurrent } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { isConfirmationVisualisationCurrent } = await import('../../app/ts/background/confirmationRun.js')
 	const run = (lifetime: string, sequence: number) => ({ data: { confirmationRunId: { lifetime, sequence } } })
 	assert.equal(isConfirmationVisualisationCurrent(undefined, run('current', 5), 'new run'), true)
 	assert.equal(isConfirmationVisualisationCurrent(run('current', 5), run('current', 6), 'new run'), true)
@@ -675,7 +757,8 @@ test('after a background restart, the first refresh of a gas limit edit stores a
 test('a run that started before a later run was stored is still not stored over it', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { isConfirmationVisualisationCurrent, refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { refreshConfirmTransactionSimulation, reserveConfirmationRun } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { isConfirmationVisualisationCurrent } = await import('../../app/ts/background/confirmationRun.js')
 	const pending = await getPendingTransaction()
 	const earlierRun = await refreshConfirmTransactionSimulation(reserveConfirmationRun(), simulator.ethereum, simulator.tokenPriceService, pending.activeAddress, false, uniqueRequestIdentifier, pending.transactionToSimulate)
 	if (earlierRun === undefined) throw new Error('The earlier run did not complete')
