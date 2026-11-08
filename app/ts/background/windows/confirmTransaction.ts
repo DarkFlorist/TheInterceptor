@@ -314,8 +314,12 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 }
 
+const isAwaitingSignerReply = (pending: PendingTransactionOrSignableMessage) => pending.approvalStatus.status === 'WaitingForSigner'
+
 async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, getInstalledServices: GetInstalledServices, stepsAfterResolution: (() => Promise<void>)[], safeSignerRefresh?: SafeSignerRefreshAtApproval) {
 	let pendingTransactionOrMessage = storedPendingTransactionOrMessage
+	// A signer reply only completes a request that was forwarded to the signer, so a reply for a request no signer was asked about, such as one still awaiting the user's approval, changes nothing; the commits below check this again on the stored request.
+	if (confirmation.data.action === 'signerIncluded' && !isAwaitingSignerReply(pendingTransactionOrMessage)) return false
 	if (confirmation.data.action === 'accept' || confirmation.data.action === 'addToSafeStack') {
 		// A request that was already forwarded can only be completed by the signer's reply, so it is not approved or added to a Gnosis Safe stack again.
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
@@ -383,9 +387,10 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		afterPendingRequestRemoved(simulationStack)
 	}
 	const deliverTerminalReply = async (terminalReply: InterceptedRequestForward) => await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+	const mayCommitThisResolution = (stored: PendingTransactionOrSignableMessage) => confirmation.data.action !== 'signerIncluded' || isAwaitingSignerReply(stored)
 	const reply = async (content: TerminalReplyContent, simulationStack: SimulationStackChange = 'unchanged') => {
 		const terminalReply = createTerminalReply(pendingTransactionOrMessage, uniqueRequestIdentifier, content)
-		const committed = await commitIfStillPending(uniqueRequestIdentifier, async () => await commitTerminalReply(terminalReply, simulationStack))
+		const committed = await commitIfStillPending(uniqueRequestIdentifier, async () => await commitTerminalReply(terminalReply, simulationStack), mayCommitThisResolution)
 		return committed.stored ? await deliverTerminalReply(terminalReply) : false
 	}
 	// The stored proposal and the reply to it are one commit, so a rejection cannot arrive between them.
@@ -394,7 +399,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 			const resolution = await write()
 			if (resolution.status === 'success') await commitTerminalReply(createTerminalReply(pendingTransactionOrMessage, uniqueRequestIdentifier, { type: 'result', result: resolution.result }), resolution.simulationStack)
 			return resolution
-		})
+		}, mayCommitThisResolution)
 		return committed.stored ? committed.result : { status: 'cancelled' }
 	}
 	const deliverCommittedSafeResolution = async (result: string) => await deliverTerminalReply(createTerminalReply(pendingTransactionOrMessage, uniqueRequestIdentifier, { type: 'result', result }))

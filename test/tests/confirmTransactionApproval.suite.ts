@@ -1334,6 +1334,55 @@ test('a signer reply after a network switch is still delivered to the website', 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.result === transactionHash), true)
 })
 
+const replyFromSigner = async (websiteTabConnections: TransactionTestConnections, signerReply: unknown) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	method: 'popup_confirmDialog',
+	data: { action: 'signerIncluded', uniqueRequestIdentifier, signerReply },
+})
+
+const getWebsiteResults = (postedMessages: readonly unknown[]) => postedMessages.filter((message) => isRecord(message) && message.type === 'result')
+
+test('a signer reply for a request still awaiting the user in signing mode does nothing', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const before = await modules.getPendingTransactionsAndMessages()
+	assert.equal(before[0]?.approvalStatus.status, 'WaitingForUser')
+
+	assert.equal(await replyFromSigner(websiteTabConnections, modules.EthereumBytes32.serialize(0x1234n)), false)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
+	assert.deepEqual(getWebsiteResults(postedMessages), [])
+})
+
+test('a signer reply for a Gnosis Safe proposal still awaiting the user does nothing', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { safePending, signature } = await setUpSafeProposal()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
+	const before = await modules.getPendingTransactionsAndMessages()
+
+	assert.equal(await replyFromSigner(websiteTabConnections, signature), false)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(getWebsiteResults(postedMessages), [])
+})
+
+test('a signer reply whose request stops waiting for the signer while the reply is validated does nothing', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { safePending, signature } = await setUpSafeProposal()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...safePending, approvalStatus: { status: 'WaitingForSigner' } }] })
+	const validation = holdSafeValidation()
+	const resolution = replyFromSigner(websiteTabConnections, signature)
+	await validation.reached
+	// Stands in for any writer that hands the request back to the user meanwhile; the commit reads the stored request again.
+	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForUser' } }))
+	validation.release()
+
+	assert.equal(await resolution, false)
+	assert.equal((await getPendingTransaction()).approvalStatus.status, 'WaitingForUser')
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(getWebsiteResults(postedMessages), [])
+})
+
 // For calling the forwarder directly, with a request nothing can reject meanwhile.
 const commitWithoutRejection = async <T>(commit: () => Promise<T>) => ({ stored: true as const, result: await commit() })
 

@@ -77,7 +77,8 @@ test('reject and result replies remain durable after their pending request is re
 		{
 			name: 'result',
 			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
-			transaction: { ...pendingTransaction, simulationMode: false as const },
+			// The wallet's result completes only a request that was forwarded to it.
+			transaction: { ...pendingTransaction, simulationMode: false as const, approvalStatus: { status: 'WaitingForSigner' as const } },
 		},
 	]
 
@@ -112,7 +113,8 @@ test('terminal replies are persisted before removing the pending rejection or re
 		{
 			name: 'result',
 			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
-			transaction: { ...pendingTransaction, simulationMode: false as const },
+			// The wallet's result completes only a request that was forwarded to it.
+			transaction: { ...pendingTransaction, simulationMode: false as const, approvalStatus: { status: 'WaitingForSigner' as const } },
 		},
 	]
 

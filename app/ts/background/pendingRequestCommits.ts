@@ -19,11 +19,11 @@ export const getPendingTransactionOrMessageByidentifier = async (uniqueRequestId
 const pendingTransactionOrMessageCommitScope = {}
 const serializePendingTransactionOrMessageCommit = createScopedKeyedSerialExecutor<typeof pendingTransactionOrMessageCommitScope, string>()
 
-// Preparing an approval can take as long as an RPC does, and a rejection or a closed window must not wait for that, so a rejection takes only this lock. Everything that decides a request's outcome runs under it on what is stored right then: whichever commits first wins, a later commit finds the request gone and does nothing, and so a request gets one reply and is not forwarded after it was rejected. A commit needs no RPC, as a rejection waits for it. It is separate from the lock of a resolution, which keeps two approvals of one request from preparing at the same time.
-export async function commitIfStillPending<T>(uniqueRequestIdentifier: UniqueRequestIdentifier, commit: (stored: PendingTransactionOrSignableMessage) => Promise<T>): Promise<PendingRequestCommit<T>> {
+// Preparing an approval can take as long as an RPC does, and a rejection or a closed window must not wait for that, so a rejection takes only this lock. Everything that decides a request's outcome runs under it on what is stored right then: whichever commits first wins, a later commit finds the request gone and does nothing, and so a request gets one reply and is not forwarded after it was rejected. A commit needs no RPC, as a rejection waits for it. It is separate from the lock of a resolution, which keeps two approvals of one request from preparing at the same time. A caller whose commit may only complete a request in a particular state passes mayCommit, which is checked on the stored request under the lock, and a request it refuses is treated as one that is gone.
+export async function commitIfStillPending<T>(uniqueRequestIdentifier: UniqueRequestIdentifier, commit: (stored: PendingTransactionOrSignableMessage) => Promise<T>, mayCommit: (stored: PendingTransactionOrSignableMessage) => boolean = () => true): Promise<PendingRequestCommit<T>> {
 	return await serializePendingTransactionOrMessageCommit(pendingTransactionOrMessageCommitScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
 		const stored = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		return stored === undefined ? { stored: false } : { stored: true, result: await commit(stored) }
+		return stored === undefined || !mayCommit(stored) ? { stored: false } : { stored: true, result: await commit(stored) }
 	})
 }
 
