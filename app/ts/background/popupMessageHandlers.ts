@@ -815,11 +815,7 @@ export async function requestNewHomeData(
 	includeWebsiteAccessAddressMetadata: boolean,
 	requestAbortController: AbortController | undefined,
 ) {
-	// Like refreshHomeData, a network change that commits while the page is built starts it over on the new network.
-	for (;;) {
-		const snapshot = await readNetworkSnapshot(simulationServicesOwner)
-		if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata })) return
-	}
+	await publishHomePageOnCurrentNetwork(simulationServicesOwner, websiteTabConnections, { requestAbortController, richDataSource: 'cached', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata })
 }
 
 export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTabConnections, popupRefreshGeneration: number) {
@@ -856,13 +852,32 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 // A refresh's services and settings serve one network only while no network change commits after its snapshot was read. The generation tells the networks apart even when a change keeps the client, as a signer-only network does, or returns to the same endpoint; reading it waits for a transition in progress, so settings the refresh read meanwhile are covered.
 const snapshotNetworkIsStillActive = async (snapshot: NetworkSnapshot) => await readCommittedNetworkChangeGeneration() === snapshot.simulation.networkChangeGeneration
 
-// The home page reads settings when it is built, so it is built with the snapshot's client and sent only if no network change committed since the snapshot was read. Returns whether it was sent, so the caller can start over on the new network. Each attempt takes its generation just before it reads what it shows: a network change broadcasts a newer generation than the attempt it interrupts, which the popup would then drop, and generations keep the order of the reads, so an older page cannot replace a newer one.
-async function sendHomePageIfNetworkStillActive(snapshot: NetworkSnapshot, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>) {
-	const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() })
-	// Nothing is awaited between this check and the broadcast, so no network change commits in between.
-	if (!await snapshotNetworkIsStillActive(snapshot)) return false
-	await sendPopupMessageToOpenWindows(updatedPage)
-	return true
+// How many snapshots one home page request tries. Each retry follows a committed network change, and each such change broadcasts its settings, after which the popup asks for the page again; a request that runs out of attempts therefore publishes nothing and leaves the page to that later request.
+const HOME_PAGE_ATTEMPTS = 3
+
+type HomePageAttemptSteps = {
+	// Work on the snapshot before its network is checked, such as metadata and the shared visualisation.
+	readonly prepare?: (snapshot: NetworkSnapshot) => Promise<void>
+	// Work that must only run while the snapshot's network is still current, such as waking its client.
+	readonly onCurrentNetwork?: (snapshot: NetworkSnapshot) => Promise<void>
+}
+
+// Builds and publishes the home page from one snapshot, and starts over on a new snapshot when a network change commits meanwhile, at most HOME_PAGE_ATTEMPTS times. The page reads settings when it is built, so it is built with the snapshot's client. This is the one place that checks the snapshot's network, after the preparation and before publishing. Each attempt takes its popup refresh generation just before it reads what it shows: a network change broadcasts a newer generation than the attempt it interrupts, which the popup would then drop, and generations keep the order of the reads, so an older page cannot replace a newer one.
+async function publishHomePageOnCurrentNetwork(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>, { prepare, onCurrentNetwork }: HomePageAttemptSteps = {}): Promise<'published' | 'network kept changing'> {
+	for (let attempt = 1; attempt <= HOME_PAGE_ATTEMPTS; attempt++) {
+		const snapshot = await readNetworkSnapshot(simulationServicesOwner)
+		if (prepare !== undefined) {
+			await prepare(snapshot)
+			if (!await snapshotNetworkIsStillActive(snapshot)) continue
+		}
+		await onCurrentNetwork?.(snapshot)
+		const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() })
+		// Nothing is awaited between this check and the broadcast, so no network change commits in between.
+		if (!await snapshotNetworkIsStillActive(snapshot)) continue
+		await sendPopupMessageToOpenWindows(updatedPage)
+		return 'published'
+	}
+	return 'network kept changing'
 }
 
 export async function refreshHomeData(
@@ -875,18 +890,18 @@ export async function refreshHomeData(
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
-		// The metadata, the wake-up and the home page all serve the services and settings of one snapshot. A network change that commits meanwhile starts the refresh over on the new network, so it wakes the newly installed client; each restart follows a committed change, so the refresh ends once switching stops.
-		for (;;) {
-			const snapshot = await readNetworkSnapshot(simulationServicesOwner)
-			const { ethereum, tokenPriceService } = snapshot.services
-			// Without a readable stack there is no metadata to add, and the home page still serves its settings.
-			if (snapshot.settings.simulationMode && snapshot.simulation.kind === 'loaded') await updateSimulationMetadata(snapshot.simulation, requestAbortController)
-			// The shared visualisation follows the latest stack, which a request accepted on the same network may have changed since this snapshot was read, so it reads its own snapshot under the transition lock; that snapshot's network checks keep these services from publishing for a replaced network.
-			if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
-			if (!await snapshotNetworkIsStillActive(snapshot)) continue
-			if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
-			if (await sendHomePageIfNetworkStillActive(snapshot, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata: true })) return
-		}
+		// The metadata, the wake-up and the home page all serve the services and settings of one snapshot, so a refresh started over on a new network wakes the newly installed client.
+		await publishHomePageOnCurrentNetwork(simulationServicesOwner, websiteTabConnections, { requestAbortController, richDataSource: 'fresh', shouldRefreshSignerAccounts, includeWebsiteAccessAddressMetadata: true }, {
+			prepare: async (snapshot) => {
+				// Without a readable stack there is no metadata to add, and the home page still serves its settings.
+				if (snapshot.settings.simulationMode && snapshot.simulation.kind === 'loaded') await updateSimulationMetadata(snapshot.simulation, requestAbortController)
+				// The shared visualisation follows the latest stack, which a request accepted on the same network may have changed since this snapshot was read, so it reads its own snapshot under the transition lock; that snapshot's network checks keep these services from publishing for a replaced network.
+				if (refreshSimulation) await updatePopupVisualisationIfNeeded(snapshot.services.ethereum, snapshot.services.tokenPriceService, { skipIfUnchanged: true })
+			},
+			onCurrentNetwork: async (snapshot) => {
+				if (snapshot.settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(snapshot.services.ethereum, publishRpcConnectionStatus)
+			},
+		})
 	} finally {
 		markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshEnd)
 	}

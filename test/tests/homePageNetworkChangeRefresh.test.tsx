@@ -101,12 +101,14 @@ installBrowserMock()
 const [
 	{ popupMessageHandler },
 	{ changeActiveAddressAndChain },
+	{ getSettings },
 	{ browserStorageLocalSet },
 	{ EthereumClientService },
 	{ TokenPriceService },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageRouting.js'),
 	import('../../app/ts/background/activeSettings.js'),
+	import('../../app/ts/background/settings.js'),
 	import('../../app/ts/utils/storageUtils.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -174,6 +176,21 @@ async function setUpPopup({ requestFreshHomeDataOnMount, homeDataRequestsToAnswe
 		commitNetworkChangeDuringNextHomePage: () => {
 			duringStorageRead = { key: 'rpcConnectionStatus', run: async () => { await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false }) } }
 		},
+		// Switches between the two networks while each of the next home pages is built, and counts the pages built.
+		commitNetworkChangesDuringHomePages: (changes: number) => {
+			const counter = { pagesBuilt: 0 }
+			const armNext = (remaining: number) => {
+				duringStorageRead = { key: 'rpcConnectionStatus', run: async () => {
+					counter.pagesBuilt += 1
+					if (remaining === 0) return
+					const rpcNetwork = (await getSettings()).activeRpcNetwork.chainId === networkA.chainId ? networkB : networkA
+					await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork, promptForAccessesIfNeeded: false })
+					armNext(remaining - 1)
+				} }
+			}
+			armNext(changes)
+			return counter
+		},
 		answerHomeDataRequests: (count: number) => { remainingHomeDataRequests = count },
 		mount: async () => {
 			await act(() => { render(<HomePageConsumer requestFreshHomeDataOnMount = { requestFreshHomeDataOnMount } />, container) })
@@ -216,6 +233,24 @@ describe('a home page interrupted by a network change', () => {
 			assert.equal(hook?.isSettingsLoaded.value, true)
 			assert.equal(hook?.rpcNetwork.value?.name, networkB.name)
 		} finally {
+			await popup.cleanUp()
+		}
+	})
+
+	test.each([[2, 1], [3, 0]] as const)('a home page request interrupted by %d network changes publishes %d pages and settles', async (changes, publishedPages) => {
+		const popup = await setUpPopup({ requestFreshHomeDataOnMount: true, homeDataRequestsToAnswer: 1 })
+		try {
+			await popup.mount()
+			pageMessages.length = 0
+			popup.answerHomeDataRequests(1)
+			const counter = popup.commitNetworkChangesDuringHomePages(changes)
+			await act(async () => { await browser.runtime.sendMessage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } }) })
+			await settle()
+			// Three attempts at most: each change starts the page over on a new snapshot, and the request gives up after the third.
+			assert.equal(counter.pagesBuilt, Math.min(changes + 1, 3))
+			assert.equal(getMessagesWithMethod('popup_UpdateHomePage').length, publishedPages)
+		} finally {
+			duringStorageRead = undefined
 			await popup.cleanUp()
 		}
 	})
