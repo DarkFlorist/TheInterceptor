@@ -164,6 +164,7 @@ export async function createEthereumSubscription(params: EthSubscribeParams, sub
 			},
 		})
 	}
+	// TypeScript checks an object whose discriminant is a union of literals against each member of the discriminated union, so `type` narrowed to 'newHeads' | 'syncing' is accepted here, and `bun run typecheck` verifies it.
 	const subscription: StoredEthSubscription = { type, subscriptionOrFilterId: generateId(40), params, subscriptionCreatorSocket }
 	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters: EthereumSubscriptionsAndFilters) => {
 		return subscriptionsAndfilters.concat(subscription)
