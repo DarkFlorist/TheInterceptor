@@ -6,7 +6,7 @@ import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
-import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
+import { popupLookupMessageHandler, popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
@@ -57,8 +57,8 @@ const popupMessageHandlers = {
 		const { ethereum, tokenPriceService } = context.network.services
 		return await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, request)
 	}),
-	popup_requestMakeMeRichData: popupSnapshotMessageHandler('popup_requestMakeMeRichData', async (context) => {
-		const { ethereum } = context.network.services
+	popup_requestMakeMeRichData: popupLookupMessageHandler('popup_requestMakeMeRichData', async (context) => {
+		const { ethereum } = context.services
 		return await requestMakeMeRichList(ethereum, context.simulationAbortController)
 	}),
 	popup_requestActiveAddresses: popupMessageHandler('popup_requestActiveAddresses', async () => await requestActiveAddresses()),
@@ -77,8 +77,8 @@ const popupMessageHandlers = {
 		const { ethereum, tokenPriceService } = context.network.services
 		return await importSimulationStack(ethereum, tokenPriceService, request)
 	}),
-	popup_requestSafeStackExport: popupSnapshotMessageHandler('popup_requestSafeStackExport', async (context) => {
-		const { ethereum } = context.network.services
+	popup_requestSafeStackExport: popupLookupMessageHandler('popup_requestSafeStackExport', async (context) => {
+		const { ethereum } = context.services
 		return await requestSafeStackExport(ethereum)
 	}),
 	popup_importSafeStack: popupSnapshotMessageHandler('popup_importSafeStack', async (context, request) => {

@@ -192,6 +192,21 @@ test('a chain change dialog reloaded while services cannot be installed receives
 	}
 })
 
+test('address and Gnosis Safe lookups answer while services cannot be installed', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+	const { websiteTabConnections } = await createApprovedWebsite(modules)
+	const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, 'service installation', websiteTabConnections)
+	try {
+		await assert.rejects(modules.readNetworkSnapshot(simulationServicesOwner))
+		const reply = await dispatchPopup(modules, { simulationServicesOwner, websiteTabConnections }, { method: 'popup_requestIdentifyAddress', data: { address: account, chainId: 'AllChains' } })
+		assert.deepEqual(reply, { method: 'popup_requestIdentifyAddress', data: { chainId: 'AllChains', addressBookEntry: undefined } })
+	} finally {
+		await letRepairSucceed()
+	}
+})
+
 test('a rejection after a background restart sends the website a rejection, not the stack', async () => {
 	installBrowserMock()
 	const modules = await loadModules()
