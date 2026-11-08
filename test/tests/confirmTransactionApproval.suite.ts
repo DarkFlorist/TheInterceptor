@@ -903,7 +903,7 @@ test('a Gnosis Safe signer refresh that started before a popup refresh does not 
 
 test('a Gnosis Safe approval that started before a popup refresh does not abort that refresh with its rebuild', async () => {
 	const { safeSignerAddress, websiteTabConnections } = await openDirectSafeExecutionAwaitingSignerRefresh()
-	const approval = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: safeSignerAddress, verificationError: undefined })
+	const approval = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { refreshedSafeSignerSelection: { selectedSigner: safeSignerAddress, verificationError: undefined } })
 	// The approval reads the active network for its network check before its rebuild.
 	assert.equal(await wasLaterPopupRefreshAborted(approval, (keys) => Array.isArray(keys) && keys.length === 1 && keys[0] === 'activeRpcNetwork'), false)
 })
@@ -1474,7 +1474,7 @@ for (const safeReturn of ['blocked', 'error'] as const) {
 
 		const resolution = safeReturn === 'error'
 			? modules.resolvePendingTransactionOrMessage(stalled.ethereum, stalled.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: '0x1234', uniqueRequestIdentifier } })
-			: modules.resolvePendingTransactionOrMessage(stalled.ethereum, stalled.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: undefined, verificationError: 'The connected signer wallet is unavailable.' })
+			: modules.resolvePendingTransactionOrMessage(stalled.ethereum, stalled.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { refreshedSafeSignerSelection: { selectedSigner: undefined, verificationError: 'The connected signer wallet is unavailable.' } })
 		const answered = await answersWithoutTheRpc(resolution)
 		const status = (await getPendingTransaction()).approvalStatus.status
 		const told = wasWindowToldOfStoredState()
@@ -1509,7 +1509,7 @@ for (const action of ['reject', 'noResponse'] as const) {
 			const validation = holdSafeValidation()
 
 			const resolution = preparing === 'accept'
-				? modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+				? modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { refreshedSafeSignerSelection: { selectedSigner: safeTestOwnerAddress, verificationError: undefined } })
 				: modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: preparing === 'signerIncluded' ? { action: preparing, signerReply: signature, uniqueRequestIdentifier } : { action: preparing, uniqueRequestIdentifier } })
 			await validation.reached
 			const cancellation = cancelRequest(websiteTabConnections, action)
@@ -1535,7 +1535,7 @@ test('a Gnosis Safe approval that nothing cancels reaches the wallet after its v
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
 	const validation = holdSafeValidation()
 
-	const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+	const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } }, { refreshedSafeSignerSelection: { selectedSigner: safeTestOwnerAddress, verificationError: undefined } })
 	await validation.reached
 	validation.release()
 

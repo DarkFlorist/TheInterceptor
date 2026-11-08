@@ -1204,7 +1204,7 @@ test('routes a completed active Safe execution through its configured signer and
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: safeSignerAddress, verificationError: undefined } },
 	)), false)
 	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -1217,7 +1217,7 @@ test('routes a completed active Safe execution through its configured signer and
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: alternateSignerAddress, verificationError: undefined } },
 	)), false)
 	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
 	fakeSafeContract.version = '1.4.1'
@@ -1229,7 +1229,7 @@ test('routes a completed active Safe execution through its configured signer and
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: alternateSignerAddress, verificationError: undefined } },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
@@ -1255,7 +1255,7 @@ test('routes a completed active Safe execution through its configured signer and
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: safeSignerAddress, verificationError: undefined } },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [staleExecution] = await modules.getPendingTransactionsAndMessages()
@@ -1277,7 +1277,7 @@ test('routes a completed active Safe execution through its configured signer and
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: safeSignerAddress, verificationError: undefined } },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersExecution] = await modules.getPendingTransactionsAndMessages()
@@ -1298,7 +1298,7 @@ test('routes a completed active Safe execution through its configured signer and
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: safeSignerAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: safeSignerAddress, verificationError: undefined } },
 	), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing direct Safe execution signer request')

@@ -103,7 +103,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		},
-		{ selectedSigner: recipientAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: recipientAddress, verificationError: undefined } },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 
