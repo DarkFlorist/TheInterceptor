@@ -280,14 +280,14 @@ describe('protocol ETH transfer logs', () => {
 
 		test('an abandoned simulation does not cancel the read another simulation shares', async () => {
 			const node = createStubNode([createRpcLog()])
-			let openGate = () => {}
+			let openGate: (() => void) | undefined
 			node.getCodeGate.opened = new Promise<void>((resolve) => { openGate = resolve })
 			const abandoned = new AbortController()
 			const abandonedSimulation = node.ethereum.simulatePrepared([createInputBlock()], 8443561n, abandoned)
 			const sharingSimulation = simulateLogAddresses(node)
 			while (node.getCodeRequests.length === 0) await new Promise((resolve) => setTimeout(resolve, 0))
 			abandoned.abort()
-			openGate()
+			openGate?.()
 			await Promise.allSettled([abandonedSimulation])
 			assert.deepEqual(await sharingSimulation, [ETHEREUM_LOGS_LOGGER_ADDRESS])
 			assert.equal(node.getCodeRequests.length, 1)
