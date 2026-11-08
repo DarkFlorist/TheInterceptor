@@ -16,14 +16,11 @@ const hashSimulatedPersonalSignMessage = (message: string) => hashMessage({ raw:
 
 export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashSimulatedPersonalSignMessage(params.params[0])
 
-// The hash simulated personal_sign signs for this message, or undefined when it cannot decode the message: then signing it throws too, so no simulated signature over it exists.
-export const tryGetSimulatedPersonalSignMessageHash = (message: string) => {
-	try {
-		return hashSimulatedPersonalSignMessage(message)
-	} catch {
-		return undefined
-	}
-}
+// Even-length hex with a 0x or 0X prefix, on which stringToUint8Array cannot throw. Its other inputs follow BigInt's string grammar and fractional byte lengths ('12' decodes to no bytes, '0x123' throws), too irregular to restate here, so callers match those by the exact message string instead.
+const isEvenLengthHexMessage = (message: string) => /^0[xX](?:[0-9a-fA-F]{2})*$/u.test(message)
+
+// The hash simulated personal_sign signs for a hex message, decoded exactly as signing decodes it, or undefined when the message is not even-length hex.
+export const getSimulatedPersonalSignHashOfHexMessage = (message: string) => isEvenLengthHexMessage(message) ? hashSimulatedPersonalSignMessage(message) : undefined
 
 export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
 	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
