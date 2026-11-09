@@ -205,11 +205,11 @@ test('storageVariables.ts imports nothing from pendingTerminalReplies.ts, not ev
 
 // In-memory modules where outbox.ts imports storage.ts, and storage.ts reaches back in each way the guard has to see.
 const importCycleFixtures = {
-	'an extensionless import': { '/fixture/storage.ts': "import type { Write } from './outbox'\nexport type Stored = Write" },
-	'an index import': { '/fixture/storage.ts': "import type { Write } from './outbox/index.js'\nexport type Stored = Write", '/fixture/outbox/index.ts': "import { stored } from '../storage.js'\nexport type Write = typeof stored" },
-	'a directory import that resolves to its index': { '/fixture/storage.ts': "import type { Write } from './outbox'\nexport type Stored = Write", '/fixture/outbox/index.ts': "import { stored } from '../storage.js'\nexport type Write = typeof stored" },
-	'an inline import() type': { '/fixture/storage.ts': "export type Stored = import('./outbox.js').Write" },
-	'a transitive import': { '/fixture/storage.ts': "import type { Write } from './middle.js'\nexport type Stored = Write", '/fixture/middle.ts': "export type { Write } from './outbox.js'" },
+	'an extensionless import': { '/fixture/storage.ts': `import type { Write } from './outbox'\nexport type Stored = Write` },
+	'an index import': { '/fixture/storage.ts': `import type { Write } from './outbox/index.js'\nexport type Stored = Write`, '/fixture/outbox/index.ts': `import { stored } from '../storage.js'\nexport type Write = typeof stored` },
+	'a directory import that resolves to its index': { '/fixture/storage.ts': `import type { Write } from './outbox'\nexport type Stored = Write`, '/fixture/outbox/index.ts': `import { stored } from '../storage.js'\nexport type Write = typeof stored` },
+	'an inline import() type': { '/fixture/storage.ts': `export type Stored = import('./outbox.js').Write` },
+	'a transitive import': { '/fixture/storage.ts': `import type { Write } from './middle.js'\nexport type Stored = Write`, '/fixture/middle.ts': `export type { Write } from './outbox.js'` },
 } as const
 
 const importFixtureHost = (files: Readonly<Record<string, string>>): ModuleSourceHost => ({
@@ -221,14 +221,14 @@ for (const [kind, files] of Object.entries(importCycleFixtures)) {
 	test(`the import cycle guard sees ${ kind }`, () => {
 		// Fixtures with an outbox directory get no outbox.ts beside it, so './outbox' can only resolve to the directory's index.
 		const outbox = '/fixture/outbox/index.ts' in files ? '/fixture/outbox/index.ts' : '/fixture/outbox.ts'
-		const modules = outbox === '/fixture/outbox.ts' ? { '/fixture/outbox.ts': "import { stored } from './storage.js'\nexport type Write = typeof stored", ...files } : files
+		const modules = outbox === '/fixture/outbox.ts' ? { '/fixture/outbox.ts': `import { stored } from './storage.js'\nexport type Write = typeof stored`, ...files } : files
 		const graph = buildImportGraph(['/fixture/storage.ts', outbox], importFixtureHost(modules), readProjectCompilerOptions())
 		assert.throws(() => assertNoImportCycle(graph, '/fixture/storage.ts', outbox), /Import cycle/u)
 	})
 }
 
 test('the import cycle guard passes modules that import in one direction only', () => {
-	const modules = { '/fixture/outbox.ts': "import { stored } from './storage.js'\nexport type Write = typeof stored", '/fixture/storage.ts': 'export const stored = 1' }
+	const modules = { '/fixture/outbox.ts': `import { stored } from './storage.js'\nexport type Write = typeof stored`, '/fixture/storage.ts': 'export const stored = 1' }
 	const graph = buildImportGraph(['/fixture/storage.ts', '/fixture/outbox.ts'], importFixtureHost(modules), readProjectCompilerOptions())
 	assertNoImportCycle(graph, '/fixture/storage.ts', '/fixture/outbox.ts')
 })
