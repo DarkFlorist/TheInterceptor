@@ -1,4 +1,4 @@
-// How a pending request's outcome is committed: the commit lock that a rejection and an approval's final commits share, the reply a request gets, and rejection itself. It needs no simulation or window code, so a rejection can never wait for either.
+// The one owner of a pending request's two locks, how its outcome is committed, the reply it gets, and rejection itself. The locks are private, and the only ways to take them are resolveSerially and commitOnly, so their order is set here: a resolution takes the resolution lock and takes the commit lock only for each of its commits, through the commit step it is given, and a rejection or a closed window takes only the commit lock. It needs no simulation or window code, so a rejection can never wait for either.
 import * as funtypes from 'funtypes'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
@@ -16,16 +16,29 @@ export const getPendingTransactionOrMessageByidentifier = async (uniqueRequestId
 	return (await getPendingTransactionsAndMessages()).find((tx) => doesUniqueRequestIdentifiersMatch(tx.uniqueRequestIdentifier, uniqueRequestIdentifier))
 }
 
-const pendingTransactionOrMessageCommitScope = {}
-const serializePendingTransactionOrMessageCommit = createScopedKeyedSerialExecutor<typeof pendingTransactionOrMessageCommitScope, string>()
+const pendingRequestLockScope = {}
+const runUnderResolutionLock = createScopedKeyedSerialExecutor<typeof pendingRequestLockScope, string>()
+const runUnderCommitLock = createScopedKeyedSerialExecutor<typeof pendingRequestLockScope, string>()
 
-// Preparing an approval can take as long as an RPC does, and a rejection or a closed window must not wait for that, so a rejection takes only this lock. Everything that decides a request's outcome runs under it on what is stored right then: whichever commits first wins, a later commit finds the request gone and does nothing, and so a request gets one reply and is not forwarded after it was rejected. A commit needs no RPC, as a rejection waits for it. It is separate from the lock of a resolution, which keeps two approvals of one request from preparing at the same time. A caller whose commit may only complete a request in a particular state passes mayCommit, which is checked on the stored request under the lock, and a request it refuses is treated as one that is gone.
-export async function commitIfStillPending<T>(uniqueRequestIdentifier: UniqueRequestIdentifier, commit: (stored: PendingTransactionOrSignableMessage) => Promise<T>, mayCommit: (stored: PendingTransactionOrSignableMessage) => boolean = () => true): Promise<PendingRequestCommit<T>> {
-	return await serializePendingTransactionOrMessageCommit(pendingTransactionOrMessageCommitScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
+// A commit on the request as it is stored right then, under the commit lock. Whichever commit comes first wins, and a later one finds the request gone and does nothing, so a request gets one reply and is not forwarded after it was rejected. A commit reads and writes storage and posts to a port, but never awaits an RPC, as a rejection waits for it; it is given no services, and the resolutions, which hold them, run their RPCs before they commit. A caller whose commit may only complete a request in a particular state passes mayCommit, which is checked on the stored request under the lock, and a request it refuses is treated as one that is gone.
+export type CommitToStoredRequest = <T>(commit: (stored: PendingTransactionOrSignableMessage) => Promise<T>, mayCommit?: (stored: PendingTransactionOrSignableMessage) => boolean) => Promise<PendingRequestCommit<T>>
+
+const commitStepFor = (uniqueRequestIdentifier: UniqueRequestIdentifier): CommitToStoredRequest => async (commit, mayCommit = () => true) => await runUnderCommitLock(pendingRequestLockScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
+	const stored = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+	return stored === undefined || !mayCommit(stored) ? { stored: false } : { stored: true, result: await commit(stored) }
+})
+
+// Approvals and signer replies of one request can overlap, for example when duplicate confirmation windows both approve it or a double click sends two approvals. They run one at a time under the resolution lock on freshly read state, so a later approval sees that the first one already forwarded the request to the signer, or added it to the simulation stack and removed it. Preparing can take as long as an RPC does, so resolve commits only through the commit step it is given, which takes the commit lock for just that commit; a rejection never waits for the preparation. A request that is no longer stored is not resolved.
+export async function resolveSerially<T>(uniqueRequestIdentifier: UniqueRequestIdentifier, resolve: (stored: PendingTransactionOrSignableMessage, commit: CommitToStoredRequest) => Promise<T>): Promise<T | undefined> {
+	return await runUnderResolutionLock(pendingRequestLockScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async () => {
 		const stored = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
-		return stored === undefined || !mayCommit(stored) ? { stored: false } : { stored: true, result: await commit(stored) }
+		if (stored === undefined) return undefined
+		return await resolve(stored, commitStepFor(uniqueRequestIdentifier))
 	})
 }
+
+// A commit that does not wait for a resolution being prepared, which is how a rejection or a closed window answers at once. It takes only the commit lock.
+export const commitOnly = async <T>(uniqueRequestIdentifier: UniqueRequestIdentifier, commit: (stored: PendingTransactionOrSignableMessage) => Promise<T>) => await commitStepFor(uniqueRequestIdentifier)(commit)
 
 export type TerminalReplyContent = { readonly type: 'result', readonly error: { readonly code: number, readonly message: string } } | { readonly type: 'result', readonly result: unknown }
 
@@ -43,7 +56,7 @@ export async function queueTerminalReplyAndRemovePendingRequest(terminalReply: I
 
 // A rejection commits without waiting for an approval that is still being prepared. A request is rejected the same way whatever its state, also while the wallet has it. A closed window's request stays stored until its reply is delivered, so a failed cleanup of the reply can be retried without posting it again. The window work after it needs an RPC, so onRemoved only lets the caller schedule it for once the websites have their answers.
 export async function cancelPendingTransactionOrMessage(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, action: 'reject' | 'noResponse', onRemoved: (removed: PendingTransactionOrSignableMessage) => void) {
-	const committed = await commitIfStillPending(uniqueRequestIdentifier, async (stored) => {
+	const committed = await commitOnly(uniqueRequestIdentifier, async (stored) => {
 		if (action === 'noResponse') {
 			const delivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, createTerminalReply(stored, uniqueRequestIdentifier, formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature')))
 			await removePendingTransactionOrMessage(uniqueRequestIdentifier)

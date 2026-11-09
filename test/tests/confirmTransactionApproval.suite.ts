@@ -1686,6 +1686,21 @@ test('a valid approval reaches the wallet while the block number is unanswered, 
 	assert.deepEqual(toldToWindow, [{ status: 'WaitingForSigner', forwarded: 0 }])
 })
 
+test('a second approval queued behind a first one is answered while the first one\'s window update waits for the block number', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const stalled = createSuspendedServices('eth_blockNumber')
+
+	// The second approval waits for the first under the resolution lock, so it answers only if the first released the lock without waiting for its view update.
+	const approvals = Promise.all([approveRequest(websiteTabConnections, () => stalled), approveRequest(websiteTabConnections, () => stalled)])
+	const answered = await answersWithoutTheRpc(approvals)
+	stalled.release()
+
+	assert.equal(answered, true)
+	assert.deepEqual(await approvals, [true, false])
+	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+})
+
 test('closing the window during a valid approval delivers the rejection while the block number is unanswered', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)

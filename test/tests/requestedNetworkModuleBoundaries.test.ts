@@ -34,7 +34,7 @@ test('the confirmation run rule is a leaf that the Gnosis Safe signer refresh us
 // A rejection must never wait for simulation or window work, so the module that commits it reaches none of that code.
 test('the commits of a pending request reach no simulation or confirmation window code', () => {
 	const simulationOrWindowModules = ['confirmTransactionSimulation.ts', 'simulationUpdating.ts', 'popupVisualisationUpdater.ts', path.join('windows', 'confirmTransaction.ts')].map(backgroundModule)
-	assert.deepEqual(listReached([backgroundModule('pendingRequestCommits.ts')], simulationOrWindowModules), [])
+	assert.deepEqual(listReached([backgroundModule('pendingRequestLocks.ts')], simulationOrWindowModules), [])
 })
 
 // requestedNetworkForwarding.ts composes delivery with the requested-network rule, so neither side depends on the other.

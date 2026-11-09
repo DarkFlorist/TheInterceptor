@@ -19,20 +19,30 @@ test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', 
 	assert.doesNotMatch(backgroundSource, /Gnosis Safe message signing is not supported|Gnosis Safe transaction proposals require/u)
 })
 
-// A queued approval or signer reply waits for the resolution lock, and the reply to an approval is what enables the reject button again, so an RPC awaited for a view update inside a resolution would hold both back. A rejection itself takes only the commit lock.
-test('nothing under the resolution lock awaits an RPC-dependent view update', () => {
+// A pending request's two locks have one owner, which exposes only the ordered ways to take them: resolveSerially, whose commits take the commit lock inside the resolution lock, and commitOnly, which takes only the commit lock. No other module keeps a lock keyed on a pending request, so the order cannot be broken elsewhere. Whether a lock is held across an RPC is shown by the behaviour tests that hold an RPC while approving and rejecting.
+test('the locks of a pending request have one owner, which exposes only the ordered ways to take them', async () => {
+	const locks = await import('../../app/ts/background/pendingRequestLocks.js')
+	assert.equal(typeof locks.resolveSerially, 'function')
+	assert.equal(typeof locks.commitOnly, 'function')
+	for (const name of ['commitIfStillPending', 'runUnderResolutionLock', 'runUnderCommitLock']) assert.equal(name in locks, false, name)
+	const backgroundDirectory = new URL('../../app/ts/background/', import.meta.url).pathname
+	const keyedLockOwners: string[] = []
+	for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: backgroundDirectory })) {
+		if (/createScopedKeyedSerialExecutor</u.test(await Bun.file(`${ backgroundDirectory }${ file }`).text())) keyedLockOwners.push(file)
+	}
+	// The others serialize per tab or per website connection, not per pending request.
+	assert.deepEqual(keyedLockOwners.toSorted(), ['iconHandler.ts', 'pendingRequestLocks.ts', 'signerStateOwnership.ts', 'windows/interceptorAccess.ts'])
+})
+
+// Showing what is stored only reads it, so a status has one owner and not also every window update.
+test('the window updates only read what is stored', () => {
 	const getFunctionSource = (name: string) => {
 		const start = confirmTransactionSource.indexOf(`async function ${ name }(`)
 		assert.notEqual(start, -1, name)
 		return confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start))
 	}
-	assert.doesNotMatch(getFunctionSource('resolveStoredPendingTransactionOrMessage'), /updateConfirmTransactionView|(?<!stepsAfterResolution\.push\(async \(\) => )await updateViewAfterPendingRequestRemoved/u)
-	assert.doesNotMatch(getFunctionSource('showNetworkRefusal'), /await updateConfirmTransactionView/u)
-	assert.doesNotMatch(getFunctionSource('showStoredStateAndRefreshView'), /await update(?:ConfirmTransactionView|ConfirmationSimulationView)/u)
-	// Showing what is stored only reads it, so a status has one owner and not also every window update.
 	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage/u, view)
 })
-
 
 // The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the push and the bootstrap reply share one projection, which derives them through showWithCurrentNetworkRefusals under the queue lock, and no other code builds a queue for the window. The installed client comes from the getCurrent of the services owner, passed as a parameter, so the dependency is in every signature and nothing has to be installed in a module slot first.
 test('the window queue is built only with the installed services passed in as a parameter, and no module keeps an installed-services slot', async () => {
