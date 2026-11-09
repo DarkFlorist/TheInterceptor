@@ -1,6 +1,6 @@
 // Curve checks for personal_ecRecover, which need more than recoverAddress reports. Import this file directly: a re-export through ethereumPrimitives would ship it to every extension page, because bundling cannot drop its top-level curve access, and only the background handler uses it.
 
-// Version coupling: @noble/curves is pinned to the exact version micro-eth-signer depends on, so these checks and recoverAddress run on one copy of the library. tryRecoverAddress.test.ts fails and names the required version when they differ, so a micro-eth-signer upgrade has to bump @noble/curves with it and cannot leave two copies behind.
+// The only module that imports @noble/curves (tryRecoverAddress.test.ts enforces this), pinned to the exact version micro-eth-signer depends on so these checks and recoverAddress run on one copy; bun run lint (lint:curves-version) fails and names the required version when a micro-eth-signer upgrade changes it.
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { bytesToNumberBE } from '@noble/curves/utils.js'
 import { concatBytes } from '@noble/hashes/utils'
