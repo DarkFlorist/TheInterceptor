@@ -25,9 +25,10 @@ export function createConfirmationRunTrackers(createLifetime: () => string = () 
 			store(uniqueRequestIdentifier, { ...tracker, latestSequence: sequence })
 			return { lifetime: tracker.lifetime, sequence }
 		},
-		// Makes the run the request's run in flight and aborts the one it replaces. A run that starts after a later run of its request is already in flight does not start, so an earlier run never aborts a later one, and runs of different requests never cancel each other.
+		// Makes the run the request's run in flight and aborts the one it replaces, or tells that the run is not started, which its caller drops. A run starts only on the tracker it was reserved from: one whose request left the queue meanwhile, or that was replaced after a disposal, finds no tracker of its lifetime and is not started, so it never recreates a tracker. A run that starts after a later run of its request is already in flight does not start either, so an earlier run never aborts a later one, and runs of different requests never cancel each other.
 		startRun: (uniqueRequestIdentifier: UniqueRequestIdentifier, run: ConfirmationRunId): AbortController | undefined => {
-			const tracker = lookupOrCreate(uniqueRequestIdentifier)
+			const tracker = lookup(uniqueRequestIdentifier)
+			if (tracker === undefined || tracker.lifetime !== run.lifetime) return undefined
 			if (tracker.inFlight !== undefined && tracker.inFlight.sequence > run.sequence) return undefined
 			tracker.inFlight?.abortController.abort(NEW_BLOCK_ABORT)
 			const inFlight = { sequence: run.sequence, abortController: new AbortController() }
@@ -39,9 +40,11 @@ export function createConfirmationRunTrackers(createLifetime: () => string = () 
 			const tracker = lookup(uniqueRequestIdentifier)
 			if (tracker?.inFlight?.abortController === abortController) store(uniqueRequestIdentifier, { ...tracker, inFlight: undefined })
 		},
+		// Whether the request has a tracker.
+		has: (uniqueRequestIdentifier: UniqueRequestIdentifier) => lookup(uniqueRequestIdentifier) !== undefined,
 		// The abort controller of the request's run in flight, if any, for work that is outdated once a later run of that request starts.
 		getInFlightAbortController: (uniqueRequestIdentifier: UniqueRequestIdentifier) => lookup(uniqueRequestIdentifier)?.inFlight?.abortController,
-		// Called when the request leaves the confirmation queue. A run still in flight finds no request to store onto, so it is left to end by itself.
+		// Called when the request leaves the confirmation queue, and by an entry that reserved a run for a request that turned out not to be stored. A run still in flight finds no request to store onto, so it is left to end by itself.
 		dispose: (uniqueRequestIdentifier: UniqueRequestIdentifier) => {
 			trackers.delete(getUniqueRequestIdentifierString(uniqueRequestIdentifier))
 		},

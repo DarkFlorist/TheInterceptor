@@ -16,7 +16,7 @@ import { confirmationRuns } from '../confirmationRunTracker.js'
 import { getConfirmationRunInputs, mayStoreNewRun } from '../confirmationRun.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, buildFromPendingTransactionsAndMessages, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, releaseConfirmationRunsIfRequestGone, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, buildFromPendingTransactionsAndMessages, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { forwardToSignerOnRequestedNetwork } from '../requestedNetworkForwarding.js'
@@ -135,44 +135,49 @@ export async function refreshPendingSafeSignerSelectionErrors(getInstalledServic
 	const pendingOfTab = (await getPendingTransactionsAndMessages())
 		.filter((pending) => pending.uniqueRequestIdentifier.requestSocket.tabId === tabId)
 		.map((pending) => ({ pending, confirmationRun: confirmationRuns.reserve(pending.uniqueRequestIdentifier) }))
-	const tabState = await getTabState(tabId)
-	const refreshedSelection = {
-		selectedSigner: getWalletSelectedAccount(tabState),
-		verificationError: undefined,
-	}
-	let pendingStateChanged = false
-	for (const { pending, confirmationRun } of pendingOfTab) {
-		const safeSignerAddress = getPendingSafeSignerAddress(pending)
-		// Rebuilding a Gnosis Safe proposal or execution signs for and simulates on the client's network, so a transaction is only rebuilt with the client of the network it was requested on.
-		const rebuildsOnRequestedNetwork = pending.type !== 'Transaction' || isEthereumClientOnTransactionChain(ethereum, pending)
-		if (refreshedSelection.selectedSigner !== undefined && rebuildsOnRequestedNetwork) {
-			const refresh = await refreshAndPersistSafeSignerSelection(
-				ethereum,
-				pending,
-				refreshedSelection.selectedSigner,
-				async (refreshedPending) => await refreshDirectSafeExecutionSimulation(confirmationRun, ethereum, tokenPriceService, refreshedPending),
-			)
-			if (refresh.persisted) pendingStateChanged = true
-			if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
+	try {
+		const tabState = await getTabState(tabId)
+		const refreshedSelection = {
+			selectedSigner: getWalletSelectedAccount(tabState),
+			verificationError: undefined,
 		}
-		if (
-			safeSignerAddress === undefined
-			|| pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId
-			|| pending.approvalStatus.status === 'WaitingForSigner'
-			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
-		) continue
-		const signerMismatch = await getSafeSignerMismatchApprovalStatus(tabId, safeSignerAddress, refreshedSelection)
-		if (pending.approvalStatus.status === 'WaitingForUser' && signerMismatch === undefined) continue
-		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
-			if (current.approvalStatus.status === 'WaitingForSigner') return current
-			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return current
-			pendingStateChanged = true
-			return modifyObject(current, {
-				approvalStatus: signerMismatch ?? { status: 'WaitingForUser' as const },
+		let pendingStateChanged = false
+		for (const { pending, confirmationRun } of pendingOfTab) {
+			const safeSignerAddress = getPendingSafeSignerAddress(pending)
+			// Rebuilding a Gnosis Safe proposal or execution signs for and simulates on the client's network, so a transaction is only rebuilt with the client of the network it was requested on.
+			const rebuildsOnRequestedNetwork = pending.type !== 'Transaction' || isEthereumClientOnTransactionChain(ethereum, pending)
+			if (refreshedSelection.selectedSigner !== undefined && rebuildsOnRequestedNetwork) {
+				const refresh = await refreshAndPersistSafeSignerSelection(
+					ethereum,
+					pending,
+					refreshedSelection.selectedSigner,
+					async (refreshedPending) => await refreshDirectSafeExecutionSimulation(confirmationRun, ethereum, tokenPriceService, refreshedPending),
+				)
+				if (refresh.persisted) pendingStateChanged = true
+				if (refresh.refreshRequired && refresh.refreshResult.status !== 'unchanged') continue
+			}
+			if (
+				safeSignerAddress === undefined
+				|| pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId
+				|| pending.approvalStatus.status === 'WaitingForSigner'
+				|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
+			) continue
+			const signerMismatch = await getSafeSignerMismatchApprovalStatus(tabId, safeSignerAddress, refreshedSelection)
+			if (pending.approvalStatus.status === 'WaitingForUser' && signerMismatch === undefined) continue
+			await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+				if (current.approvalStatus.status === 'WaitingForSigner') return current
+				if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return current
+				pendingStateChanged = true
+				return modifyObject(current, {
+					approvalStatus: signerMismatch ?? { status: 'WaitingForUser' as const },
+				})
 			})
-		})
+		}
+		if (pendingStateChanged) await updateConfirmTransactionView(getInstalledServices)
+	} finally {
+		// The runs reserved for requests that left the queue meanwhile are released.
+		for (const { pending } of pendingOfTab) await releaseConfirmationRunsIfRequestGone(pending.uniqueRequestIdentifier)
 	}
-	if (pendingStateChanged) await updateConfirmTransactionView(getInstalledServices)
 }
 
 
@@ -331,6 +336,7 @@ export async function resolvePendingTransactionOrMessage(getInstalledServices: G
 		return await resolveSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage, commit) => await resolveStoredPendingTransactionOrMessage(getInstalledServices, preparationServices, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, commit, stepsAfterResolution, safeSignerRefresh))
 	} finally {
 		for (const step of stepsAfterResolution) await step()
+		if (safeSignerRefresh !== undefined) await releaseConfirmationRunsIfRequestGone(confirmation.data.uniqueRequestIdentifier)
 	}
 }
 
@@ -849,121 +855,126 @@ export async function openConfirmTransactionDialogForTransaction(
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	// Reserved before anything is awaited, so the first simulation of this request is ordered before any refresh requested after it.
 	const confirmationRun = confirmationRuns.reserve(request.uniqueRequestIdentifier)
-	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-	const walletSignerAddress = getWalletSelectedAccount(signerTabState)
-	const safePreparation = await prepareSafeTransactionConfirmation(
-		ethereumClientService,
-		confirmation,
-		simulationMode,
-		activeAddress,
-		walletSignerAddress,
-	)
-	if (safePreparation.rejection !== undefined) {
-		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
-	}
-	const {
-		effectiveTransactionParams,
-		transactionExecutor,
-		gasPayment,
-		preparationMessage: safePreparationMessage,
-	} = safePreparation
-	const transactionToSimulatePromise = safePreparationMessage !== undefined
-		? Promise.resolve({
-			website,
-			created,
-			originalRequestParameters: effectiveTransactionParams,
-			transactionIdentifier,
-			success: false as const,
-			error: {
-				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-				message: safePreparationMessage,
-			},
-		})
-		: effectiveTransactionParams.method === 'eth_sendTransaction'
-		? formEthSendTransaction(
+	try {
+		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
+		const safePreparation = await prepareSafeTransactionConfirmation(
 			ethereumClientService,
-			undefined,
-			transactionExecutor,
-			website,
-			effectiveTransactionParams,
-			created,
-			transactionIdentifier,
+			confirmation,
 			simulationMode,
+			activeAddress,
+			walletSignerAddress,
+		)
+		if (safePreparation.rejection !== undefined) {
+			return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
+		}
+		const {
+			effectiveTransactionParams,
+			transactionExecutor,
 			gasPayment,
-		)
-		: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
-	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
-	const outcome = await pendingConfirmationSemaphore.execute(async () => {
-		const finalizedSafePreparation = await safePreparation.finalize(
-			await transactionToSimulatePromise,
-			request.uniqueRequestIdentifier.requestSocket.tabId,
-		)
-		try {
-			const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
-			const openedDialog = await getPendingTransactionWindow(getInstalledServices, websiteTabConnections)
-			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
-			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
-
-			const pendingTransaction = {
-				type: 'Transaction' as const,
-				popupOrTabId: openedDialog,
-				originalRequestParameters: effectiveTransactionParams,
-				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
-				simulationMode,
-				activeAddress: transactionExecutor,
-				created,
-				transactionOrMessageCreationStatus: 'Crafting' as const,
-				transactionIdentifier,
-				requestedChainId: ethereumClientService.getChainId(),
+			preparationMessage: safePreparationMessage,
+		} = safePreparation
+		const transactionToSimulatePromise = safePreparationMessage !== undefined
+			? Promise.resolve({
 				website,
-				approvalStatus: safeSignerMismatch ?? { status: 'WaitingForUser' as const },
-				...(safeTransaction === undefined ? {} : { safeTransaction }),
-				...(pendingSafeFields ?? {}),
-			}
-			// The inputs this run prepares the transaction from, so the run is not stored onto a transaction whose gas limit or Gnosis Safe signer changed while it ran.
-			const runInputs = getConfirmationRunInputs(pendingTransaction)
-			await appendPendingTransactionOrMessage(pendingTransaction)
-			await updateConfirmTransactionView(getInstalledServices)
-			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
-			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
-				confirmationRun,
+				created,
+				originalRequestParameters: effectiveTransactionParams,
+				transactionIdentifier,
+				success: false as const,
+				error: {
+					code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
+					message: safePreparationMessage,
+				},
+			})
+			: effectiveTransactionParams.method === 'eth_sendTransaction'
+			? formEthSendTransaction(
 				ethereumClientService,
-				tokenPriceService,
+				undefined,
 				transactionExecutor,
+				website,
+				effectiveTransactionParams,
+				created,
+				transactionIdentifier,
 				simulationMode,
-				request.uniqueRequestIdentifier,
-				transactionToSimulate,
-				safeTransaction,
-			))
-			if (transactionToSimulate.success) {
+				gasPayment,
+			)
+			: formSendRawTransaction(ethereumClientService, effectiveTransactionParams, website, created, transactionIdentifier)
+		silenceChromeUnCaughtPromise(transactionToSimulatePromise)
+		const outcome = await pendingConfirmationSemaphore.execute(async () => {
+			const finalizedSafePreparation = await safePreparation.finalize(
+				await transactionToSimulatePromise,
+				request.uniqueRequestIdentifier.requestSocket.tabId,
+			)
+			try {
+				const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
+				const openedDialog = await getPendingTransactionWindow(getInstalledServices, websiteTabConnections)
+				if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
+				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
+
+				const pendingTransaction = {
+					type: 'Transaction' as const,
+					popupOrTabId: openedDialog,
+					originalRequestParameters: effectiveTransactionParams,
+					uniqueRequestIdentifier: request.uniqueRequestIdentifier,
+					simulationMode,
+					activeAddress: transactionExecutor,
+					created,
+					transactionOrMessageCreationStatus: 'Crafting' as const,
+					transactionIdentifier,
+					requestedChainId: ethereumClientService.getChainId(),
+					website,
+					approvalStatus: safeSignerMismatch ?? { status: 'WaitingForUser' as const },
+					...(safeTransaction === undefined ? {} : { safeTransaction }),
+					...(pendingSafeFields ?? {}),
+				}
+				// The inputs this run prepares the transaction from, so the run is not stored onto a transaction whose gas limit or Gnosis Safe signer changed while it ran.
+				const runInputs = getConfirmationRunInputs(pendingTransaction)
+				await appendPendingTransactionOrMessage(pendingTransaction)
+				await updateConfirmTransactionView(getInstalledServices)
+				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
+				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
+					confirmationRun,
+					ethereumClientService,
+					tokenPriceService,
+					transactionExecutor,
+					simulationMode,
+					request.uniqueRequestIdentifier,
+					transactionToSimulate,
+					safeTransaction,
+				))
+				if (transactionToSimulate.success) {
+					await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+						// A refresh may already have stored a preview, or the inputs may have changed, in which case this run's transaction is not shown.
+						if (transaction.type !== 'Transaction' || transaction.transactionOrMessageCreationStatus !== 'Crafting' || getConfirmationRunInputs(transaction) !== runInputs) return transaction
+						return { ...transaction, transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }
+					})
+					await updateConfirmTransactionView(getInstalledServices)
+				}
+				const popupVisualisation = await simulationResultsPromise
+				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-					// A refresh may already have stored a preview, or the inputs may have changed, in which case this run's transaction is not shown.
-					if (transaction.type !== 'Transaction' || transaction.transactionOrMessageCreationStatus !== 'Crafting' || getConfirmationRunInputs(transaction) !== runInputs) return transaction
-					return { ...transaction, transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }
+					if (transaction.type !== 'Transaction') return transaction
+					if (popupVisualisation === undefined) return transaction
+					// A run that is not stored leaves the transaction to the next refresh, which simulates it from its stored inputs.
+					if (!mayStoreNewRun(transaction, runInputs, popupVisualisation)) return transaction
+					if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
+					return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 				})
 				await updateConfirmTransactionView(getInstalledServices)
+				await tryFocusingTabOrWindow(openedDialog)
+				return { success: true }
+			} catch(e: unknown) {
+				await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.', details: e instanceof Error ? e.stack : undefined })
+				return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 			}
-			const popupVisualisation = await simulationResultsPromise
-			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
-			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-				if (transaction.type !== 'Transaction') return transaction
-				if (popupVisualisation === undefined) return transaction
-				// A run that is not stored leaves the transaction to the next refresh, which simulates it from its stored inputs.
-				if (!mayStoreNewRun(transaction, runInputs, popupVisualisation)) return transaction
-				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
-				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
-			})
-			await updateConfirmTransactionView(getInstalledServices)
-			await tryFocusingTabOrWindow(openedDialog)
-			return { success: true }
-		} catch(e: unknown) {
-			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.', details: e instanceof Error ? e.stack : undefined })
-			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
-		}
-	})
-	if (!('success' in outcome)) return formRejectMessage(outcome.error.code, outcome.error.message)
-	const pendingTransactionData = await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier)
+		})
+		if (!('success' in outcome)) return formRejectMessage(outcome.error.code, outcome.error.message)
+		const pendingTransactionData = await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier)
 
-	if (pendingTransactionData === undefined) return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
-	return { type: 'doNotReply' as const }
+		if (pendingTransactionData === undefined) return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
+		return { type: 'doNotReply' as const }
+	} finally {
+		// A request that was never stored, or left the queue meanwhile, releases the run reserved for it.
+		await releaseConfirmationRunsIfRequestGone(request.uniqueRequestIdentifier)
+	}
 }

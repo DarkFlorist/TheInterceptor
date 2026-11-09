@@ -93,14 +93,15 @@ export function createBrowserMock() {
 					const writeStoredItems = () => {
 						Object.assign(storageState, items)
 						const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { newValue }]))
-						for (const listener of storageChangeListeners) listener(changes, 'local')
+						// Delivered in a later task, after the write is stored, as browsers deliver storage.onChanged.
+						setTimeout(() => { for (const listener of storageChangeListeners) listener(changes, 'local') }, 0)
 					}
 					if (storageSetHandler !== undefined) return await storageSetHandler(items, writeStoredItems)
 					writeStoredItems()
 				},
 				async remove(keys: string | string[]) { removeItems(keys) },
 			},
-			// Storage reports a write to its listeners once the write is stored, as browser storage does.
+			// Storage reports a write to its listeners asynchronously, once the write is stored, as browser storage does.
 			onChanged: {
 				addListener: (listener: StorageChangeListener) => { storageChangeListeners.add(listener) },
 				removeListener: (listener: StorageChangeListener) => { storageChangeListeners.delete(listener) },

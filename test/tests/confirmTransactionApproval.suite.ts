@@ -908,6 +908,33 @@ test('a rejected request\'s run tracker is disposed, so a request that is gone k
 	confirmationRuns.dispose(uniqueRequestIdentifier)
 })
 
+test('a refresh whose preparation outlives the rejection of its request starts no run and leaves no run tracker behind', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { confirmationRuns } = await import('../../app/ts/background/confirmationRunTracker.js')
+	// Every RPC of these services waits, so the refresh is held while it prepares the transaction.
+	const suspended = createSuspendedServices()
+	const refresh = modules.refreshPopupConfirmTransactionSimulation(() => suspended, uniqueRequestIdentifier)
+	await suspended.reached
+
+	await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier } })
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	suspended.release()
+	await refresh
+
+	assert.equal(confirmationRuns.has(uniqueRequestIdentifier), false)
+	assert.equal(confirmationRuns.getInFlightAbortController(uniqueRequestIdentifier), undefined)
+})
+
+test('a refresh asked for a request that is no longer stored releases the run it reserved', async () => {
+	await setUpTransactionApprovalTest(false)
+	const { confirmationRuns } = await import('../../app/ts/background/confirmationRunTracker.js')
+
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
+
+	assert.equal(confirmationRuns.has(uniqueRequestIdentifier), false)
+})
+
 test('a run that started before a later run was stored is still not stored over it', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
@@ -2177,7 +2204,7 @@ test('a repair of a corrupt active network read before a network switch committe
 	assert.equal((await getSettings()).activeRpcNetwork.chainId, otherNetwork.chainId)
 })
 
-test('a write of the active network that bypasses its writer, reported while the guard reads the network, makes the guard read again, so it commits on no network it cannot vouch for', async () => {
+test('a write of the active network outside its writer that lands while the guard\'s read returns the old network, and is reported before the commit, makes the guard read again and refuse', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
 	const { observeActiveNetworkChanges } = await import('../../app/ts/background/activeNetworkStorage.js')
 	browser.storage.onChanged.addListener(observeActiveNetworkChanges)
@@ -2199,8 +2226,9 @@ test('a write of the active network that bypasses its writer, reported while the
 
 	const stackUpdate = updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
 	await guardReadNetwork.promise
-	// Written as a path that bypasses writeActiveNetwork would write it.
+	// Written as a path that bypasses writeActiveNetwork would write it; its notification is delivered in a later task, which comes before the guard's read returns.
 	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	await new Promise((resolve) => setTimeout(resolve, 0))
 	releaseGuardRead.resolve(undefined)
 	const update = await stackUpdate
 	browserMock.setStorageGetHandler(undefined)

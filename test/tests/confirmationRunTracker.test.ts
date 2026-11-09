@@ -52,4 +52,26 @@ describe('confirmation run tracker', () => {
 		assert.notEqual(firstRunAfterDisposal.lifetime, lastRunBeforeDisposal.lifetime)
 		assert.equal(trackers.getInFlightAbortController(request(1)), undefined)
 	})
+
+	test('a run reserved before its request\'s tracker was disposed is not started and does not recreate the tracker', () => {
+		const trackers = createNumberedTrackers()
+		const run = trackers.reserve(request(1))
+		trackers.dispose(request(1))
+
+		assert.equal(trackers.startRun(request(1), run), undefined)
+		assert.equal(trackers.has(request(1)), false)
+	})
+
+	test('a run of an obsolete tracker is not started, while a run of the current tracker is', () => {
+		const trackers = createNumberedTrackers()
+		const obsoleteRun = trackers.reserve(request(1))
+		trackers.dispose(request(1))
+		const currentRun = trackers.reserve(request(1))
+		// The obsolete run has a lower or equal sequence and another lifetime; it must not start, nor abort the current one.
+		const current = trackers.startRun(request(1), currentRun)
+
+		assert.equal(trackers.startRun(request(1), obsoleteRun), undefined)
+		assert.equal(current?.signal.aborted, false)
+		assert.equal(trackers.getInFlightAbortController(request(1)), current)
+	})
 })

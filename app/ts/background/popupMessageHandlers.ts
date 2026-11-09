@@ -5,7 +5,7 @@ import type { ConfirmationRunId } from '../types/accessRequest.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, releaseConfirmationRunsIfRequestGone, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, readConfirmationQueue, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
@@ -109,23 +109,28 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	// An approval may rebuild a Gnosis Safe execution after refreshing the wallet's accounts, so its run is reserved before anything is awaited and is ordered from when the approval started.
 	const safeRebuildRun = confirmation.data.action === 'accept' ? confirmationRuns.reserve(confirmation.data.uniqueRequestIdentifier) : undefined
-	const pending = confirmation.data.action === 'accept'
-		? (await getPendingTransactionsAndMessages()).find((entry) =>
-			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
-		)
-		: undefined
-	const refreshedSafeSignerSelection = pending !== undefined && getSafePendingFlow(pending) !== undefined
-		? await (async () => {
-			const refreshResult = await refreshSignerAccountsForTab(
-				websiteTabConnections,
-				pending.uniqueRequestIdentifier.requestSocket.tabId,
-				false,
+	try {
+		const pending = confirmation.data.action === 'accept'
+			? (await getPendingTransactionsAndMessages()).find((entry) =>
+				doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
 			)
-			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
-		})()
-		: undefined
-	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair, which it reads when it starts.
-	await resolvePendingTransactionOrMessage(simulationServicesOwner.getCurrent, websiteTabConnections, confirmation, { refreshedSafeSignerSelection, safeRebuildRun })
+			: undefined
+		const refreshedSafeSignerSelection = pending !== undefined && getSafePendingFlow(pending) !== undefined
+			? await (async () => {
+				const refreshResult = await refreshSignerAccountsForTab(
+					websiteTabConnections,
+					pending.uniqueRequestIdentifier.requestSocket.tabId,
+					false,
+				)
+				return getSafeSignerSelectionFromAccountRefresh(refreshResult)
+			})()
+			: undefined
+		// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair, which it reads when it starts.
+		await resolvePendingTransactionOrMessage(simulationServicesOwner.getCurrent, websiteTabConnections, confirmation, { refreshedSafeSignerSelection, safeRebuildRun })
+	} finally {
+		// An approval of a request that left the queue releases the rebuild run it reserved.
+		if (safeRebuildRun !== undefined) await releaseConfirmationRunsIfRequestGone(confirmation.data.uniqueRequestIdentifier)
+	}
 }
 
 export async function confirmRequestAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
@@ -577,6 +582,15 @@ export async function refreshPopupConfirmTransactionMetadata(getInstalledService
 
 // Refreshes the request the window shows, which it names. The run is reserved for that request before anything is awaited, so overlapping refreshes of it are ordered by when they were requested; an entry that awaits before refreshing, such as a gas limit edit, reserves it itself and passes it in. A request that is no longer first in the queue is not refreshed, as the window is about to show another one.
 export async function refreshPopupConfirmTransactionSimulation(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationRun: ConfirmationRunId = confirmationRuns.reserve(uniqueRequestIdentifier)) {
+	try {
+		return await refreshReservedConfirmationRun(getInstalledServices, uniqueRequestIdentifier, confirmationRun)
+	} finally {
+		// A refresh whose request left the queue, or was never first, releases the run it reserved, so its tracker does not outlive the request.
+		await releaseConfirmationRunsIfRequestGone(uniqueRequestIdentifier)
+	}
+}
+
+async function refreshReservedConfirmationRun(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationRun: ConfirmationRunId) {
 	// The refresh simulates with the services installed when it starts.
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	const [firstTxn] = await getPendingTransactionsAndMessages()
@@ -977,8 +991,13 @@ export async function forceSetGasLimitForTransaction(getInstalledServices: GetIn
 	const editedRequest = await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
 	// Reserved once the new gas limit is stored, before anything else is awaited: a run that reads the transaction before the edit must not outrank the edit's run, or it would keep a preview of a gas limit that is no longer requested, while a refresh that starts later is ordered after the edit.
 	const confirmationRun = editedRequest === undefined ? undefined : confirmationRuns.reserve(editedRequest)
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	if (editedRequest !== undefined) await refreshPopupConfirmTransactionSimulation(getInstalledServices, editedRequest, confirmationRun)
+	try {
+		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
+		if (editedRequest !== undefined) await refreshPopupConfirmTransactionSimulation(getInstalledServices, editedRequest, confirmationRun)
+	} finally {
+		// The edit's run is released if the request left the queue meanwhile.
+		if (editedRequest !== undefined) await releaseConfirmationRunsIfRequestGone(editedRequest)
+	}
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {

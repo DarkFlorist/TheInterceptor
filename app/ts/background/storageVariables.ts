@@ -96,6 +96,14 @@ export async function appendPendingTransactionOrMessage(pendingTransactionOrMess
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
 
+// Disposes of the request's confirmation run tracker if the request is not stored, for an entry that reserved a run for it and then found it gone, or never stored it, so no tracker outlives its request. It reads under the lock of the queue's writers, so an append of the request is not missed.
+export async function releaseConfirmationRunsIfRequestGone(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await pendingTransactionsSemaphore.execute(async () => {
+		const stored = (await readPendingTransactionsAndMessagesWithRecovery()).some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (!stored) confirmationRuns.dispose(uniqueRequestIdentifier)
+	})
+}
+
 // Removes the request from the confirmation queue and disposes of its confirmation run tracker, which nothing needs once the request is gone.
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
