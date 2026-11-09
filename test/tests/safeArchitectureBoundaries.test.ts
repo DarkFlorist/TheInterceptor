@@ -34,7 +34,7 @@ test('nothing under the resolution lock awaits an RPC-dependent view update', ()
 })
 
 
-// The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the one push builder and the bootstrap reply derive them through showWithCurrentNetworkRefusals, and no other code builds a queue for the window. The installed client comes from the getCurrent of the services owner, passed as a parameter, so the dependency is in every signature and nothing has to be installed in a module slot first.
+// The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the push and the bootstrap reply share one projection, which derives them through showWithCurrentNetworkRefusals under the queue lock, and no other code builds a queue for the window. The installed client comes from the getCurrent of the services owner, passed as a parameter, so the dependency is in every signature and nothing has to be installed in a module slot first.
 test('the window queue is built only with the installed services passed in as a parameter, and no module keeps an installed-services slot', async () => {
 	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
 	const builders: string[] = []
@@ -45,7 +45,9 @@ test('the window queue is built only with the installed services passed in as a 
 		if (/^(?:export )?let \w+: SimulationServicesOwner\b/mu.test(source) && file !== 'background/background-startup.ts') installedServicesSlots.push(file)
 		if (/installedSimulationServices|getInstalledSimulationServices|setInstalledSimulationServicesOwner/u.test(source)) installedServicesSlots.push(file)
 	}
-	assert.deepEqual(builders.toSorted(), ['background/popupMessageHandlers.ts', 'background/windows/confirmTransaction.ts'])
+	assert.deepEqual(builders, ['background/windows/confirmTransaction.ts'])
+	assert.match(confirmTransactionSource, /export const readConfirmationQueue = async \(getInstalledServices: GetInstalledServices\) => await buildFromPendingTransactionsAndMessages\(async \(pending\) => await projectConfirmationQueue\(getInstalledServices, pending\)\)/u)
+	assert.match(popupMessageHandlersSource, /await readConfirmationQueue\(getInstalledServices\)/u)
 	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /await showWithCurrentNetworkRefusals\(getInstalledServices, /u, builder)
 	assert.deepEqual(installedServicesSlots, [])
 	assert.equal(await Bun.file(`${ appDirectory }background/installedSimulationServices.ts`).exists(), false)

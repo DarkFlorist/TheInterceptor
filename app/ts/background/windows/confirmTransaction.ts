@@ -15,7 +15,7 @@ import { refreshConfirmTransactionSimulation, reserveConfirmationRun } from '../
 import { getConfirmationRunInputs, mayStoreNewRun } from '../confirmationRun.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, buildFromPendingTransactionsAndMessages, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { forwardToSignerOnRequestedNetwork } from '../requestedNetworkForwarding.js'
@@ -180,18 +180,24 @@ type ShowPending = (pending: readonly PendingTransactionOrSignableMessage[]) => 
 export async function publishConfirmationView(getInstalledServices: GetInstalledServices, view: UpdateConfirmTransactionDialog['data'] | undefined, showPending: ShowPending = (pending) => pending) {
 	return await publishPendingTransactionsAndMessages(async (pending) => {
 		if (pending.length === 0) return []
-		return await showWithCurrentNetworkRefusals(getInstalledServices, (getNetworkRefusalMessage) => {
-			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-				data: { pendingTransactionAndSignableMessages: showPending(pending).map((current) => toPopupPendingTransactionOrSignableMessage(current, getNetworkRefusalMessage)) },
-			}
-			const queueMessage = serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)
-			if (view === undefined) return [queueMessage]
-			const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
-			return [queueMessage, serialize(UpdateConfirmTransactionDialog, message)]
-		})
+		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+			data: { pendingTransactionAndSignableMessages: await projectConfirmationQueue(getInstalledServices, pending, showPending) },
+		}
+		const queueMessage = serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)
+		if (view === undefined) return [queueMessage]
+		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
+		return [queueMessage, serialize(UpdateConfirmTransactionDialog, message)]
 	}, async (message) => await sendPopupMessageToOpenWindows(message, 'confirmTransaction'))
 }
+
+// The one projection of the stored queue for the window, run under the queue lock by both the push and the bootstrap reply. The refusals are derived as its last step, from the active network and the client getInstalledServices returns, read together.
+async function projectConfirmationQueue(getInstalledServices: GetInstalledServices, pending: readonly PendingTransactionOrSignableMessage[], showPending: ShowPending = (stored) => stored) {
+	return await showWithCurrentNetworkRefusals(getInstalledServices, (getNetworkRefusalMessage) => showPending(pending).map((current) => toPopupPendingTransactionOrSignableMessage(current, getNetworkRefusalMessage)))
+}
+
+// The queue for the window's bootstrap reply, read and projected under the queue lock as a push is, so no write lands between reading the queue and deriving its refusals. The reply's slow lookups run before this.
+export const readConfirmationQueue = async (getInstalledServices: GetInstalledServices) => await buildFromPendingTransactionsAndMessages(async (pending) => await projectConfirmationQueue(getInstalledServices, pending))
 
 // Sends the confirmation window the stored queue, which needs no RPC. It is sent after every stored change, before anything else happens, such as the wallet being prompted, and whenever the window asks for it, as it does when it opens and when the network, the client or the settings change.
 export const publishConfirmationQueue = async (getInstalledServices: GetInstalledServices) => await publishConfirmationView(getInstalledServices, undefined)

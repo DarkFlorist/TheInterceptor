@@ -7,9 +7,8 @@ import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRi
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
-import { toPopupPendingTransactionOrSignableMessage } from '../utils/popupPendingRequest.js'
-import { isEthereumClientOnTransactionChain, showWithCurrentNetworkRefusals } from './transactionNetwork.js'
+import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, readConfirmationQueue, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
+import { isEthereumClientOnTransactionChain } from './transactionNetwork.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -163,12 +162,10 @@ export async function popupReadyAndListening(getInstalledServices: GetInstalledS
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
-			// Read after the slow lookups, so the window does not start from confirmations they outlasted.
-			const pendingTransactions = await getPendingTransactionsAndMessages()
-			const firstPendingTransaction = pendingTransactions[0]
+			// Read after the slow lookups, so the window does not start from confirmations they outlasted, and built under the queue lock as a push is built.
+			const shownPendingTransactions = await readConfirmationQueue(getInstalledServices)
+			const firstPendingTransaction = shownPendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
-			// The refusals are derived last, from the active network and the installed client read together.
-			const shownPendingTransactions = await showWithCurrentNetworkRefusals(getInstalledServices, (getNetworkRefusalMessage) => pendingTransactions.map((pending) => toPopupPendingTransactionOrSignableMessage(pending, getNetworkRefusalMessage)))
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {

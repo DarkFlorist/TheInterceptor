@@ -466,6 +466,30 @@ test('a switch back while the window bootstrap reply is built never pairs the ne
 	assert.equal(shown.networkRefusal, undefined)
 })
 
+test('the window bootstrap reply builds its queue under the queue lock, so a write waits for it and the reply never pairs an older queue with newer refusals', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { popupReadyAndListening } = await import('../../app/ts/background/popupMessageHandlers.js')
+
+	const networkRead = holdNextActiveNetworkRead()
+	const reply = popupReadyAndListening(() => simulator, websiteTabConnections, 'confirmTransaction')
+	await networkRead.reached
+	// A write of the stored confirmations queued while the reply derives the refusals of the queue it read.
+	let written = false
+	const writing = storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } })).then(() => { written = true })
+	await new Promise((resolve) => setTimeout(resolve, 50))
+	assert.equal(written, false)
+	networkRead.release()
+	const bootstrap = await reply
+	await writing
+	networkRead.restore()
+
+	const shown = bootstrap !== undefined && 'confirmTransactionBootstrap' in bootstrap.data ? bootstrap.data.confirmTransactionBootstrap?.pendingTransactionAndSignableMessages[0] : undefined
+	if (shown === undefined) throw new Error('Missing bootstrapped request')
+	assert.deepEqual(shown.approvalStatus, { status: 'WaitingForUser' })
+	assert.equal((await getStoredApprovalStatus()).status, 'WaitingForSigner')
+})
+
 test('a refusal stays while the check still refuses, and approving again still sends nothing', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)

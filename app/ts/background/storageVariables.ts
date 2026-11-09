@@ -79,9 +79,14 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-// Sends what createMessages makes of the stored confirmations, read under the lock of their writers, and starts the sends under that lock, so the messages reach the windows ahead of the message of any later write. createMessages may read other storage, such as the active network, but never an RPC, as every writer of the confirmations waits for it, and the deliveries that send starts are awaited after the lock is released. send is passed in because the sending module depends on this one.
+// Builds what build makes of the stored confirmations, read under the lock of their writers, so no write lands between the read and the build. build may read other storage, such as the active network, but never an RPC, as every writer of the confirmations waits for it.
+export async function buildFromPendingTransactionsAndMessages<T>(build: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<T>) {
+	return await pendingTransactionsSemaphore.execute(async () => await build(await readPendingTransactionsAndMessagesWithRecovery()))
+}
+
+// Sends what createMessages makes of the stored confirmations, built under the lock of their writers as buildFromPendingTransactionsAndMessages builds, and starts the sends under that lock, so the messages reach the windows ahead of the message of any later write. The deliveries that send starts are awaited after the lock is released. send is passed in because the sending module depends on this one.
 export async function publishPendingTransactionsAndMessages<Message>(createMessages: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly Message[]>, send: (message: Message) => Promise<void>) {
-	const deliveries = await pendingTransactionsSemaphore.execute(async () => (await createMessages(await readPendingTransactionsAndMessagesWithRecovery())).map((message) => send(message)))
+	const deliveries = await buildFromPendingTransactionsAndMessages(async (pendingTransactionsOrMessages) => (await createMessages(pendingTransactionsOrMessages)).map((message) => send(message)))
 	await Promise.all(deliveries)
 	return deliveries.length > 0
 }
