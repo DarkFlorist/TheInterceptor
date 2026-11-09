@@ -31,8 +31,8 @@ const popupMessageHandlers = {
 		const { ethereum, tokenPriceService } = context.services
 		return await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService)
 	}),
-	popup_requestConfirmTransactionQueue: popupSnapshotMessageHandler('popup_requestConfirmTransactionQueue', async (context) => {
-		await publishConfirmationQueue(context.services.ethereum)
+	popup_requestConfirmTransactionQueue: popupMessageHandler('popup_requestConfirmTransactionQueue', async () => {
+		await publishConfirmationQueue()
 	}),
 	popup_refreshConfirmTransactionMetadata: popupSnapshotMessageHandler('popup_refreshConfirmTransactionMetadata', async (context) => {
 		const { ethereum, tokenPriceService } = context.services

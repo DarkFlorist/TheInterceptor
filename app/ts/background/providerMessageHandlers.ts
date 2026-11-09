@@ -327,7 +327,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 								action: 'signerIncluded',
 								signerReply: params.reply,
 							}
-						}, { getInstalledServices: simulationServicesOwner.getCurrent })
+						})
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}

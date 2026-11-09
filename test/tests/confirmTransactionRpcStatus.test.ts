@@ -390,6 +390,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
+		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
+		createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 
@@ -643,7 +645,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			if (blockNumbers.otherNetworkFails === true) throw new TypeError('Failed to fetch')
 		})
 		const simulationServicesOwner = createTestSimulationServicesOwner(requestedServices, (network) => network.chainId === otherNetwork.chainId ? otherServices : requestedServices)
-		answerQueueRequest = async () => { await publishConfirmationQueue(simulationServicesOwner.getCurrent().ethereum) }
+		answerQueueRequest = async () => { await publishConfirmationQueue() }
 		const switchNetwork = async (rpcNetwork: typeof requestedNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork })
 		const settle = async () => await new Promise((resolve) => setTimeout(resolve, 25))
 

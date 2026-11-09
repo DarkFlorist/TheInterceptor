@@ -8,6 +8,7 @@ import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -479,6 +480,8 @@ export const simulator = {
 	ethereum,
 	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
 }
+// The background's installed services, until a test installs others.
+createTestSimulationServicesOwner(simulator)
 
 export const activeAddress = modules.defaultActiveAddresses[0]?.address
 export const recipientAddress = modules.defaultActiveAddresses[1]?.address

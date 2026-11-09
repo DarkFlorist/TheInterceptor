@@ -457,6 +457,8 @@ describe('SafeTx confirm transaction metadata', () => {
 		let reportedError: unknown
 		let reportCalls = 0
 
+		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
+		createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
 			visualisation: {
 				async update() { throw refreshError },
@@ -520,6 +522,8 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
+		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
+		createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)

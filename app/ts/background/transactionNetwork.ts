@@ -59,10 +59,10 @@ export async function getTransactionNetworkApprovalError(ethereum: EthereumClien
 	return approval.committed ? undefined : approval.refusal
 }
 
-// What the confirmation window is shown of the requested-network rule, derived from the stored active network and the given client each time the queue is sent, so a refusal is never stored and never outlives the network or client that caused it. Showing it is advisory: every approval runs the rule itself. The returned function is synchronous, so the queue can be projected under the lock of its writers.
-export async function readNetworkRefusalMessages(ethereum: EthereumClientService) {
+// What the confirmation window is shown of the requested-network rule, derived each time the queue is sent from the stored active network and the client installed when the queue is built, so a refusal is never stored, never outlives the network or client that caused it, and never comes from a client captured before slow work. Showing it is advisory: every approval runs the rule itself. The active network is read here, and the returned function is synchronous, so the queue can be projected under the lock of its writers with the client installed at that moment.
+export async function readNetworkRefusalMessages() {
 	const activeNetwork = await readActiveNetworkSnapshot()
-	return (pending: PendingTransaction) => getNetworkRefusal(activeNetwork.activeRpcNetwork.chainId, ethereum, pending)?.message
+	return (installedEthereum: EthereumClientService, pending: PendingTransaction) => getNetworkRefusal(activeNetwork.activeRpcNetwork.chainId, installedEthereum, pending)?.message
 }
 
 // Queues the update on the transaction state lock in the same synchronous step as the passed check, so the stack reset of a later network switch, which takes the same lock, is applied after it. The update itself runs later, under the lock, and is synchronous.

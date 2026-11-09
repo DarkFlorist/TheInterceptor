@@ -10,6 +10,7 @@ import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransacti
 import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { toPopupPendingTransactionOrSignableMessage } from '../utils/popupPendingRequest.js'
 import { isEthereumClientOnTransactionChain, readNetworkRefusalMessages } from './transactionNetwork.js'
+import { getInstalledSimulationServices } from './installedSimulationServices.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -126,7 +127,7 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 		: undefined
 	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, { refreshedSafeSignerSelection, safeRebuildRun, getInstalledServices: simulationServicesOwner.getCurrent })
+	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, { refreshedSafeSignerSelection, safeRebuildRun })
 }
 
 export async function confirmRequestAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccess, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
@@ -163,17 +164,18 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
-			const getNetworkRefusalMessage = await readNetworkRefusalMessages(ethereum)
+			const getNetworkRefusalMessage = await readNetworkRefusalMessages()
 			// Read after the slow lookups, so the window does not start from confirmations they outlasted.
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
+			const installedEthereum = getInstalledSimulationServices().ethereum
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
 					confirmTransactionBootstrap: {
-						pendingTransactionAndSignableMessages: pendingTransactions.map((pending) => toPopupPendingTransactionOrSignableMessage(pending, getNetworkRefusalMessage)),
+						pendingTransactionAndSignableMessages: pendingTransactions.map((pending) => toPopupPendingTransactionOrSignableMessage(pending, (transaction) => getNetworkRefusalMessage(installedEthereum, transaction))),
 						currentBlockNumber,
 						rpcConnectionStatus,
 						visualizedSimulatorState,
@@ -543,7 +545,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			const view = { visualizedSimulatorState: await visualizedSimulatorStatePromise, currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise }
 			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
 			// The prepared visualization is shown on the message as it is stored now, so an approval made during the lookups is kept.
-			await publishConfirmationView(ethereum, view, (pending) => pending.map((current) => current.type === 'SignableMessage' && doesUniqueRequestIdentifiersMatch(current.uniqueRequestIdentifier, first.uniqueRequestIdentifier)
+			await publishConfirmationView(view, (pending) => pending.map((current) => current.type === 'SignableMessage' && doesUniqueRequestIdentifiersMatch(current.uniqueRequestIdentifier, first.uniqueRequestIdentifier)
 				? { ...current, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
 				: current))
 			return
@@ -563,7 +565,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					return modifyObject(current, { popupVisualisation })
 				})
 				if (!stored) return
-				await publishConfirmationView(ethereum, { visualizedSimulatorState: await visualizedSimulatorStatePromise, currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise })
+				await publishConfirmationView({ visualizedSimulatorState: await visualizedSimulatorStatePromise, currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise })
 				return
 			} catch(error: unknown) {
 				if (isExpectedInfrastructureError(error)) return

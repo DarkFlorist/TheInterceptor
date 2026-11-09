@@ -34,6 +34,19 @@ test('nothing under the resolution lock awaits an RPC-dependent view update', ()
 })
 
 
+// The window's queue carries refusals derived with the client installed when it is built, so the one push builder and the bootstrap reply read the installed client themselves, and no other code builds a queue for the window.
+test('only the push builder and the bootstrap reply build the window queue, both with the installed client', async () => {
+	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const builders: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
+		if (file === 'utils/popupPendingRequest.ts') continue
+		if (/toPopupPendingTransactionOrSignableMessage\(/u.test(await Bun.file(`${ appDirectory }${ file }`).text())) builders.push(file)
+	}
+	assert.deepEqual(builders.toSorted(), ['background/popupMessageHandlers.ts', 'background/windows/confirmTransaction.ts'])
+	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /getNetworkRefusalMessage\(installedEthereum, transaction\)/u, builder)
+	assert.doesNotMatch(confirmTransactionSource, /export async function publishConfirmationView\(ethereum/u)
+})
+
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {
 	assert.match(confirmTransactionSource, /resolveSafeConfirmation\(/u)
 	assert.match(confirmTransactionSource, /resolveSafeSignerReply\(/u)
