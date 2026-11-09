@@ -42,6 +42,8 @@ export function createSafeAddressBookEntry(overrides: Partial<SafeEntry> = {}): 
 
 export function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
+	type StorageChangeListener = (changes: Record<string, { readonly newValue?: unknown }>, areaName: string) => void
+	const storageChangeListeners = new Set<StorageChangeListener>()
 	const sentMessages: RuntimeMessage[] = []
 	const liveTabIds = new Set<number>()
 	const liveWindowIds = new Set<number>()
@@ -88,10 +90,20 @@ export function createBrowserMock() {
 					return getItems(keys)
 				},
 				async set(items: Record<string, unknown>) {
-					if (storageSetHandler !== undefined) return await storageSetHandler(items, () => Object.assign(storageState, items))
-					Object.assign(storageState, items)
+					const writeStoredItems = () => {
+						Object.assign(storageState, items)
+						const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { newValue }]))
+						for (const listener of storageChangeListeners) listener(changes, 'local')
+					}
+					if (storageSetHandler !== undefined) return await storageSetHandler(items, writeStoredItems)
+					writeStoredItems()
 				},
 				async remove(keys: string | string[]) { removeItems(keys) },
+			},
+			// Storage reports a write to its listeners once the write is stored, as browser storage does.
+			onChanged: {
+				addListener: (listener: StorageChangeListener) => { storageChangeListeners.add(listener) },
+				removeListener: (listener: StorageChangeListener) => { storageChangeListeners.delete(listener) },
 			},
 		},
 		declarativeNetRequest: {

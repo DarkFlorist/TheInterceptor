@@ -39,7 +39,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
-import { repairCorruptActiveNetwork } from './activeNetworkStorage.js'
+import { observeActiveNetworkChanges, repairCorruptActiveNetwork } from './activeNetworkStorage.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -346,6 +346,7 @@ const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () =>
 
 // MV3 service worker event listeners must be registered synchronously at module load.
 browser.tabs.onUpdated.addListener(onTabUpdated)
+browser.storage.onChanged.addListener(observeActiveNetworkChanges)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))

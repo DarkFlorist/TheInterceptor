@@ -2177,6 +2177,39 @@ test('a repair of a corrupt active network read before a network switch committe
 	assert.equal((await getSettings()).activeRpcNetwork.chainId, otherNetwork.chainId)
 })
 
+test('a write of the active network that bypasses its writer, reported while the guard reads the network, makes the guard read again, so it commits on no network it cannot vouch for', async () => {
+	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
+	const { observeActiveNetworkChanges } = await import('../../app/ts/background/activeNetworkStorage.js')
+	browser.storage.onChanged.addListener(observeActiveNetworkChanges)
+	await setUpTransactionApprovalTest(false)
+	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
+	const guardReadNetwork = createDeferredValue<undefined>()
+	const releaseGuardRead = createDeferredValue<undefined>()
+	let held = false
+	// The guard's first read of the network gets the requested network, and is held until another path has written the other network.
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (!held && Array.isArray(keys) && keys.length === 1 && keys[0] === 'activeRpcNetwork') {
+			held = true
+			guardReadNetwork.resolve(undefined)
+			await releaseGuardRead.promise
+		}
+		return items
+	})
+
+	const stackUpdate = updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
+	await guardReadNetwork.promise
+	// Written as a path that bypasses writeActiveNetwork would write it.
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	releaseGuardRead.resolve(undefined)
+	const update = await stackUpdate
+	browserMock.setStorageGetHandler(undefined)
+	browser.storage.onChanged.removeListener(observeActiveNetworkChanges)
+
+	assert.equal(update.committed ? undefined : update.refusal.message, NETWORK_CHANGED_REFUSAL)
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+})
+
 test('a page context reads a corrupt active network without writing it, so a guarded write commits only on the network that stays stored', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
 	const backgroundSettings = await import('../../app/ts/background/settings.js')
