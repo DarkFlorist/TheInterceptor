@@ -25,6 +25,7 @@ async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientSe
 	 }
 }
 
+// Rejects only tokens positively identified as NFTs. Contracts that do not answer the ERC20 and ERC165 probes, addresses without code and address book contacts pass, and the signing page shows them under the unidentified token warning.
 async function identifyPermitToken(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenAddress: bigint) {
 	const token = await identifyAddress(ethereumClientService, requestAbortController, tokenAddress)
 	if (token.type === 'ERC721') throw new Error('Attempted to perform Permit to an ERC721')

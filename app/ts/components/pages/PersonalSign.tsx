@@ -122,11 +122,11 @@ type UnidentifiedPermitTokenApprovalsParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
-// A token can be unidentified when it has no code on the active chain or its metadata lookup failed, and the spender and amounts must stay visible even then.
+// Shown for every permitted token not identified as an ERC20, such as an unknown or unresponsive contract, an address without code or a non-token address book entry: the spender and raw amount stay visible, without approval phrasing or a formatted amount.
 function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: UnidentifiedPermitTokenApprovalsParams) {
 	const errorText = tokenAmounts.length === 1
-		? 'The permitted token is not an identified ERC20 token, so its amount is shown as a raw value without decimals.'
-		: 'These permitted tokens are not identified ERC20 tokens, so their amounts are shown as raw values without decimals.'
+		? 'The permitted token could not be confirmed as an ERC20 token and may be an NFT or another contract, so its amount is shown as a raw value without decimals.'
+		: 'These permitted tokens could not be confirmed as ERC20 tokens and may be NFTs or other contracts, so their amounts are shown as raw values without decimals.'
 	return <>
 		<ErrorComponent text = { errorText }/>
 		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
@@ -142,17 +142,17 @@ function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddress
 	</>
 }
 
-// Identified ERC20 tokens keep their decimal adjusted approval display even when other tokens of the same batch are unidentified.
+// Decides from the token entry alone, so a classification gap in the background cannot turn an NFT permit into a routine looking approval: only ERC20 entries get the approval box, and any other token is listed under the warning, which comes first.
 function PermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: PermitTokenApprovalsParams) {
 	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount }] : [])
 	const unidentifiedTokenAmounts = tokenAmounts.filter(({ token }) => token.type !== 'ERC20')
 	return <>
+		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
 		{ approvals.length === 0 ? <></> : <TokenApprovalsVisualisation
 			spender = { spender }
 			approvals = { approvals }
 			renameAddressCallBack = { renameAddressCallBack }
 		/> }
-		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
 	</>
 }
 
@@ -203,15 +203,12 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		}
-		case 'Permit': {
-			if (visualizedPersonalSignRequest.verifyingContract.type !== 'ERC20') return <ErrorComponent text = { 'Malformed Permit1 request. The tokentype is not ERC20' }/>
-			return <TokenApprovalsVisualisation
-				spender = { visualizedPersonalSignRequest.spender }
-				approvals = { [{ type: 'ERC20', token: visualizedPersonalSignRequest.verifyingContract, amount: visualizedPersonalSignRequest.message.message.value }] }
-				renameAddressCallBack = { renameAddressCallBack }
-			/>
-		}
-		// Permit2 signatures authorize transfers of whatever token address they name, so a token that isn't an identified ERC20 still gets its spender and raw amount shown, under an explicit warning (UnidentifiedPermitTokenApprovals), rather than only an error; tokens identified as ERC721 or ERC1155 are rejected in the background. The EIP-2612 branch above keeps its existing requirement that the token be identified as an ERC20, which is outside this change; a failed metadata lookup can also trip it.
+		// Every permit authorizes transfers of whatever token address it names, so all of them render through PermitTokenApprovals. The background only rejects tokens it positively identifies as ERC721 or ERC1155, so an NFT it cannot classify still arrives here as a contract or contact entry.
+		case 'Permit': return <PermitTokenApprovals
+			spender = { visualizedPersonalSignRequest.spender }
+			tokenAmounts = { [{ token: visualizedPersonalSignRequest.verifyingContract, amount: visualizedPersonalSignRequest.message.message.value }] }
+			renameAddressCallBack = { renameAddressCallBack }
+		/>
 		case 'Permit2': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.token, amount: visualizedPersonalSignRequest.message.message.details.amount }] }
