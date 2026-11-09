@@ -656,3 +656,20 @@ test('the confirmation window gets the stored queue from the background without 
 		rpc.restore()
 	}
 })
+
+test('the write that answers a request stores exactly the pending requests and the reply outbox, under their declared keys', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	await approveAndForwardToSigner(page)
+	const writtenKeys: string[][] = []
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		writtenKeys.push(Object.keys(items).sort())
+		writeStoredItems()
+	})
+	try {
+		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: OLD_SIGNATURE, uniqueRequestIdentifier: pageRequestIdentifier } })
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.deepEqual(writtenKeys.filter((keys) => keys.includes('pendingTerminalReplies')), [['pendingTerminalReplies', 'pendingTransactionsAndMessages']])
+})

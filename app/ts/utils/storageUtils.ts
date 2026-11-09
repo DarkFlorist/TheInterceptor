@@ -61,6 +61,9 @@ const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'ac
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
 const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress')
 const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress')
+// The terminal reply outbox's stored form, shared by the outbox's own reads and writes and by the write that stores it with the pending requests.
+export const StoredPendingTerminalReplies = funtypes.ReadonlyArray(InterceptedRequestForward)
+
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -96,7 +99,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
-	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
+	pendingTerminalReplies: StoredPendingTerminalReplies,
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
@@ -157,16 +160,14 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-export const serializeBrowserStorageLocalItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
-
 // Marks a reply outbox that pendingTerminalReplies.ts prepared under its lock. It is declared here, beside the storage layer both modules use, so storageVariables.ts can accept it without importing the outbox module; an architecture test holds that only pendingTerminalReplies.ts uses it, so no other module can build one.
 export const pendingTerminalRepliesWriteBrand: unique symbol = Symbol('pendingTerminalRepliesWriteBrand')
 
-// The reply outbox to store in the same storage write as a pending request decision.
-export type PendingTerminalRepliesWrite = { readonly [pendingTerminalRepliesWriteBrand]: true, readonly storedItems: ReturnType<typeof serializeBrowserStorageLocalItems> }
+// The reply outbox to store under its own key in the same storage write as a pending request decision.
+export type PendingTerminalRepliesWrite = { readonly [pendingTerminalRepliesWriteBrand]: true, readonly pendingTerminalReplies: readonly InterceptedRequestForward[] }
 
 export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serializeBrowserStorageLocalItems(items))
+	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

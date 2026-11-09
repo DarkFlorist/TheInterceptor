@@ -2,8 +2,8 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet, pendingTerminalRepliesWriteBrand, serializeBrowserStorageLocalItems } from '../utils/storageUtils.js'
-import { type DecidePendingRequestInstance, type PendingRequestInstance, writePendingRequestsWithTerminalReplies } from './storageVariables.js'
+import { browserStorageLocalSafeParseGet, browserStorageLocalSet, pendingTerminalRepliesWriteBrand } from '../utils/storageUtils.js'
+import { type DecidePendingRequestInstance, type PendingRequestInstance, writePendingRequestsWithTerminalReplies } from './pendingRequestDecisions.js'
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
 
@@ -32,8 +32,7 @@ async function updatePendingTerminalReplies(update: (pendingReplies: readonly In
 export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
 		const otherReplies = (await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
-		const storedItems = serializeBrowserStorageLocalItems({ pendingTerminalReplies: [...otherReplies, reply] })
-		return await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, storedItems }, instance, decide)
+		return await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, pendingTerminalReplies: [...otherReplies, reply] }, instance, decide)
 	})
 }
 

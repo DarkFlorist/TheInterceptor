@@ -7,7 +7,7 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
-import type { DecidePendingRequestInstance, PendingRequestInstance } from './storageVariables.js'
+import type { DecidePendingRequestInstance, PendingRequestInstance } from './pendingRequestDecisions.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()

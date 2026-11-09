@@ -200,6 +200,7 @@ export async function loadModules() {
 		ethSimulateTypes,
 		messageSending,
 		pendingTerminalReplies,
+		pendingRequestDecisions,
 		terminalReplyDelivery,
 		providerMessageHandlers,
 		safeExecutionRouting,
@@ -222,6 +223,7 @@ export async function loadModules() {
 		import('../../app/ts/types/ethSimulate-types.js'),
 		import('../../app/ts/background/messageSending.js'),
 		import('../../app/ts/background/pendingTerminalReplies.js'),
+		import('../../app/ts/background/pendingRequestDecisions.js'),
 		import('../../app/ts/background/terminalReplyDelivery.js'),
 		import('../../app/ts/background/providerMessageHandlers.js'),
 		import('../../app/ts/safe/safeExecutionRouting.js'),
@@ -267,17 +269,17 @@ export async function loadModules() {
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
-		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
+		appendPendingTransactionOrMessage: pendingRequestDecisions.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		updatePendingTransactionOrMessageInstance: storageVariables.updatePendingTransactionOrMessageInstance,
-		removePendingTransactionOrMessageInstance: storageVariables.removePendingTransactionOrMessageInstance,
+		updatePendingTransactionOrMessageInstance: pendingRequestDecisions.updatePendingTransactionOrMessageInstance,
+		removePendingTransactionOrMessageInstance: pendingRequestDecisions.removePendingTransactionOrMessageInstance,
 		// Test setup names a request by id, so it reads the instance stored under that id first.
-		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof storageVariables.updatePendingTransactionOrMessageInstance>[1]) => {
+		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof pendingRequestDecisions.updatePendingTransactionOrMessageInstance>[1]) => {
 			const stored = (await storageVariables.getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 			if (stored === undefined) throw new Error('Expected a pending request under the test request id')
-			return await storageVariables.updatePendingTransactionOrMessageInstance(stored, update)
+			return await pendingRequestDecisions.updatePendingTransactionOrMessageInstance(stored, update)
 		},
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({

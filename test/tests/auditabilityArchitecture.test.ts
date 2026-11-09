@@ -194,13 +194,20 @@ function assertNoImportCycle(graph: ReadonlyMap<string, ReadonlySet<string>>, fi
 	if (findReachableModules(graph, first).has(second) && findReachableModules(graph, second).has(first)) throw new Error(`Import cycle between ${ first } and ${ second }`)
 }
 
-test('storageVariables.ts imports nothing from pendingTerminalReplies.ts, not even a type, so the two modules have no import cycle', () => {
-	const storageVariables = join(appSourceDirectory, 'background/storageVariables.ts')
-	const pendingTerminalReplies = join(appSourceDirectory, 'background/pendingTerminalReplies.ts')
-	const graph = buildImportGraph([storageVariables, pendingTerminalReplies], ts.sys, readProjectCompilerOptions())
-	assert.equal(graph.get(pendingTerminalReplies)?.has(storageVariables), true)
-	assert.equal(graph.get(storageVariables)?.has(pendingTerminalReplies), false)
+test('the pending-request storage, decision and outbox modules import in one direction only, so none of them has an import cycle', () => {
+	const [storageVariables, pendingRequestDecisions, pendingTerminalReplies] = ['background/storageVariables.ts', 'background/pendingRequestDecisions.ts', 'background/pendingTerminalReplies.ts'].map((path) => join(appSourceDirectory, path))
+	if (storageVariables === undefined || pendingRequestDecisions === undefined || pendingTerminalReplies === undefined) throw new Error('Expected three module paths')
+	const graph = buildImportGraph([storageVariables, pendingRequestDecisions, pendingTerminalReplies], ts.sys, readProjectCompilerOptions())
+	// The outbox decides through the decision module, which writes through the storage module.
+	assert.equal(graph.get(pendingTerminalReplies)?.has(pendingRequestDecisions), true)
+	assert.equal(graph.get(pendingRequestDecisions)?.has(storageVariables), true)
+	// The storage module stays a leaf of the three, and the decision module never reaches the outbox, not even through a type.
+	const reachedFromStorage = findReachableModules(graph, storageVariables)
+	assert.equal(reachedFromStorage.has(pendingRequestDecisions) || reachedFromStorage.has(pendingTerminalReplies), false)
+	assert.equal(findReachableModules(graph, pendingRequestDecisions).has(pendingTerminalReplies), false)
+	assertNoImportCycle(graph, storageVariables, pendingRequestDecisions)
 	assertNoImportCycle(graph, storageVariables, pendingTerminalReplies)
+	assertNoImportCycle(graph, pendingRequestDecisions, pendingTerminalReplies)
 })
 
 // In-memory modules where outbox.ts imports storage.ts, and storage.ts reaches back in each way the guard has to see.
