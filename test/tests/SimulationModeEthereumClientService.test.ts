@@ -438,7 +438,7 @@ describe('SimulationModeEthereumClientService', () => {
 			maxPriorityFeePerGas: exampleTransaction.maxPriorityFeePerGas,
 		}
 		await simulatedCallFromInput(forwardingEthereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), callParams, 'safe')
-		await simulatedCall(forwardingEthereum, undefined, resolvedState, callParams, 'earliest')
+		await simulatedCall(forwardingEthereum, undefined, resolvedState, callParams, 'earliest', { includeSimulatedSignatures: true })
 
 		assert.deepEqual(forwardedTags, [
 			{ method: 'getTransactionCount', blockTag: 'safe' },
@@ -2575,6 +2575,15 @@ describe('SimulationModeEthereumClientService', () => {
 
 			assert.equal(result.length, 1)
 			assert.deepEqual(requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides, websiteStateOverrides)
+		})
+
+		test('getSimulatedCode adds only its code-reader override on top of a signed message', async () => {
+			const simulationState = await createSimulationState(ethereum, undefined, createSignedMessageSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(simulationState), 0x1234n)
+
+			const lastBlockOverrides = requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides
+			assert.deepEqual(Object.keys(lastBlockOverrides ?? {}), [addressString(0x1ce438391307f908756fefe0fe220c0f0d51508an)])
 		})
 
 		test('eth_getStorageAt of the ecrecover relocation address does not add the signed-message override', async () => {
