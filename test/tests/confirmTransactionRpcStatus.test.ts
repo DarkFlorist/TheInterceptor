@@ -262,28 +262,38 @@ async function makeSimulatedPendingTransaction(approvalStatus: { readonly status
 	}
 }
 
-// Holds the reads of the stored pending transactions that shouldHold selects, each with the value storage had when it was made, until the test releases it.
-function holdStoredPendingTransactionReads(shouldHold: () => boolean = () => true) {
+// Records every storage read the window makes, to show that it never reads the confirmation queue itself.
+function recordStorageReads() {
 	const { local } = globalThis.browser.storage
 	const read = local.get.bind(local)
-	const heldReads: (() => void)[] = []
+	const keysRead: unknown[] = []
 	Object.defineProperty(local, 'get', {
 		configurable: true,
 		value: async (keys: Parameters<typeof read>[0]) => {
-			const held = shouldHold() && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')
-			const stored = await read(keys)
-			if (!held) return stored
-			await new Promise<void>((resolve) => { heldReads.push(resolve) })
-			return stored
+			keysRead.push(keys)
+			return await read(keys)
 		},
 	})
-	return {
-		get count() { return heldReads.length },
-		release: async (index: number) => {
-			heldReads[index]?.()
-			await new Promise((resolve) => setTimeout(resolve, 25))
-		},
-	}
+	return keysRead
+}
+
+// A browser whose background answers the window's request for its queue with a push of the given stored transaction, as the background's handler does.
+async function answerQueueRequestsWith(stored: Parameters<typeof import('../../app/ts/utils/popupPendingRequest.js')['toPopupPendingTransactionOrSignableMessage']>[0]) {
+	const { serialize } = await import('../../app/ts/types/wire-types.js')
+	const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
+	const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/utils/popupPendingRequest.js')
+	const browser = installBrowserMock((message) => {
+		if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_requestConfirmTransactionQueue') return undefined
+		browser.dispatch({
+			role: 'confirmTransaction',
+			...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+				method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+				data: { pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(stored, () => undefined)] },
+			}),
+		})
+		return undefined
+	})
+	return browser
 }
 
 function makeUnexpectedSimulationFailurePendingTransaction(errorMessage: string) {
@@ -526,69 +536,45 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 
-	test('shows the stored pending transactions when the chain changes, as a refusal may have been lifted', async () => {
+	test('the window asks the background for its queue when it opens and when the network or the client changes, and never reads the queue from storage', async () => {
 		const dom = installDomMock()
-		const { serialize } = await import('../../app/ts/types/wire-types.js')
-		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const browser = installBrowserMock()
+		const keysRead = recordStorageReads()
 		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-		const dispatchChainUpdate = async () => {
-			await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
-			await new Promise((resolve) => setTimeout(resolve, 25))
-		}
+		const getQueueRequests = () => browser.getSentMessages().filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestConfirmTransactionQueue').length
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
-		await act(() => {
-			browser.dispatch({
-				role: 'all',
-				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: {
-						pendingTransactionAndSignableMessages: [makePendingTransaction('transaction before the chain change')],
-						currentBlockNumber: 124n,
-						rpcConnectionStatus: undefined,
-					},
-				}),
-			})
-		})
 		await new Promise((resolve) => setTimeout(resolve, 25))
-		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), true)
+		assert.equal(getQueueRequests(), 1)
 
-		// With nothing stored the window keeps what it shows until the background closes it.
-		await dispatchChainUpdate()
-		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), true)
-
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction after the chain change')] })
-		await dispatchChainUpdate()
-		assert.equal(dom.document.body.textContent?.includes('transaction after the chain change'), true)
-		assert.equal(dom.document.body.textContent?.includes('transaction before the chain change'), false)
-
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction after a stored change')] })
-		await act(() => { browser.dispatch({ role: 'confirmTransaction', method: 'popup_confirm_transaction_stored_state_changed' }) })
+		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
 		await new Promise((resolve) => setTimeout(resolve, 25))
-		assert.equal(dom.document.body.textContent?.includes('transaction after a stored change'), true)
+		assert.equal(getQueueRequests(), 2)
+		await act(() => { browser.dispatch({ role: 'all', method: 'popup_update_rpc_list', data: [] }) })
+		await new Promise((resolve) => setTimeout(resolve, 25))
+		assert.equal(getQueueRequests(), 3)
+		assert.equal(JSON.stringify(keysRead).includes('pendingTransactionsAndMessages'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
 
-	test('a chain-change read that a newer push overtook does not re-enable approval', async () => {
+	test('the window shows the refusal pushed with the queue and keeps approval disabled until a push without one', async () => {
 		const dom = installDomMock()
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
 		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const browser = installBrowserMock()
 		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-		const push = async (status: 'WaitingForUser' | 'WaitingForSigner') => {
-			const pendingTransaction = await makeSimulatedPendingTransaction({ status })
+		const refusal = 'The active network changed after this transaction was requested. Reject this transaction and send the request again.'
+		const push = async (networkRefusal: string | undefined) => {
+			const { requestedChainId: _requestedChainId, ...pendingTransaction } = await makeSimulatedPendingTransaction({ status: 'WaitingForUser' })
 			await act(() => {
 				browser.dispatch({
-					role: 'all',
+					role: 'confirmTransaction',
 					...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 						method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-						data: { pendingTransactionAndSignableMessages: [pendingTransaction], currentBlockNumber: 124n, rpcConnectionStatus: undefined },
+						data: { pendingTransactionAndSignableMessages: [networkRefusal === undefined ? pendingTransaction : { ...pendingTransaction, networkRefusal }] },
 					}),
 				})
 			})
@@ -598,64 +584,36 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
 		})
-		await push('WaitingForUser')
+		await push(undefined)
 		assert.equal(isApprovalDisabled(dom), false)
-
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [await makeSimulatedPendingTransaction({ status: 'WaitingForUser' })] })
-		const reads = holdStoredPendingTransactionReads()
-		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
-		assert.equal(reads.count, 1)
-
-		await push('WaitingForSigner')
-		await act(async () => { await reads.release(0) })
-		assert.equal(dom.document.body.textContent?.includes('Waiting for'), true)
+		await push(refusal)
+		assert.equal(dom.document.body.textContent?.includes('The active network changed'), true)
 		assert.equal(isApprovalDisabled(dom), true)
+		await push(undefined)
+		assert.equal(dom.document.body.textContent?.includes('The active network changed'), false)
+		assert.equal(isApprovalDisabled(dom), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
 
-	test('of two overlapping chain-change reads only the later one is shown', async () => {
+	// The real background and the real window in one process: what the background sends reaches the window in order, and the window's request for its queue is answered as the background's handler answers it. The only thing held is the block number of the network the user left.
+	async function setUpApprovalOnOtherNetwork(blockNumbers: { readonly onRequestedNetwork?: () => Promise<unknown>, readonly otherNetworkFails?: boolean } = {}) {
 		const dom = installDomMock()
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
-		const browser = installBrowserMock()
-		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction before the chain changes')] })
-		await act(() => {
-			render(h(ConfirmTransaction, {}), dom.document.body)
-		})
-		await new Promise((resolve) => setTimeout(resolve, 25))
-		const reads = holdStoredPendingTransactionReads()
-
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction of the first read')] })
-		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makePendingTransaction('transaction of the second read')] })
-		await act(() => { browser.dispatch({ role: 'all', method: 'popup_chain_update' }) })
-		assert.equal(reads.count, 2)
-
-		await act(async () => { await reads.release(1) })
-		await act(async () => { await reads.release(0) })
-		assert.equal(dom.document.body.textContent?.includes('transaction of the second read'), true)
-		assert.equal(dom.document.body.textContent?.includes('transaction of the first read'), false)
-		await unmountConfirmTransaction(dom)
-		dom.restore()
-	})
-
-	// The real background and the real window in one process: what the background sends reaches the window in order, and the only things held are the block number of the network the user left and, if asked, the window's own read.
-	async function setUpApprovalOnOtherNetwork(shouldHoldClearingRead: boolean, blockNumbers: { readonly onRequestedNetwork?: () => Promise<unknown>, readonly otherNetworkFails?: boolean } = {}) {
-		const dom = installDomMock()
-		let relayingChainUpdate = false
+		let answerQueueRequest = async () => undefined
 		const browser = installBrowserMock(async (message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
 			if (message.method === 'popup_isMainPopupWindowOpen') return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
+			if (message.method === 'popup_requestConfirmTransactionQueue') {
+				await answerQueueRequest()
+				return undefined
+			}
 			if (!('role' in message)) return undefined
-			relayingChainUpdate = message.method === 'popup_chain_update'
 			browser.dispatch(message)
-			relayingChainUpdate = false
 			return undefined
 		})
 		const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 		const { getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
+		const { publishConfirmationQueue } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
@@ -685,6 +643,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			if (blockNumbers.otherNetworkFails === true) throw new TypeError('Failed to fetch')
 		})
 		const simulationServicesOwner = createTestSimulationServicesOwner(requestedServices, (network) => network.chainId === otherNetwork.chainId ? otherServices : requestedServices)
+		answerQueueRequest = async () => { await publishConfirmationQueue(simulationServicesOwner.getCurrent().ethereum) }
 		const switchNetwork = async (rpcNetwork: typeof requestedNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork })
 		const settle = async () => await new Promise((resolve) => setTimeout(resolve, 25))
 
@@ -697,12 +656,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await settle()
 
 		const getStoredApprovalStatus = async () => (await getPendingTransactionsAndMessages())[0]?.approvalStatus
-		const reads = holdStoredPendingTransactionReads(() => relayingChainUpdate && shouldHoldClearingRead)
 		return {
-			dom, otherServices, pendingTransaction, reads, settle, simulationServicesOwner, getStoredApprovalStatus,
+			dom, otherServices, pendingTransaction, settle, simulationServicesOwner, getStoredApprovalStatus,
 			blockNumberReached: blockNumberReached.promise,
 			releaseBlockNumber: () => blockNumberReleased.resolve(undefined),
 			switchBack: async () => await switchNetwork(requestedNetwork),
+			isRefusalShown: () => dom.document.body.textContent?.includes('The active network changed') === true,
 			expectNoRefusalShown: async () => {
 				assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
 				assert.equal(dom.document.body.textContent?.includes('The active network changed'), false)
@@ -711,38 +670,33 @@ describe('confirm transaction rpc status bootstrap', () => {
 		}
 	}
 
-	for (const clearingRead of ['still running', 'finished'] as const) {
-		test(`a refusal that outlived a switch back cannot return to the window when the clearing read is ${ clearingRead } as its update completes`, async () => {
-			const race = await setUpApprovalOnOtherNetwork(clearingRead === 'still running')
-			const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	test('a refusal shown while its view update waits for the block number of the network the user left does not return after a switch back', async () => {
+		const race = await setUpApprovalOnOtherNetwork()
+		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 
-			// The approval is refused on the other network, and its window update waits for that network's block number.
-			const approval = resolvePendingTransactionOrMessage(race.otherServices.ethereum, race.otherServices.tokenPriceService, new Map(), {
-				method: 'popup_confirmDialog',
-				data: { action: 'accept', uniqueRequestIdentifier: race.pendingTransaction.uniqueRequestIdentifier },
-			})
-			await race.blockNumberReached
-			await race.settle()
-			assert.equal((await race.getStoredApprovalStatus())?.status, 'NetworkRefusal')
-
-			await race.switchBack()
-			assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
-			assert.equal(race.reads.count, clearingRead === 'still running' ? 1 : 0)
-			await race.settle()
-
-			race.releaseBlockNumber()
-			await approval
-			await race.settle()
-			await act(async () => { await race.reads.release(0) })
-			await act(async () => { await race.settle() })
-
-			await race.expectNoRefusalShown()
-			await unmountConfirmTransaction(race.dom)
-			race.dom.restore()
+		// The approval is refused on the other network, and its view update waits for that network's block number.
+		const approval = resolvePendingTransactionOrMessage(race.otherServices.ethereum, race.otherServices.tokenPriceService, new Map(), {
+			method: 'popup_confirmDialog',
+			data: { action: 'accept', uniqueRequestIdentifier: race.pendingTransaction.uniqueRequestIdentifier },
 		})
-	}
+		await race.blockNumberReached
+		await act(async () => { await race.settle() })
+		assert.equal(race.isRefusalShown(), true)
+		assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
 
-	// Both approvals take the other network's services, and the second waits behind the first, whose window update waits for that network's block number.
+		await race.switchBack()
+		await act(async () => { await race.settle() })
+		await race.expectNoRefusalShown()
+
+		race.releaseBlockNumber()
+		await approval
+		await act(async () => { await race.settle() })
+		await race.expectNoRefusalShown()
+		await unmountConfirmTransaction(race.dom)
+		race.dom.restore()
+	})
+
+	// Both approvals take the other network's services, and the second waits behind the first.
 	async function approveTwiceOnOtherNetwork(race: Awaited<ReturnType<typeof setUpApprovalOnOtherNetwork>>) {
 		const { confirmDialog } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { websiteSocketToString } = await import('../../app/ts/background/backgroundUtils.js')
@@ -755,15 +709,15 @@ describe('confirm transaction rpc status bootstrap', () => {
 		return { approvals: Promise.all([approve(), approve()]), reachedWallet: () => messages.some((message) => message.type === 'forwardToSigner') }
 	}
 
-	test('approvals on the other network are refused without waiting for its block number, and the refusal does not stay after a switch back', async () => {
-		const race = await setUpApprovalOnOtherNetwork(false)
+	test('approvals on the other network are refused without waiting for its block number, store no refusal, and the refusal is not shown after a switch back', async () => {
+		const race = await setUpApprovalOnOtherNetwork()
 		const { approvals, reachedWallet } = await approveTwiceOnOtherNetwork(race)
 		await approvals
-		assert.equal((await race.getStoredApprovalStatus())?.status, 'NetworkRefusal')
-
-		await race.switchBack()
+		await act(async () => { await race.settle() })
+		assert.equal(race.isRefusalShown(), true)
 		assert.deepEqual(await race.getStoredApprovalStatus(), { status: 'WaitingForUser' })
 
+		await race.switchBack()
 		race.releaseBlockNumber()
 		await act(async () => { await race.settle() })
 
@@ -773,12 +727,12 @@ describe('confirm transaction rpc status bootstrap', () => {
 		race.dom.restore()
 	})
 
-	// Neither network's block number is ever answered with a value, so no view update can publish: the refusal is shown and cleared through storage alone.
+	// Neither network's block number is ever answered with a value, so no simulation view update completes: the refusal is shown and cleared through the queue pushes alone.
 	for (const rpc of ['failing', 'hanging'] as const) {
 		test(`the window shows a refusal and learns that it was lifted while the RPC is ${ rpc }`, async () => {
 			const { createDeferredValue } = await import('./backgroundEthAccountsTestHarness.js')
 			const hangingBlockNumber = createDeferredValue<undefined>()
-			const race = await setUpApprovalOnOtherNetwork(false, {
+			const race = await setUpApprovalOnOtherNetwork({
 				otherNetworkFails: true,
 				onRequestedNetwork: async () => {
 					if (rpc === 'failing') throw new TypeError('Failed to fetch')
@@ -789,7 +743,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			await approvals
 			if (rpc === 'failing') race.releaseBlockNumber()
 			await act(async () => { await race.settle() })
-			assert.equal(race.dom.document.body.textContent?.includes('The active network changed'), true)
+			assert.equal(race.isRefusalShown(), true)
 
 			await race.switchBack()
 			await act(async () => { await race.settle() })
@@ -805,24 +759,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 
 	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()
-		installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			const typedMessage = message as { method?: string }
-			if (typedMessage.method === 'popup_readyAndListening') return undefined
-			if (typedMessage.method === 'popup_requestSettings') return undefined
-			return undefined
-		})
-		const [
-			{ browserStorageLocalSet2 },
-			{ ConfirmTransaction },
-		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
-			import('../../app/ts/components/pages/ConfirmTransaction.js'),
-		])
-
-		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('Failed to decode ABI data')],
-		})
+		await answerQueueRequestsWith(makeUnexpectedSimulationFailurePendingTransaction('Failed to decode ABI data'))
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -838,24 +776,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 
 	test('opens address editing from an execution error preview', async () => {
 		const dom = installDomMock()
-		installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			const typedMessage = message as { method?: string }
-			if (typedMessage.method === 'popup_readyAndListening') return undefined
-			if (typedMessage.method === 'popup_requestSettings') return undefined
-			return undefined
-		})
-		const [
-			{ browserStorageLocalSet2 },
-			{ ConfirmTransaction },
-		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
-			import('../../app/ts/components/pages/ConfirmTransaction.js'),
-		])
-
-		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('execution reverted')],
-		})
+		await answerQueueRequestsWith(makeUnexpectedSimulationFailurePendingTransaction('execution reverted'))
+		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)

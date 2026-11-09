@@ -9,7 +9,7 @@ import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { toPopupPendingTransactionOrSignableMessage } from '../utils/popupPendingRequest.js'
-import { isEthereumClientOnTransactionChain } from './transactionNetwork.js'
+import { isEthereumClientOnTransactionChain, readNetworkRefusalMessages } from './transactionNetwork.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -163,6 +163,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
+			const getNetworkRefusalMessage = await readNetworkRefusalMessages(ethereum)
 			// Read after the slow lookups, so the window does not start from confirmations they outlasted.
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
@@ -172,7 +173,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
 					confirmTransactionBootstrap: {
-						pendingTransactionAndSignableMessages: pendingTransactions.map(toPopupPendingTransactionOrSignableMessage),
+						pendingTransactionAndSignableMessages: pendingTransactions.map((pending) => toPopupPendingTransactionOrSignableMessage(pending, getNetworkRefusalMessage)),
 						currentBlockNumber,
 						rpcConnectionStatus,
 						visualizedSimulatorState,
@@ -542,7 +543,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			const view = { visualizedSimulatorState: await visualizedSimulatorStatePromise, currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise }
 			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
 			// The prepared visualization is shown on the message as it is stored now, so an approval made during the lookups is kept.
-			await publishConfirmationView(view, (pending) => pending.map((current) => current.type === 'SignableMessage' && doesUniqueRequestIdentifiersMatch(current.uniqueRequestIdentifier, first.uniqueRequestIdentifier)
+			await publishConfirmationView(ethereum, view, (pending) => pending.map((current) => current.type === 'SignableMessage' && doesUniqueRequestIdentifiersMatch(current.uniqueRequestIdentifier, first.uniqueRequestIdentifier)
 				? { ...current, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
 				: current))
 			return
@@ -562,7 +563,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					return modifyObject(current, { popupVisualisation })
 				})
 				if (!stored) return
-				await publishConfirmationView({ visualizedSimulatorState: await visualizedSimulatorStatePromise, currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise })
+				await publishConfirmationView(ethereum, { visualizedSimulatorState: await visualizedSimulatorStatePromise, currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise })
 				return
 			} catch(error: unknown) {
 				if (isExpectedInfrastructureError(error)) return

@@ -7,13 +7,7 @@ import { getActiveRpcNetwork, parseStoredActiveRpcNetwork } from '../utils/pageS
 let activeNetworkWritesStarted = 0
 let activeNetworkWritesFinished = 0
 
-// What runs after every write of the active network. transactionNetwork.ts sets it at background startup to re-evaluate the stored network refusals; it is set rather than imported because that module reads the network through this one. The follow-up reports its own failures, so a write's callers still tell the windows and websites of the new network.
-let afterActiveNetworkWrite: (() => Promise<void>) | undefined
-export function setAfterActiveNetworkWrite(followUp: () => Promise<void>) {
-	afterActiveNetworkWrite = followUp
-}
-
-// Writes the active network, together with any other items of the same update, and counts the write. The follow-up runs once the write is counted as finished, as a read it starts would otherwise never be current.
+// Writes the active network, together with any other items of the same update, and counts the write.
 export async function writeActiveNetwork(items: LocalStorageItems & { readonly activeRpcNetwork: RpcNetwork }) {
 	activeNetworkWritesStarted += 1
 	try {
@@ -21,7 +15,6 @@ export async function writeActiveNetwork(items: LocalStorageItems & { readonly a
 	} finally {
 		activeNetworkWritesFinished += 1
 	}
-	await afterActiveNetworkWrite?.()
 }
 
 // Called right before the active network is read. The returned check tells, synchronously, whether the network read is still the stored one: it is not if a write of the active network was running when the read started, or has started since.

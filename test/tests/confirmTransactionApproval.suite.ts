@@ -7,7 +7,7 @@ import { createDeferredValue, createTestSimulationServicesOwner } from './backgr
 import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite, reevaluateStoredNetworkRefusals } from '../../app/ts/background/transactionNetwork.js'
+import { readNetworkRefusalMessages } from '../../app/ts/background/transactionNetwork.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
@@ -22,8 +22,6 @@ const transactionParams = SendTransactionParams.parse({
 })
 
 async function setUpTransactionApprovalTest(simulationMode: boolean) {
-	// As at background startup, every write of the active network re-evaluates the stored network refusals with the installed client.
-	reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite(() => simulator.ethereum)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.browserStorageLocalSet({ simulationMode, activeRpcNetwork: fakeRpcNetwork })
 	const postedMessages: unknown[] = []
@@ -73,8 +71,10 @@ const getForwardedSignerRequests = (postedMessages: readonly unknown[]) => poste
 async function expectApprovalToBeInvalidated(websiteTabConnections: TransactionTestConnections, postedMessages: readonly unknown[], ethereum = simulator.ethereum, tokenPriceService = simulator.tokenPriceService) {
 	assert.equal(await approveRequest(websiteTabConnections, ethereum, tokenPriceService), false)
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+	// The refusal is not stored: the request waits for the user, and the window is shown the refusal with the queue sent after the approval.
 	const pending = await getPendingTransaction()
-	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
+	assert.notEqual(pending.approvalStatus.status, 'WaitingForSigner')
+	assert.equal(typeof getLastShownNetworkRefusal(), 'string')
 }
 
 // Services for another network that record their RPC requests, so a test can tell whether a transaction preview was produced on that network.
@@ -252,11 +252,20 @@ test('a confirmation stored without its requested network decodes as requested o
 })
 
 // What the confirmation window last received for the first pending request.
-function getLastPublishedApprovalStatus() {
+function getLastPublishedFirstRequest() {
 	const published = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)
 	if (!isRecord(published) || !isRecord(published.data) || !Array.isArray(published.data.pendingTransactionAndSignableMessages)) return undefined
 	const first: unknown = published.data.pendingTransactionAndSignableMessages[0]
-	return isRecord(first) ? first.approvalStatus : undefined
+	return isRecord(first) ? first : undefined
+}
+
+const getLastPublishedApprovalStatus = () => getLastPublishedFirstRequest()?.approvalStatus
+const getLastShownNetworkRefusal = () => getLastPublishedFirstRequest()?.networkRefusal
+
+// A refused approval leaves the request waiting for the user, also when it was handed to the signer before the refusal stopped its posting, and the window is shown the refusal derived when the queue was sent.
+async function expectRefusalShownAndNotStored(label?: string) {
+	assert.deepEqual((await getPendingTransaction()).approvalStatus, { status: 'WaitingForUser' }, label)
+	assert.equal(typeof getLastShownNetworkRefusal(), 'string', label)
 }
 
 const NETWORK_CHANGED_REFUSAL = 'The active network changed after this transaction was requested. Reject this transaction and send the request again.'
@@ -267,8 +276,6 @@ async function createNetworkSwitcher(requestedNetworkServices: Pick<typeof simul
 	const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 	const otherNetworkServices = createOtherNetworkServices()
 	const simulationServicesOwner = createTestSimulationServicesOwner(simulator, (network) => network.chainId === otherNetwork.chainId ? otherNetworkServices : requestedNetworkServices)
-	// As at background startup, the follow-up of a network write uses whichever client is installed at that time, which during a switch is still the one of the previous network.
-	reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite(() => simulationServicesOwner.getCurrent().ethereum)
 	return {
 		simulationServicesOwner,
 		switchNetwork: async (rpcNetwork: typeof fakeRpcNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork }),
@@ -277,23 +284,29 @@ async function createNetworkSwitcher(requestedNetworkServices: Pick<typeof simul
 
 const getStoredApprovalStatus = async () => (await getPendingTransaction()).approvalStatus
 
-const getRefusalMessage = async () => {
-	const approvalStatus = await getStoredApprovalStatus()
-	return approvalStatus.status === 'NetworkRefusal' ? approvalStatus.message : undefined
+// The refusal a queue sent now with the given client shows for the stored transaction. It is derived, never stored.
+async function getRefusalMessage(ethereum = simulator.ethereum) {
+	return (await readNetworkRefusalMessages(ethereum))(await getPendingTransaction())
 }
 
-// Records the stored approval status at each chain update, which is what a confirmation window reads from storage when that message reaches it.
-function recordApprovalStatusAtChainUpdates() {
-	const recorded: unknown[] = []
-	const sendMessage = browser.runtime.sendMessage
-	browser.runtime.sendMessage = async (message: Parameters<typeof sendMessage>[0]) => {
-		if (isRecord(message) && message.method === 'popup_chain_update') recorded.push(await getStoredApprovalStatus())
-		return await sendMessage(message)
-	}
-	return { recorded, restore: () => { browser.runtime.sendMessage = sendMessage } }
+// Records the writes of the stored confirmations, to show that a network change lifts a refusal without one.
+function recordPendingRequestWrites() {
+	const writes: unknown[] = []
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items) writes.push(items.pendingTransactionsAndMessages)
+		writeStoredItems()
+	})
+	return { writes, restore: () => browserMock.setStorageSetHandler(undefined) }
 }
 
-test('a refusal is lifted as soon as the network is back on the requested network, before the windows are told', async () => {
+// What the confirmation window is sent when it asks for its queue, as it does on a chain update.
+async function publishQueueAsAskedByTheWindow(ethereum: typeof simulator.ethereum) {
+	const { publishConfirmationQueue } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	browserMock.sentMessages.length = 0
+	await publishConfirmationQueue(ethereum)
+}
+
+test('switching away refuses an approval and shows the refusal without storing it, and switching back lifts it without a stored write', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
 	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
@@ -301,20 +314,23 @@ test('a refusal is lifted as soon as the network is back on the requested networ
 	await switchNetwork(otherNetwork)
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
-
-	const chainUpdates = recordApprovalStatusAtChainUpdates()
-	await switchNetwork(fakeRpcNetwork)
-	chainUpdates.restore()
+	assert.equal(getLastShownNetworkRefusal(), NETWORK_CHANGED_REFUSAL)
 	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
-	assert.deepEqual(chainUpdates.recorded, [{ status: 'WaitingForUser' }])
+
+	const pendingWrites = recordPendingRequestWrites()
+	await switchNetwork(fakeRpcNetwork)
+	pendingWrites.restore()
+	assert.deepEqual(pendingWrites.writes, [])
+	await publishQueueAsAskedByTheWindow(simulationServicesOwner.getCurrent().ethereum)
+	assert.equal(getLastShownNetworkRefusal(), undefined)
+	assert.deepEqual(getLastPublishedApprovalStatus(), { status: 'WaitingForUser' })
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 
 	assert.equal(await approveRequest(websiteTabConnections), true)
 	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
 })
 
-test('lifting a refusal does not hold back the network change behind an RPC of the requested network', async () => {
+test('switching back does not wait for an RPC of the requested network', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
 	const suspended = createSuspendedServices('eth_blockNumber')
@@ -324,36 +340,14 @@ test('lifting a refusal does not hold back the network change behind an RPC of t
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 
-	// The change completes and the refusal is gone while the RPC of the requested network has not answered.
+	// The change completes, and the queue the window asks for shows no refusal, while the RPC of the requested network has not answered.
 	await switchNetwork(fakeRpcNetwork)
-	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
+	await publishQueueAsAskedByTheWindow(simulationServicesOwner.getCurrent().ethereum)
+	assert.equal(getLastShownNetworkRefusal(), undefined)
 	suspended.release()
 })
 
-test('a network switch that fails to re-evaluate the stored refusals reports the failure and still tells the windows of the switch', async () => {
-	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
-	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
-	await switchNetwork(otherNetwork)
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
-
-	// Storing the lifted refusal fails.
-	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		if ('pendingTransactionsAndMessages' in items) throw new Error('pending request storage unavailable')
-		writeStoredItems()
-	})
-	browserMock.sentMessages.length = 0
-	await withSilencedConsole(async () => await switchNetwork(fakeRpcNetwork))
-	browserMock.setStorageSetHandler(undefined)
-
-	const methods = browserMock.sentMessages.map((message) => message.method)
-	assert.ok(methods.includes('popup_UnexpectedErrorOccured'))
-	assert.ok(methods.includes('popup_chain_update'))
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
-})
-
-// A settings import stores the requested network without installing its client, so the refusal stays, as the installed client of the other network would still execute the transaction.
+// A settings import stores the requested network without installing its client, so the approval is still refused, as the installed client of the other network would execute the transaction.
 async function refuseAndImportRequestedNetwork() {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
@@ -364,26 +358,42 @@ async function refuseAndImportRequestedNetwork() {
 	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
 	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	assert.equal(networkSwitcher.simulationServicesOwner.getCurrent().ethereum.getChainId(), otherNetwork.chainId)
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
-	browserMock.sentMessages.length = 0
+	assert.equal(await getRefusalMessage(networkSwitcher.simulationServicesOwner.getCurrent().ethereum), NETWORK_CHANGED_REFUSAL)
+	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 	return { postedMessages, ...networkSwitcher }
 }
 
-test('selecting another endpoint of the stored network after a settings import installs its client and lifts the refusal', async () => {
-	const { postedMessages, switchNetwork } = await refuseAndImportRequestedNetwork()
+// The installed client when the window is told to ask for its queue again.
+function recordInstalledChainWhenWindowIsTold(simulationServicesOwner: Awaited<ReturnType<typeof createNetworkSwitcher>>['simulationServicesOwner'], methods: readonly string[]) {
+	const recorded: bigint[] = []
+	browserMock.setRuntimeSendMessageHandler(async (message) => {
+		if (methods.includes(message.method)) recorded.push(simulationServicesOwner.getCurrent().ethereum.getChainId())
+	})
+	return { recorded, restore: () => browserMock.setRuntimeSendMessageHandler(undefined) }
+}
+
+test('selecting another endpoint of the stored network after a settings import installs its client, after which the window is told to ask for its queue, which shows no refusal', async () => {
+	const { postedMessages, simulationServicesOwner, switchNetwork } = await refuseAndImportRequestedNetwork()
+	const told = recordInstalledChainWhenWindowIsTold(simulationServicesOwner, ['popup_settingsUpdated'])
+	const pendingWrites = recordPendingRequestWrites()
 
 	await switchNetwork({ ...fakeRpcNetwork, httpsRpc: 'https://other-endpoint.invalid' })
+	told.restore()
+	pendingWrites.restore()
 
-	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
-	assert.equal(wasWindowToldOfStoredState(), true)
+	assert.deepEqual(told.recorded, [fakeRpcNetwork.chainId])
+	await publishQueueAsAskedByTheWindow(simulationServicesOwner.getCurrent().ethereum)
+	assert.equal(getLastShownNetworkRefusal(), undefined)
+	assert.deepEqual(pendingWrites.writes, [])
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
-test('an RPC list change that installs the client of the stored network lifts the refusal without writing the network', async () => {
+test('an RPC list change that installs the client of the stored network tells the window once it is installed, and the queue then shows no refusal', async () => {
 	const { postedMessages, simulationServicesOwner } = await refuseAndImportRequestedNetwork()
+	const told = recordInstalledChainWhenWindowIsTold(simulationServicesOwner, ['popup_update_rpc_list'])
 	const networkWrites: unknown[] = []
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		if ('activeRpcNetwork' in items) networkWrites.push(items.activeRpcNetwork)
+		if ('activeRpcNetwork' in items || 'pendingTransactionsAndMessages' in items) networkWrites.push(items)
 		writeStoredItems()
 	})
 
@@ -391,10 +401,11 @@ test('an RPC list change that installs the client of the stored network lifts th
 	const { getSettings } = await import('../../app/ts/background/settings.js')
 	await setNewRpcList(simulationServicesOwner, { method: 'popup_set_rpc_list', data: [fakeRpcNetwork, { ...otherNetwork, primary: true }] }, await getSettings())
 	browserMock.setStorageSetHandler(undefined)
+	told.restore()
 
-	assert.equal(simulationServicesOwner.getCurrent().ethereum.getChainId(), fakeRpcNetwork.chainId)
-	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
-	assert.equal(wasWindowToldOfStoredState(), true)
+	assert.deepEqual(told.recorded, [fakeRpcNetwork.chainId])
+	await publishQueueAsAskedByTheWindow(simulationServicesOwner.getCurrent().ethereum)
+	assert.equal(getLastShownNetworkRefusal(), undefined)
 	assert.deepEqual(networkWrites, [])
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
@@ -410,23 +421,12 @@ test('a refusal stays while the check still refuses, and approving again still s
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 
 	await switchNetwork(thirdNetwork)
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+	assert.equal(await getRefusalMessage(simulationServicesOwner.getCurrent().ethereum), NETWORK_CHANGED_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 
 	// The client of the requested network alone does not lift it: the active network has to match too.
-	await reevaluateStoredNetworkRefusals(simulator.ethereum)
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+	assert.equal(await getRefusalMessage(simulator.ethereum), NETWORK_CHANGED_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
-})
-
-test('an error reported by the wallet is not lifted by the requested network, even with the same error code', async () => {
-	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
-	const walletError = { status: 'SignerError' as const, code: 4901, message: 'The wallet is not connected to this chain.' }
-	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: walletError }))
-
-	await reevaluateStoredNetworkRefusals(simulator.ethereum)
-	assert.deepEqual(await getStoredApprovalStatus(), walletError)
 })
 
 test('the confirmation window receives a transaction without the background bookkeeping stored with it', async () => {
@@ -436,111 +436,55 @@ test('the confirmation window receives a transaction without the background book
 	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
 	const stored = await getPendingTransaction()
 
-	const published = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').at(-1)
-	if (!isRecord(published) || !isRecord(published.data) || !Array.isArray(published.data.pendingTransactionAndSignableMessages)) throw new Error('Nothing was published to the confirmation window')
-	const first: unknown = published.data.pendingTransactionAndSignableMessages[0]
-	if (!isRecord(first) || !isRecord(first.popupVisualisation) || !isRecord(first.popupVisualisation.data)) throw new Error('Missing published transaction')
+	const first = getLastPublishedFirstRequest()
+	if (first === undefined || !isRecord(first.popupVisualisation) || !isRecord(first.popupVisualisation.data)) throw new Error('Missing published transaction')
 	assert.equal('requestedChainId' in first, false)
 	assert.equal('confirmationRunId' in first.popupVisualisation.data, false)
+	assert.equal('networkRefusal' in first, false)
 	// Everything else reaches the window unchanged.
 	const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/utils/popupPendingRequest.js')
 	const { requestedChainId: _requestedChainId, popupVisualisation: storedVisualisation, ...storedRest } = stored
 	const { confirmationRunId: _confirmationRunId, ...storedData } = storedVisualisation.data
-	assert.deepEqual(toPopupPendingTransactionOrSignableMessage(stored), { ...storedRest, popupVisualisation: { ...storedVisualisation, data: storedData } })
+	assert.deepEqual(toPopupPendingTransactionOrSignableMessage(stored, () => undefined), { ...storedRest, popupVisualisation: { ...storedVisualisation, data: storedData } })
 })
 
-test('re-evaluating a refusal never replaces a newer refusal stored while it ran', async () => {
-	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
-	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
-	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
-	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
-	const readReached = createDeferredValue<undefined>()
-	const releaseRead = createDeferredValue<undefined>()
-	let holdNextNetworkRead = true
-	browserMock.setStorageGetHandler(async (keys, read) => {
-		const stored = read()
-		if (holdNextNetworkRead && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
-			holdNextNetworkRead = false
-			readReached.resolve(undefined)
-			await releaseRead.promise
-		}
-		return stored
-	})
-
-	// The re-evaluation checks the stored refusal and finds that approving would work, while a newer refusal is stored.
-	const reevaluation = reevaluateStoredNetworkRefusals(simulator.ethereum)
-	await readReached.promise
-	const newerRefusal = { status: 'NetworkRefusal' as const, message: 'A newer refusal.' }
-	const storing = storePendingTransaction((pending) => ({ ...pending, approvalStatus: newerRefusal }))
-	await new Promise((resolve) => setTimeout(resolve, 10))
-	releaseRead.resolve(undefined)
-	await Promise.all([reevaluation, storing])
-	browserMock.setStorageGetHandler(undefined)
-
-	assert.deepEqual(await getStoredApprovalStatus(), newerRefusal)
-})
-
-test('a write of the active network tells the window that a refusal was lifted, also of a transaction behind a message', async () => {
+test('the queue shows the refusal of each transaction it holds, also of one behind a message, and none for a message', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestPersonalSign(websiteTabConnections)
 	const [message] = await modules.getPendingTransactionsAndMessages()
 	if (message === undefined) throw new Error('Missing message signing request')
 	const transactionIdentifier = { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 }
-	const refusal = { status: 'NetworkRefusal' as const, message: NETWORK_CHANGED_REFUSAL }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [message, { ...pendingTransaction, uniqueRequestIdentifier: transactionIdentifier, approvalStatus: refusal }] })
-	browserMock.sentMessages.length = 0
-
-	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
-	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
-
-	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[1]?.approvalStatus, { status: 'WaitingForUser' })
-	assert.equal(wasWindowToldOfStoredState(), true)
-})
-
-test('a Gnosis Safe execution rebuild leaves a stored network refusal to its owner', async () => {
-	await openDirectSafeExecutionAwaitingSignerRefresh()
-	const refusal = { status: 'NetworkRefusal' as const, message: NETWORK_CHANGED_REFUSAL }
-	await storePendingTransaction((pending) => ({ ...pending, approvalStatus: refusal }))
-	const before = await modules.getPendingTransactionsAndMessages()
-
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
-
-	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus, refusal)
-	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
-})
-
-test('a window update shows a stored refusal without changing it, and the next write of the active network re-evaluates it', async () => {
-	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
-	await requestTransaction(websiteTabConnections, false)
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [message, { ...pendingTransaction, uniqueRequestIdentifier: transactionIdentifier }] })
 	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
-	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 
-	// Stored back without going through the background's writer, so nothing re-evaluates the refusal.
-	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
-	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
-	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
-	await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
-	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
+	await publishQueueAsAskedByTheWindow(simulator.ethereum)
 
-	// A simulation mode change writes the network through writeActiveNetwork, as a settings import and the startup repair do, without the chain change of a network switch.
-	browserMock.sentMessages.length = 0
-	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
-	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
-	assert.deepEqual(await getStoredApprovalStatus(), { status: 'WaitingForUser' })
-	assert.equal(wasWindowToldOfStoredState(), true)
+	const published = browserMock.sentMessages.find((sent) => sent.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+	if (!isRecord(published) || !isRecord(published.data) || !Array.isArray(published.data.pendingTransactionAndSignableMessages)) throw new Error('Nothing was published to the confirmation window')
+	const [shownMessage, shownTransaction]: unknown[] = published.data.pendingTransactionAndSignableMessages
+	assert.equal(isRecord(shownMessage) && 'networkRefusal' in shownMessage, false)
+	assert.equal(isRecord(shownTransaction) ? shownTransaction.networkRefusal : undefined, NETWORK_CHANGED_REFUSAL)
 })
 
-test('a Gnosis Safe signer refresh leaves a stored network refusal to its owner', async () => {
-	await setUpTransactionApprovalTest(false)
-	const { safePending } = await setUpSafeProposal()
-	const refusal = { status: 'NetworkRefusal' as const, message: NETWORK_CHANGED_REFUSAL }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{ ...safePending, approvalStatus: refusal }] })
+test('a window update derives the refusal and changes nothing stored', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const before = await modules.getPendingTransactionsAndMessages()
+	const pendingWrites = recordPendingRequestWrites()
 
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	browserMock.sentMessages.length = 0
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal(getLastShownNetworkRefusal(), NETWORK_CHANGED_REFUSAL)
 
-	assert.deepEqual(await getStoredApprovalStatus(), refusal)
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
+	browserMock.sentMessages.length = 0
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal(getLastShownNetworkRefusal(), undefined)
+	pendingWrites.restore()
+
+	assert.deepEqual(pendingWrites.writes, [])
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
 })
 
 test('updating the confirmation window never refuses a request that was not refused', async () => {
@@ -556,16 +500,16 @@ test('a confirmation stored by an older version is told so, and its refusal neve
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
 	await storePendingTransactionsAsOlderVersion()
-	const { switchNetwork } = await createNetworkSwitcher()
+	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
 
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
-	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
+	assert.equal(getLastShownNetworkRefusal(), OLDER_VERSION_REFUSAL)
 
 	await switchNetwork(otherNetwork)
 	await switchNetwork(fakeRpcNetwork)
-	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
+	assert.equal(await getRefusalMessage(simulationServicesOwner.getCurrent().ethereum), OLDER_VERSION_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
-	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
+	assert.equal(getLastShownNetworkRefusal(), OLDER_VERSION_REFUSAL)
 })
 
 test('a delivery that does not finish holds no lock over the stored confirmations', async () => {
@@ -580,7 +524,7 @@ test('a delivery that does not finish holds no lock over the stored confirmation
 		await releaseDelivery.promise
 	})
 
-	const publishing = publishConfirmationView({ currentBlockNumber: 1n, rpcConnectionStatus: undefined, visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() })
+	const publishing = publishConfirmationView(simulator.ethereum, { currentBlockNumber: 1n, rpcConnectionStatus: undefined, visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() })
 	await deliveryStarted.promise
 	const written = await Promise.race([storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } })).then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500))])
 	releaseDelivery.resolve(undefined)
@@ -598,9 +542,10 @@ test('a push whose read overlaps a write reaches the windows before that write i
 	const readStarted = createDeferredValue<undefined>()
 	const releaseRead = createDeferredValue<undefined>()
 	let holdNextRead = true
-	browserMock.setStorageGetHandler(async (_keys, read) => {
+	// Holds the publisher's read of the stored confirmations, which it takes under their writers' lock.
+	browserMock.setStorageGetHandler(async (keys, read) => {
 		const stored = read()
-		if (holdNextRead) {
+		if (holdNextRead && JSON.stringify(keys ?? null).includes('pendingTransactionsAndMessages')) {
 			holdNextRead = false
 			readStarted.resolve(undefined)
 			await releaseRead.promise
@@ -608,7 +553,7 @@ test('a push whose read overlaps a write reaches the windows before that write i
 		return stored
 	})
 
-	const publishing = publishConfirmationView({ currentBlockNumber: 1n, rpcConnectionStatus: undefined, visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() })
+	const publishing = publishConfirmationView(simulator.ethereum, { currentBlockNumber: 1n, rpcConnectionStatus: undefined, visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() })
 	await readStarted.promise
 	browserMock.sentMessages.length = 0
 	const writing = storePendingTransaction((pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } })).then(async () => await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' }))
@@ -728,8 +673,7 @@ test('a raw transaction signed for another network is not added to the simulatio
 
 	assert.equal(await approveRequest(websiteTabConnections), false)
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
-	const pending = await getPendingTransaction()
-	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
+	await expectRefusalShownAndNotStored()
 })
 
 test('a legacy raw transaction without a chain id never becomes a pending confirmation', async () => {
@@ -1282,8 +1226,7 @@ test('a network switch while a signing-mode approval is suspended keeps the tran
 
 	assert.equal(await approval, false)
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
-	const pending = await getPendingTransaction()
-	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
+	await expectRefusalShownAndNotStored()
 })
 
 test('a network switch while a simulation-mode approval is suspended keeps the transaction out of the simulation stack', async () => {
@@ -1311,8 +1254,7 @@ test('a network switch while a simulation-mode approval is suspended keeps the t
 
 	assert.equal(await approval, false)
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
-	const pending = await getPendingTransaction()
-	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
+	await expectRefusalShownAndNotStored()
 })
 
 test('a Gnosis Safe proposal is only stored in the Gnosis Safe stack of its own network', async () => {
@@ -1343,8 +1285,7 @@ test('a Gnosis Safe proposal is only stored in the Gnosis Safe stack of its own 
 	})
 	const expectNotStored = async () => {
 		assert.deepEqual(await modules.getSafeTransactionStacks(), [])
-		const pending = await getPendingTransaction()
-		assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
+		await expectRefusalShownAndNotStored()
 	}
 
 	// A network without an Interceptor RPC is active, while the client of the requested network is still installed.
@@ -1379,6 +1320,45 @@ test('a signer reply after a network switch is still delivered to the website', 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.result === transactionHash), true)
 })
+
+// A transaction whose latest run did not produce a preview: still crafting, still simulating, or failed.
+function getTransactionsWithoutPreview() {
+	const { popupVisualisation, transactionToSimulate, ...base } = pendingTransaction
+	const failedTransaction = { website: transactionToSimulate.website, created: transactionToSimulate.created, originalRequestParameters: transactionToSimulate.originalRequestParameters, transactionIdentifier: transactionToSimulate.transactionIdentifier, success: false as const, error: { code: -32000, message: 'simulation failed' } }
+	const failedVisualisation = {
+		statusCode: 'failed' as const,
+		data: {
+			activeAddress: popupVisualisation.data.activeAddress,
+			simulationMode: false,
+			simulationStartedTimestamp: popupVisualisation.data.simulationStartedTimestamp,
+			uniqueRequestIdentifier,
+			transactionToSimulate: failedTransaction,
+			signerName: popupVisualisation.data.signerName,
+			confirmationRunId: popupVisualisation.data.confirmationRunId,
+			error: { code: -32000, message: 'simulation failed', decodedErrorMessage: 'simulation failed' },
+			simulationState: { blockNumber: 1n, simulationConductedTimestamp: popupVisualisation.data.simulationStartedTimestamp },
+		},
+	}
+	return {
+		Crafting: { ...base, simulationMode: false, transactionOrMessageCreationStatus: 'Crafting' as const },
+		Simulating: { ...base, simulationMode: false, transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const },
+		FailedToSimulate: { ...base, simulationMode: false, transactionToSimulate: failedTransaction, popupVisualisation: failedVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' as const },
+	}
+}
+
+for (const [status, transaction] of Object.entries(getTransactionsWithoutPreview())) {
+	test(`an approval of a transaction that is ${ status } is refused and forwards nothing`, async () => {
+		const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [transaction] })
+		const before = await modules.getPendingTransactionsAndMessages()
+		assert.equal(before[0]?.transactionOrMessageCreationStatus, status)
+
+		assert.equal(await approveRequest(websiteTabConnections), false)
+
+		assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), before)
+	})
+}
 
 const replyFromSigner = async (websiteTabConnections: TransactionTestConnections, signerReply: unknown) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 	method: 'popup_confirmDialog',
@@ -1468,7 +1448,8 @@ function holdSafeValidation() {
 	return { reached: reached.promise, release: () => release.resolve(undefined) }
 }
 
-const wasWindowToldOfStoredState = () => browserMock.sentMessages.some((message) => message.method === 'popup_confirm_transaction_stored_state_changed')
+// Whether the window was sent the stored queue, which the background sends without waiting for an RPC.
+const wasWindowToldOfStoredState = () => browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
 
 test('a signed Gnosis Safe proposal that resumes after a switch back is refused, and the refusal clears without any RPC', async () => {
 	const { postedMessages } = await setUpTransactionApprovalTest(false)
@@ -1569,7 +1550,7 @@ test('a valid approval reaches the wallet while the block number is unanswered, 
 	const stalled = createSuspendedServices('eth_blockNumber')
 	const toldToWindow: { readonly status: unknown, readonly forwarded: number }[] = []
 	browserMock.setRuntimeSendMessageHandler(async (message) => {
-		if (message.method === 'popup_confirm_transaction_stored_state_changed') toldToWindow.push({ status: (await getPendingTransaction()).approvalStatus.status, forwarded: getForwardedSignerRequests(postedMessages).length })
+		if (message.method === 'popup_update_confirm_transaction_dialog_pending_transactions') toldToWindow.push({ status: (await getPendingTransaction()).approvalStatus.status, forwarded: getForwardedSignerRequests(postedMessages).length })
 	})
 
 	const approval = approveRequest(websiteTabConnections, stalled.ethereum, stalled.tokenPriceService)
@@ -1708,7 +1689,7 @@ test('a rejection after the status change but before the post keeps the request 
 	await requestTransaction(websiteTabConnections, false)
 	let cancellation: Promise<unknown> | undefined
 	browserMock.setRuntimeSendMessageHandler(async (message) => {
-		if (message.method !== 'popup_confirm_transaction_stored_state_changed' || cancellation !== undefined) return
+		if (message.method !== 'popup_update_confirm_transaction_dialog_pending_transactions' || cancellation !== undefined) return
 		cancellation = cancelRequest(websiteTabConnections, 'noResponse')
 		await cancellation
 	})
@@ -1814,8 +1795,7 @@ test('a network switch while a Gnosis Safe proposal is validated keeps it out of
 
 		assert.equal(await resolution, false, persistence.data.action)
 		assert.deepEqual(await modules.getSafeTransactionStacks(), [], persistence.data.action)
-		const pending = await getPendingTransaction()
-		assert.equal(pending.approvalStatus.status, 'NetworkRefusal', persistence.data.action)
+		await expectRefusalShownAndNotStored(persistence.data.action)
 	}
 })
 
@@ -1838,8 +1818,7 @@ test('a network switch while the website connection is re-established keeps the 
 	assert.equal(await approveRequest(websiteTabConnections), false)
 	assert.equal(disconnectedPort.getPostAttempts(), 1)
 	assert.deepEqual(getForwardedSignerRequests(replacementPortMessages), [])
-	const pending = await getPendingTransaction()
-	assert.equal(pending.approvalStatus.status, 'NetworkRefusal')
+	await expectRefusalShownAndNotStored()
 })
 
 test('every guarded write and delivery starts in the same synchronous step as its network check', async () => {
@@ -1896,13 +1875,13 @@ test('a network switch right after the network was read keeps the guarded stack 
 
 	await switchNetworkAfterNetworkRead(1)
 	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
-	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.status, 'NetworkRefusal')
+	assert.equal(stackUpdate.committed ? undefined : typeof stackUpdate.refusal.message, 'string')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 
 	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 	await switchNetworkAfterNetworkRead(1)
 	const stateUpdate = await updateTransactionStateOnRequestedNetwork(simulator.ethereum, pendingTransaction, (previousState) => ({ ...previousState, safeTransactionStacks: [createSafeStackFixture([])] }))
-	assert.equal(stateUpdate.committed ? undefined : stateUpdate.refusal.status, 'NetworkRefusal')
+	assert.equal(stateUpdate.committed ? undefined : typeof stateUpdate.refusal.message, 'string')
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
@@ -1913,7 +1892,7 @@ test('a network switch right after the network was read keeps the first delivery
 	await switchNetworkAfterNetworkRead(1)
 	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
 
-	assert.equal(forwarding.committed ? undefined : forwarding.refusal.status, 'NetworkRefusal')
+	assert.equal(forwarding.committed ? undefined : typeof forwarding.refusal.message, 'string')
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
@@ -1936,7 +1915,7 @@ test('a network switch right after the network was read keeps the retried delive
 	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
 
 	assert.equal(disconnectedPort.getPostAttempts(), 1)
-	assert.equal(forwarding.committed ? undefined : forwarding.refusal.status, 'NetworkRefusal')
+	assert.equal(forwarding.committed ? undefined : typeof forwarding.refusal.message, 'string')
 	assert.deepEqual(getForwardedSignerRequests(replacementPortMessages), [])
 })
 
@@ -1961,7 +1940,7 @@ test('a network write still running when the network was read keeps the guarded 
 	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
 	await networkSwitch
 
-	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.status, 'NetworkRefusal')
+	assert.equal(stackUpdate.committed ? undefined : typeof stackUpdate.refusal.message, 'string')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 })
 
@@ -2010,7 +1989,7 @@ test('a repair of a corrupt active network still running when the network is rea
 	const stackUpdate = await updateInterceptorTransactionStackOnRequestedNetwork(simulator.ethereum, pendingTransaction, () => ({ operations: [stackOperation] }))
 	await repairingRead
 
-	assert.equal(stackUpdate.committed ? undefined : stackUpdate.refusal.status, 'NetworkRefusal')
+	assert.equal(stackUpdate.committed ? undefined : typeof stackUpdate.refusal.message, 'string')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 })
 

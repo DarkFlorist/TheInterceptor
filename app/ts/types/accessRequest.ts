@@ -99,12 +99,10 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 		code: funtypes.Number,
 		message: funtypes.String,
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
-	// The Interceptor's own refusal under the requested-network check, kept only while that check still refuses, unlike a SignerError, which the wallet or the signing flow reported and which stays until the next approval. Only transactionNetwork.ts writes it.
-	funtypes.ReadonlyObject({ status: funtypes.Literal('NetworkRefusal'), message: funtypes.String }),
 )
 
-// What the windows receive of a pending transaction. The stored form adds requestedChainId, which only the background uses.
-const PopupPendingTransactionBase = funtypes.ReadonlyObject({
+// What the stored and the window forms of a pending transaction share.
+const PendingTransactionSharedBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('Transaction'),
 	popupOrTabId: PopupOrTabId,
 	originalRequestParameters: OriginalSendRequestParameters,
@@ -124,7 +122,11 @@ const PopupPendingTransactionBase = funtypes.ReadonlyObject({
 	executeThroughSafe: funtypes.Literal(true),
 }))
 
-const SimulatedPendingTransactionBase = funtypes.Intersect(PopupPendingTransactionBase, funtypes.ReadonlyObject({ requestedChainId: RequestedChainId }))
+// What the windows receive of a pending transaction. networkRefusal is what the requested-network rule says when the queue is sent, derived by readNetworkRefusalMessages in transactionNetwork.ts and never stored.
+const PopupPendingTransactionBase = funtypes.Intersect(PendingTransactionSharedBase, funtypes.ReadonlyPartial({ networkRefusal: funtypes.String }))
+
+// The stored form adds requestedChainId, which only the background uses.
+const SimulatedPendingTransactionBase = funtypes.Intersect(PendingTransactionSharedBase, funtypes.ReadonlyObject({ requestedChainId: RequestedChainId }))
 
 // The stored and the window forms of a pending transaction differ only in the bookkeeping their base and visualisation carry, so both are built from one definition.
 function createPendingTransactionRuntypes<Base, Visualisation>(base: funtypes.Runtype<Base>, visualisation: funtypes.Runtype<Visualisation>) {

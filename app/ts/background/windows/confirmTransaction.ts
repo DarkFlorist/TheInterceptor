@@ -52,7 +52,7 @@ import { persistUnsignedSafeTransaction, resolveSafeSignerReply, type SafeResolu
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import type { SimulationServices } from '../../simulation/serviceLifecycle.js'
-import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, type NetworkRefusal, storeNetworkRefusal, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
+import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, readNetworkRefusalMessages, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -155,13 +155,12 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 			safeSignerAddress === undefined
 			|| pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId
 			|| pending.approvalStatus.status === 'WaitingForSigner'
-			|| pending.approvalStatus.status === 'NetworkRefusal'
 			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
 		) continue
 		const signerMismatch = await getSafeSignerMismatchApprovalStatus(tabId, safeSignerAddress, refreshedSelection)
 		if (pending.approvalStatus.status === 'WaitingForUser' && signerMismatch === undefined) continue
 		await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
-			if (current.approvalStatus.status === 'WaitingForSigner' || current.approvalStatus.status === 'NetworkRefusal') return current
+			if (current.approvalStatus.status === 'WaitingForSigner') return current
 			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return current
 			pendingStateChanged = true
 			return modifyObject(current, {
@@ -173,40 +172,59 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 }
 
 
-// Sends the confirmation window what is stored at this moment. A push must never be older than the moment it is sent, or it could undo a later change, such as a refusal lifted by a network switch, after the window has read that change. So every caller finishes all its slow work first, and the stored confirmations are read here, under the lock of their writers, in the same step as the send. showPending adds what a caller has prepared but not stored.
-export async function publishConfirmationView(view: UpdateConfirmTransactionDialog['data'], showPending: (pending: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[] = (pending) => pending) {
+type ShowPending = (pending: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[]
+
+// Sends the confirmation window the queue as it is stored at this moment, the window's only source of it, and with a view also the simulation view and the block data, which come after the queue. A push must never be older than the moment it is sent, or it could undo a later change, such as an approval handed to the signer, after the window has shown that change. So the stored confirmations are read here, under the lock of their writers, in the same step as the send, and a caller with slow work sends the queue only after it. The refusals shown with the queue are derived here from the stored active network and the given client, and showPending adds what a caller has prepared but not stored.
+export async function publishConfirmationView(ethereum: EthereumClientService, view: UpdateConfirmTransactionDialog['data'] | undefined, showPending: ShowPending = (pending) => pending) {
+	const getNetworkRefusalMessage = await readNetworkRefusalMessages(ethereum)
 	return await publishPendingTransactionsAndMessages((pending) => {
 		if (pending.length === 0) return []
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: {
-				pendingTransactionAndSignableMessages: showPending(pending).map(toPopupPendingTransactionOrSignableMessage),
-				currentBlockNumber: view.currentBlockNumber,
-				rpcConnectionStatus: view.rpcConnectionStatus,
-			},
+			data: { pendingTransactionAndSignableMessages: showPending(pending).map((current) => toPopupPendingTransactionOrSignableMessage(current, getNetworkRefusalMessage)) },
 		}
+		const queueMessage = serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)
+		if (view === undefined) return [queueMessage]
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
-		return [serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), serialize(UpdateConfirmTransactionDialog, message)]
+		return [queueMessage, serialize(UpdateConfirmTransactionDialog, message)]
 	}, async (message) => await sendPopupMessageToOpenWindows(message, 'confirmTransaction'))
 }
 
-// Tells the windows what is stored. It only reads: a stored status is changed by the code that owns it, never as a side effect of showing it.
+// Sends the confirmation window the stored queue, which needs no RPC. It is sent after every stored change, before anything else happens, such as the wallet being prompted, and whenever the window asks for it, as it does when it opens and when the network, the client or the settings change.
+export const publishConfirmationQueue = async (ethereum: EthereumClientService) => await publishConfirmationView(ethereum, undefined)
+
+// Sends the simulation view and the block data, without the queue: they wait for an RPC, and a client that was replaced meanwhile would derive refusals the installed one no longer gives, so the queue goes out before the slow work instead.
+async function publishSimulationView(view: UpdateConfirmTransactionDialog['data']) {
+	const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
+	await sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
+}
+
+// Sends the simulation view with the block data, which waits for an RPC. It tells whether it was sent.
+async function updateConfirmationSimulationView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating: boolean) {
+	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
+	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
+	const settings = await getSettings()
+	const visualizedSimulatorState = settings.simulationMode
+		? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
+		: createPassthroughCompleteVisualizedSimulation()
+	await publishSimulationView({ currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise, visualizedSimulatorState })
+}
+
+// Reports a failed window update, unless the RPC or the browser failed as they can at any time. It tells whether the update was sent, never.
+async function reportFailedWindowUpdate(error: unknown) {
+	if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
+	return false
+}
+
+// Tells the windows what is stored: the queue at once, then the simulation view once its RPC answers. It only reads: a stored status is changed by the code that owns it, never as a side effect of showing it. It tells whether a queue was shown.
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const settingsPromise = getSettings()
-		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
-		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-		if ((await getPendingTransactionsAndMessages()).length === 0) return false
-		const settings = await settingsPromise
-		const visualizedSimulatorState = settings.simulationMode
-			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
-			: createPassthroughCompleteVisualizedSimulation()
-		return await publishConfirmationView({ currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise, visualizedSimulatorState })
+		if (!await publishConfirmationQueue(ethereum)) return false
+		await updateConfirmationSimulationView(ethereum, tokenPriceService, onlyIfNotAlreadyUpdating)
+		return true
 	} catch(error: unknown) {
-		if (isExpectedInfrastructureError(error)) return false
-		await reportUnexpectedError(error)
+		return await reportFailedWindowUpdate(error)
 	}
-	return false
 }
 
 export const isConfirmTransactionFocused = async () => {
@@ -247,15 +265,15 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
-// A request has two locks: the resolution lock keeps its approvals and signer replies one at a time, and the short commit lock of commitIfStillPending orders their final commits against a rejection. A rejection or a closed window takes only the commit lock, so it bypasses preparation, and nothing here holds that lock. A resolution still awaits no RPC to update the window, as a queued approval or signer reply would wait for it under the resolution lock. The window is told to read what is stored, which needs no RPC and reaches it before anything the resolution does next, such as prompting the wallet. The view update, which does need an RPC, is started without being awaited, which keeps the reply to the approval prompt: that reply is what enables the reject button again.
+// A request has two locks: the resolution lock keeps its approvals and signer replies one at a time, and the short commit lock of commitIfStillPending orders their final commits against a rejection. A rejection or a closed window takes only the commit lock, so it bypasses preparation, and nothing here holds that lock. A resolution still awaits no RPC to update the window, as a queued approval or signer reply would wait for it under the resolution lock. The window is sent the stored queue, which needs no RPC and reaches it before anything the resolution does next, such as prompting the wallet. The view update, which does need an RPC, is started without being awaited, which keeps the reply to the approval prompt: that reply is what enables the reject button again.
 async function showStoredStateAndRefreshView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
-	silenceChromeUnCaughtPromise(updateConfirmTransactionView(ethereum, tokenPriceService))
+	await publishConfirmationQueue(ethereum)
+	silenceChromeUnCaughtPromise(updateConfirmationSimulationView(ethereum, tokenPriceService, false).catch(reportFailedWindowUpdate))
 }
 
-// Stores a refusal and shows the state that results, which is what the installed services say now.
-async function refuseOnNetwork(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, refusal: NetworkRefusal) {
-	await storeNetworkRefusal(() => getInstalledServices().ethereum, uniqueRequestIdentifier, refusal)
+// A refused approval stores no refusal: the window derives it from the network and the installed client whenever the queue is sent, so it is shown with the queue sent here and lifts on the push after the network or the client changes back. A request the approval handed to the signer, whose posting the refusal stopped, goes back to the user.
+async function showNetworkRefusal(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.approvalStatus.status === 'WaitingForSigner' ? modifyObject(pending, { approvalStatus: { status: 'WaitingForUser' as const } }) : undefined)
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 	return false
@@ -264,7 +282,7 @@ async function refuseOnNetwork(getInstalledServices: GetInstalledServices, uniqu
 // Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
 async function updateViewAfterPendingRequestRemoved(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, removedRequest: PendingTransactionOrSignableMessage, simulationStack: SimulationStackChange) {
 	const removedRequestWindow = removedRequest.popupOrTabId
-	await sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_stored_state_changed' }, 'confirmTransaction')
+	await runConfirmationViewStep(async () => await publishConfirmationQueue(ethereum))
 	await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
 	await runConfirmationViewStep(async () => {
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: removedRequest.uniqueRequestIdentifier.requestSocket.tabId })
@@ -325,7 +343,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
 		// Checked before the Gnosis Safe refresh below, which rebuilds the transaction with this client, and before a proposal is stored in this client's Gnosis Safe stack.
 		const networkApprovalError = pendingTransactionOrMessage.type === 'Transaction' ? await getTransactionNetworkApprovalError(ethereum, pendingTransactionOrMessage) : undefined
-		if (networkApprovalError !== undefined) return await refuseOnNetwork(getInstalledServices, confirmation.data.uniqueRequestIdentifier, networkApprovalError)
+		if (networkApprovalError !== undefined) return await showNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier)
 	}
 	if (
 		confirmation.data.action === 'accept'
@@ -407,7 +425,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
 		const safeReply = await persistUnsignedSafeTransaction(ethereum, pendingTransactionOrMessage, commitSafeResolution)
 		if (safeReply.status === 'cancelled') return false
-		if (safeReply.status === 'networkRefusal') return await refuseOnNetwork(getInstalledServices, confirmation.data.uniqueRequestIdentifier, safeReply.refusal)
+		if (safeReply.status === 'networkRefusal') return await showNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier)
 		if (safeReply.status === 'error') {
 			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 				approvalStatus: safeReply.approvalStatus,
@@ -418,6 +436,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		if (safeReply.status === 'success') return await deliverCommittedSafeResolution(safeReply.result)
 		return false
 	}
+	// Refuses an accept for any request whose latest run is not Simulated, still crafting, simulating or failed, so only a preview the Interceptor produced is approved; this also keeps the raw-transaction chain check, which the requested-network rule applies to a Simulated preview, on this path.
 	if (
 		confirmation.data.action === 'accept'
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
@@ -428,7 +447,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		await showStoredStateAndRefreshView(ethereum, tokenPriceService)
 		// The forwarded parameters carry no chain id, so the network is checked once more right before every attempt to post the request to the wallet.
 		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, async (commit) => await commitIfStillPending(uniqueRequestIdentifier, commit))
-		if (!forwarding.committed) return await refuseOnNetwork(getInstalledServices, confirmation.data.uniqueRequestIdentifier, forwarding.refusal)
+		if (!forwarding.committed) return await showNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier)
 		if (forwarding.result) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -445,7 +464,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, pendingTransactionOrMessage, confirmation.data.signerReply, commitSafeResolution)
 			if (safeReply.status === 'cancelled') return false
-			if (safeReply.status === 'networkRefusal') return await refuseOnNetwork(getInstalledServices, confirmation.data.uniqueRequestIdentifier, safeReply.refusal)
+			if (safeReply.status === 'networkRefusal') return await showNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier)
 			if (safeReply.status === 'error') {
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
 					approvalStatus: safeReply.approvalStatus,
@@ -489,7 +508,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 				return addition
 			})
 			if (!committed.stored) return false
-			if (!committed.result.committed) return await refuseOnNetwork(getInstalledServices, uniqueRequestIdentifier, committed.result.refusal)
+			if (!committed.result.committed) return await showNetworkRefusal(getInstalledServices, uniqueRequestIdentifier)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return await deliverTerminalReply(terminalReply)
 		}

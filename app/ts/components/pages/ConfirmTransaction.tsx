@@ -16,7 +16,6 @@ import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, PopupSimulatedPendingTransaction as SimulatedPendingTransaction } from '../../types/accessRequest.js'
-import { toPopupPendingTransactionOrSignableMessage } from '../../utils/popupPendingRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -38,7 +37,6 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '.
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
-import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -53,9 +51,8 @@ type UnderTransactionsParams = {
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
 const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
-	storage: 1,
-	bootstrap: 2,
-	push: 3,
+	bootstrap: 1,
+	push: 2,
 } as const
 
 const waitForDelay = async (delayMs: number) => await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs))
@@ -82,10 +79,8 @@ async function bootstrapConfirmTransactionDialog(
 	}
 }
 
-// The window keeps what it is sent, so it keeps the same projection of what it reads from storage.
-async function hydratePendingTransactionsFromStorage() {
-	return ((await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []).map(toPopupPendingTransactionOrSignableMessage)
-}
+// The background owns the confirmation queue and pushes it to the window in the order it changes, so the window never reads it from storage. Asking for it gets a push of the queue as it is stored then, with the refusals the network and the installed client give.
+const requestConfirmTransactionQueue = () => sendPopupMessageToBackgroundPage({ method: 'popup_requestConfirmTransactionQueue' })
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
 	return visualizedSimulationState.visualizedBlocks
@@ -565,9 +560,9 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
-	if (current.approvalStatus.status === 'NetworkRefusal') return <div style = 'display: grid'>
+	if (current.type === 'Transaction' && current.networkRefusal !== undefined) return <div style = 'display: grid'>
 		<div style = { margins }>
-			<ErrorComponent text = { current.approvalStatus.message } />
+			<ErrorComponent text = { current.networkRefusal } />
 		</div>
 	</div>
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
@@ -759,7 +754,19 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 	</div>
 }
 
-export const shouldDisableConfirmForApprovalStatus = (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
+// The one place the window decides from an approval status whether the request may be approved, so a new status fails typecheck here until it is decided.
+export function shouldDisableConfirmForApprovalStatus(approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) {
+	const status = approvalStatus.status
+	switch (status) {
+		case 'WaitingForUser': return false
+		case 'SignerError': return false
+		case 'WaitingForSigner': return true
+		default: return assertNever(status)
+	}
+}
+
+// A transaction the requested-network rule refuses cannot be approved or added to a Gnosis Safe stack; the background refuses either anyway.
+const isRefusedOnNetwork = (pending: PendingTransactionOrSignableMessage) => pending.type === 'Transaction' && pending.networkRefusal !== undefined
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
@@ -810,8 +817,6 @@ export function ConfirmTransaction() {
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
-	// Counts pending data pushes and chain-change storage reads, so a storage read can tell that newer data arrived while it ran.
-	const latestPendingDataUpdate = useSignal(0)
 
 	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
@@ -831,14 +836,6 @@ export function ConfirmTransaction() {
 		if (firstMessage.type === 'Transaction' && (firstMessage.transactionOrMessageCreationStatus === 'Simulated' || firstMessage.transactionOrMessageCreationStatus === 'FailedToSimulate') && firstMessage.popupVisualisation !== undefined && firstMessage.popupVisualisation.statusCode === 'success' && (currentBlockNumber.value === undefined || firstMessage.popupVisualisation.data.simulationState.blockNumber > currentBlockNumber.value)) {
 			currentBlockNumber.value = firstMessage.popupVisualisation.data.simulationState.blockNumber
 		}
-	}
-
-	// The background stores a change before it reports it, and storage answers without waiting for an RPC, so this is how a window learns of a change while an RPC is slow. A push or a later read that arrives during the read is newer than its result, so the result is dropped: it could otherwise re-enable approval of a request that is already waiting for the signer.
-	const showStoredPendingTransactions = async () => {
-		latestPendingDataUpdate.value += 1
-		const thisRead = latestPendingDataUpdate.value
-		const pendingTransactions = await hydratePendingTransactionsFromStorage()
-		if (thisRead === latestPendingDataUpdate.value && pendingTransactions.length > 0) applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 	}
 
 	const applyNetworkData = (blockNumber: bigint | undefined, status: RpcConnectionStatus, priority: number) => {
@@ -862,10 +859,12 @@ export function ConfirmTransaction() {
 
 			if (parsed.method === 'popup_settingsUpdated') {
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				requestConfirmTransactionQueue()
 				return false
 			}
-			if (parsed.method === 'popup_chain_update' || parsed.method === 'popup_confirm_transaction_stored_state_changed') {
-				showStoredPendingTransactions()
+			// The refusals shown with the queue depend on the network and the installed client, which these change.
+			if (parsed.method === 'popup_chain_update' || parsed.method === 'popup_update_rpc_list') {
+				requestConfirmTransactionQueue()
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
@@ -905,10 +904,8 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
-				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
-				latestPendingDataUpdate.value += 1
 				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 			}
 			return false
@@ -928,10 +925,8 @@ export function ConfirmTransaction() {
 			}
 			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 		}
-		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
-			if (cancelled || pendingTransactions.length === 0) return
-			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
-		})
+		// The queue arrives as a push, which needs no RPC, so the window shows it without waiting for the bootstrap reply, and a push sent before this window listened is not missed.
+		requestConfirmTransactionQueue()
 		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
 			if (cancelled || reply?.method !== 'popup_readyAndListening') return
 			const bootstrapData = reply.data.confirmTransactionBootstrap
@@ -1020,6 +1015,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(currentPendingTransactionOrSignableMessage.value.approvalStatus)) return true
+		if (isRefusedOnNetwork(currentPendingTransactionOrSignableMessage.value)) return true
 		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
@@ -1041,7 +1037,7 @@ export function ConfirmTransaction() {
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
-		if (pending.approvalStatus.status === 'WaitingForSigner') return true
+		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus) || isRefusedOnNetwork(pending)) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
 		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)

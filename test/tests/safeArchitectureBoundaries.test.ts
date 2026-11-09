@@ -27,48 +27,12 @@ test('nothing under the resolution lock awaits an RPC-dependent view update', ()
 		return confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start))
 	}
 	assert.doesNotMatch(getFunctionSource('resolveStoredPendingTransactionOrMessage'), /updateConfirmTransactionView|(?<!stepsAfterResolution\.push\(async \(\) => )await updateViewAfterPendingRequestRemoved/u)
-	assert.doesNotMatch(getFunctionSource('refuseOnNetwork'), /updateConfirmTransactionView/u)
-	assert.doesNotMatch(getFunctionSource('showStoredStateAndRefreshView'), /await updateConfirmTransactionView/u)
+	assert.doesNotMatch(getFunctionSource('showNetworkRefusal'), /await updateConfirmTransactionView/u)
+	assert.doesNotMatch(getFunctionSource('showStoredStateAndRefreshView'), /await update(?:ConfirmTransactionView|ConfirmationSimulationView)/u)
 	// Showing what is stored only reads it, so a status has one owner and not also every window update.
-	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage|reevaluateStoredNetworkRefusals|storeNetworkRefusal/u, view)
+	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage/u, view)
 })
 
-test('only the requested-network rule writes a network refusal', async () => {
-	const backgroundDirectory = new URL('../../app/ts/background/', import.meta.url).pathname
-	const writers: string[] = []
-	for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: backgroundDirectory })) {
-		if (/status: 'NetworkRefusal'/u.test(await Bun.file(`${ backgroundDirectory }${ file }`).text())) writers.push(file)
-	}
-	assert.deepEqual(writers, ['transactionNetwork.ts'])
-})
-
-// A stored refusal depends on the stored active network and on the installed client. The network is only written through writeActiveNetwork, which re-evaluates the refusals after every write once background startup set its follow-up. The client is only replaced through replaceInstalledSimulationServices, which re-evaluates with the new client, whether or not the stored chain changed. A refusal that is stored is re-evaluated by storeNetworkRefusal, as a switch may have finished while it was decided. Nothing else re-evaluates, so a view or a refresh never stands in for a missing trigger.
-test('only network writes, client replacements and the refusal store re-evaluate stored network refusals', async () => {
-	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
-	const callers = new Map<string, string[]>()
-	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
-		const source = await Bun.file(`${ appDirectory }${ file }`).text()
-		for (const name of ['reevaluateStoredNetworkRefusals', 'reevaluateStoredNetworkRefusalsBestEffort', 'reevaluateStoredNetworkRefusalsAndNotifyWindow', 'setAfterActiveNetworkWrite', 'reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite', 'afterActiveNetworkWrite', 'replaceInstalledSimulationServices', 'simulationServicesOwner\\.reset']) {
-			if (new RegExp(`(?<!function )\\b${ name }\\??\\.?\\(`, 'u').test(source)) callers.set(name, [...callers.get(name) ?? [], file])
-		}
-	}
-	assert.deepEqual(Object.fromEntries([...callers].map(([name, files]) => [name, files.toSorted()])), {
-		reevaluateStoredNetworkRefusals: ['background/transactionNetwork.ts'],
-		reevaluateStoredNetworkRefusalsBestEffort: ['background/transactionNetwork.ts'],
-		reevaluateStoredNetworkRefusalsAndNotifyWindow: ['background/transactionNetwork.ts'],
-		replaceInstalledSimulationServices: ['background/activeSettings.ts', 'background/popupMessageHandlers/settings.ts'],
-		'simulationServicesOwner\\.reset': ['background/transactionNetwork.ts'],
-		setAfterActiveNetworkWrite: ['background/transactionNetwork.ts'],
-		reevaluateNetworkRefusalsAfterEveryActiveNetworkWrite: ['background/background-startup.ts'],
-		afterActiveNetworkWrite: ['background/activeNetworkStorage.ts'],
-	})
-	const transactionNetworkSource = await Bun.file(`${ appDirectory }background/transactionNetwork.ts`).text()
-	const storeNetworkRefusalSource = transactionNetworkSource.slice(transactionNetworkSource.indexOf('export async function storeNetworkRefusal('), transactionNetworkSource.indexOf('\n}\n', transactionNetworkSource.indexOf('export async function storeNetworkRefusal(')))
-	assert.match(storeNetworkRefusalSource, /await reevaluateStoredNetworkRefusals\(getInstalledEthereum\(\)\)/u)
-	const activeNetworkStorageSource = await Bun.file(`${ appDirectory }background/activeNetworkStorage.ts`).text()
-	// The follow-up runs after the write is counted as finished, so a read it starts can be current.
-	assert.match(activeNetworkStorageSource, /\} finally \{\n\t\tactiveNetworkWritesFinished \+= 1\n\t\}\n\tawait afterActiveNetworkWrite\?\.\(\)\n\}/u)
-})
 
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {
 	assert.match(confirmTransactionSource, /resolveSafeConfirmation\(/u)

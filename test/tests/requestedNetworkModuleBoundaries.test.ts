@@ -16,11 +16,11 @@ const listReached = (from: readonly string[], forbidden: readonly string[]) => f
 	.filter((reached) => forbidden.includes(reached))
 	.map((reached) => `${ path.basename(module) } reaches ${ path.basename(reached) }`))
 
-// The settings transition updates stored refusals through the network rule and tells the windows, so the confirmation window machinery stays out of it, and the rule stays out of the cycle the settings transition is part of.
-test('the settings transition depends on the network rule but not on the confirmation window', () => {
+// A refusal is derived when the queue is sent, so the settings transition only tells the windows of a network change, and the confirmation window, which asks for its queue again on that message, stays out of it. The network rule stays out of the cycle the settings transition is part of.
+test('the settings transition depends on neither the network rule nor the confirmation window', () => {
 	const settingsTransitionModule = backgroundModule('activeSettings.ts')
 	const directImports = getRuntimeDependencies(settingsTransitionModule).map((dependency) => dependency.module)
-	assert.ok(directImports.includes(networkRuleModule))
+	assert.equal(directImports.includes(networkRuleModule), false)
 	assert.equal(directImports.includes(path.join(backgroundDirectory, 'windows', 'confirmTransaction.ts')), false)
 	assert.deepEqual(listReached([networkRuleModule], [settingsTransitionModule]), [])
 })

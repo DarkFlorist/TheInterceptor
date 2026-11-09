@@ -15,7 +15,6 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { replaceInstalledSimulationServices } from './transactionNetwork.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -114,7 +113,7 @@ async function runActiveSettingsChange(
 					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
 					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
 						try {
-							await replaceInstalledSimulationServices(simulationServicesOwner, change.rpcNetwork)
+							simulationServicesOwner.reset(change.rpcNetwork)
 						} catch (error) {
 							// Only failed provider installation invalidates simulation output here.
 							await publishFailedPopupVisualisation()

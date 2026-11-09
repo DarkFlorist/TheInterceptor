@@ -296,8 +296,6 @@ export async function refreshSafeSignerSelection(
 
 function shouldRefreshSafeSignerSelection(flow: SafePendingFlow, selectedSigner: bigint) {
 	if (flow.pending.approvalStatus.status === 'WaitingForSigner') return false
-	// A rebuild stores its own approval status, and a network refusal is only changed by transactionNetwork.ts, so a refused request is rebuilt once the refusal is lifted. The persist step checks this again on the stored request.
-	if (flow.pending.approvalStatus.status === 'NetworkRefusal') return false
 	switch (flow.kind) {
 		case 'directExecution': return flow.pending.safeExecutionSignerAddress !== selectedSigner
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner

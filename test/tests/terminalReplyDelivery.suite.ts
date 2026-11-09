@@ -29,16 +29,16 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
-		const statusesToldToWindow: unknown[] = []
-		browserMock.setRuntimeSendMessageHandler(async (message) => {
-			if (message.method === 'popup_confirm_transaction_stored_state_changed') statusesToldToWindow.push((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus.status)
+		// The status of the first request in each queue the window is sent.
+		const getStatusesToldToWindow = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').map((message) => {
+			const first: unknown = isRecord(message.data) && Array.isArray(message.data.pendingTransactionAndSignableMessages) ? message.data.pendingTransactionAndSignableMessages[0] : undefined
+			return isRecord(first) && isRecord(first.approvalStatus) ? first.approvalStatus.status : undefined
 		})
 
 		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier },
 		})
-		browserMock.setRuntimeSendMessageHandler(undefined)
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 
@@ -47,17 +47,12 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		assert.equal(retainedRequest?.approvalStatus.status, 'SignerError')
 		if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing signer delivery error')
 		assert.match(retainedRequest.approvalStatus.message, /request reached your wallet/)
-		// The window is told of the spinner and of the error without an RPC, and the view updates that follow are not awaited.
-		assert.deepEqual(statusesToldToWindow, ['WaitingForSigner', 'SignerError'])
-		const getPendingUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-		for (let attempt = 0; attempt < 200 && getPendingUpdates().length < 2; attempt++) await new Promise((resolve) => setTimeout(resolve, 1))
-		const pendingUpdates = getPendingUpdates()
-		assert.equal(pendingUpdates.length, 2)
-		const finalUpdateData = pendingUpdates.at(-1)?.data
-		if (!isRecord(finalUpdateData) || !Array.isArray(finalUpdateData.pendingTransactionAndSignableMessages)) throw new Error('missing final pending transaction popup update')
-		const finalUpdatedRequest = finalUpdateData.pendingTransactionAndSignableMessages[0]
-		if (!isRecord(finalUpdatedRequest) || !isRecord(finalUpdatedRequest.approvalStatus)) throw new Error('missing approval status in final popup update')
-		assert.equal(finalUpdatedRequest.approvalStatus.status, 'SignerError')
+		// The window is sent the queue with the spinner and with the error without an RPC, and the simulation view updates that follow, which carry no queue, are not awaited.
+		assert.deepEqual(getStatusesToldToWindow(), ['WaitingForSigner', 'SignerError'])
+		const getViewUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog')
+		for (let attempt = 0; attempt < 200 && getViewUpdates().length < 2; attempt++) await new Promise((resolve) => setTimeout(resolve, 1))
+		assert.equal(getViewUpdates().length, 2)
+		assert.deepEqual(getStatusesToldToWindow(), ['WaitingForSigner', 'SignerError'])
 		assert.equal(disconnectedPort.getPostAttempts(), connectionCase.expectedPostAttempts)
 	}
 })
