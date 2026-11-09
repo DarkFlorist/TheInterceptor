@@ -37,7 +37,6 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '.
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { readPendingRequestsForConfirmationPage } from '../../background/storageVariables.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -52,7 +51,7 @@ type UnderTransactionsParams = {
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
 const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
-	storage: 1,
+	queue: 1,
 	bootstrap: 2,
 	push: 3,
 } as const
@@ -923,9 +922,10 @@ export function ConfirmTransaction() {
 			}
 			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 		}
-		void readPendingRequestsForConfirmationPage().then((pendingTransactions) => {
-			if (cancelled || pendingTransactions.length === 0) return
-			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
+		// The queue alone needs no RPC, so the window shows it without waiting for the bootstrap reply, whose block number may wait on the RPC.
+		void sendPopupMessageWithReply({ method: 'popup_requestConfirmTransactionQueue' }).then((reply) => {
+			if (cancelled || reply?.method !== 'popup_requestConfirmTransactionQueue' || reply.data.pendingTransactionAndSignableMessages.length === 0) return
+			applyPendingTransactions(reply.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.queue)
 		})
 		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
 			if (cancelled || reply?.method !== 'popup_readyAndListening') return

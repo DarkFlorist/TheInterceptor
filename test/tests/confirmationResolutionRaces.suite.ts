@@ -639,3 +639,20 @@ test('an instance update reports whether it stored, and a removal whether it rem
 	assert.equal(await modules.removePendingTransactionOrMessageInstance(pending, () => true), true)
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 })
+
+test('the confirmation window gets the stored queue from the background without waiting on the RPC', async () => {
+	const page = await startPageConnection([])
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	// The first RPC request is held for the whole call, so a reply that waited on the RPC would come back as blocked.
+	const rpc = pauseFirstRpcRequest()
+	try {
+		const reply = await settledOrBlocked(modules.requestConfirmTransactionQueue())
+		if (reply === 'blocked') throw new Error('The queue reply waited on the RPC')
+		assert.equal(reply.method, 'popup_requestConfirmTransactionQueue')
+		assert.deepEqual(reply.data.pendingTransactionAndSignableMessages.map(({ uniqueRequestIdentifier, instanceId }) => ({ uniqueRequestIdentifier, instanceId })), [{ uniqueRequestIdentifier: pending.uniqueRequestIdentifier, instanceId: pending.instanceId }])
+	} finally {
+		rpc.release()
+		rpc.restore()
+	}
+})

@@ -27,7 +27,7 @@ globalThis.browser = {
 	},
 } as unknown as typeof globalThis.browser
 
-const { clearPendingTransactions, readPendingRequestsForConfirmationPage } = await import('../../app/ts/background/storageVariables.js')
+const { clearPendingTransactions } = await import('../../app/ts/background/storageVariables.js')
 
 beforeEach(() => {
 	for (const key of Object.keys(storageState)) delete storageState[key]
@@ -50,14 +50,5 @@ test('does not erase pending transaction storage after a transient read failure'
 	await assert.rejects(clearPendingTransactions(), /Storage temporarily unavailable/)
 
 	assert.deepEqual(storageState.pendingTransactionsAndMessages, [])
-	assert.equal(storageWrites.length, 0)
-})
-
-test('the confirmation page read reports corrupt storage and leaves its recovery to the background', async () => {
-	storageState.pendingTransactionsAndMessages = 'corrupt'
-
-	await assert.rejects(readPendingRequestsForConfirmationPage())
-
-	assert.equal(storageState.pendingTransactionsAndMessages, 'corrupt')
 	assert.equal(storageWrites.length, 0)
 })

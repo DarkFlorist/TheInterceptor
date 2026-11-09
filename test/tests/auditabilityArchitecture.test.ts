@@ -125,9 +125,10 @@ test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('__proto__'), false)
 })
 
-// Known debt, not permitted architecture: the page reads pending requests from storage outside the message protocol. This fails once the read is gone, and readPendingRequestsForConfirmationPage goes with it.
-test('known debt: the confirmation page still hydrates pending requests from storage', () => {
-	assert.match(confirmTransactionPageSource, /readPendingRequestsForConfirmationPage\(\)/u)
+// The background owns the confirmation queue and sends it over the message protocol, so the window neither reads browser storage nor imports the background's storage module.
+test('the confirmation page gets its queue over the message protocol, never from storage', () => {
+	assert.doesNotMatch(confirmTransactionPageSource, /browser\.storage|storageVariables|pendingTransactionsAndMessages|storageUtils/u)
+	assert.match(confirmTransactionPageSource, /popup_requestConfirmTransactionQueue/u)
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {

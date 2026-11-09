@@ -1091,6 +1091,12 @@ export const requestActiveAddresses = async () => ({ method: 'popup_requestActiv
 
 export const requestSimulationMode = async () => ({ method: 'popup_requestSimulationMode' as const, simulationMode: (await getSettings()).simulationMode })
 
+// The background owns the confirmation queue, so the window asks for it here instead of reading it from storage.
+export const requestConfirmTransactionQueue = async () => ({
+	method: 'popup_requestConfirmTransactionQueue' as const,
+	data: { pendingTransactionAndSignableMessages: (await getPendingTransactionsAndMessages()).map(toPopupPendingTransactionOrSignableMessage) },
+})
+
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
 async function getCachedRichData(chainId: bigint) {

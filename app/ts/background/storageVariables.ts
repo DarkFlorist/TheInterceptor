@@ -82,13 +82,6 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
-// Known debt: the confirmation page paints from storage before the background's bootstrap reply arrives, outside the message protocol. This only reads and leaves a corrupt value to the background's recovery, so a popup never writes the key.
-export async function readPendingRequestsForConfirmationPage() {
-	const result = await readPendingTransactionsAndMessages()
-	if (!result.success) throw result.error
-	return result.value
-}
-
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(() => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[]) {
 	return await pendingTransactionsSemaphore.execute(async () => {
