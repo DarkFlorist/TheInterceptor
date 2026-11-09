@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { dirname, join, normalize } from 'node:path'
+import { join } from 'node:path'
 import ts from 'typescript'
 import * as simulationFacade from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
@@ -130,18 +130,46 @@ test('popup method guards reject inherited object keys', () => {
 const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
 const parseAppSource = async (path: string) => ts.createSourceFile(path, await Bun.file(join(appSourceDirectory, path)).text(), ts.ScriptTarget.Latest, false, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
 
-// Every module of the extension source with the modules it imports or re-exports from, type-only ones included, as paths relative to app/ts.
-async function readAppImportGraph() {
-	const paths = new Set<string>()
-	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) paths.add(path)
-	const resolve = (path: string) => paths.has(path) ? path : path.replace(/\.ts$/u, '.tsx')
+const repositoryRoot = new URL('../../', import.meta.url).pathname
+
+// The project's compiler options, so the import guard resolves modules exactly as tsc does.
+function readProjectCompilerOptions() {
+	const configPath = join(repositoryRoot, 'tsconfig.json')
+	const configFile = ts.readConfigFile(configPath, ts.sys.readFile)
+	if (configFile.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(configFile.error.messageText, '\n'))
+	return ts.parseJsonConfigFileContent(configFile.config, ts.sys, repositoryRoot, undefined, configPath).options
+}
+
+type ModuleSourceHost = Pick<ts.ModuleResolutionHost, 'fileExists' | 'readFile'>
+
+// Every module a source file depends on, type-only ones included: import and export declarations, inline import('...') types, and dynamic import() calls.
+function collectModuleSpecifiers(sourceFile: ts.SourceFile) {
+	const specifiers: string[] = []
+	const visit = (node: ts.Node) => {
+		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) specifiers.push(node.moduleSpecifier.text)
+		if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) specifiers.push(node.argument.literal.text)
+		const firstArgument = ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined
+		if (firstArgument !== undefined && ts.isStringLiteralLike(firstArgument)) specifiers.push(firstArgument.text)
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	return specifiers
+}
+
+// The project modules reachable from the entry files, each with the project modules it depends on, resolved by TypeScript's own resolver. Library modules are left out.
+function buildImportGraph(entryPaths: readonly string[], host: ModuleSourceHost, compilerOptions: ts.CompilerOptions) {
 	const graph = new Map<string, ReadonlySet<string>>()
-	for (const path of paths) {
+	const pending = [...entryPaths]
+	for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+		if (graph.has(path)) continue
+		const text = host.readFile(path)
+		if (text === undefined) throw new Error(`Cannot read ${ path }`)
 		const imported = new Set<string>()
-		for (const statement of (await parseAppSource(path)).statements) {
-			if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue
-			if (statement.moduleSpecifier === undefined || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.moduleSpecifier.text.startsWith('.')) continue
-			imported.add(resolve(normalize(join(dirname(path), statement.moduleSpecifier.text)).replace(/\.js$/u, '.ts')))
+		for (const specifier of collectModuleSpecifiers(ts.createSourceFile(path, text, ts.ScriptTarget.Latest, false, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS))) {
+			const resolved = ts.resolveModuleName(specifier, path, compilerOptions, host).resolvedModule
+			if (resolved === undefined || resolved.isExternalLibraryImport === true) continue
+			imported.add(resolved.resolvedFileName)
+			pending.push(resolved.resolvedFileName)
 		}
 		graph.set(path, imported)
 	}
@@ -161,11 +189,48 @@ const findReachableModules = (graph: ReadonlyMap<string, ReadonlySet<string>>, s
 	return reached
 }
 
-test('storageVariables.ts imports nothing from pendingTerminalReplies.ts, not even a type, so the two modules have no import cycle', async () => {
-	const graph = await readAppImportGraph()
-	assert.equal(graph.get('background/pendingTerminalReplies.ts')?.has('background/storageVariables.ts'), true)
-	assert.equal(graph.get('background/storageVariables.ts')?.has('background/pendingTerminalReplies.ts'), false)
-	assert.equal(findReachableModules(graph, 'background/storageVariables.ts').has('background/pendingTerminalReplies.ts'), false)
+// Fails when each module reaches the other through the import graph.
+function assertNoImportCycle(graph: ReadonlyMap<string, ReadonlySet<string>>, first: string, second: string) {
+	if (findReachableModules(graph, first).has(second) && findReachableModules(graph, second).has(first)) throw new Error(`Import cycle between ${ first } and ${ second }`)
+}
+
+test('storageVariables.ts imports nothing from pendingTerminalReplies.ts, not even a type, so the two modules have no import cycle', () => {
+	const storageVariables = join(appSourceDirectory, 'background/storageVariables.ts')
+	const pendingTerminalReplies = join(appSourceDirectory, 'background/pendingTerminalReplies.ts')
+	const graph = buildImportGraph([storageVariables, pendingTerminalReplies], ts.sys, readProjectCompilerOptions())
+	assert.equal(graph.get(pendingTerminalReplies)?.has(storageVariables), true)
+	assert.equal(graph.get(storageVariables)?.has(pendingTerminalReplies), false)
+	assertNoImportCycle(graph, storageVariables, pendingTerminalReplies)
+})
+
+// In-memory modules where outbox.ts imports storage.ts, and storage.ts reaches back in each way the guard has to see.
+const importCycleFixtures = {
+	'an extensionless import': { '/fixture/storage.ts': "import type { Write } from './outbox'\nexport type Stored = Write" },
+	'an index import': { '/fixture/storage.ts': "import type { Write } from './outbox/index.js'\nexport type Stored = Write", '/fixture/outbox/index.ts': "import { stored } from '../storage.js'\nexport type Write = typeof stored" },
+	'a directory import that resolves to its index': { '/fixture/storage.ts': "import type { Write } from './outbox'\nexport type Stored = Write", '/fixture/outbox/index.ts': "import { stored } from '../storage.js'\nexport type Write = typeof stored" },
+	'an inline import() type': { '/fixture/storage.ts': "export type Stored = import('./outbox.js').Write" },
+	'a transitive import': { '/fixture/storage.ts': "import type { Write } from './middle.js'\nexport type Stored = Write", '/fixture/middle.ts': "export type { Write } from './outbox.js'" },
+} as const
+
+const importFixtureHost = (files: Readonly<Record<string, string>>): ModuleSourceHost => ({
+	fileExists: (path) => path in files,
+	readFile: (path) => files[path],
+})
+
+for (const [kind, files] of Object.entries(importCycleFixtures)) {
+	test(`the import cycle guard sees ${ kind }`, () => {
+		// Fixtures with an outbox directory get no outbox.ts beside it, so './outbox' can only resolve to the directory's index.
+		const outbox = '/fixture/outbox/index.ts' in files ? '/fixture/outbox/index.ts' : '/fixture/outbox.ts'
+		const modules = outbox === '/fixture/outbox.ts' ? { '/fixture/outbox.ts': "import { stored } from './storage.js'\nexport type Write = typeof stored", ...files } : files
+		const graph = buildImportGraph(['/fixture/storage.ts', outbox], importFixtureHost(modules), readProjectCompilerOptions())
+		assert.throws(() => assertNoImportCycle(graph, '/fixture/storage.ts', outbox), /Import cycle/u)
+	})
+}
+
+test('the import cycle guard passes modules that import in one direction only', () => {
+	const modules = { '/fixture/outbox.ts': "import { stored } from './storage.js'\nexport type Write = typeof stored", '/fixture/storage.ts': 'export const stored = 1' }
+	const graph = buildImportGraph(['/fixture/storage.ts', '/fixture/outbox.ts'], importFixtureHost(modules), readProjectCompilerOptions())
+	assertNoImportCycle(graph, '/fixture/storage.ts', '/fixture/outbox.ts')
 })
 
 // Building a PendingTerminalRepliesWrite needs this symbol's value, so limiting who names it limits who can build one. Comments do not count.
