@@ -8,7 +8,6 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
-import { setInstalledSimulationServicesOwner } from '../../app/ts/background/installedSimulationServices.js'
 
 type Listener = () => void
 type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -257,13 +256,10 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-// Stands in for the services owner the background creates at startup, so it is also installed as the background's owner, which the confirmation window's refusals are derived with.
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current = initial
-	const simulationServicesOwner: SimulationServicesOwner = {
+	return {
 		getCurrent: () => current,
 		reset: network => { current = reset === undefined ? current : reset(network); return current },
 	}
-	setInstalledSimulationServicesOwner(simulationServicesOwner)
-	return simulationServicesOwner
 }

@@ -390,10 +390,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
-		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
-		createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await updateConfirmTransactionView(() => ({ ethereum, tokenPriceService }))
 
 		const initialMessage = browser.sentMessages.find((message) =>
 			typeof message === 'object'
@@ -645,7 +643,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			if (blockNumbers.otherNetworkFails === true) throw new TypeError('Failed to fetch')
 		})
 		const simulationServicesOwner = createTestSimulationServicesOwner(requestedServices, (network) => network.chainId === otherNetwork.chainId ? otherServices : requestedServices)
-		answerQueueRequest = async () => { await publishConfirmationQueue() }
+		answerQueueRequest = async () => { await publishConfirmationQueue(simulationServicesOwner.getCurrent) }
 		const switchNetwork = async (rpcNetwork: typeof requestedNetwork) => await changeActiveAddressAndChain(simulationServicesOwner, new Map(), { simulationMode: false, rpcNetwork })
 		const settle = async () => await new Promise((resolve) => setTimeout(resolve, 25))
 
@@ -677,7 +675,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 
 		// The approval is refused on the other network, and its view update waits for that network's block number.
-		const approval = resolvePendingTransactionOrMessage(race.otherServices.ethereum, race.otherServices.tokenPriceService, new Map(), {
+		const approval = resolvePendingTransactionOrMessage(() => race.otherServices, new Map(), {
 			method: 'popup_confirmDialog',
 			data: { action: 'accept', uniqueRequestIdentifier: race.pendingTransaction.uniqueRequestIdentifier },
 		})

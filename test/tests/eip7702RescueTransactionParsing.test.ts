@@ -346,9 +346,9 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 		const pendingTransaction = makeSimulatedPendingRawTransaction(transactionToSimulate)
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 
+		const ethereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
 		await resolvePendingTransactionOrMessage(
-			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
-			{} as never,
+			() => ({ ethereum, tokenPriceService: {} as never }),
 			browserMock.websiteTabConnections,
 			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
 		)

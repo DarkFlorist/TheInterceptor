@@ -68,6 +68,9 @@ export type SimulationServicesOwner = {
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 }
 
+// The owner's getCurrent, passed to code that must act on the services installed at the moment it runs, never on services it captured before slow work, such as what the confirmation window is shown.
+export type GetInstalledServices = SimulationServicesOwner['getCurrent']
+
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
 export function createSimulationServicesOwner(
 	rpcNetwork: RpcEntry,

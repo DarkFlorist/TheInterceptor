@@ -673,11 +673,8 @@ describe('ConfirmTransaction', () => {
 		})
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
-		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
-		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
-		createTestSimulationServicesOwner({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) })
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+			await refreshPopupConfirmTransactionSimulation(() => simulator)
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()

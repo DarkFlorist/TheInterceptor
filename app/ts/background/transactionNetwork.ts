@@ -1,7 +1,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { GetInstalledServices } from '../simulation/serviceLifecycle.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { readActiveNetworkSnapshot } from './activeNetworkStorage.js'
-import { getInstalledSimulationServices } from './installedSimulationServices.js'
 import { updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
@@ -63,12 +63,12 @@ export async function getTransactionNetworkApprovalError(ethereum: EthereumClien
 // How many times the active network is read for what the window is shown before a read that a write overlapped is used anyway. A switch writes the network once, so a second read is current unless writes keep arriving, and a refusal shown from an overlapped read is only advisory and is replaced by the queue the window asks for after the switch.
 const SHOWN_REFUSAL_NETWORK_READS = 3
 
-// What the confirmation window is shown of the requested-network rule, derived each time the queue is shown and never stored. show receives the refusal of each transaction under the stored active network and the client installed at that moment, both taken in the same synchronous step as show runs: the network is read again while a write overlapped its read, so a switch between the read and show never pairs the network from before it with the client installed after it. Showing it is advisory: every approval runs the rule itself.
-export async function showWithCurrentNetworkRefusals<T>(show: (getNetworkRefusalMessage: (pending: PendingTransaction) => string | undefined) => T): Promise<T> {
+// What the confirmation window is shown of the requested-network rule, derived each time the queue is shown and never stored. show receives the refusal of each transaction under the stored active network and the client getInstalledServices returns at that moment, both taken in the same synchronous step as show runs: the network is read again while a write overlapped its read, so a switch between the read and show never pairs the network from before it with the client installed after it. Showing it is advisory: every approval runs the rule itself.
+export async function showWithCurrentNetworkRefusals<T>(getInstalledServices: GetInstalledServices, show: (getNetworkRefusalMessage: (pending: PendingTransaction) => string | undefined) => T): Promise<T> {
 	for (let read = 1; ; read++) {
 		const activeNetwork = await readActiveNetworkSnapshot()
 		if (!activeNetwork.isStillCurrent() && read < SHOWN_REFUSAL_NETWORK_READS) continue
-		const installedEthereum = getInstalledSimulationServices().ethereum
+		const installedEthereum = getInstalledServices().ethereum
 		return show((pending) => getNetworkRefusal(activeNetwork.activeRpcNetwork.chainId, installedEthereum, pending)?.message)
 	}
 }

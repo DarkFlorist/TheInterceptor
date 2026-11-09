@@ -34,17 +34,28 @@ test('nothing under the resolution lock awaits an RPC-dependent view update', ()
 })
 
 
-// The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the one push builder and the bootstrap reply derive them through showWithCurrentNetworkRefusals, and no other code builds a queue for the window.
-test('only the push builder and the bootstrap reply build the window queue, both with the installed client', async () => {
+// The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the one push builder and the bootstrap reply derive them through showWithCurrentNetworkRefusals, and no other code builds a queue for the window. The installed client comes from the getCurrent of the services owner, passed as a parameter, so the dependency is in every signature and nothing has to be installed in a module slot first.
+test('the window queue is built only with the installed services passed in as a parameter, and no module keeps an installed-services slot', async () => {
 	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
 	const builders: string[] = []
+	const installedServicesSlots: string[] = []
 	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
-		if (file === 'utils/popupPendingRequest.ts') continue
-		if (/toPopupPendingTransactionOrSignableMessage\(/u.test(await Bun.file(`${ appDirectory }${ file }`).text())) builders.push(file)
+		const source = await Bun.file(`${ appDirectory }${ file }`).text()
+		if (file !== 'utils/popupPendingRequest.ts' && /toPopupPendingTransactionOrSignableMessage\(/u.test(source)) builders.push(file)
+		if (/^(?:export )?let \w+: SimulationServicesOwner\b/mu.test(source) && file !== 'background/background-startup.ts') installedServicesSlots.push(file)
+		if (/installedSimulationServices|getInstalledSimulationServices|setInstalledSimulationServicesOwner/u.test(source)) installedServicesSlots.push(file)
 	}
 	assert.deepEqual(builders.toSorted(), ['background/popupMessageHandlers.ts', 'background/windows/confirmTransaction.ts'])
-	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /await showWithCurrentNetworkRefusals\(/u, builder)
-	assert.doesNotMatch(confirmTransactionSource, /export async function publishConfirmationView\(ethereum/u)
+	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /await showWithCurrentNetworkRefusals\(getInstalledServices, /u, builder)
+	assert.deepEqual(installedServicesSlots, [])
+	assert.equal(await Bun.file(`${ appDirectory }background/installedSimulationServices.ts`).exists(), false)
+	const transactionNetworkSource = await Bun.file(`${ appDirectory }background/transactionNetwork.ts`).text()
+	assert.match(transactionNetworkSource, /export async function showWithCurrentNetworkRefusals<T>\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /export async function publishConfirmationView\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /export const publishConfirmationQueue = async \(getInstalledServices: GetInstalledServices\)/u)
+	assert.match(confirmTransactionSource, /export async function resolvePendingTransactionOrMessage\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /async function showNetworkRefusal\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(popupMessageHandlersSource, /export async function popupReadyAndListening\(getInstalledServices: GetInstalledServices, /u)
 })
 
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {

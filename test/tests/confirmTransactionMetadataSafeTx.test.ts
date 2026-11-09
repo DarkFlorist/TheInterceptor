@@ -457,9 +457,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		let reportedError: unknown
 		let reportCalls = 0
 
-		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
-		createTestSimulationServicesOwner({ ethereum, tokenPriceService })
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
+		await modules.refreshPopupConfirmTransactionMetadata(() => ({ ethereum, tokenPriceService }), undefined, {
 			visualisation: {
 				async update() { throw refreshError },
 				async getStored() { return storedVisualisation },
@@ -522,9 +520,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		const { createTestSimulationServicesOwner } = await import('./backgroundEthAccountsTestHarness.js')
-		createTestSimulationServicesOwner({ ethereum, tokenPriceService })
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(() => ({ ethereum, tokenPriceService }), undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
@@ -573,7 +569,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.updateConfirmTransactionView(ethereum, tokenPriceService)
+		await modules.updateConfirmTransactionView(() => ({ ethereum, tokenPriceService }))
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 	})
