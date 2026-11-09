@@ -469,6 +469,8 @@ type PreparedBlockWithoutSignedMessages = Omit<SimulationStateInputBlock, 'signe
 
 // The one place a prepared block gets its signed messages, always the stack block's own, so preparation steps cannot change which signed messages the simulation and personal_ecRecover see.
 const withStackSignedMessages = (stackInput: SimulationStateInput, preparedBlocks: readonly PreparedBlockWithoutSignedMessages[]): SimulationStateInput => {
+	// When no step ran, the stack input itself is the prepared input, keeping its identity for callers that compare it.
+	if (preparedBlocks === stackInput) return stackInput
 	if (preparedBlocks.length !== stackInput.length) throw new Error('RPC preparation must keep one block per stack block')
 	return stackInput.map((stackBlock, blockIndex) => {
 		const preparedBlock = preparedBlocks[blockIndex]
