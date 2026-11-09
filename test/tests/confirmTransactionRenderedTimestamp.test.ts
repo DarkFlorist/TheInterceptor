@@ -674,7 +674,7 @@ describe('ConfirmTransaction', () => {
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(() => simulator)
+			await refreshPopupConfirmTransactionSimulation(() => simulator, olderPendingTransaction.uniqueRequestIdentifier)
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()

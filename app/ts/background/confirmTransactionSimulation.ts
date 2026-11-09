@@ -8,33 +8,16 @@ import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
-import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
+import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import { type UniqueRequestIdentifier, getUniqueRequestIdentifierString } from '../utils/requests.js'
+import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
-
-// Every confirmation simulation run gets an id that orders it against the other runs of its request: the random id of this background lifetime and the run's place among this lifetime's runs. Stored timestamps keep only whole seconds, so they cannot. Issuing an id reads neither storage nor the clock, so reserving one cannot fail.
-const confirmationRunLifetime = crypto.randomUUID()
-let latestConfirmationRunSequence = 0
-
-// Reserves the next run id synchronously, so every entry that starts a confirmation run calls it before its first await, and a run that starts first gets the earlier id. A reservation that its entry ends up not using only skips a sequence number.
-export function reserveConfirmationRun(): ConfirmationRunId {
-	latestConfirmationRunSequence += 1
-	return { lifetime: confirmationRunLifetime, sequence: latestConfirmationRunSequence }
-}
-
-type InFlightConfirmationRun = { readonly sequence: number, readonly abortController: AbortController }
-
-// The run in flight for each confirmation request, keyed by its request. A run aborts only the run of its own request that it replaces, and a run that resumes after a later run of its request was installed ends as an aborted run does, so an earlier run never aborts a later one. Runs of different requests never cancel each other, so a run never leaves another confirmation without the run that completes it. An entry is removed when its run finishes, so only runs in flight are kept.
-const inFlightConfirmationRuns = new Map<string, InFlightConfirmationRun>()
-
-// The abort controller of the run in flight for the request, if any, for work that is outdated once a later run of that request starts.
-export const getInFlightConfirmationRunAbortController = (uniqueRequestIdentifier: UniqueRequestIdentifier) => inFlightConfirmationRuns.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))?.abortController
+import { confirmationRuns } from './confirmationRunTracker.js'
 
 export async function refreshConfirmTransactionSimulation(
 	confirmationRunId: ConfirmationRunId,
@@ -55,16 +38,12 @@ export async function refreshConfirmTransactionSimulation(
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 		confirmationRunId,
 	}
-	const requestKey = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
-	const replacedRun = inFlightConfirmationRuns.get(requestKey)
-	if (replacedRun !== undefined && replacedRun.sequence > confirmationRunId.sequence) return undefined
-	replacedRun?.abortController.abort(NEW_BLOCK_ABORT)
-	const thisRun = { sequence: confirmationRunId.sequence, abortController: new AbortController() }
-	inFlightConfirmationRuns.set(requestKey, thisRun)
+	const abortController = confirmationRuns.startRun(uniqueRequestIdentifier, confirmationRunId)
+	if (abortController === undefined) return undefined
 	try {
-		return await simulateConfirmationRun(ethereum, tokenPriceService, info, thisRun.abortController, safeSigningRequest)
+		return await simulateConfirmationRun(ethereum, tokenPriceService, info, abortController, safeSigningRequest)
 	} finally {
-		if (inFlightConfirmationRuns.get(requestKey) === thisRun) inFlightConfirmationRuns.delete(requestKey)
+		confirmationRuns.finishRun(uniqueRequestIdentifier, abortController)
 	}
 }
 

@@ -1022,7 +1022,7 @@ const PopupMessageRuntype = funtypes.Union(
 	ChangeActiveAddress,
 	ChangePage,
 	RequestAccountsFromSigner,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'), data: funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestConfirmTransactionQueue') }),
 	RefreshConfirmTransactionMetadata,
 	InterceptorAccess,

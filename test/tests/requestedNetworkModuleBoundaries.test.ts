@@ -31,6 +31,11 @@ test('the confirmation run rule is a leaf that the Gnosis Safe signer refresh us
 	assert.deepEqual(listReached([backgroundModule('safeSignerSelectionRefresh.ts')], [backgroundModule('confirmTransactionSimulation.ts')]), [])
 })
 
+// The run tracker keeps only per-request run state, so it depends on no storage, simulation or window code and can be tested on its own.
+test('the confirmation run tracker depends on no storage, simulation or window code', () => {
+	assert.deepEqual(getRuntimeDependencies(backgroundModule('confirmationRunTracker.ts')).map((dependency) => path.relative(backgroundDirectory, dependency.module)).toSorted(), [path.join('..', 'utils', 'constants.ts'), path.join('..', 'utils', 'requests.ts')])
+})
+
 // A rejection must never wait for simulation or window work, so the module that commits it reaches none of that code.
 test('the commits of a pending request reach no simulation or confirmation window code', () => {
 	const simulationOrWindowModules = ['confirmTransactionSimulation.ts', 'simulationUpdating.ts', 'popupVisualisationUpdater.ts', path.join('windows', 'confirmTransaction.ts')].map(backgroundModule)

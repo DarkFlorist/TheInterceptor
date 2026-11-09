@@ -7,7 +7,7 @@ import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, 
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
-	await modules.refreshPopupConfirmTransactionSimulation(() => simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 	const [pendingTransaction] = await modules.getPendingTransactionsAndMessages()
 	if (pendingTransaction === undefined || pendingTransaction.type !== 'Transaction') throw new Error('missing refreshed pending transaction')
 	if (pendingTransaction.popupVisualisation.statusCode !== 'success') throw new Error('unexpected popup visualisation state')

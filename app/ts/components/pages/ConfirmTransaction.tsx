@@ -1006,9 +1006,11 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata'})
 	}
+	// Names the request the window shows, so the background orders this refresh among the runs of that request from the moment it is asked.
 	const refreshPopupVisualisationIfNeeded = async () => {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
+		const current = currentPendingTransactionOrSignableMessage.value
+		if (current === undefined) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation', data: { uniqueRequestIdentifier: current.uniqueRequestIdentifier } })
 	}
 
 	const isConfirmDisabled = useComputed(() => {

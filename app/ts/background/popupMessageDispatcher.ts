@@ -28,7 +28,7 @@ const popupMessageHandlers = {
 		await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true })
 	}),
 	// The confirmation window is shown what the services installed when it is sent give, so these handlers pass the owner's getCurrent rather than a snapshot.
-	popup_refreshConfirmTransactionDialogSimulation: popupMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context) => await refreshPopupConfirmTransactionSimulation(context.simulationServicesOwner.getCurrent)),
+	popup_refreshConfirmTransactionDialogSimulation: popupMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context, request) => await refreshPopupConfirmTransactionSimulation(context.simulationServicesOwner.getCurrent, request.data.uniqueRequestIdentifier)),
 	popup_requestConfirmTransactionQueue: popupMessageHandler('popup_requestConfirmTransactionQueue', async (context) => {
 		await publishConfirmationQueue(context.simulationServicesOwner.getCurrent)
 	}),

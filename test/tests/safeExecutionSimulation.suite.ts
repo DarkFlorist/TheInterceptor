@@ -446,7 +446,7 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const visualizedTransaction = pending.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	assert.deepEqual(visualizedTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
 
-	await modules.refreshPopupConfirmTransactionSimulation(() => simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.deepEqual(refreshedPending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'a refresh forms the transaction as a Safe execution again')
@@ -567,7 +567,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 	assert.equal(pending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined)
 	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false, 'no executor calls the Safe\'s execTransaction')
 
-	await modules.refreshPopupConfirmTransactionSimulation(() => simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.equal(refreshedPending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined, 'a refresh keeps the ordinary simulation')

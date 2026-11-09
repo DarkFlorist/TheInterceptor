@@ -1,4 +1,5 @@
-import { getInFlightConfirmationRunAbortController, refreshConfirmTransactionSimulation, reserveConfirmationRun } from './confirmTransactionSimulation.js'
+import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { confirmationRuns } from './confirmationRunTracker.js'
 import { getConfirmationRunInputs, isConfirmationVisualisationCurrent, mayStoreNewRun } from './confirmationRun.js'
 import type { ConfirmationRunId } from '../types/accessRequest.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -31,7 +32,7 @@ import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise, type UniqueRequestIdentifier, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -107,7 +108,7 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 
 export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	// An approval may rebuild a Gnosis Safe execution after refreshing the wallet's accounts, so its run is reserved before anything is awaited and is ordered from when the approval started.
-	const safeRebuildRun = confirmation.data.action === 'accept' ? reserveConfirmationRun() : undefined
+	const safeRebuildRun = confirmation.data.action === 'accept' ? confirmationRuns.reserve(confirmation.data.uniqueRequestIdentifier) : undefined
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -528,7 +529,7 @@ export async function refreshPopupConfirmTransactionMetadata(getInstalledService
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	const [first] = await getPendingTransactionsAndMessages()
 	if (first === undefined) return
-	const requestAbortController = callerAbortController ?? getInFlightConfirmationRunAbortController(first.uniqueRequestIdentifier)
+	const requestAbortController = callerAbortController ?? confirmationRuns.getInFlightAbortController(first.uniqueRequestIdentifier)
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
@@ -574,13 +575,13 @@ export async function refreshPopupConfirmTransactionMetadata(getInstalledService
 	}
 }
 
-// The run is reserved before anything is awaited, so overlapping refreshes are ordered by when they were requested; an entry that awaits before refreshing, such as a gas limit edit, reserves it itself and passes it in.
-export async function refreshPopupConfirmTransactionSimulation(getInstalledServices: GetInstalledServices, confirmationRun: ConfirmationRunId = reserveConfirmationRun()) {
+// Refreshes the request the window shows, which it names. The run is reserved for that request before anything is awaited, so overlapping refreshes of it are ordered by when they were requested; an entry that awaits before refreshing, such as a gas limit edit, reserves it itself and passes it in. A request that is no longer first in the queue is not refreshed, as the window is about to show another one.
+export async function refreshPopupConfirmTransactionSimulation(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationRun: ConfirmationRunId = confirmationRuns.reserve(uniqueRequestIdentifier)) {
 	// The refresh simulates with the services installed when it starts.
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	// A transaction still being crafted or simulated is refreshed too, so a first run that was not stored because its inputs changed while it ran is redone from the stored inputs.
-	if (firstTxn === undefined || firstTxn.type !== 'Transaction') return
+	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || !doesUniqueRequestIdentifiersMatch(firstTxn.uniqueRequestIdentifier, uniqueRequestIdentifier)) return
 	// The same transaction can do something else on another network, so after a network switch it keeps the preview of the network it was requested for. A client serves one network for its whole lifetime, so a refresh that passes this check only stores results from that network, even if the user switches networks while it runs.
 	if (!isEthereumClientOnTransactionChain(ethereum, firstTxn)) return
 	// Keep the simulation the user approved while the signer is handling the transaction.
@@ -973,11 +974,11 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 
 export async function forceSetGasLimitForTransaction(getInstalledServices: GetInstalledServices, parsedRequest: ForceSetGasLimitForTransaction) {
 	const { ethereum, tokenPriceService } = getInstalledServices()
-	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
+	const editedRequest = await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
 	// Reserved once the new gas limit is stored, before anything else is awaited: a run that reads the transaction before the edit must not outrank the edit's run, or it would keep a preview of a gas limit that is no longer requested, while a refresh that starts later is ordered after the edit.
-	const confirmationRun = reserveConfirmationRun()
+	const confirmationRun = editedRequest === undefined ? undefined : confirmationRuns.reserve(editedRequest)
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await refreshPopupConfirmTransactionSimulation(getInstalledServices, confirmationRun)
+	if (editedRequest !== undefined) await refreshPopupConfirmTransactionSimulation(getInstalledServices, editedRequest, confirmationRun)
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {

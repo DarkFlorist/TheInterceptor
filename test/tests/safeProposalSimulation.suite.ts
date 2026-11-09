@@ -281,7 +281,7 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	const confirmTransactionSimulation = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const popupVisualisation = await confirmTransactionSimulation.refreshConfirmTransactionSimulation(
-		confirmTransactionSimulation.reserveConfirmationRun(),
+		(await import('../../app/ts/background/confirmationRunTracker.js')).confirmationRuns.reserve(uniqueRequestIdentifier),
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		activeAddress,
@@ -695,7 +695,7 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 		}],
 	})
 
-	await modules.refreshPopupConfirmTransactionSimulation(() => simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 
 	const [refreshed] = await modules.getPendingTransactionsAndMessages()
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
@@ -758,7 +758,7 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 	})
 	fakeSafeContract.requestedRpcMethods.splice(0, fakeSafeContract.requestedRpcMethods.length)
 
-	await modules.refreshPopupConfirmTransactionSimulation(() => simulator)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 
 	const [refreshed] = await modules.getPendingTransactionsAndMessages()
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
