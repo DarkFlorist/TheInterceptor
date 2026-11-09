@@ -1,13 +1,15 @@
 import process from 'node:process'
 
-// ethereumRecovery.ts checks signatures on the direct @noble/curves and recovers them through micro-eth-signer's copy, so the direct pin must equal micro-eth-signer's own dependency and the lockfile must hold no second copy nested under micro-eth-signer.
+// ethereumRecovery.ts checks signatures on the direct @noble/curves and recovers them through micro-eth-signer's copy, so the direct pin must equal micro-eth-signer's own dependency and bun.lock must install @noble/curves exactly once, under any parent path.
+// @noble/hashes is not held to one copy: the app's own @noble/hashes never feeds curve code, which uses the curves package's own utilities, so separate hashes copies only hash and encode bytes.
 type CurvesVersionCoupling = { readonly pinnedVersion: string | undefined, readonly requiredVersion: string | undefined, readonly lockfile: string }
 
 export function getCurvesVersionCouplingErrors({ pinnedVersion, requiredVersion, lockfile }: CurvesVersionCoupling) {
 	const errors: string[] = []
 	if (requiredVersion === undefined) errors.push('micro-eth-signer no longer depends on @noble/curves: revisit ethereumRecovery.ts and the direct @noble/curves dependency.')
 	else if (pinnedVersion !== requiredVersion) errors.push(`package.json pins @noble/curves ${ pinnedVersion ?? '(missing)' }, but micro-eth-signer depends on ${ requiredVersion }: set exactly ${ requiredVersion } so ethereumRecovery.ts and recoverAddress run on one copy of the library.`)
-	if (lockfile.includes('"micro-eth-signer/@noble/curves"')) errors.push('bun.lock installs a second @noble/curves under micro-eth-signer: align the versions and reinstall.')
+	const curvesInstallations = [...lockfile.matchAll(/"([^"]+)": \["@noble\/curves@([^"]+)"/gu)].map(([, installPath, version]) => `${ installPath } (${ version })`)
+	if (curvesInstallations.length > 1) errors.push(`bun.lock installs @noble/curves more than once: ${ curvesInstallations.join(', ') }. Align the versions and reinstall.`)
 	return errors
 }
 

@@ -2,8 +2,7 @@
 
 // The only module that imports @noble/curves (tryRecoverAddress.test.ts enforces this), pinned to the exact version micro-eth-signer depends on so these checks and recoverAddress run on one copy; bun run lint (lint:curves-version) fails and names the required version when a micro-eth-signer upgrade changes it.
 import { secp256k1 } from '@noble/curves/secp256k1.js'
-import { bytesToNumberBE } from '@noble/curves/utils.js'
-import { concatBytes } from '@noble/hashes/utils'
+import { bytesToNumberBE, concatBytes } from '@noble/curves/utils.js'
 import { bytesFromHexOrBytes, type Hex } from './ethereumBytes.js'
 import { recoverAddress } from './ethereumSigning.js'
 

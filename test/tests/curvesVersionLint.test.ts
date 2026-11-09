@@ -13,7 +13,10 @@ test('the @noble/curves coupling lint names the required version when micro-eth-
 	assert.match(error ?? '', /pins @noble\/curves 2\.2\.0, but micro-eth-signer depends on 2\.3\.0: set exactly 2\.3\.0/u)
 })
 
-test('the @noble/curves coupling lint rejects a second copy nested under micro-eth-signer and a dropped dependency', () => {
-	assert.equal(getCurvesVersionCouplingErrors({ pinnedVersion: '2.2.0', requiredVersion: '2.2.0', lockfile: `${ singleCopyLockfile }\n"micro-eth-signer/@noble/curves": ["@noble/curves@2.3.0", "", {}],` }).length, 1)
+test('the @noble/curves coupling lint rejects a second installed copy under any parent path, and a dropped dependency', () => {
+	for (const nestedPath of ['micro-eth-signer/@noble/curves', 'some-library/@noble/curves', 'a/node_modules/b/@noble/curves']) {
+		const [error] = getCurvesVersionCouplingErrors({ pinnedVersion: '2.2.0', requiredVersion: '2.2.0', lockfile: `${ singleCopyLockfile }\n"${ nestedPath }": ["@noble/curves@2.2.0", "", {}],` })
+		assert.ok(error?.includes(`installs @noble/curves more than once: @noble/curves (2.2.0), ${ nestedPath } (2.2.0)`), nestedPath)
+	}
 	assert.equal(getCurvesVersionCouplingErrors({ pinnedVersion: '2.2.0', requiredVersion: undefined, lockfile: singleCopyLockfile }).length, 1)
 })

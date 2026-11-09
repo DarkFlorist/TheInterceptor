@@ -88,6 +88,12 @@ describe('ethereumRecovery import boundaries', () => {
 		assert.deepEqual(getSourcesImporting(await readAppSources(), isCurvesModule), ['app/ts/utils/ethereumRecovery.ts'])
 	})
 
+	test('ethereumRecovery.ts takes byte helpers from @noble/curves itself, so no other @noble/hashes copy feeds its curve code', async () => {
+		const recoverySource = (await readAppSources()).find((source) => source.path === 'app/ts/utils/ethereumRecovery.ts')
+		if (recoverySource === undefined) throw new Error('ethereumRecovery.ts is missing')
+		assert.deepEqual(getImportedModuleSpecifiers(recoverySource).filter((specifier) => specifier.startsWith('@noble/')), ['@noble/curves/secp256k1.js', '@noble/curves/utils.js'])
+	})
+
 	test('only the personal_ecRecover handler imports ethereumRecovery, so the ethereumPrimitives barrel does not ship it to every page', async () => {
 		assert.deepEqual(getSourcesImporting(await readAppSources(), isEthereumRecoveryModule), ['app/ts/background/personalEcRecoverRpc.ts'])
 	})

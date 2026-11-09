@@ -1,11 +1,12 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
-import { personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
+import { MAX_PERSONAL_EC_RECOVER_MESSAGE_LENGTH, personalEcRecover } from '../../app/ts/background/personalEcRecoverRpc.js'
 import { getSafeModeRpcPolicyReply } from '../../app/ts/safe/safeRequestPolicy.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { getSimulatedMessageSignature, getSimulatedPersonalSignHashOfHexMessage, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
+import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
+import { getMessageHashForPersonalSign, getSimulatedMessageSignature, simulatePersonalSign } from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -13,7 +14,9 @@ import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-typ
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
 import { encodeAbiValues } from '../../app/ts/utils/abiRuntime.js'
-import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
+import * as bigint from '../../app/ts/utils/bigint.js'
+import { addressString, bytes32String, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import * as ethereumBytes from '../../app/ts/utils/ethereumBytes.js'
 import { bytesToHex, hashMessage, keccak256, privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
@@ -181,10 +184,65 @@ describe('personal_ecRecover recovery', () => {
 		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover(['0X6869', await account.signMessage({ message: '0X6869' })]), [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: signerAddress })
 	})
 
-	test('hashes hex messages the way simulated signing decodes them and declines other messages without throwing', () => {
-		const decodableMessages = { '0X6869': '0x6869', '0x6869': '0x6869', '0xABcd': '0xabcd', '0x': '0x' } as const
-		for (const [message, signedBytes] of Object.entries(decodableMessages)) assert.equal(getSimulatedPersonalSignHashOfHexMessage(message), hashMessage({ raw: signedBytes }), message)
-		for (const message of ['hello', '0x123', '0xzz', '12', '1234567890', '']) assert.equal(getSimulatedPersonalSignHashOfHexMessage(message), undefined, message)
+	test('simulated personal_sign signs the same bytes as stringToUint8Array, as on main, while decoding hex directly', () => {
+		const personalSignHash = (message: string) => getMessageHashForPersonalSign({ method: 'personal_sign', params: [message, simulatedSigner] })
+		for (const message of ['0X6869', '0x6869', '0xABcd', '0x', '0x00ff', `0x${ '0f'.repeat(300) }`, '12', '1234567890', '0o17']) {
+			assert.equal(personalSignHash(message), hashMessage({ raw: stringToUint8Array(message) }), message)
+		}
+	})
+
+	test('rejects a message over the length limit before decoding or hashing it', async () => {
+		const decodeSpy = spyOn(ethereumBytes, 'hexOrUtf8StringToBytes')
+		try {
+			const signature = await getSimulatedSignature(createSignedMessage(simulatedSigner, helloMessage, { tabId: 1, connectionName: 0n }))
+			const messageAtLimit = `0x${ '00'.repeat(1024 * 1024) }`
+			assert.equal(messageAtLimit.length, MAX_PERSONAL_EC_RECOVER_MESSAGE_LENGTH)
+			const oversizedMessage = `${ messageAtLimit }0`
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([oversizedMessage, signature]), [], websiteOrigin), {
+				type: 'result',
+				method: 'personal_ecRecover',
+				error: { code: -32602, message: `Invalid personal_ecRecover message. Messages longer than ${ MAX_PERSONAL_EC_RECOVER_MESSAGE_LENGTH } characters (1 MiB of hex-encoded bytes) are not supported.` },
+			})
+			assert.equal(decodeSpy.mock.calls.length, 0)
+			const reply = await personalEcRecover(parsePersonalEcRecover([messageAtLimit, signature]), [], websiteOrigin)
+			assert.ok(reply.type === 'result' && 'result' in reply, 'a message at the limit is recovered')
+			assert.equal(decodeSpy.mock.calls.length, 1)
+		} finally {
+			decodeSpy.mockRestore()
+		}
+	})
+
+	test('skips the simulated signer lookup when the requesting website simulated-signed nothing', async () => {
+		const lookupSpy = spyOn(simulationPersonalSigning, 'findSimulatedPersonalSignSigner')
+		try {
+			const socket = { tabId: 1, connectionName: 0n }
+			const ownSigning = createSignedMessage(simulatedSigner, helloMessage, socket)
+			const otherWebsiteSigning = createSignedMessage(simulatedSigner, helloMessage, socket, { websiteOrigin: 'https://other.example', icon: undefined, title: undefined })
+			const request = parsePersonalEcRecover([helloMessage, await getSimulatedSignature(ownSigning)])
+			assert.deepEqual(await personalEcRecover(request, [], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+			assert.deepEqual(await personalEcRecover(request, [otherWebsiteSigning], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: mockSimulationKeyAddress })
+			assert.equal(lookupSpy.mock.calls.length, 0)
+			assert.deepEqual(await personalEcRecover(request, [ownSigning], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+			assert.equal(lookupSpy.mock.calls.length, 1)
+		} finally {
+			lookupSpy.mockRestore()
+		}
+	})
+
+	test('recovers a 1 MiB hex message the simulation signed without the quadratic BigInt decoding', async () => {
+		const largeMessage = `0x${ 'ab'.repeat(1024 * 1024) }`
+		const signedMessage = createSignedMessage(simulatedSigner, largeMessage, { tabId: 1, connectionName: 0n })
+		const bigIntDecodeSpy = spyOn(bigint, 'stringToUint8Array')
+		try {
+			const started = performance.now()
+			const signature = await getSimulatedSignature(signedMessage)
+			assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([largeMessage, signature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+			// stringToUint8Array takes over a minute on this message; direct hex decoding takes well under a second.
+			assert.ok(performance.now() - started < 10_000)
+			assert.equal(bigIntDecodeSpy.mock.calls.length, 0)
+		} finally {
+			bigIntDecodeSpy.mockRestore()
+		}
 	})
 
 	test('recovers messages simulated signing decodes irregularly by their exact string, and recovers undecodable messages without throwing', async () => {
