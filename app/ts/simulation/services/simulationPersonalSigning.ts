@@ -1,5 +1,5 @@
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
+import type { SignedMessageTransaction, SimulationStateInputBlock } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import { bytes32String, stringToUint8Array } from '../../utils/bigint.js'
 import { hashMessage, hashTypedData, privateKeyToAccount } from '../../utils/ethereumPrimitives.js'
@@ -41,6 +41,9 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 		default: assertNever(params)
 	}
 }
+
+// How a simulation's blocks give their signed messages, shared by the ecRecover precompile override (one block at a time) and personal_ecRecover (across the stack) so both read the same messages.
+export const getSignedMessagesOfBlocks = (blocks: readonly Pick<SimulationStateInputBlock, 'signedMessages'>[]) => blocks.flatMap((block) => block.signedMessages)
 
 // The single definition of how a simulated signing maps to its signer: the simulation signs with a public mock key, and the resulting message hash and signature stand for the simulated signer. The ecRecover precompile override (EthereumClientService.getBlockStateCall) and personal_ecRecover both resolve simulated signatures through this, each applying its own choice of which signed messages to consider at its call site.
 export const getSimulatedMessageSignature = async (signedMessage: Pick<SignedMessageTransaction, 'originalRequestParameters' | 'fakeSignedFor'>) => {

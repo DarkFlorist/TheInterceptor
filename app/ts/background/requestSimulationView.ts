@@ -1,4 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { getSignedMessagesOfBlocks } from '../simulation/services/simulationPersonalSigning.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type SignedMessageTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, prepareSimulationInputForRpc } from './simulationUpdating.js'
 
@@ -28,11 +29,11 @@ export const createRequestSimulationView = (ethereum: EthereumClientService, sim
 		})()
 		return await executionSimulationStatePromise
 	}
-	// RPC preparation rewrites transactions and state overrides but never signed messages, so they come straight from the snapshot without touching the RPC.
+	// prepareSimulationInputForRpc gives every prepared block its stack block's signed messages (withStackSignedMessages), so reading them from the snapshot sees what the ecRecover precompile override maps, without touching the RPC.
 	const getSimulatedSignedMessages = async (): Promise<readonly SignedMessageTransaction[]> => {
 		const simulationStackSnapshot = await getSimulationStackSnapshot()
 		if (simulationStackSnapshot.kind === 'passthrough') return []
-		return simulationStackSnapshot.value.flatMap((block) => block.signedMessages)
+		return getSignedMessagesOfBlocks(simulationStackSnapshot.value)
 	}
 	return { getSimulationInput, getExecutionSimulationState, getSimulatedSignedMessages }
 }
