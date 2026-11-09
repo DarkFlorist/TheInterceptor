@@ -22,7 +22,7 @@ import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/er
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
-import { type BundledMetadata, findBundledMetadata } from './bundledMetadata.js'
+import { type BundledMetadata, findBundledMetadataForChain } from './bundledMetadata.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -105,8 +105,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
-	// bundled @darkflorist/address-metadata entries describe Ethereum mainnet contracts only
-	const bundledMetadata = chainId === 1n ? findBundledMetadata(address) : undefined
+	const bundledMetadata = findBundledMetadataForChain(address, chainId)
 	if (bundledMetadata !== undefined) return getBundledMetadataEntry(bundledMetadata, rpcEntry)
 
 	if (address === MOCK_ADDRESS) return {

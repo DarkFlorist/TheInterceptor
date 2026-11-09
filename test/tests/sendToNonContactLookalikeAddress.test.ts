@@ -5,7 +5,7 @@ import type { KnownAddress, KnownAddressIndex, KnownAddressIndexesLoader } from 
 import { runProtectorsForTransaction } from '../../app/ts/simulation/protectorRunner.js'
 import { updateUserAddressBookEntries } from '../../app/ts/background/storageVariables.js'
 import { getKnownAddressIndexes, loadKnownAddressIndexesForChain } from '../../app/ts/background/lookalikeKnownAddresses.js'
-import { findBundledMetadata } from '../../app/ts/background/bundledMetadata.js'
+import { findBundledMetadataForChain } from '../../app/ts/background/bundledMetadata.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedEthereumEvents } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -253,7 +253,7 @@ describe('sendToNonContact lookalike destinations', () => {
 		const lookalikeWarnings = await getWarnings(sendEtherTo(compoundPaxDollarLookalike))
 		const exactWarnings = await getWarnings(sendEtherTo(compoundPaxDollarAsUnrecognized))
 
-		assert.equal(findBundledMetadata(COMPOUND_PAX_DOLLAR_ADDRESS), undefined)
+		assert.equal(findBundledMetadataForChain(COMPOUND_PAX_DOLLAR_ADDRESS, 1n), undefined)
 		assert.deepEqual(lookalikeWarnings, [expectedNotInAddressBookWarning(compoundPaxDollarLookalike)])
 		assert.deepEqual(exactWarnings, [expectedNotInAddressBookWarning(compoundPaxDollarAsUnrecognized)])
 	})
