@@ -7,7 +7,8 @@ import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { buildSimulationInput, captureSimulationSnapshot, getSimulationProviderForSnapshot, snapshotMatchesSelection, type BuiltSimulationInput, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { buildSimulationInput, captureSimulationSnapshot, getSimulationProviderForSnapshot, type BuiltSimulationInput, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { selectionChanged } from '../utils/simulationSelection.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -22,10 +23,10 @@ let abortController = new AbortController()
 // Signer-only networks render passthrough without using the services.
 const servicesServeNetwork = (ethereum: EthereumClientService, network: RpcNetwork) => isSignerOnlyNetwork(network) || !getRpcNetworkChange(ethereum.getRpcEntry(), network).endpointChanged
 
-// The one rule for acting on a refresh, always read from the current settings because a queued snapshot only says what was selected at enqueue time: its services must serve the current selection, and any snapshot it would execute must still describe that selection. A selection change owns the refresh of what it selected (activeSettings.ts), and queues none for external-wallet signing, which has no stack to show, so a refresh failing this rule returns without cancelling or publishing.
+// The one rule for acting on a refresh, always read from the current settings because a queued snapshot only says what was selected at enqueue time: its services must serve the current selection, and any snapshot it would execute must not have changed from it. A selection change queues its own refresh by selectionNeedsRefresh, built on the same selectionChanged, so a refresh failing this rule returns without cancelling or publishing.
 const refreshMatchesCurrentSelection = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined) => {
 	const selection = await getSettings()
-	return servicesServeNetwork(ethereum, selection.activeRpcNetwork) && (snapshot === undefined || snapshotMatchesSelection(snapshot, selection))
+	return servicesServeNetwork(ethereum, selection.activeRpcNetwork) && (snapshot === undefined || !selectionChanged(snapshot, selection))
 }
 
 function buildPassthroughVisualizedState(
