@@ -1,10 +1,10 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
+import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params, type StateOverrides } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
@@ -50,6 +50,46 @@ export const isUnpreparedSimulationInputError = (error: unknown): error is Error
 	&& (error.violation === 'missing-executed-call' || error.violation === 'unauthorized-executed-call')
 
 export const getTotalExecutedGasLimit = (transactions: readonly RpcTransaction[]) => transactions.reduce((totalGasLimit, transaction) => totalGasLimit + getExecutedTransaction(transaction).gas, 0n)
+
+const ECRECOVER_ADDRESS = 1n
+const ECRECOVER_MOVED_TO_ADDRESS = 0x123456n
+
+const isHexSignature = (value: string): value is `0x${ string }` => value.startsWith('0x')
+const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
+	if (!isHexSignature(messageHashAndSignature.signature)) throw new Error('Signature must be hex encoded')
+	const sig = parseSignatureHex(messageHashAndSignature.signature)
+	const packed = BigInt(keccak256(encodeAbiValues(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v ?? BigInt(sig.yParity), sig.r, sig.s])))
+	return packed
+}
+
+// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
+const getMappingsMemorySlot = (hash: EthereumBytes32) => keccak256(encodeAbiValues(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
+
+// eth_simulateV1 restores every precompile at the start of each block and a `state` override replaces the account's whole storage, so every block that runs after a simulated signature needs this override built from all signed messages up to that block, not only its own.
+export const getSignedMessagesEcRecoverOverride = async (signedMessages: SimulationStateInputMinimalDataBlock['signedMessages']): Promise<StateOverrides> => {
+	if (signedMessages.length === 0) return {}
+	const signatureSlots = await Promise.all(signedMessages.map(async (sign) => {
+		const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
+		return [getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), sign.fakeSignedFor] satisfies [string, bigint]
+	}))
+	return {
+		[addressString(ECRECOVER_ADDRESS)]: {
+			movePrecompileToAddress: ECRECOVER_MOVED_TO_ADDRESS,
+			code: getEcRecoverOverride(),
+			state: Object.fromEntries(signatureSlots),
+		}
+	}
+}
+
+const isEcRecoverOverrideAddress = (address: bigint) => address === ECRECOVER_ADDRESS || address === ECRECOVER_MOVED_TO_ADDRESS
+const touchesEcRecoverOverrideAddresses = (stateOverrides: StateOverrides) => Object.entries(stateOverrides).some(([address, accountOverride]) => {
+	const parsedAddress = EthereumAddress.safeParse(address)
+	const movePrecompileToAddress = accountOverride?.movePrecompileToAddress
+	return (parsedAddress.success && isEcRecoverOverrideAddress(parsedAddress.value)) || (movePrecompileToAddress !== undefined && isEcRecoverOverrideAddress(movePrecompileToAddress))
+})
+
+// Overrides that touch address 1 or 0x123456 keep main's behaviour of no signed-message override, because eth_simulateV1 rejects relocating ecrecover onto an overridden address and EcRecoverOverride hardcodes 0x123456 as its relocation target.
+export const addEcRecoverOverride = (ecRecoverOverride: StateOverrides, stateOverrides: StateOverrides): StateOverrides => touchesEcRecoverOverrideAddresses(stateOverrides) ? stateOverrides : { ...ecRecoverOverride, ...stateOverrides }
 
 const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	const commonFields = {
@@ -408,49 +448,19 @@ export class EthereumClientService {
 			previousBlockOverride = newBlockOverride
 		}
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, signedMessagesUpToBlock: SimulationStateInputMinimalDataBlock['signedMessages']) => {
 			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(getExecutedTransaction(transaction)))
-			const ecRecoverMovedToAddress = 0x123456n
-			const ecRecoverAddress = 1n
-
-			const isHexSignature = (value: string): value is `0x${ string }` => value.startsWith('0x')
-			const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
-				if (!isHexSignature(messageHashAndSignature.signature)) throw new Error('Signature must be hex encoded')
-				const sig = parseSignatureHex(messageHashAndSignature.signature)
-				const packed = BigInt(keccak256(encodeAbiValues(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v ?? BigInt(sig.yParity), sig.r, sig.s])))
-				return packed
-			}
-
-			// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
-			const getMappingsMemorySlot = (hash: EthereumBytes32) => keccak256(encodeAbiValues(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
-			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => {
-				const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
-				return { key: getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), value: sign.fakeSignedFor }
-			}))
-			const stateSets = signatureStructs.reduce((acc, current) => {
-				acc[current.key] = current.value
-				return acc
-			}, {} as { [key: string]: bigint } )
 			return {
 				calls: rpcCalls,
 				blockOverrides,
-				stateOverrides: {
-					...block.signedMessages.length > 0 ? {
-						[addressString(ecRecoverAddress)]: {
-							movePrecompileToAddress: ecRecoverMovedToAddress,
-							code: getEcRecoverOverride(),
-							state: stateSets,
-						}
-					} : {},
-					...block.stateOverrides,
-				}
+				stateOverrides: addEcRecoverOverride(await getSignedMessagesEcRecoverOverride(signedMessagesUpToBlock), block.stateOverrides),
 			}
 		}
 
 		const blockStateCalls = await Promise.all(rpcBlocks.map(async (block, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
-			return await getBlockStateCall(block, blockOverrideForBlock)
+			return await getBlockStateCall(block, blockOverrideForBlock, rpcBlocks.slice(0, index + 1).flatMap((earlierBlock) => earlierBlock.signedMessages))
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {
