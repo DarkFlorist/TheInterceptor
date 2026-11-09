@@ -156,6 +156,14 @@ class MockEthereumJSONRpcRequestHandler {
 			}
 			case 'eth_simulateV1': {
 				this.ethSimulateV1Requests.push(rpcRequest)
+				// Like geth's StateOverride.Apply, refuse to move a precompile onto an address the same block overrides.
+				for (const blockStateCall of rpcRequest.params[0].blockStateCalls) {
+					const overriddenAddresses = new Set(Object.keys(blockStateCall.stateOverrides ?? {}).map((address) => BigInt(address)))
+					for (const accountOverride of Object.values(blockStateCall.stateOverrides ?? {})) {
+						if (accountOverride.movePrecompileToAddress === undefined || !overriddenAddresses.has(accountOverride.movePrecompileToAddress)) continue
+						throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: `account ${ addressString(accountOverride.movePrecompileToAddress) } is already overridden` } })
+					}
+				}
 				const lastBlockStateCall = rpcRequest.params[0]?.blockStateCalls.at(-1)
 				const lastCall = lastBlockStateCall?.calls[0]
 				const lastCallInput = lastCall?.input
@@ -2554,6 +2562,27 @@ describe('SimulationModeEthereumClientService', () => {
 		test('website eth_simulateV1', async () => {
 			await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), createDappEthSimulateV1Request())
 			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		const ecRecoverRelocationAddress = addressString(0x123456n)
+
+		test('website eth_simulateV1 overriding the ecrecover relocation address keeps its own override without an error', async () => {
+			const websiteStateOverrides = { [ecRecoverRelocationAddress]: { balance: 5n } }
+			const request = createDappEthSimulateV1Request()
+			const [websiteBlock] = request.params[0].blockStateCalls
+			if (websiteBlock === undefined) throw new Error('missing website block')
+			const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), { ...request, params: [{ ...request.params[0], blockStateCalls: [{ ...websiteBlock, stateOverrides: websiteStateOverrides }] }, 'latest'] })
+
+			assert.equal(result.length, 1)
+			assert.deepEqual(requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides, websiteStateOverrides)
+		})
+
+		test('eth_getStorageAt of the ecrecover relocation address does not add the signed-message override', async () => {
+			const storageValue = await getSimulatedStorageAtFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), 0x123456n, 0n)
+
+			assert.equal(storageValue, 0n)
+			const lastBlockOverrides = requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides
+			assert.deepEqual(Object.keys(lastBlockOverrides ?? {}), [ecRecoverRelocationAddress])
 		})
 	})
 		})

@@ -1,4 +1,4 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -80,6 +80,16 @@ export const getSignedMessagesEcRecoverOverride = async (signedMessages: Simulat
 		}
 	}
 }
+
+const isEcRecoverOverrideAddress = (address: bigint) => address === ECRECOVER_ADDRESS || address === ECRECOVER_MOVED_TO_ADDRESS
+const touchesEcRecoverOverrideAddresses = (stateOverrides: StateOverrides) => Object.entries(stateOverrides).some(([address, accountOverride]) => {
+	const parsedAddress = EthereumAddress.safeParse(address)
+	const movePrecompileToAddress = accountOverride?.movePrecompileToAddress
+	return (parsedAddress.success && isEcRecoverOverrideAddress(parsedAddress.value)) || (movePrecompileToAddress !== undefined && isEcRecoverOverrideAddress(movePrecompileToAddress))
+})
+
+// Overrides that touch address 1 or 0x123456 keep main's behaviour of no signed-message override, because eth_simulateV1 rejects relocating ecrecover onto an overridden address and EcRecoverOverride hardcodes 0x123456 as its relocation target.
+export const addEcRecoverOverride = (ecRecoverOverride: StateOverrides, stateOverrides: StateOverrides): StateOverrides => touchesEcRecoverOverrideAddresses(stateOverrides) ? stateOverrides : { ...ecRecoverOverride, ...stateOverrides }
 
 const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	const commonFields = {
@@ -443,10 +453,7 @@ export class EthereumClientService {
 			return {
 				calls: rpcCalls,
 				blockOverrides,
-				stateOverrides: {
-					...await getSignedMessagesEcRecoverOverride(signedMessagesUpToBlock),
-					...block.stateOverrides,
-				}
+				stateOverrides: addEcRecoverOverride(await getSignedMessagesEcRecoverOverride(signedMessagesUpToBlock), block.stateOverrides),
 			}
 		}
 

@@ -100,6 +100,22 @@ describe('ecrecover override across eth_simulateV1 blocks', () => {
 		assert.equal(overrides[3]?.state?.[slotB], fakeSignerB)
 	})
 
+	test('a block whose own overrides use the ecrecover addresses keeps them without the signed-message override', async () => {
+		const [slotA] = await getMessageStorageEntry(messageA)
+		const relocationAddressOverride = { [addressString(0x123456n)]: { balance: 1n } }
+		const precompileMovedOntoRelocationAddress = { [addressString(2n)]: { movePrecompileToAddress: 0x123456n } }
+		const prepared = await service.prepareEthSimulateV1Input([
+			{ ...createBlock([messageA], [createTransaction(0n)]), stateOverrides: relocationAddressOverride },
+			{ ...createBlock([], [createTransaction(1n)]), stateOverrides: precompileMovedOntoRelocationAddress },
+			createBlock([], [createTransaction(2n)]),
+		], 1n, undefined)
+		const { blockStateCalls } = prepared.request.params[0]
+
+		assert.deepEqual(blockStateCalls[0]?.stateOverrides, relocationAddressOverride)
+		assert.deepEqual(blockStateCalls[1]?.stateOverrides, precompileMovedOntoRelocationAddress)
+		assert.equal(blockStateCalls[2]?.stateOverrides?.[ecRecoverAddress]?.state?.[slotA], fakeSignerA)
+	})
+
 	test('blocks split off by the gas limit keep the override of their input block', async () => {
 		const [slotA] = await getMessageStorageEntry(messageA)
 		const prepared = await service.prepareEthSimulateV1Input([
