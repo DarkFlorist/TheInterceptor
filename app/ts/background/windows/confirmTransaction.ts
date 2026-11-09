@@ -52,7 +52,7 @@ import { persistUnsignedSafeTransaction, resolveSafeSignerReply, type SafeResolu
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import { getInstalledSimulationServices } from '../installedSimulationServices.js'
-import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, readNetworkRefusalMessages, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
+import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, showWithCurrentNetworkRefusals, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -174,20 +174,20 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 
 type ShowPending = (pending: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[]
 
-// The one builder of what the confirmation window is sent: the queue as it is stored at this moment, the window's only source of it, and with a view also the simulation view and the block data, which come after the queue. A push must never be older than the moment it is sent, or it could undo a later change, such as an approval handed to the signer, after the window has shown that change. So the stored confirmations are read here, under the lock of their writers, in the same step as the send, and a caller with slow work sends the queue only after it. The refusals shown with the queue are derived from the stored active network and the client installed when the queue is built under that lock, which this reads itself, so no caller can pass a client captured before its slow work. showPending adds what a caller has prepared but not stored.
+// The one builder of what the confirmation window is sent: the queue as it is stored at this moment, the window's only source of it, and with a view also the simulation view and the block data, which come after the queue. A push must never be older than the moment it is sent, or it could undo a later change, such as an approval handed to the signer, after the window has shown that change. So the stored confirmations are read here, under the lock of their writers, in the same step as the send, and a caller with slow work sends the queue only after it. The refusals shown with the queue are derived by showWithCurrentNetworkRefusals as the last step before the queue is built under that lock, from the active network and the installed client read together, so no caller can pass a client captured before its slow work and a switch during the publication never pairs an old network with a new client. showPending adds what a caller has prepared but not stored.
 export async function publishConfirmationView(view: UpdateConfirmTransactionDialog['data'] | undefined, showPending: ShowPending = (pending) => pending) {
-	const getNetworkRefusalMessage = await readNetworkRefusalMessages()
-	return await publishPendingTransactionsAndMessages((pending) => {
+	return await publishPendingTransactionsAndMessages(async (pending) => {
 		if (pending.length === 0) return []
-		const installedEthereum = getInstalledSimulationServices().ethereum
-		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: { pendingTransactionAndSignableMessages: showPending(pending).map((current) => toPopupPendingTransactionOrSignableMessage(current, (transaction) => getNetworkRefusalMessage(installedEthereum, transaction))) },
-		}
-		const queueMessage = serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)
-		if (view === undefined) return [queueMessage]
-		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
-		return [queueMessage, serialize(UpdateConfirmTransactionDialog, message)]
+		return await showWithCurrentNetworkRefusals((getNetworkRefusalMessage) => {
+			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+				data: { pendingTransactionAndSignableMessages: showPending(pending).map((current) => toPopupPendingTransactionOrSignableMessage(current, getNetworkRefusalMessage)) },
+			}
+			const queueMessage = serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)
+			if (view === undefined) return [queueMessage]
+			const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
+			return [queueMessage, serialize(UpdateConfirmTransactionDialog, message)]
+		})
 	}, async (message) => await sendPopupMessageToOpenWindows(message, 'confirmTransaction'))
 }
 

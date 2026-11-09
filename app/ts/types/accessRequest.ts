@@ -122,7 +122,7 @@ const PendingTransactionSharedBase = funtypes.ReadonlyObject({
 	executeThroughSafe: funtypes.Literal(true),
 }))
 
-// What the windows receive of a pending transaction. networkRefusal is what the requested-network rule says when the queue is sent, derived by readNetworkRefusalMessages in transactionNetwork.ts and never stored.
+// What the windows receive of a pending transaction. networkRefusal is what the requested-network rule says when the queue is sent, derived by showWithCurrentNetworkRefusals in transactionNetwork.ts and never stored.
 const PopupPendingTransactionBase = funtypes.Intersect(PendingTransactionSharedBase, funtypes.ReadonlyPartial({ networkRefusal: funtypes.String }))
 
 // The stored form adds requestedChainId, which only the background uses.

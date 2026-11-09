@@ -79,9 +79,9 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
-// Sends what createMessages makes of the stored confirmations, in the same step as reading them under the lock of their writers, so the messages reach the windows ahead of the message of any later write. createMessages is synchronous, so it cannot wait for anything under the lock, and the deliveries that send starts are awaited after the lock is released. send is passed in because the sending module depends on this one.
-export async function publishPendingTransactionsAndMessages<Message>(createMessages: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => readonly Message[], send: (message: Message) => Promise<void>) {
-	const deliveries = await pendingTransactionsSemaphore.execute(async () => createMessages(await readPendingTransactionsAndMessagesWithRecovery()).map((message) => send(message)))
+// Sends what createMessages makes of the stored confirmations, read under the lock of their writers, and starts the sends under that lock, so the messages reach the windows ahead of the message of any later write. createMessages may read other storage, such as the active network, but never an RPC, as every writer of the confirmations waits for it, and the deliveries that send starts are awaited after the lock is released. send is passed in because the sending module depends on this one.
+export async function publishPendingTransactionsAndMessages<Message>(createMessages: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly Message[]>, send: (message: Message) => Promise<void>) {
+	const deliveries = await pendingTransactionsSemaphore.execute(async () => (await createMessages(await readPendingTransactionsAndMessagesWithRecovery())).map((message) => send(message)))
 	await Promise.all(deliveries)
 	return deliveries.length > 0
 }

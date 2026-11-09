@@ -9,8 +9,7 @@ import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, publishConfirmationView, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction } from './windows/confirmTransaction.js'
 import { toPopupPendingTransactionOrSignableMessage } from '../utils/popupPendingRequest.js'
-import { isEthereumClientOnTransactionChain, readNetworkRefusalMessages } from './transactionNetwork.js'
-import { getInstalledSimulationServices } from './installedSimulationServices.js'
+import { isEthereumClientOnTransactionChain, showWithCurrentNetworkRefusals } from './transactionNetwork.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -164,18 +163,18 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
-			const getNetworkRefusalMessage = await readNetworkRefusalMessages()
 			// Read after the slow lookups, so the window does not start from confirmations they outlasted.
 			const pendingTransactions = await getPendingTransactionsAndMessages()
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
-			const installedEthereum = getInstalledSimulationServices().ethereum
+			// The refusals are derived last, from the active network and the installed client read together.
+			const shownPendingTransactions = await showWithCurrentNetworkRefusals((getNetworkRefusalMessage) => pendingTransactions.map((pending) => toPopupPendingTransactionOrSignableMessage(pending, getNetworkRefusalMessage)))
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
 					popupOrTabId: firstPendingTransaction.popupOrTabId,
 					confirmTransactionBootstrap: {
-						pendingTransactionAndSignableMessages: pendingTransactions.map((pending) => toPopupPendingTransactionOrSignableMessage(pending, (transaction) => getNetworkRefusalMessage(installedEthereum, transaction))),
+						pendingTransactionAndSignableMessages: shownPendingTransactions,
 						currentBlockNumber,
 						rpcConnectionStatus,
 						visualizedSimulatorState,

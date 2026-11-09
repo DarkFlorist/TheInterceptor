@@ -7,7 +7,7 @@ import { createDeferredValue, createTestSimulationServicesOwner } from './backgr
 import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { readNetworkRefusalMessages } from '../../app/ts/background/transactionNetwork.js'
+import { showWithCurrentNetworkRefusals } from '../../app/ts/background/transactionNetwork.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
@@ -286,9 +286,10 @@ async function createNetworkSwitcher(requestedNetworkServices: Pick<typeof simul
 
 const getStoredApprovalStatus = async () => (await getPendingTransaction()).approvalStatus
 
-// The refusal a queue sent now with the given client shows for the stored transaction. It is derived, never stored.
-async function getRefusalMessage(ethereum = simulator.ethereum) {
-	return (await readNetworkRefusalMessages())(ethereum, await getPendingTransaction())
+// The refusal a queue sent now shows for the stored transaction, with the installed client. It is derived, never stored.
+async function getRefusalMessage() {
+	const pending = await getPendingTransaction()
+	return await showWithCurrentNetworkRefusals((getNetworkRefusalMessage) => getNetworkRefusalMessage(pending))
 }
 
 // Records the writes of the stored confirmations, to show that a network change lifts a refusal without one.
@@ -360,7 +361,7 @@ async function refuseAndImportRequestedNetwork() {
 	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
 	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	assert.equal(networkSwitcher.simulationServicesOwner.getCurrent().ethereum.getChainId(), otherNetwork.chainId)
-	assert.equal(await getRefusalMessage(networkSwitcher.simulationServicesOwner.getCurrent().ethereum), NETWORK_CHANGED_REFUSAL)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 	return { postedMessages, ...networkSwitcher }
 }
@@ -412,6 +413,63 @@ test('an RPC list change that installs the client of the stored network tells th
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
+// Holds the next read of the active network alone, the one a queue's refusals are derived from, after it has read the stored value.
+function holdNextActiveNetworkRead() {
+	const reached = createDeferredValue<undefined>()
+	const release = createDeferredValue<undefined>()
+	let held = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		if (!held && Array.isArray(keys) && keys.length === 1 && keys[0] === 'activeRpcNetwork') {
+			held = true
+			reached.resolve(undefined)
+			await release.promise
+		}
+		return items
+	})
+	return { reached: reached.promise, release: () => release.resolve(undefined), restore: () => browserMock.setStorageGetHandler(undefined) }
+}
+
+test('a switch back while the queue is being built never pairs the network read before it with the client installed after it', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { switchNetwork } = await createNetworkSwitcher()
+	await switchNetwork(otherNetwork)
+	const { publishConfirmationQueue } = await import('../../app/ts/background/windows/confirmTransaction.js')
+
+	const networkRead = holdNextActiveNetworkRead()
+	browserMock.sentMessages.length = 0
+	const publication = publishConfirmationQueue()
+	await networkRead.reached
+	await switchNetwork(fakeRpcNetwork)
+	networkRead.release()
+	await publication
+	networkRead.restore()
+
+	assert.equal(getLastPublishedFirstRequest() === undefined, false)
+	assert.equal(getLastShownNetworkRefusal(), undefined)
+})
+
+test('a switch back while the window bootstrap reply is built never pairs the network read before it with the client installed after it', async () => {
+	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
+	await switchNetwork(otherNetwork)
+	const { popupReadyAndListening } = await import('../../app/ts/background/popupMessageHandlers.js')
+
+	const networkRead = holdNextActiveNetworkRead()
+	const reply = popupReadyAndListening(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, 'confirmTransaction')
+	await networkRead.reached
+	await switchNetwork(fakeRpcNetwork)
+	networkRead.release()
+	const bootstrap = await reply
+	networkRead.restore()
+
+	const shown = bootstrap !== undefined && 'confirmTransactionBootstrap' in bootstrap.data ? bootstrap.data.confirmTransactionBootstrap?.pendingTransactionAndSignableMessages[0] : undefined
+	if (shown === undefined || shown.type !== 'Transaction') throw new Error('Missing bootstrapped transaction')
+	assert.equal(shown.networkRefusal, undefined)
+})
+
 test('a refusal stays while the check still refuses, and approving again still sends nothing', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
@@ -423,11 +481,12 @@ test('a refusal stays while the check still refuses, and approving again still s
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 
 	await switchNetwork(thirdNetwork)
-	assert.equal(await getRefusalMessage(simulationServicesOwner.getCurrent().ethereum), NETWORK_CHANGED_REFUSAL)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, ethereum, tokenPriceService)
 
 	// The client of the requested network alone does not lift it: the active network has to match too.
-	assert.equal(await getRefusalMessage(simulator.ethereum), NETWORK_CHANGED_REFUSAL)
+	createTestSimulationServicesOwner(simulator)
+	assert.equal(await getRefusalMessage(), NETWORK_CHANGED_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 })
 
@@ -549,7 +608,7 @@ test('a confirmation stored by an older version is told so, and its refusal neve
 
 	await switchNetwork(otherNetwork)
 	await switchNetwork(fakeRpcNetwork)
-	assert.equal(await getRefusalMessage(simulationServicesOwner.getCurrent().ethereum), OLDER_VERSION_REFUSAL)
+	assert.equal(await getRefusalMessage(), OLDER_VERSION_REFUSAL)
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages)
 	assert.equal(getLastShownNetworkRefusal(), OLDER_VERSION_REFUSAL)
 })
