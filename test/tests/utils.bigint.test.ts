@@ -18,6 +18,7 @@ function quadraticStringToUint8Array(data: string) {
 	return quadraticBigintToUint8Array(BigInt(data), dataLength)
 }
 
+// Only whether a conversion threw is compared: the fractional-size RangeError message changed, and no caller reads it.
 type ConversionOutcome = { readonly bytes: readonly number[] } | { readonly threw: true }
 
 function conversionOutcome(convert: () => Uint8Array): ConversionOutcome {
@@ -36,11 +37,15 @@ function assertSameBigintConversion(value: bigint, numberOfBytes: number) {
 	assert.deepEqual(conversionOutcome(() => bigintToUint8Array(value, numberOfBytes)), conversionOutcome(() => quadraticBigintToUint8Array(value, numberOfBytes)), `bigintToUint8Array(${ value }, ${ numberOfBytes })`)
 }
 
-// Deterministic generator so a failing random case reproduces on every run.
+// Seeded xorshift32 so a failing random case reproduces on every run; its shifts and xors on a uint32 state never leave the exact integer range.
 function createRandom(seed: number) {
-	let state = seed
+	let state = seed >>> 0
 	return (limit: number) => {
-		state = (state * 1_103_515_245 + 12_345) % 2_147_483_648
+		state ^= state << 13
+		state >>>= 0
+		state ^= state >>> 17
+		state ^= state << 5
+		state >>>= 0
 		return state % limit
 	}
 }
@@ -93,22 +98,39 @@ describe('utils.bigint', () => {
 		const random = createRandom(1)
 		const prefixes = ['0x', '0X', '', ' 0x', '0x0', '00']
 		const digits = '0123456789abcdefABCDEF'
+		const maximumBodyLength = 69
+		const usedPrefixes = new Set<string>()
+		const usedBodyLengths = new Set<number>()
+		const usedDigits = new Set<string>()
 		for (let iteration = 0; iteration < 5_000; iteration++) {
 			const prefix = prefixes[random(prefixes.length)] ?? '0x'
-			const body = Array.from({ length: random(70) }, () => digits[random(digits.length)]).join('')
+			const body = Array.from({ length: random(maximumBodyLength + 1) }, () => digits[random(digits.length)] ?? '0').join('')
+			usedPrefixes.add(prefix)
+			usedBodyLengths.add(body.length)
+			for (const digit of body) usedDigits.add(digit)
 			assertSameStringConversion(`${ prefix }${ body }`)
 		}
+		assert.equal(usedPrefixes.size, prefixes.length, 'every prefix variant is generated')
+		assert.equal(usedBodyLengths.size, maximumBodyLength + 1, 'every body length from 0 to the maximum is generated')
+		assert.equal(usedDigits.size, digits.length, 'every hex digit in both cases is generated')
 	})
 
 	test('matches the per-byte BigInt conversion when encoding bigints into a fixed number of bytes', () => {
 		const random = createRandom(2)
+		const maximumNumberOfBytes = 39
+		const usedSizes = new Set<number>()
+		const usedByteValues = new Set<number>()
 		for (let iteration = 0; iteration < 5_000; iteration++) {
-			const numberOfBytes = random(40)
-			const valueBytes = random(numberOfBytes + 2)
-			const value = valueBytes === 0 ? 0n : BigInt(`0x${ Array.from({ length: valueBytes }, () => random(256).toString(16).padStart(2, '0')).join('') }`)
+			const numberOfBytes = random(maximumNumberOfBytes + 1)
+			const valueBytes = Array.from({ length: random(numberOfBytes + 2) }, () => random(256))
+			usedSizes.add(numberOfBytes)
+			for (const byte of valueBytes) usedByteValues.add(byte)
+			const value = valueBytes.length === 0 ? 0n : BigInt(`0x${ valueBytes.map((byte) => byte.toString(16).padStart(2, '0')).join('') }`)
 			assertSameBigintConversion(value, numberOfBytes)
 			assertSameBigintConversion(value, numberOfBytes + 0.5)
 		}
+		assert.equal(usedSizes.size, maximumNumberOfBytes + 1, 'every size from 0 to the maximum is generated')
+		assert.equal(usedByteValues.size, 256, 'every byte value is generated')
 		assertSameBigintConversion(0n, 0)
 		assertSameBigintConversion(1n, 0)
 		assertSameBigintConversion(-1n, 32)
