@@ -673,3 +673,32 @@ test('the write that answers a request stores exactly the pending requests and t
 	}
 	assert.deepEqual(writtenKeys.filter((keys) => keys.includes('pendingTerminalReplies')), [['pendingTerminalReplies', 'pendingTransactionsAndMessages']])
 })
+
+test('a delivered popup-close rejection is not posted again when a storage write after its delivery fails', async () => {
+	const messagesPostedToPage: unknown[] = []
+	let rejectionPosted = false
+	const page = await startPageConnection(messagesPostedToPage, (message) => { if (isCloseRejection(message)) rejectionPosted = true })
+	await sendPersonalSignFromPage(page, 'first message')
+	// The first write of the pending requests after the rejection reached the page fails once, which then retries the no-response resolution.
+	let pendingRequestWriteFailedAfterDelivery = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (rejectionPosted && !pendingRequestWriteFailedAfterDelivery && 'pendingTransactionsAndMessages' in items) {
+			pendingRequestWriteFailedAfterDelivery = true
+			throw new Error('storage write failed')
+		}
+		writeStoredItems()
+	})
+	try {
+		await withSilencedConsole(async () => {
+			await modules.onCloseWindowOrTab((await getOnlyPendingRequest()).popupOrTabId, simulator.ethereum, simulator.tokenPriceService, page.connections)
+			// Long enough for the no-response retry to run, and to post again if it would.
+			await new Promise((resolve) => setTimeout(resolve, 300))
+		})
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(pendingRequestWriteFailedAfterDelivery, true)
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})

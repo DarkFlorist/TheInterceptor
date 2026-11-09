@@ -6,7 +6,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply, removePendingTerminalReplyWithAnsweredRequest } from './pendingTerminalReplies.js'
 import type { DecidePendingRequestInstance, PendingRequestInstance } from './pendingRequestDecisions.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
@@ -16,16 +16,22 @@ const terminalReplySemaphore = new Semaphore(1)
 const terminalReplyFlushRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS = 50
 
-async function finishPreviouslyDeliveredTerminalReply(identifier: string, message: InterceptedRequestForward) {
+// Drops a delivered reply from the outbox, and with it, in the same storage write, the pending request it answered when that request is still pending.
+const removeDeliveredTerminalReply = async (message: InterceptedRequestForward, answeredRequest: PendingRequestInstance | undefined) => answeredRequest === undefined
+	? await removePendingTerminalReply(message.uniqueRequestIdentifier)
+	: await removePendingTerminalReplyWithAnsweredRequest(message.uniqueRequestIdentifier, answeredRequest)
+
+async function finishPreviouslyDeliveredTerminalReply(identifier: string, message: InterceptedRequestForward, answeredRequest?: PendingRequestInstance) {
 	if (!completedTerminalReplies.has(identifier)) return false
-	await removePendingTerminalReply(message.uniqueRequestIdentifier)
+	await removeDeliveredTerminalReply(message, answeredRequest)
 	completedTerminalReplies.delete(identifier)
 	return true
 }
 
-async function recordSuccessfulTerminalReplyDelivery(identifier: string, message: InterceptedRequestForward, keepCompletionMarker: boolean) {
+// The completion marker is set before the outbox cleanup and cleared only after it succeeds, so a delivery whose cleanup failed is finished later without posting the reply again.
+async function recordSuccessfulTerminalReplyDelivery(identifier: string, message: InterceptedRequestForward, keepCompletionMarker: boolean, answeredRequest?: PendingRequestInstance) {
 	completedTerminalReplies.add(identifier)
-	await removePendingTerminalReply(message.uniqueRequestIdentifier)
+	await removeDeliveredTerminalReply(message, answeredRequest)
 	if (!keepCompletionMarker) completedTerminalReplies.delete(identifier)
 }
 
@@ -48,15 +54,16 @@ export async function queueTerminalReplyWithPendingRequestDecision(message: Inte
 	}
 }
 
-export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
+// answeredRequest, when given, is a pending request kept until its reply is delivered; it is removed in the same storage write that drops the delivered reply from the outbox.
+export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, answeredRequest?: PendingRequestInstance) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
 	if (existingProduction !== undefined) return await existingProduction
 	const production = (async () => {
 		const deliver = async () => await terminalReplySemaphore.execute(async () => {
-			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
+			if (await finishPreviouslyDeliveredTerminalReply(identifier, message, answeredRequest)) return true
 			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
-			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
+			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false, answeredRequest)
 			return delivery
 		})
 		return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, deliver)

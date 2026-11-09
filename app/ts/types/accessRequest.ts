@@ -94,7 +94,7 @@ export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<t
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
-// ClosedWithoutResponse: the popup closed without a decision and the rejection is queued as the request's one terminal outcome; it stays pending only until that rejection is delivered.
+// ClosedWithoutResponse: the popup closed without a decision and the rejection is queued as the request's one terminal outcome. The request leaves the queue in the same storage write that drops the delivered rejection from the outbox, or right away when the rejection could not be delivered.
 const PendingTransactionApprovalStatus = funtypes.Union(
 	funtypes.ReadonlyObject({ status: funtypes.Union(funtypes.Literal('WaitingForUser'), funtypes.Literal('WaitingForSigner'), funtypes.Literal('ClosedWithoutResponse')) }),
 	funtypes.ReadonlyObject({

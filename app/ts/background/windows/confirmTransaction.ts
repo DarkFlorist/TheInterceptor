@@ -472,11 +472,13 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
 			uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier,
 		}
-		// Claims the request's one terminal outcome in one storage write: the rejection is queued and the request marked ClosedWithoutResponse, so a wallet reply or another decision can no longer complete it. The rejection is delivered before the request is removed, so a failed outbox cleanup leaves it for the no-response retry instead of reposting.
+		// Claims the request's one terminal outcome in one storage write: the rejection is queued and the request marked ClosedWithoutResponse, so a wallet reply or another decision can no longer complete it.
 		const claim = await queueTerminalReplyWithPendingRequestDecision(rejection, resolvedInstance, (current) => ({ type: 'store', pending: modifyObject(current, { approvalStatus: { status: 'ClosedWithoutResponse' } }) }))
 		if (claim === 'unchanged') return false
-		const noResponseDelivery = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, rejection)
-		await removePendingRequestAndUpdateView()
+		// A delivered rejection leaves the outbox in the same storage write that removes the request, so a failure leaves both and the no-response retry finds it delivered rather than posting it again. An undelivered rejection stays queued for the website's next connection, and the request leaves the queue now.
+		const noResponseDelivery = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, rejection, resolvedInstance)
+		if (noResponseDelivery !== true) await removePendingTransactionOrMessageInstance(resolvedInstance, canCompleteStoredRequest)
+		await updateViewAfterPendingRequestRemoved('unchanged')
 		return noResponseDelivery
 	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
