@@ -159,6 +159,12 @@ export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalSto
 }
 export const serializeBrowserStorageLocalItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
 
+// Marks a reply outbox that pendingTerminalReplies.ts prepared under its lock. It is declared here, beside the storage layer both modules use, so storageVariables.ts can accept it without importing the outbox module; an architecture test holds that only pendingTerminalReplies.ts uses it, so no other module can build one.
+export const pendingTerminalRepliesWriteBrand: unique symbol = Symbol('pendingTerminalRepliesWriteBrand')
+
+// The reply outbox to store in the same storage write as a pending request decision.
+export type PendingTerminalRepliesWrite = { readonly [pendingTerminalRepliesWriteBrand]: true, readonly storedItems: ReturnType<typeof serializeBrowserStorageLocalItems> }
+
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	return await browser.storage.local.set(serializeBrowserStorageLocalItems(items))
 }

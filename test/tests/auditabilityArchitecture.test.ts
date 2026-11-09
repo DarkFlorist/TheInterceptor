@@ -1,5 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
+import { dirname, join, normalize } from 'node:path'
+import ts from 'typescript'
 import * as simulationFacade from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import * as simulationTransactionSigning from '../../app/ts/simulation/services/simulationTransactionSigning.js'
@@ -123,6 +125,60 @@ test('historical popup wire spellings are explicit protocol exceptions', () => {
 test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('toString'), false)
 	assert.equal(isPopupMessageMethod('__proto__'), false)
+})
+
+const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+const parseAppSource = async (path: string) => ts.createSourceFile(path, await Bun.file(join(appSourceDirectory, path)).text(), ts.ScriptTarget.Latest, false, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+
+// Every module of the extension source with the modules it imports or re-exports from, type-only ones included, as paths relative to app/ts.
+async function readAppImportGraph() {
+	const paths = new Set<string>()
+	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) paths.add(path)
+	const resolve = (path: string) => paths.has(path) ? path : path.replace(/\.ts$/u, '.tsx')
+	const graph = new Map<string, ReadonlySet<string>>()
+	for (const path of paths) {
+		const imported = new Set<string>()
+		for (const statement of (await parseAppSource(path)).statements) {
+			if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue
+			if (statement.moduleSpecifier === undefined || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.moduleSpecifier.text.startsWith('.')) continue
+			imported.add(resolve(normalize(join(dirname(path), statement.moduleSpecifier.text)).replace(/\.js$/u, '.ts')))
+		}
+		graph.set(path, imported)
+	}
+	return graph
+}
+
+const findReachableModules = (graph: ReadonlyMap<string, ReadonlySet<string>>, start: string) => {
+	const reached = new Set<string>()
+	const pending = [start]
+	for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+		for (const imported of graph.get(path) ?? []) {
+			if (reached.has(imported)) continue
+			reached.add(imported)
+			pending.push(imported)
+		}
+	}
+	return reached
+}
+
+test('storageVariables.ts imports nothing from pendingTerminalReplies.ts, not even a type, so the two modules have no import cycle', async () => {
+	const graph = await readAppImportGraph()
+	assert.equal(graph.get('background/pendingTerminalReplies.ts')?.has('background/storageVariables.ts'), true)
+	assert.equal(graph.get('background/storageVariables.ts')?.has('background/pendingTerminalReplies.ts'), false)
+	assert.equal(findReachableModules(graph, 'background/storageVariables.ts').has('background/pendingTerminalReplies.ts'), false)
+})
+
+// Building a PendingTerminalRepliesWrite needs this symbol's value, so limiting who names it limits who can build one. Comments do not count.
+test('only the outbox module and its declaration name the pending terminal replies write brand', async () => {
+	const filesNamingBrand = new Set<string>()
+	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) {
+		const visit = (node: ts.Node) => {
+			if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text === 'pendingTerminalRepliesWriteBrand') filesNamingBrand.add(path)
+			ts.forEachChild(node, visit)
+		}
+		visit(await parseAppSource(path))
+	}
+	assert.deepEqual([...filesNamingBrand].sort(), ['background/pendingTerminalReplies.ts', 'utils/storageUtils.ts'])
 })
 
 // The background owns the confirmation queue and sends it over the message protocol, so the window neither reads browser storage nor imports the background's storage module.

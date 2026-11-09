@@ -2,14 +2,10 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet, serializeBrowserStorageLocalItems } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet, browserStorageLocalSet, pendingTerminalRepliesWriteBrand, serializeBrowserStorageLocalItems } from '../utils/storageUtils.js'
 import { type DecidePendingRequestInstance, type PendingRequestInstance, writePendingRequestsWithTerminalReplies } from './storageVariables.js'
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
-const outboxLockIsHeld: unique symbol = Symbol('outboxLockIsHeld')
-
-// The outbox contents to store with a pending request decision. The private symbol means only this module can build one, which it does while holding the outbox lock, so the outbox's read-modify-write cannot race a flush.
-export type PendingTerminalRepliesWrite = { readonly [outboxLockIsHeld]: true, readonly storedItems: ReturnType<typeof serializeBrowserStorageLocalItems> }
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
@@ -37,7 +33,7 @@ export async function appendPendingTerminalReplyWithPendingRequestDecision(reply
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
 		const otherReplies = (await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
 		const storedItems = serializeBrowserStorageLocalItems({ pendingTerminalReplies: [...otherReplies, reply] })
-		return await writePendingRequestsWithTerminalReplies({ [outboxLockIsHeld]: true, storedItems }, instance, decide)
+		return await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, storedItems }, instance, decide)
 	})
 }
 
