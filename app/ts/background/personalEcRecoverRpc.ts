@@ -1,5 +1,5 @@
 import type { RPCReply } from '../types/interceptor-messages.js'
-import { RecoverableMessageSignature, type PersonalEcRecover } from '../types/JsonRpc-types.js'
+import type { PersonalEcRecover, RecoverableMessageSignature } from '../types/JsonRpc-types.js'
 import type { SignedMessageTransaction } from '../types/visualizer-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
