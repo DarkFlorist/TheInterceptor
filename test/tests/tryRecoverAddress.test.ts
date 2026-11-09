@@ -69,6 +69,7 @@ describe('ethereumRecovery import boundaries', () => {
 			'import type { CurveFn } from \'@noble/curves/abstract/weierstrass.js\'',
 			'export { secp256k1 } from \'@noble/curves/secp256k1.js\'',
 			'import * as curves from \'@noble/curves\'',
+			'import curves = require(\'@noble/curves\')',
 			'const curves = await import(\'@noble/curves/secp256k1.js\')',
 			'const curves = await import("@noble/curves/secp256k1.js")',
 			'const curves = await import(`@noble/curves/secp256k1.js`)',
