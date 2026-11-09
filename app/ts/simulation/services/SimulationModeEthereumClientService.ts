@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
+import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getSignedMessagesEcRecoverOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
@@ -344,6 +344,9 @@ const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBloc
 	}
 }
 
+// A block appended after a prepared simulation prefix keeps verifying the simulated signatures of that prefix only if it carries their ecrecover override itself.
+const getEcRecoverOverrideAfterPrefix = async (context: PreparedSimulationExecutionContext | undefined, simulationPrefixBlockCount: number) => await getSignedMessagesEcRecoverOverride((context?.prepared.rpcBlocks.slice(0, simulationPrefixBlockCount) ?? []).flatMap((block) => block.signedMessages))
+
 const simulateBlockCallWithPreparedInputContext = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -370,7 +373,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: extraOverrides,
+			stateOverrides: { ...await getEcRecoverOverrideAfterPrefix(context, simulationPrefixBlockCount), ...extraOverrides },
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -1179,9 +1182,11 @@ export const ethSimulateV1FromInput = async (
 	if (request.params[0].validation === true) throwEthSimulateV1ValidationWithSimulationStackError()
 
 	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
+	const ecRecoverOverride = await getEcRecoverOverrideAfterPrefix(context, simulationPrefixBlockCount)
+	const requestedBlockStateCalls = request.params[0].blockStateCalls.map((blockStateCall) => ({ ...blockStateCall, stateOverrides: { ...ecRecoverOverride, ...blockStateCall.stateOverrides } }))
 	const payload: EthSimulateV1Params['params'][0] = {
 		...request.params[0],
-		blockStateCalls: [...simulationPrefixBlockStateCalls, ...request.params[0].blockStateCalls],
+		blockStateCalls: [...simulationPrefixBlockStateCalls, ...requestedBlockStateCalls],
 		validation: false,
 	}
 	const prefixedRequest: EthSimulateV1Params = {

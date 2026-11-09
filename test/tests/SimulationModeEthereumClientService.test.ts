@@ -10,7 +10,7 @@ import { createExecutionSimulationState, createSimulationCallParams, createSimul
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { type SignedMessageTransaction, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -2515,4 +2515,45 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)
 				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
 			})
+
+	describe('blocks appended on top of a simulated signed message', () => {
+		const ecRecoverAddress = addressString(1n)
+		const signedMessage = {
+			website: { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined },
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			fakeSignedFor: exampleTransaction.from,
+			originalRequestParameters: { method: 'personal_sign', params: ['0x68656c6c6f', exampleTransaction.from] },
+			request: { method: 'personal_sign', params: ['0x68656c6c6f', exampleTransaction.from] },
+			simulationMode: true,
+			messageIdentifier: 1n,
+		} satisfies SignedMessageTransaction
+		const createSignedMessageSimulationStateInput = () => createSimulationStateInput().map((block) => ({ ...block, signedMessages: [signedMessage] }))
+		const callParams = { from: exampleTransaction.from, to: exampleTransaction.to, value: 0n, input: new Uint8Array(), maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
+
+		// The appended block must carry the stack's ecrecover override itself, since eth_simulateV1 restores the ecrecover precompile at the start of every block.
+		const assertAppendedBlockKeepsStackEcRecoverOverride = () => {
+			const blockStateCalls = requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls
+			const stackEcRecoverOverride = blockStateCalls?.[0]?.stateOverrides?.[ecRecoverAddress]
+			assert.equal(blockStateCalls?.length, 2)
+			assert.equal(Object.values(stackEcRecoverOverride?.state ?? {}).includes(exampleTransaction.from), true)
+			assert.deepEqual(blockStateCalls?.at(-1)?.stateOverrides?.[ecRecoverAddress], stackEcRecoverOverride)
+		}
+
+		test('eth_call', async () => {
+			const callResult = await simulatedCallFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), callParams)
+			if ('error' in callResult) throw new Error(`simulated call unexpectedly failed: ${ callResult.message }`)
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		test('eth_estimateGas', async () => {
+			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), callParams)
+			if ('error' in estimateGas) throw new Error(`gas estimation unexpectedly failed: ${ estimateGas.error.message }`)
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
+		test('website eth_simulateV1', async () => {
+			await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), createDappEthSimulateV1Request())
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+	})
 		})
