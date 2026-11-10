@@ -116,10 +116,11 @@ export const updateContentScriptInjectionStrategyManifestV3 = async ({ injection
 				if (currentRegisteredContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: currentRegisteredContentScriptIds })
 				if (previousRegisteredContentScripts.length > 0) await browser.scripting.registerContentScripts(previousRegisteredContentScripts)
 			} catch (rollbackError) {
+				// A failed rollback is a second failure that the rethrown registration error does not carry, so only it is reported here.
 				await reportUnexpectedError(rollbackError, { code: 'content_script_registration_rollback_failed' })
 			}
 		}
-		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+		// The caller reports the registration failure with the code of its own context, so it is only rethrown here.
 		throw error
 	}
 }

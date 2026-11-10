@@ -17,8 +17,7 @@ const registeredContentScripts = new Map<string, { readonly id: string, readonly
 const contentScriptRegistrationOperations: string[] = []
 const reloadedTabs: number[] = []
 let storageSetError: Error | undefined
-let storageSetErrorAfterWebsiteAccess: Error | undefined
-let failNextStorageSet = false
+let websiteAccessStorageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let contentScriptRegistrationError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
@@ -48,14 +47,8 @@ Reflect.set(globalThis, 'browser', {
 			},
 			async set(items: Record<string, unknown>) {
 				if (storageSetError !== undefined) throw storageSetError
-				if (failNextStorageSet && storageSetErrorAfterWebsiteAccess !== undefined) {
-					failNextStorageSet = false
-					const error = storageSetErrorAfterWebsiteAccess
-					storageSetErrorAfterWebsiteAccess = undefined
-					throw error
-				}
+				if ('websiteAccess' in items && websiteAccessStorageSetError !== undefined) throw websiteAccessStorageSetError
 				Object.assign(storageState, items)
-				if ('websiteAccess' in items && !('metamaskCompatibilityMode' in items) && storageSetErrorAfterWebsiteAccess !== undefined) failNextStorageSet = true
 			},
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -180,8 +173,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 
 beforeEach(() => {
 	storageSetError = undefined
-	storageSetErrorAfterWebsiteAccess = undefined
-	failNextStorageSet = false
+	websiteAccessStorageSetError = undefined
 	dynamicRuleUpdateError = undefined
 	contentScriptRegistrationError = undefined
 	addressBookBroadcastWait = undefined
@@ -594,7 +586,7 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('reports import failure and restores the full previous settings when a later storage write fails', async () => {
+	test('reports import failure and keeps every previous setting when the import storage write fails', async () => {
 		const previousWebsiteAccess = [{
 			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
 			addressAccess: [],
@@ -606,7 +598,7 @@ describe('popup message dispatcher seams', () => {
 		storageState.websiteAccess = previousWebsiteAccess
 		registeredContentScripts.set('inpage', { id: 'inpage', js: ['/inpage/js/inpage.js'] })
 		registeredContentScripts.set('inpage2', { id: 'inpage2', js: ['/inpage/js/listenContentScript.js'] })
-		storageSetErrorAfterWebsiteAccess = new Error('Later imported setting could not be stored')
+		websiteAccessStorageSetError = new Error('Imported settings could not be stored')
 		const importedSettings = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
 			version: '1.4',
@@ -647,7 +639,7 @@ describe('popup message dispatcher seams', () => {
 		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
-		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Later imported setting could not be stored' })
+		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Imported settings could not be stored' })
 		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), false)
 		assert.equal(storageState.metamaskCompatibilityMode, false)
 		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)

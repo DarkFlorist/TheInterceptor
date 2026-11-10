@@ -98,10 +98,10 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
-export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
+type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSigningSafeAddress'),
@@ -191,17 +191,6 @@ export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalSto
 }
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
-}
-
-// Captures the stored values of keys without parsing them; the returned restore writes them back verbatim and removes keys that were absent.
-export async function snapshotBrowserStorageLocalKeys(keys: readonly LocalStorageKey[]) {
-	const storedItems: Record<string, unknown> = await browser.storage.local.get([...keys])
-	const presentItems = Object.fromEntries(keys.flatMap((key) => storedItems[key] === undefined ? [] : [[key, storedItems[key]]]))
-	const absentKeys = keys.filter((key) => storedItems[key] === undefined)
-	return async () => {
-		await browser.storage.local.set(presentItems)
-		if (absentKeys.length > 0) await browser.storage.local.remove(absentKeys)
-	}
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

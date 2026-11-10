@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { browserStorageLocalGet, browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -10,6 +10,8 @@ function createBrowserStorageMock() {
 	const storageState: Record<string, unknown> = {}
 	let signingPreferenceWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
 	let addressBookWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
+	let nextSetError: Error | undefined
+	const setCalls: Record<string, unknown>[] = []
 
 	const getItems = (keys?: StorageKeyInput) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -38,6 +40,12 @@ function createBrowserStorageMock() {
 					return getItems(keys)
 				},
 				async set(items: Record<string, unknown>) {
+					setCalls.push(items)
+					if (nextSetError !== undefined) {
+						const error = nextSetError
+						nextSetError = undefined
+						throw error
+					}
 					if ('userAddressBookEntriesV3' in items && addressBookWriteGate !== undefined) {
 						const gate = addressBookWriteGate
 						addressBookWriteGate = undefined
@@ -83,10 +91,18 @@ function createBrowserStorageMock() {
 			signingPreferenceWriteGate = { started: markStarted, waitForRelease }
 			return { started, release }
 		},
+		failNextWrite(error: Error) {
+			nextSetError = error
+		},
+		takeSetCalls() {
+			return setCalls.splice(0, setCalls.length)
+		},
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			addressBookWriteGate = undefined
 			signingPreferenceWriteGate = undefined
+			nextSetError = undefined
+			setCalls.splice(0, setCalls.length)
 			installGlobals()
 		},
 	}
@@ -99,7 +115,6 @@ const settingsModulePromise = import('../../app/ts/background/settings.js').then
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
-const settingsTransactionsModulePromise = import('../../app/ts/background/settingsTransactions.js')
 
 const readWholeStorage = async () => structuredClone(await browser.storage.local.get(null))
 
@@ -478,49 +493,87 @@ describe('settings import', () => {
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 
-	test('a failed import of any export version rolls back every storage key the import wrote', async () => {
-		const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await settingsModulePromise
-		const { withSettingsImportRollback } = await settingsTransactionsModulePromise
-		const currentVersionExport = await exportSettingsAndAddressBook()
-		const exportsOfEveryVersion = [
+	const buildExportsOfEveryVersion = async () => {
+		const { exportSettingsAndAddressBook } = await settingsModulePromise
+		return [
 			buildVersion10Import(),
 			buildVersion12Import(true, true),
 			buildVersion13Import(),
 			buildVersion14Import(true, true, [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, access: true }]),
-			currentVersionExport,
+			await exportSettingsAndAddressBook(),
 		]
-		for (const exportedSettings of exportsOfEveryVersion) {
+	}
+
+	const storePreImportSettings = async () => {
+		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
+		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: testRpcNetwork, activeSimulationAddress: 0x9292929292929292929292929292929292929292n, activeSigningAddress: 0x9393939393939393939393939393939393939393n, activeSigningSafeAddress: 0x9494949494949494949494949494949494949494n })
+		await rememberSigningAddressPreference({ signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer', chainId: testRpcNetwork.chainId })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'pre-import.example', icon: undefined, title: 'Pre-import' }, access: false }])
+		await setPage({ page: 'Home' })
+		await setUseTabsInsteadOfPopup(false)
+		await setSafeAppsCompatibilityMode(true)
+		await persistMetamaskCompatibilityMode(false)
+	}
+
+	test('every export version writes all of its storage changes in a single storage set', async () => {
+		const { importSettingsAndAddressBook } = await settingsModulePromise
+		for (const exportedSettings of await buildExportsOfEveryVersion()) {
 			browserMock.reset()
-			const importFailure = new Error(`Import of version ${ exportedSettings.version } failed after writing`)
-			let storageWrittenByImport: Record<string, unknown> = {}
-			await assert.rejects(withSettingsImportRollback(async () => {
-				await importSettingsAndAddressBook(exportedSettings)
-				storageWrittenByImport = await readWholeStorage()
-				throw importFailure
-			}), importFailure)
-			assert.notDeepEqual(Object.keys(storageWrittenByImport), [], `version ${ exportedSettings.version } import wrote nothing`)
-			assert.deepEqual(await readWholeStorage(), {}, `version ${ exportedSettings.version } import left keys behind after rollback`)
+			await storePreImportSettings()
+			browserMock.takeSetCalls()
+
+			await importSettingsAndAddressBook(exportedSettings)
+
+			assert.equal(browserMock.takeSetCalls().length, 1, `version ${ exportedSettings.version } import wrote storage more than once`)
 		}
 	})
 
-	test('a failed import restores the active signing address that settings exports do not carry', async () => {
-		const activeSigningAddress = 0x7777777777777777777777777777777777777777n
-		const { changeSimulationMode, exportSettingsAndAddressBook, importSettingsAndAddressBook, persistMetamaskCompatibilityMode } = await settingsModulePromise
-		const { withSettingsImportRollback } = await settingsTransactionsModulePromise
-		const exportedSettings = await exportSettingsAndAddressBook()
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
-		await changeSimulationMode({ simulationMode: false, activeSigningAddress })
-		await persistMetamaskCompatibilityMode(true)
-		const storageBeforeImport = await readWholeStorage()
-		const importFailure = new Error('Import failed after replacing the signing address')
+	test('a failed import storage write leaves storage unchanged for every export version', async () => {
+		const { importSettingsAndAddressBook } = await settingsModulePromise
+		for (const exportedSettings of await buildExportsOfEveryVersion()) {
+			browserMock.reset()
+			await storePreImportSettings()
+			const storageBeforeImport = await readWholeStorage()
+			const writeFailure = new Error(`Import of version ${ exportedSettings.version } could not be stored`)
+			browserMock.failNextWrite(writeFailure)
 
-		await assert.rejects(withSettingsImportRollback(async () => {
-			await importSettingsAndAddressBook({ ...exportedSettings, settings: { ...exportedSettings.settings, useSignersAddressAsActiveAddress: true } })
-			assert.equal((await browserStorageLocalGet('activeSigningAddress')).activeSigningAddress, undefined)
-			throw importFailure
-		}), importFailure)
+			await assert.rejects(importSettingsAndAddressBook(exportedSettings), writeFailure)
 
-		assert.equal((await browserStorageLocalGet('activeSigningAddress')).activeSigningAddress, activeSigningAddress)
-		assert.deepEqual(await readWholeStorage(), storageBeforeImport)
+			assert.deepEqual(await readWholeStorage(), storageBeforeImport, `version ${ exportedSettings.version } import changed storage although its write failed`)
+		}
+	})
+
+	test('writers of website access, signing preferences and the address book that start during an import apply on top of the imported values', async () => {
+		const importedSignerAddress = 0x9696969696969696969696969696969696969696n
+		const laterSignerAddress = 0x9797979797979797979797979797979797979797n
+		const laterContactAddress = 0x9898989898989898989898989898989898989898n
+		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
+		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const currentVersionExport = (await buildExportsOfEveryVersion()).at(-1)
+		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
+		const exportedSettings: ExportedSettings = {
+			...currentVersionExport,
+			settings: {
+				...currentVersionExport.settings,
+				websiteAccess: [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, access: true }],
+				signingAddressPreferences: [{ signerAddress: importedSignerAddress, selection: 'signer', chainId: testRpcNetwork.chainId }],
+				addressBookEntries: [{ type: 'contact', name: 'Imported contact', address: 0x9999999999999999999999999999999999999999n, entrySource: 'User', useAsActiveAddress: true }],
+			},
+		}
+		const importWriteGate = browserMock.blockNextAddressBookWrite()
+		const settingsImport = importSettingsAndAddressBook(exportedSettings)
+		await importWriteGate.started
+
+		const laterWebsiteAccessUpdate = updateWebsiteAccess((entries) => [...entries, { website: { websiteOrigin: 'later.example', icon: undefined, title: 'Later' }, access: false }])
+		const laterPreferenceUpdate = rememberSigningAddressPreference({ signerAddress: laterSignerAddress, selection: 'signer', chainId: testRpcNetwork.chainId })
+		const laterAddressBookUpdate = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'Later contact', address: laterContactAddress, entrySource: 'User', useAsActiveAddress: false }])
+		importWriteGate.release()
+		await Promise.all([settingsImport, laterWebsiteAccessUpdate, laterPreferenceUpdate, laterAddressBookUpdate])
+
+		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['imported.example', 'later.example'])
+		assert.deepEqual((await getSigningAddressPreferences()).map(({ signerAddress }) => signerAddress), [importedSignerAddress, laterSignerAddress])
+		assert.deepEqual((await getUserAddressBookEntries()).map(({ name }) => name), ['Imported contact', 'Later contact'])
 	})
 })

@@ -1,7 +1,6 @@
 import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { Semaphore } from '../utils/semaphore.js'
-import { snapshotSettingsImportStorage, updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
+import { updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
 
 // Equality, and for transaction-rolled-back types also rollback, for every field of a stored type; the mapped types make a field added to that type without a rule here a compile error.
 type FieldEquality<T> = { readonly [Key in keyof T]-?: { readonly isSame: (first: T[Key], second: T[Key]) => boolean } }
@@ -117,23 +116,4 @@ export async function withWebsiteAccessRollback(update: (previousWebsiteAccess: 
 		}
 		throw error
 	}
-}
-
-const settingsImportSemaphore = new Semaphore(1)
-
-// Restores the raw pre-import values of every storage key the import writes when the import fails.
-export async function withSettingsImportRollback<T>(importSettings: () => Promise<T>) {
-	return await settingsImportSemaphore.execute(async () => {
-		const restorePreImportStorage = await snapshotSettingsImportStorage()
-		try {
-			return await importSettings()
-		} catch (error: unknown) {
-			try {
-				await restorePreImportStorage()
-			} catch (rollbackError: unknown) {
-				await reportUnexpectedError(rollbackError, { code: 'settings_import_rollback_failed' })
-			}
-			throw error
-		}
-	})
 }

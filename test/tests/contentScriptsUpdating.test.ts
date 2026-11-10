@@ -477,14 +477,12 @@ describe('content script injection strategy', () => {
 		})
 		const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { persistMetamaskCompatibilityMode } = await import('../../app/ts/background/settings.js')
-		const { withSettingsImportRollback } = await import('../../app/ts/background/settingsTransactions.js')
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 
 		await withSilencedConsole(async () => {
 			const settingsImport = updateAllContentScriptConfigurationAfterSettingsImport(
 				new Map(),
 				async () => await persistMetamaskCompatibilityMode(true),
-				withSettingsImportRollback,
 			)
 			await registrationStarted.promise
 			const queuedCompatibilityUpdate = setMetamaskCompatibilityMode(new Map(), true)
@@ -511,14 +509,12 @@ describe('content script injection strategy', () => {
 		})
 		const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { persistMetamaskCompatibilityMode } = await import('../../app/ts/background/settings.js')
-		const { withSettingsImportRollback } = await import('../../app/ts/background/settingsTransactions.js')
 		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
 
 		await withSilencedConsole(async () => {
 			const settingsImport = updateAllContentScriptConfigurationAfterSettingsImport(
 				new Map(),
 				async () => await persistMetamaskCompatibilityMode(true),
-				withSettingsImportRollback,
 			)
 			await registrationStarted.promise
 			const queuedWebsiteAccessUpdate = updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), () => disabledWebsiteAccess)
@@ -545,7 +541,7 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getReloadedTabs(), [42])
 	})
 
-	test('website access changes skip connected-tab reload when manifest v3 registration refresh fails', async () => {
+	test('website access changes roll back and skip connected-tab reload when manifest v3 registration refresh fails', async () => {
 		const registrationError = new Error('website access registration refresh failed')
 		const { getReloadedTabs, getStorageState } = installBrowserMock({
 			registeredContentScriptIds: ['inpage', 'inpage2'],
@@ -555,11 +551,23 @@ describe('content script injection strategy', () => {
 		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
 		const { getLatestUnexpectedError } = await loadModules()
 
-		await withSilencedConsole(async () => await assert.rejects(updateWebsiteAccessAndContentScriptInjectionStrategy(new Map([[42, { connections: {} }]]), () => []), registrationError))
+		await withSilencedConsole(async () => await updateWebsiteAccessAndContentScriptInjectionStrategy(new Map([[42, { connections: {} }]]), () => []))
 
 		assert.deepEqual(getReloadedTabs(), [])
 		assert.deepEqual(getStorageState().websiteAccess, disabledWebsiteAccess)
 		assert.equal((await getLatestUnexpectedError())?.data.message, registrationError.message)
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'website_access_content_script_refresh_failed')
+	})
+
+	test('a website access update whose own storage write fails propagates the failure unreported', async () => {
+		installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'], websiteAccess: disabledWebsiteAccess })
+		const { updateContentScriptInjectionSitesAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { getInterceptorErrorDiagnostics } = await loadModules()
+		const storageWriteError = new Error('website access could not be stored')
+
+		await assert.rejects(updateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], async () => { throw storageWriteError }), storageWriteError)
+
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
 	})
 
 	test('website access rollback restores every transaction field while preserving concurrent metadata', async () => {
@@ -787,8 +795,8 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'unregister', 'register'])
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage'), previousMainWorldRegistration)
 		assert.deepEqual(getReloadedTabs(), [])
-		assert.equal((await getLatestUnexpectedError())?.data.message, registrationError.message)
-		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.equal(sentMessages.some(({ method }) => method === 'popup_UnexpectedErrorOccured'), false)
 	})
 
 	test('injects the Firefox document-start artifact for the active compatibility mode', async () => {
@@ -818,16 +826,40 @@ describe('content script injection strategy', () => {
 		assert.equal(getStorageGetCalls() > 0, true)
 	})
 
-	test('records manifest v3 registration failures as unexpected errors', async () => {
+	test('startup refresh records manifest v3 registration failures as unexpected errors', async () => {
 		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
-		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
+		const { refreshContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadModules()
 
-		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategyManifestV3(), /registration failed/))
+		await withSilencedConsole(async () => await refreshContentScriptInjectionStrategy())
 
 		const latestUnexpectedError = await getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError?.data.message, 'registration failed')
 		assert.equal(latestUnexpectedError?.data.code, 'content_script_registration_failed')
 		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
+	})
+
+	test('one manifest v3 registration failure is reported exactly once on every refresh path', async () => {
+		const refreshPaths = [
+			{ code: 'content_script_registration_failed', run: async () => await (await import('../../app/ts/background/contentScriptInjectionStrategy.js')).refreshContentScriptInjectionStrategy() },
+			{ code: 'website_access_content_script_refresh_failed', run: async () => await (await import('../../app/ts/background/websiteAccessUpdating.js')).updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), () => disabledWebsiteAccess) },
+			{ code: 'page_world_provider_bootstrap_refresh_failed', run: async () => await (await import('../../app/ts/background/metamaskCompatibilityMode.js')).setMetamaskCompatibilityMode(new Map(), true) },
+			{ code: 'settings_import_content_script_refresh_failed', run: async () => {
+				const { updateAllContentScriptConfigurationAfterSettingsImport } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+				const { persistMetamaskCompatibilityMode } = await import('../../app/ts/background/settings.js')
+				await updateAllContentScriptConfigurationAfterSettingsImport(new Map(), async () => await persistMetamaskCompatibilityMode(true))
+			} },
+		]
+		for (const refreshPath of refreshPaths) {
+			const registrationError = new Error(`registration failed on the ${ refreshPath.code } path`)
+			const { sentMessages } = installBrowserMock({ metamaskCompatibilityMode: false, websiteAccess: [], registerError: registrationError })
+			const { getInterceptorErrorDiagnostics } = await loadModules()
+
+			await withSilencedConsole(refreshPath.run)
+
+			const unexpectedErrorPopups = sentMessages.filter(({ method }) => method === 'popup_UnexpectedErrorOccured')
+			assert.deepEqual(unexpectedErrorPopups.map(({ data }) => data?.code), [refreshPath.code])
+			assert.deepEqual((await getInterceptorErrorDiagnostics()).map(({ code }) => code), [refreshPath.code])
+		}
 	})
 
 	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
