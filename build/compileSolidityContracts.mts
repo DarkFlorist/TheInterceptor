@@ -10,7 +10,6 @@ const generatedModulePath = path.join(projectRoot, 'app', 'ts', 'generated', 'et
 
 const contracts = [
 	{ sourceFile: 'EcRecoverOverride.sol', contractName: 'EcRecoverOverride', exportName: 'ecRecoverOverrideByteCode' },
-	{ sourceFile: 'CompoundGovernanceTimeLockMulticall.sol', contractName: 'CompoundGovernanceTimeLockMulticall', exportName: 'compoundGovernanceTimeLockMulticallByteCode' },
 	{ sourceFile: 'GetCode.sol', contractName: 'GetCode', exportName: 'getCodeByteCode' },
 	{ sourceFile: 'GnosisSafeProxyProxy.sol', contractName: 'GnosisSafeProxyProxy', exportName: 'gnosisSafeProxyProxyByteCode' },
 	{ sourceFile: 'StorageReader.sol', contractName: 'StorageReader', exportName: 'storageReaderByteCode' },

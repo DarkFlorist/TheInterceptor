@@ -12,13 +12,6 @@ export const SimulateExecutionReplyData = funtypes.Union(
 		errorMessage: funtypes.String,
 	}),
 	funtypes.ReadonlyObject({
-		success: funtypes.Literal(false),
-		errorType: funtypes.Literal('MissingAbi'),
-		transactionOrMessageIdentifier: EthereumQuantity,
-		errorMessage: funtypes.String,
-		errorAddressBookEntry: AddressBookEntry,
-	}),
-	funtypes.ReadonlyObject({
 		success: funtypes.Literal(true),
 		transactionOrMessageIdentifier: EthereumQuantity,
 		result: funtypes.ReadonlyObject({

@@ -1,10 +1,9 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGovernanceContractExecution } from '../../../background/backgroundUtils.js'
-import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
-import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
+import type { BlockTimeManipulation, SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
+import { bigintSecondsToDate, checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
@@ -14,26 +13,6 @@ import { useEffect, useRef } from 'preact/hooks'
 import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
 import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
-
-type MissingAbiParams = {
-	errorMessage: string
-	addressBookEntry: AddressBookEntry | undefined
-	renameAddressCallBack: (entry: AddressBookEntry) => void
-}
-
-function MissingAbi(params: MissingAbiParams) {
-	return <div style = 'display: block'>
-		<ErrorComponent warning = { false } text = { params.errorMessage }/>
-		<div style = 'display: flex; justify-content: center; padding-top: 10px'>
-			{ params.addressBookEntry === undefined ? <></> :
-				<button class = { 'button is-primary' } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
-					Add Abi
-				</button>
-			}
-		</div>
-	</div>
-}
-
 
 function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteInputParameters | undefined> }) {
 	const resolvedInputParams = resolveSignal(inputParams)
@@ -92,16 +71,19 @@ type ShowSuccessOrFailureParams = {
 
 const GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Simulating governance execution')
 
+const formatExecutionTime = (blockTimeManipulation: BlockTimeManipulation | undefined) => {
+	if (blockTimeManipulation?.type !== 'SetTimetamp') return undefined
+	return bigintSecondsToDate(blockTimeManipulation.timeToSet).toUTCString()
+}
+
 const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, governanceSimulationState, requestErrorText, simulateGovernanceVote }: ShowSuccessOrFailureParams) => {
-	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
-	const govSimTx = useComputed(() => {
+	// The background simulates the proposal's execution as the last block of the reply. A Compound Timelock executes each action in its own call, so that block can hold several transactions.
+	const executionBlock = useComputed(() => {
 		if (simulateExecutionReply.value?.data.success !== true) return undefined
 		const visualizedBlocks = simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks
-		const lastBlock = visualizedBlocks[visualizedBlocks.length - 1]
-		if (lastBlock === undefined) return undefined
-		return lastBlock.simulatedAndVisualizedTransactions[lastBlock.simulatedAndVisualizedTransactions.length - 1]
+		return visualizedBlocks[visualizedBlocks.length - 1]
 	})
 	const addressMetaData = useComputed(() => {
 		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) return []
@@ -127,32 +109,21 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 	if (simulateExecutionReply.value === undefined) {
 		return <div style = 'display: grid; row-gap: 10px;'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-			{ simTx.value.transaction.to !== undefined && 'abi' in simTx.value.transaction.to && simTx.value.transaction.to.abi !== undefined ?
-				<div style = 'display: flex; justify-content: center;'>
-					<AsyncActionButton
-						class = 'button is-primary'
-						state = { governanceSimulationState }
-						text = 'Simulate execution on a passing vote'
-						pendingText = 'Simulating...'
-						onClick = { simulateGovernanceVote }
-					/>
-				</div>
-			: <> <MissingAbi
-					errorMessage = { missingAbiText }
-					addressBookEntry = { simTx.value.transaction.to }
-					renameAddressCallBack = { renameAddressCallBack }
+			<div style = 'display: flex; justify-content: center;'>
+				<AsyncActionButton
+					class = 'button is-primary'
+					state = { governanceSimulationState }
+					text = 'Simulate execution on a passing vote'
+					pendingText = 'Simulating...'
+					onClick = { simulateGovernanceVote }
 				/>
-			</> }
+			</div>
 		</div>
 	}
 	if (simulateExecutionReply.value.data.success === false) {
 		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-			{ simulateExecutionReply.value.data.errorType === 'MissingAbi' ? <MissingAbi
-				errorMessage = { missingAbiText }
-				addressBookEntry = { simulateExecutionReply.value.data.errorAddressBookEntry }
-				renameAddressCallBack = { renameAddressCallBack }
-			/> : <ErrorComponent text = { errorText }/> }
+			<ErrorComponent text = { errorText }/>
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
@@ -161,19 +132,23 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
-	if (govSimTx.value === undefined || results.value === undefined) return <></>
+	const simulationAndVisualisationResults = results.value
+	if (executionBlock.value === undefined || simulationAndVisualisationResults === undefined) return <></>
+	const executionTime = formatExecutionTime(executionBlock.value.blockTimeManipulation)
 
 	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-		<Transaction
-			simTx = { govSimTx.value }
-			simulationAndVisualisationResults = { results.value }
+		{ executionTime === undefined ? <></> : <p class = 'paragraph'>{ `Executed by the governor's timelock on ${ executionTime }` }</p> }
+		{ executionBlock.value.simulatedAndVisualizedTransactions.map((executionTransaction) => <Transaction
+			key = { executionTransaction.transactionIdentifier.toString() }
+			simTx = { executionTransaction }
+			simulationAndVisualisationResults = { simulationAndVisualisationResults }
 			removeTransactionOrSignedMessage = { undefined }
 			activeAddress = { activeAddress }
 			renameAddressCallBack = { renameAddressCallBack }
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 			addressMetaData = { addressMetaData }
-		/>
+		/>) }
 	</div>
 }
 

@@ -407,104 +407,126 @@ export const GovernorVoteAbi = [
 	{ type: 'function', name: 'castVoteWithReasonAndParamsBySig', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'voter', type: 'address' }, { name: 'reason', type: 'string' }, { name: 'params', type: 'bytes' }, { name: 'signature', type: 'bytes' }], outputs: [] },
 ] as const satisfies Abi
 
-export const CompoundGovernanceAbi = [
-	{
-		type: 'function',
-		name: 'timelock',
-		stateMutability: 'view',
-		inputs: [],
-		outputs: [{ type: 'address' }],
-	},
+// The governor functions the execution preview reads or calls. Compound-style governors (GovernorAlpha, GovernorBravo and OpenZeppelin's GovernorCompatibilityBravo) answer getActions and proposals; OpenZeppelin governors answer proposalEta, proposalDeadline and proposalSnapshot, and list a proposal's actions through proposalDetails (GovernorStorage) or only in their ProposalCreated event.
+export const GovernorAbi = [
+	{ type: 'function', name: 'timelock', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'address' }] },
+	{ type: 'function', name: 'state', stateMutability: 'view', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [{ name: '', type: 'uint8' }] },
 	{
 		type: 'function',
 		name: 'getActions',
 		stateMutability: 'view',
-		inputs: [{ name: 'id', type: 'uint256' }],
-		outputs: [
-			{ name: 'targets', type: 'address[]' },
-			{ name: 'values', type: 'uint256[]' },
-			{ name: 'signatures', type: 'string[]' },
-			{ name: 'calldatas', type: 'bytes[]' },
-		],
+		inputs: [{ name: 'proposalId', type: 'uint256' }],
+		outputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'signatures', type: 'string[]' }, { name: 'calldatas', type: 'bytes[]' }],
+	},
+	// Only the fields GovernorAlpha and GovernorBravo share at the start of their proposals getter; the fields after endBlock differ between the two.
+	{
+		type: 'function',
+		name: 'proposals',
+		stateMutability: 'view',
+		inputs: [{ name: 'proposalId', type: 'uint256' }],
+		outputs: [{ name: 'id', type: 'uint256' }, { name: 'proposer', type: 'address' }, { name: 'eta', type: 'uint256' }, { name: 'startBlock', type: 'uint256' }, { name: 'endBlock', type: 'uint256' }],
 	},
 	{
 		type: 'function',
-		name: 'submitVote',
-		stateMutability: 'nonpayable',
-		inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'bool' }],
-		outputs: [],
+		name: 'proposalDetails',
+		stateMutability: 'view',
+		inputs: [{ name: 'proposalId', type: 'uint256' }],
+		outputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'descriptionHash', type: 'bytes32' }],
 	},
+	{ type: 'function', name: 'proposalEta', stateMutability: 'view', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [{ name: '', type: 'uint256' }] },
+	{ type: 'function', name: 'proposalDeadline', stateMutability: 'view', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [{ name: '', type: 'uint256' }] },
+	{ type: 'function', name: 'proposalSnapshot', stateMutability: 'view', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [{ name: '', type: 'uint256' }] },
+	{ type: 'function', name: 'votingDelay', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+	{ type: 'function', name: 'CLOCK_MODE', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'string' }] },
+	{ type: 'function', name: 'execute', stateMutability: 'payable', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [] },
 	{
 		type: 'function',
-		name: 'castVote',
-		stateMutability: 'nonpayable',
-		inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }],
-		outputs: [],
+		name: 'execute',
+		stateMutability: 'payable',
+		inputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'descriptionHash', type: 'bytes32' }],
+		outputs: [{ name: '', type: 'uint256' }],
 	},
 	{
-		type: 'function',
-		name: 'castVoteWithReason',
-		stateMutability: 'nonpayable',
+		type: 'event',
+		name: 'ProposalCreated',
+		anonymous: false,
 		inputs: [
-			{ name: 'proposalId', type: 'uint256' },
-			{ name: 'support', type: 'uint8' },
-			{ name: 'reason', type: 'string' },
+			{ name: 'proposalId', type: 'uint256', indexed: false },
+			{ name: 'proposer', type: 'address', indexed: false },
+			{ name: 'targets', type: 'address[]', indexed: false },
+			{ name: 'values', type: 'uint256[]', indexed: false },
+			{ name: 'signatures', type: 'string[]', indexed: false },
+			{ name: 'calldatas', type: 'bytes[]', indexed: false },
+			{ name: 'voteStart', type: 'uint256', indexed: false },
+			{ name: 'voteEnd', type: 'uint256', indexed: false },
+			{ name: 'description', type: 'string', indexed: false },
 		],
-		outputs: [{ name: 'balance', type: 'uint256' }],
-	},
-	{
-		type: 'function',
-		name: 'castVoteWithReasonAndParams',
-		stateMutability: 'nonpayable',
-		inputs: [
-			{ name: 'proposalId', type: 'uint256' },
-			{ name: 'support', type: 'uint8' },
-			{ name: 'reason', type: 'string' },
-			{ name: 'params', type: 'bytes' },
-		],
-		outputs: [{ name: 'balance', type: 'uint256' }],
-	},
-	{
-		type: 'function',
-		name: 'castVoteBySig',
-		stateMutability: 'nonpayable',
-		inputs: [
-			{ name: 'proposalId', type: 'uint256' },
-			{ name: 'support', type: 'uint8' },
-			{ name: 'voter', type: 'address' },
-			{ name: 'signature', type: 'bytes' },
-		],
-		outputs: [{ name: 'balance', type: 'uint256' }],
-	},
-	{
-		type: 'function',
-		name: 'castVoteWithReasonAndParamsBySig',
-		stateMutability: 'nonpayable',
-		inputs: [
-			{ name: 'proposalId', type: 'uint256' },
-			{ name: 'support', type: 'uint8' },
-			{ name: 'voter', type: 'address' },
-			{ name: 'reason', type: 'string' },
-			{ name: 'params', type: 'bytes' },
-			{ name: 'signature', type: 'bytes' },
-		],
-		outputs: [{ name: 'balance', type: 'int256' }],
 	},
 ] as const satisfies Abi
 
-export const CompoundTimeLock = [
+// Compound's Timelock, which GovernorAlpha, GovernorBravo and OpenZeppelin's GovernorTimelockCompound execute through.
+export const CompoundTimelockAbi = [
+	{ type: 'function', name: 'admin', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'address' }] },
+	{ type: 'function', name: 'delay', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+	{ type: 'function', name: 'GRACE_PERIOD', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 	{
 		type: 'function',
-		name: 'executeTransactions',
+		name: 'queueTransaction',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'target', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'signature', type: 'string' }, { name: 'data', type: 'bytes' }, { name: 'eta', type: 'uint256' }],
+		outputs: [{ name: '', type: 'bytes32' }],
+	},
+	{
+		type: 'function',
+		name: 'executeTransaction',
 		stateMutability: 'payable',
+		inputs: [{ name: 'target', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'signature', type: 'string' }, { name: 'data', type: 'bytes' }, { name: 'eta', type: 'uint256' }],
+		outputs: [{ name: '', type: 'bytes' }],
+	},
+	{
+		type: 'event',
+		name: 'ExecuteTransaction',
+		anonymous: false,
 		inputs: [
-			{ name: 'targets', type: 'address[]' },
-			{ name: 'values', type: 'uint256[]' },
-			{ name: 'signatures', type: 'string[]' },
-			{ name: 'datas', type: 'bytes[]' },
-			{ name: 'eta', type: 'uint256' },
+			{ name: 'txHash', type: 'bytes32', indexed: true },
+			{ name: 'target', type: 'address', indexed: true },
+			{ name: 'value', type: 'uint256', indexed: false },
+			{ name: 'signature', type: 'string', indexed: false },
+			{ name: 'data', type: 'bytes', indexed: false },
+			{ name: 'eta', type: 'uint256', indexed: false },
 		],
+	},
+] as const satisfies Abi
+
+// OpenZeppelin's TimelockController, which OpenZeppelin's GovernorTimelockControl executes through.
+export const TimelockControllerAbi = [
+	{ type: 'function', name: 'getMinDelay', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+	{ type: 'function', name: 'hasRole', stateMutability: 'view', inputs: [{ name: 'role', type: 'bytes32' }, { name: 'account', type: 'address' }], outputs: [{ name: '', type: 'bool' }] },
+	{
+		type: 'function',
+		name: 'scheduleBatch',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'payloads', type: 'bytes[]' }, { name: 'predecessor', type: 'bytes32' }, { name: 'salt', type: 'bytes32' }, { name: 'delay', type: 'uint256' }],
 		outputs: [],
+	},
+	{
+		type: 'function',
+		name: 'executeBatch',
+		stateMutability: 'payable',
+		inputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'payloads', type: 'bytes[]' }, { name: 'predecessor', type: 'bytes32' }, { name: 'salt', type: 'bytes32' }],
+		outputs: [],
+	},
+	{
+		type: 'event',
+		name: 'CallExecuted',
+		anonymous: false,
+		inputs: [
+			{ name: 'id', type: 'bytes32', indexed: true },
+			{ name: 'index', type: 'uint256', indexed: true },
+			{ name: 'target', type: 'address', indexed: false },
+			{ name: 'value', type: 'uint256', indexed: false },
+			{ name: 'data', type: 'bytes', indexed: false },
+		],
 	},
 ] as const satisfies Abi
 
