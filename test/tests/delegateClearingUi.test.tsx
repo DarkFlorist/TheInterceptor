@@ -12,7 +12,8 @@ const address = 0x1234567890123456789012345678901234567890n
 const chainId = 1n
 const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
 const activeAddress = signal({ type: 'contact' as const, name: 'Account', address, entrySource: 'User' as const, chainId })
-const rpcNetwork = signal({ name: 'Ethereum', chainId, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false })
+const initialRpcNetwork = { name: 'Ethereum', chainId, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+const rpcNetwork = signal(initialRpcNetwork)
 const simulationMode = signal(true)
 const preferences = signal<DelegateClearingPreferences>([])
 const currentBlockNumber = signal<bigint | undefined>(undefined)
@@ -56,6 +57,7 @@ afterEach(() => {
 	pendingSetReply = undefined
 	pendingLookupReply = undefined
 	currentBlockNumber.value = undefined
+	rpcNetwork.value = initialRpcNetwork
 })
 
 function option() {
@@ -105,6 +107,34 @@ describe('delegate clearing option', () => {
 			await flush()
 			assert.equal(lookups, 4)
 			assert.notEqual(checkbox(dom.document.body), undefined)
+		} finally {
+			await act(() => render(undefined, dom.document.body))
+			dom.restore()
+		}
+	})
+
+	test('ignores a delayed block-triggered lookup reply from the previous RPC endpoint on the same chain', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => render(option(), dom.document.body))
+			await flush()
+			assert.equal(lookups, 1)
+			assert.match(dom.document.body.textContent, /Delegated to/u)
+			let resolvePreviousEndpointReply: (reply: unknown) => void = () => undefined
+			pendingLookupReply = new Promise((resolve) => { resolvePreviousEndpointReply = resolve })
+			await act(() => { currentBlockNumber.value = 1n })
+			await flush()
+			assert.equal(lookups, 2)
+			pendingLookupReply = undefined
+			status = { type: 'none' }
+			await act(() => { rpcNetwork.value = { ...initialRpcNetwork, httpsRpc: 'https://other-rpc.example' } })
+			await flush()
+			assert.equal(lookups, 3)
+			assert.equal(checkbox(dom.document.body), undefined)
+			resolvePreviousEndpointReply(PopupRequestsReplies.popup_requestDelegateClearing.serialize({ method: 'popup_requestDelegateClearing', data: { address, chainId, status: { type: 'delegated', delegate } } }))
+			await flush()
+			assert.equal(checkbox(dom.document.body), undefined)
+			assert.doesNotMatch(dom.document.body.textContent, /Delegated to/u)
 		} finally {
 			await act(() => render(undefined, dom.document.body))
 			dom.restore()

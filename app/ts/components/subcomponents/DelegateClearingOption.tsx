@@ -23,6 +23,8 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 	const errorText = useSignal<string | undefined>(undefined)
 	const address = activeAddress.value?.type === 'safe' ? undefined : activeAddress.value?.address
 	const chainId = rpcNetwork.value?.chainId
+	// Lookups depend on the endpoint too, so switching endpoints on the same chain disposes replies still pending from the previous one.
+	const rpcEndpoint = rpcNetwork.value?.httpsRpc
 
 	useEffect(() => {
 		delegationOption.value = undefined
@@ -35,7 +37,7 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 			delegationOption.value = { address, chainId, status: reply.data.status, checkedAt: Date.now() }
 		})()
 		return () => { disposed = true }
-	}, [simulationMode.value, address, chainId, rpcNetwork.value?.httpsRpc])
+	}, [simulationMode.value, address, chainId, rpcEndpoint])
 
 	useEffect(() => {
 		const current = delegationOption.value
@@ -50,7 +52,7 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 			delegationOption.value = { address, chainId, status: reply.data.status, checkedAt: Date.now() }
 		})()
 		return () => { disposed = true }
-	}, [currentBlockNumber.value, simulationMode.value, address, chainId])
+	}, [currentBlockNumber.value, simulationMode.value, address, chainId, rpcEndpoint])
 
 	const current = delegationOption.value
 	const enabled = hasDelegateClearingPreference(preferences.value, address, chainId)
