@@ -339,6 +339,8 @@ function mergeSafeSignerSelectionRefresh(
 				transactionOrMessageCreationStatus: refreshedFlow.pending.transactionOrMessageCreationStatus,
 				transactionToSimulate: refreshedFlow.pending.transactionToSimulate,
 				popupVisualisation: refreshedFlow.pending.popupVisualisation,
+				// The run's record travels with the visualisation it describes.
+				confirmationRun: refreshedFlow.pending.confirmationRun,
 			}
 			: {},
 	})

@@ -7,22 +7,21 @@ import { updatePendingTransactionOrMessage } from './storageVariables.js'
 export type StoredConfirmationRun = {
 	readonly uniqueRequestIdentifier: UniqueRequestIdentifier
 	readonly confirmationRunId: number
-	// Undefined only for a run stored without the revision, which a catch-up therefore treats as changed.
-	readonly addressBookRevisionBeforeLookups: number | undefined
+	readonly addressBookRevisionBeforeLookups: number
 }
 
-function getStoredConfirmationRunData(pending: PendingTransactionOrSignableMessage) {
-	if (pending.type !== 'Transaction' || (pending.transactionOrMessageCreationStatus !== 'Simulated' && pending.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return undefined
-	return pending.popupVisualisation.data
-}
+// The record of the confirmation run a pending transaction stores beside its visualisation, if any; confirmations stored by older versions have none.
+export const getStoredConfirmationRunRecord = (pending: PendingTransactionOrSignableMessage) => pending.type === 'Transaction' && (pending.transactionOrMessageCreationStatus === 'Simulated' || pending.transactionOrMessageCreationStatus === 'FailedToSimulate')
+	? pending.confirmationRun
+	: undefined
 
 // The id of the confirmation run a pending confirmation stores; every new run gets a new id, so the writer tells a new run from the stored one by it and a re-label writes only onto the run it read.
-export const getStoredConfirmationRunId = (pending: PendingTransactionOrSignableMessage) => getStoredConfirmationRunData(pending)?.confirmationRunId
+export const getStoredConfirmationRunId = (pending: PendingTransactionOrSignableMessage) => getStoredConfirmationRunRecord(pending)?.confirmationRunId
 
 function getStoredConfirmationRun(pending: PendingTransactionOrSignableMessage): StoredConfirmationRun | undefined {
-	const data = getStoredConfirmationRunData(pending)
-	if (data?.confirmationRunId === undefined) return undefined
-	return { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, confirmationRunId: data.confirmationRunId, addressBookRevisionBeforeLookups: data.addressBookRevisionBeforeLookups }
+	const record = getStoredConfirmationRunRecord(pending)
+	if (record === undefined) return undefined
+	return { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, confirmationRunId: record.confirmationRunId, addressBookRevisionBeforeLookups: record.addressBookRevisionBeforeLookups }
 }
 
 // Updates a pending confirmation as updatePendingTransactionOrMessage does, and returns the confirmation run the write stored, one whose run id differs from that of the run stored before. An update that keeps the stored run, such as one that only records an approval error or loses to a newer stored run, stored none and returns undefined.

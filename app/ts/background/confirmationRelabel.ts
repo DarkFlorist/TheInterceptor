@@ -8,17 +8,18 @@ import { getStoredConfirmationRunId, type StoredConfirmationRun } from './confir
 import { relabelReportingUnexpectedErrors, relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
 import { getPendingTransactionsAndMessages, getSettledAddressBookRevision, updatePendingTransactionOrMessage } from './storageVariables.js'
 
-// Only a successful simulation of a pending transaction on the services' chain can be re-labelled: failed or still pending simulations show no names to re-label, and a run stored without a confirmationRunId by an older version cannot be told apart from a newer run.
+// Only a successful simulation of a pending transaction on the services' chain can be re-labelled: failed or still pending simulations show no names to re-label, and a run stored without its run record by an older version cannot be told apart from a newer run.
 function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessage, chainId: bigint): SimulationRunToRelabel<PendingTransactionOrSignableMessage> | undefined {
 	if (pending.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return undefined
 	const visualisation = pending.popupVisualisation.data
-	const confirmationRunId = getStoredConfirmationRunId(pending)
-	if (confirmationRunId === undefined || visualisation.simulationState.rpcNetwork.chainId !== chainId) return undefined
+	const confirmationRun = pending.confirmationRun
+	if (confirmationRun === undefined || visualisation.simulationState.rpcNetwork.chainId !== chainId) return undefined
 	return {
-		runId: confirmationRunId,
+		runId: confirmationRun.confirmationRunId,
 		simulationState: visualisation.simulationState,
-		storedMetadata: visualisation,
-		withMetadata: (metadata) => modifyObject(pending, { popupVisualisation: { statusCode: 'success', data: modifyObject(visualisation, metadata) } }),
+		storedMetadata: { ...visualisation, recordedVisualisationLookups: confirmationRun.recordedVisualisationLookups },
+		// The re-label's record of its lookups stays out of the visualisation; the run's record beside it is kept, as the re-label identifies nothing new on chain.
+		withMetadata: ({ recordedVisualisationLookups: _relabelLookups, ...metadata }) => modifyObject(pending, { popupVisualisation: { statusCode: 'success', data: modifyObject(visualisation, metadata) } }),
 	}
 }
 

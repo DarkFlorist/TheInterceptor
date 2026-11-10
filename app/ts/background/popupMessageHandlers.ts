@@ -583,7 +583,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			getPendingTransactionGasPayment(firstTxn),
 		)
 		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
-	const refreshMessage = await refreshConfirmTransactionSimulation(
+	const run = await refreshConfirmTransactionSimulation(
 		ethereum,
 		tokenPriceService,
 		firstTxn.activeAddress,
@@ -592,27 +592,30 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 		transactionToSimulate,
 		proposalSafeTransaction,
 	)
-	if (refreshMessage === undefined) return
+	if (run === undefined) return
+	const { popupVisualisation, confirmationRun } = run
 	const storedRun = await storeConfirmationRun(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
 				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
 				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
-				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
+				const nextTimestamp = getSimulationConductedTimestamp(popupVisualisation)
 				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,
 						transactionToSimulate,
-						popupVisualisation: refreshMessage,
+						popupVisualisation,
+						confirmationRun,
 						transactionOrMessageCreationStatus: 'Simulated' as const,
 					}
 				}
 				return {
 					...transactionOrMessage,
 					transactionToSimulate,
-					popupVisualisation: refreshMessage,
+					popupVisualisation,
+					confirmationRun,
 					transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
 				}
 			}

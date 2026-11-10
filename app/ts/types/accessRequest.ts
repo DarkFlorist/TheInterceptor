@@ -30,7 +30,7 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
-export type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
+type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
@@ -80,21 +80,17 @@ const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
-// What background storage keeps with a confirmation run besides what the confirmation dialog is sent; toPopupPendingTransactionOrSignableMessage in confirmTransaction.ts selects only the dialog's fields, so a popup message never carries it. Confirmations stored by older versions have none of it.
-const ConfirmationRunRecord = funtypes.ReadonlyPartial({
-	// Identifies the confirmation simulation run that produced this visualisation.
+// What background storage keeps of a confirmation run beside its visualisation, as the stored stack keeps its recordedVisualisationLookups beside its result. It is a sibling of popupVisualisation, never part of it, so the stored visualisation is exactly what the dialog is sent, and a popup projection only drops this one field (toPopupPendingTransactionOrSignableMessage in confirmTransaction.ts).
+export type ConfirmationRunRecord = funtypes.Static<typeof ConfirmationRunRecord>
+const ConfirmationRunRecord = funtypes.ReadonlyObject({
+	// Identifies the confirmation simulation run that produced the visualisation beside it.
 	confirmationRunId: funtypes.Number,
-	recordedVisualisationLookups: RecordedVisualisationLookups,
 	// The address-book revision (getAddressBookRevision in storageVariables.ts) the run read when it started, before its first lookup; only the workflow that stores the run compares it, within the same background session.
 	addressBookRevisionBeforeLookups: funtypes.Number,
-})
-
-// A confirmation run as background storage keeps it in its pending transaction.
-export type StoredConfirmTransactionVisualization = funtypes.Static<typeof StoredConfirmTransactionVisualization>
-const StoredConfirmTransactionVisualization = funtypes.Union(
-	funtypes.ReadonlyObject({ statusCode: funtypes.Literal('failed'), data: funtypes.Intersect(ConfirmTransactionSimulationFailedData, ConfirmationRunRecord) }),
-	funtypes.ReadonlyObject({ statusCode: funtypes.Literal('success'), data: funtypes.Intersect(ConfirmTransactionDialogState, ConfirmationRunRecord) }),
-)
+}).And(funtypes.ReadonlyPartial({
+	// What a successful run recorded of its lookups, so a re-label can visualise it again without the node; a failed run has nothing to re-label.
+	recordedVisualisationLookups: RecordedVisualisationLookups,
+}))
 
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
 const PendingTransactionApprovalStatus = funtypes.Union(
@@ -106,7 +102,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-export type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
+type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('Transaction'),
 	popupOrTabId: PopupOrTabId,
@@ -139,19 +135,19 @@ const SimulatedPendingTransactionStatus = funtypes.Union(
 	}),
 )
 
-type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
-const SimulatedPendingTransaction = funtypes.Intersect(
-	SimulatedPendingTransactionBase,
-	funtypes.ReadonlyObject({ popupVisualisation: StoredConfirmTransactionVisualization }),
-	SimulatedPendingTransactionStatus,
-)
-
 // A simulated pending transaction as the confirmation dialog is sent it, without the run's record.
 export type PopupSimulatedPendingTransaction = funtypes.Static<typeof PopupSimulatedPendingTransaction>
 const PopupSimulatedPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
 	funtypes.ReadonlyObject({ popupVisualisation: ConfirmTransactionTransactionSingleVisualization }),
 	SimulatedPendingTransactionStatus,
+)
+
+// A simulated pending transaction as background storage keeps it: what the dialog is sent, with the record of the run that produced its visualisation beside it. Confirmations stored by older versions, or by builds that kept the record inside the visualisation, decode without it, as funtypes drops fields its codec does not declare.
+type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
+const SimulatedPendingTransaction = funtypes.Intersect(
+	PopupSimulatedPendingTransaction,
+	funtypes.ReadonlyPartial({ confirmationRun: ConfirmationRunRecord }),
 )
 
 type CraftingTransactionPendingTransaction = funtypes.Static<typeof CraftingTransactionPendingTransaction>
@@ -174,7 +170,7 @@ export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
 
 // A pending transaction as popups are sent it, without its confirmation run's record.
-export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
+type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
 const PopupPendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, PopupSimulatedPendingTransaction)
 
 type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
@@ -200,7 +196,7 @@ const PendingSignableMessage = funtypes.Intersect(
 	)
 )
 
-export type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
+type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('SignableMessage'),
 	popupOrTabId: PopupOrTabId,

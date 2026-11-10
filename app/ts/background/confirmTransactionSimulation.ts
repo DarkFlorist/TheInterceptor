@@ -3,7 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { StoredConfirmTransactionVisualization } from '../types/accessRequest.js'
+import type { ConfirmationRunRecord, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
@@ -27,6 +27,9 @@ function getNextConfirmationRunId() {
 	return latestConfirmationRunId
 }
 
+// A confirmation run's visualisation, which the dialog is sent, and its record, which background storage keeps beside it.
+export type SimulatedConfirmationRun = { readonly popupVisualisation: ConfirmTransactionTransactionSingleVisualization, readonly confirmationRun: ConfirmationRunRecord }
+
 // Returns the run without storing it; the confirmation workflows store it with storeConfirmationRun in confirmationRunStorage.ts and then catch it up on address-book changes made during it (relabelStoredRunIfAddressBookChangedDuringIt in confirmationRelabel.ts).
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
@@ -36,7 +39,7 @@ export async function refreshConfirmTransactionSimulation(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
-): Promise<StoredConfirmTransactionVisualization | undefined> {
+): Promise<SimulatedConfirmationRun | undefined> {
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -44,6 +47,8 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+	}
+	const confirmationRun = {
 		confirmationRunId: getNextConfirmationRunId(),
 		// Read once as the run starts, before its first lookup, so the workflow that stores the run can tell whether the address book changed during it.
 		addressBookRevisionBeforeLookups: getAddressBookRevision(),
@@ -81,7 +86,7 @@ export async function refreshConfirmTransactionSimulation(
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
-			return { statusCode: 'failed', data: {
+			return { confirmationRun, popupVisualisation: { statusCode: 'failed', data: {
 				...info,
 				simulationStartedTimestamp,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
@@ -89,16 +94,18 @@ export async function refreshConfirmTransactionSimulation(
 					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
 					simulationConductedTimestamp: new Date(),
 				}
-			} }
+			} } }
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
-		return {
+		// The record of the run's lookups is stored beside the visualisation, never in it.
+		const { recordedVisualisationLookups, ...visualisation } = visualizedSimulatorState
+		return { confirmationRun: { ...confirmationRun, recordedVisualisationLookups }, popupVisualisation: {
 			statusCode: 'success',
 			data: {
 				...info,
 				simulationStartedTimestamp,
-				...visualizedSimulatorState,
+				...visualisation,
 				transactionToSimulate: {
 					...transactionToSimulate,
 					...transactionToSimulate.success ? {
@@ -112,7 +119,7 @@ export async function refreshConfirmTransactionSimulation(
 					} }
 				}
 			}
-		}
+		} }
 	} catch (error) {
 		if (isNewBlockAbort(error)) return undefined
 		if (isFailedToFetchError(error)) return undefined
@@ -129,7 +136,7 @@ export async function refreshConfirmTransactionSimulation(
 			const recipient = params.to
 			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
 		}
-		return { statusCode: 'failed', data: {
+		return { confirmationRun, popupVisualisation: { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
 			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
@@ -137,6 +144,6 @@ export async function refreshConfirmTransactionSimulation(
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()
 			}
-		} }
+		} } }
 	}
 }

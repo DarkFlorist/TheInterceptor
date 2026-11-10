@@ -509,7 +509,8 @@ test('re-labels a simulation-mode Gnosis Safe execution in the confirmation and 
 	const [pendingAfter] = await modules.getPendingTransactionsAndMessages()
 	if (pendingAfter?.type !== 'Transaction' || pendingAfter.transactionOrMessageCreationStatus !== 'Simulated' || pendingAfter.popupVisualisation.statusCode !== 'success') throw new Error('Expected the re-labelled confirmation to stay simulated')
 	const confirmationAfter = pendingAfter.popupVisualisation.data
-	assert.equal(confirmationAfter.confirmationRunId, pendingBefore.popupVisualisation.data.confirmationRunId)
+	assert.equal(pendingAfter.confirmationRun?.confirmationRunId, pendingBefore.confirmationRun?.confirmationRunId)
+	assert.notEqual(pendingAfter.confirmationRun, undefined)
 	const relabelledConfirmationTransaction = getLastVisualizedTransaction(confirmationAfter.visualizedSimulationState)
 	assert.equal(relabelledConfirmationTransaction?.transaction.to?.name, calledContractName)
 	assert.deepEqual(relabelledConfirmationTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'the re-labelled confirmation still shows the transaction running through the Safe')
