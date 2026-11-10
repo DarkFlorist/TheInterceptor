@@ -13,12 +13,15 @@ import { Transaction } from '../Transactions.js'
 import { useEffect, useRef } from 'preact/hooks'
 import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
 
-// The outcome only happens once the Safe has enough owner signatures, so say how many it needs, and when the user's own owner accounts are not enough, that others must sign too. Without a requirement (the Safe did not answer its owner reads) nothing is shown.
+// The signer provides at most one signature, and none when it is not an owner.
+export const signaturesTheSignerProvides = (requirement: SafeSignatureRequirement) => requirement.signerIsOwner ? 1n : 0n
+
+// The outcome only happens once the Safe has enough owner signatures, so say how many it needs, and when the signer's own signature is not enough, that others must sign too. Without a requirement (the Safe did not answer its owner reads) nothing is shown.
 export function SafeSignatureRequirementLabel({ requirement }: { requirement: SafeSignatureRequirement | undefined }) {
 	if (requirement === undefined) return <></>
 	return <div class = 'safe-outcome-panel__signatures'>
 		<p class = 'paragraph'>Needs { requirement.threshold.toString() } of { requirement.ownerCount.toString() } owner signatures</p>
-		{ requirement.threshold > requirement.userOwnerCount ? <ErrorComponent warning = { true } text = 'Other owners must also sign before this can execute' containerStyle = { { margin: '0px' } }/> : <></> }
+		{ requirement.threshold > signaturesTheSignerProvides(requirement) ? <ErrorComponent warning = { true } text = 'Other owners must also sign before this can execute' containerStyle = { { margin: '0px' } }/> : <></> }
 	</div>
 }
 

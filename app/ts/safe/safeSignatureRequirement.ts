@@ -18,12 +18,12 @@ const callSafeOnStack = async (ethereum: EthereumClientService, simulationInput:
 	maxPriorityFeePerGas: 0n,
 })
 
-// Reads the Safe's owners and threshold on top of the same simulation stack the Safe transaction preview runs on, so a Safe deployed or reconfigured on the stack is read as the preview sees it. Returns undefined when the address does not answer as a Safe: a revert, a reply that does not decode, or a threshold outside 1 to the owner count, which a Safe's setup and owner changes never allow. A node failure is not caught here, as it fails the preview it belongs to as well.
+// Reads the Safe's owners and threshold on top of the same simulation stack the Safe transaction preview runs on, so a Safe deployed or reconfigured on the stack is read as the preview sees it. Returns undefined when the address does not answer as a Safe: a revert, a reply that does not decode, or a threshold outside 1 to the owner count, which a Safe's setup and owner changes never allow. A node failure is not caught here, as it fails the preview it belongs to as well. Only the account asked to sign counts as a signature the user can provide. Other address-book accounts are not counted: they include default demo accounts the user does not control, and counting one would hide that other owners must sign.
 export async function getSafeSignatureRequirement(
 	ethereum: EthereumClientService,
 	simulationInput: SimulationStateInput,
 	safeAddress: EthereumAddress,
-	userAccounts: readonly EthereumAddress[],
+	signer: EthereumAddress,
 ): Promise<SafeSignatureRequirement | undefined> {
 	const [ownersReply, thresholdReply] = await Promise.all([
 		callSafeOnStack(ethereum, simulationInput, safeAddress, 'getOwners'),
@@ -35,6 +35,5 @@ export async function getSafeSignatureRequirement(
 	if (owners === undefined || threshold === undefined) return undefined
 	const ownerCount = BigInt(owners.length)
 	if (threshold === 0n || threshold > ownerCount) return undefined
-	const userOwnerCount = BigInt(owners.filter((owner) => userAccounts.includes(BigInt(owner))).length)
-	return { threshold, ownerCount, userOwnerCount }
+	return { threshold, ownerCount, signerIsOwner: owners.some((owner) => BigInt(owner) === signer) }
 }

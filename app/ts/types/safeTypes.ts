@@ -12,12 +12,12 @@ export const SafeContractStateSnapshot = funtypes.ReadonlyObject({
 	threshold: EthereumQuantity,
 })
 
-// How many owner signatures a Safe needs to execute, and how many of its owners are the user's own accounts.
+// How many owner signatures a Safe needs to execute, and whether the account asked to sign is one of its owners.
 export type SafeSignatureRequirement = funtypes.Static<typeof SafeSignatureRequirement>
 export const SafeSignatureRequirement = funtypes.ReadonlyObject({
 	threshold: EthereumQuantity,
 	ownerCount: EthereumQuantity,
-	userOwnerCount: EthereumQuantity,
+	signerIsOwner: funtypes.Boolean,
 })
 
 export type SafeMessageCoSignSnapshot = funtypes.Static<typeof SafeMessageCoSignSnapshot>

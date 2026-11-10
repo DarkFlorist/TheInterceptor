@@ -9,6 +9,9 @@ import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { h, render } from 'preact'
+import { act } from 'preact/test-utils'
+import { installDomMock } from './domMock.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -149,6 +152,8 @@ async function loadModules() {
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const settings = await import('../../app/ts/background/settings.js')
+	const metadataUtils = await import('../../app/ts/background/metadataUtils.js')
+	const gnosisSafeVisualizer = await import('../../app/ts/components/simulationExplaining/customExplainers/GnosisSafeVisualizer.js')
 
 	return {
 		...simulationUpdating,
@@ -157,6 +162,9 @@ async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
+		getActiveAddresses: metadataUtils.getActiveAddresses,
+		SafeSignatureRequirementLabel: gnosisSafeVisualizer.SafeSignatureRequirementLabel,
+		signaturesTheSignerProvides: gnosisSafeVisualizer.signaturesTheSignerProvides,
 	}
 }
 
@@ -287,12 +295,12 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 	return safeMessage
 }
 
-// Answers the owner reads of the Safe signature requirement as a 1 of 1 Safe owned by the given owner, and undefined for any other call.
-function getSafeOwnerReadReply(call: unknown, safeAddress: bigint, owner: bigint) {
+// Answers the owner reads of the Safe signature requirement as a Safe with the given owners and threshold, and undefined for any other call.
+function getSafeOwnerReadReply(call: unknown, safeAddress: bigint, owners: readonly bigint[], threshold: bigint) {
 	if (typeof call !== 'object' || call === null || !('to' in call) || call.to !== safeAddress || !('input' in call) || !(call.input instanceof Uint8Array)) return undefined
 	const callData = dataStringWith0xStart(call.input)
-	if (callData === encodeFunctionCall(SAFE_ABI, 'getOwners', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getOwners', [[addressString(owner)]]))
-	if (callData === encodeFunctionCall(SAFE_ABI, 'getThreshold', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getThreshold', [1n]))
+	if (callData === encodeFunctionCall(SAFE_ABI, 'getOwners', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getOwners', [owners.map(addressString)]))
+	if (callData === encodeFunctionCall(SAFE_ABI, 'getThreshold', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getThreshold', [threshold]))
 	return undefined
 }
 
@@ -495,7 +503,7 @@ describe('Gnosis Safe stack simulation', () => {
 							throw new Error('Missing calls in eth_simulateV1 block')
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
-						const ownerReadReply = getSafeOwnerReadReply(lastCall, activeAddress.address, activeAddress.address)
+						const ownerReadReply = getSafeOwnerReadReply(lastCall, activeAddress.address, [activeAddress.address], 1n)
 						if (ownerReadReply !== undefined) {
 							ownerReadBlockCounts.push(callCount)
 							return makeEthSimulateBlocks(callCount, ownerReadReply)
@@ -618,6 +626,64 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(delegateCallSimulationCount, operation === 1n ? 2 : 0)
 		// Both owner reads run on top of the stack the preview runs on: one block for the read, after the seeded stack block.
 		assert.deepEqual(ownerReadBlockCounts, seedStack ? [2, 2] : [1, 1])
-		assert.deepEqual(reply.result.safeSignatureRequirement, { threshold: 1n, ownerCount: 1n, userOwnerCount: 1n })
+		assert.deepEqual(reply.result.safeSignatureRequirement, { threshold: 1n, ownerCount: 1n, signerIsOwner: true })
+	})
+	test('a default demo account among the owners does not count as a signature the user can provide', async () => {
+		// Fresh storage: the user has configured no accounts, so the default demo accounts are the active addresses.
+		await browserMock.reset()
+		const modules = await modulesPromise
+		const demoAccount = modules.defaultActiveAddresses[0]
+		if (demoAccount === undefined) throw new Error('missing default test addresses')
+		assert.equal((await modules.getActiveAddresses()).some((entry) => entry.address === demoAccount.address), true)
+		const connectedUser = { ...demoAccount, name: 'Connected User', address: 0x7a16ff8270133f063aab6c9977183d9e72835428n }
+		const sharedSafe = { ...demoAccount, name: 'Shared Safe', address: 0x5afe5afe5afe5afe5afe5afe5afe5afe5afe5afen }
+		const fakeRpcNetwork: RpcEntry = { name: 'Test Chain', chainId: 1337n, httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: true }
+		await modules.browserStorageLocalSet({ simulationMode: true, independentActiveSimulationAddress: connectedUser.address, activeRpcNetwork: fakeRpcNetwork })
+		const fakeBlock = makeFakeBlock(123n)
+		const fakeRequestHandler = {
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+				switch (rpcRequest.method) {
+					case 'eth_getBlockByNumber': return serializeForRpc(EthereumBlockHeader, fakeBlock)
+					case 'eth_blockNumber': return serializeForRpc(EthereumQuantity, fakeBlock.number)
+					case 'eth_getTransactionCount': return serializeForRpc(EthereumQuantity, 0n)
+					case 'eth_getBalance': return serializeForRpc(EthereumQuantity, 0n)
+					case 'eth_getCode': return '0x6000'
+					case 'eth_gasPrice': return serializeForRpc(EthereumQuantity, 1n)
+					case 'eth_simulateV1': {
+						const firstParam = rpcRequest.params?.[0]
+						if (typeof firstParam !== 'object' || firstParam === null || !('blockStateCalls' in firstParam) || !Array.isArray(firstParam.blockStateCalls)) throw new Error('Missing blockStateCalls in eth_simulateV1 request')
+						const callCount = firstParam.blockStateCalls.length
+						const lastBlock = firstParam.blockStateCalls[callCount - 1]
+						if (typeof lastBlock !== 'object' || lastBlock === null || !('calls' in lastBlock) || !Array.isArray(lastBlock.calls)) throw new Error('Missing calls in eth_simulateV1 block')
+						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
+						const ownerReadReply = getSafeOwnerReadReply(lastCall, sharedSafe.address, [connectedUser.address, demoAccount.address], 2n)
+						if (ownerReadReply !== undefined) return makeEthSimulateBlocks(callCount, ownerReadReply)
+						const isAggregate3BalanceCall = typeof lastCall === 'object' && lastCall !== null && 'to' in lastCall && lastCall.to === MULTICALL3
+						if (isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount, stringToUint8Array(encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{ success: true, returnData: encodeAbiParameters([{ type: 'uint256' }], [0n]) }]])))
+						// Address identification sends several calls in one block; each gets an empty success.
+						if (lastBlock.calls.length > 1) return serializeForRpc(EthSimulateV1Result, [{ ...EthSimulateV1Result.parse(makeEthSimulateBlocks(1))[0], calls: lastBlock.calls.map(() => ({ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] })) }])
+						return makeEthSimulateBlocks(callCount)
+					}
+					default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+				}
+			},
+		}
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const safeMessage = createSafeMessage(fakeRpcNetwork, connectedUser, connectedUser)
+		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: sharedSafe, message: { ...safeMessage.message, domain: { ...safeMessage.message.domain, verifyingContract: sharedSafe.address } } }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
+		if (!reply.success) throw new Error(reply.errorMessage)
+
+		const requirement = reply.result.safeSignatureRequirement
+		assert.deepEqual(requirement, { threshold: 2n, ownerCount: 2n, signerIsOwner: true })
+		if (requirement === undefined) throw new Error('missing Safe signature requirement')
+		assert.equal(modules.signaturesTheSignerProvides(requirement), 1n)
+		const dom = installDomMock()
+		await act(() => { render(h(modules.SafeSignatureRequirementLabel, { requirement }), dom.document.body) })
+		const labelText = dom.document.body.textContent ?? ''
+		dom.restore()
+		assert.equal(labelText.includes('Needs 2 of 2 owner signatures'), true)
+		assert.equal(labelText.includes('Other owners must also sign before this can execute'), true)
 	})
 })

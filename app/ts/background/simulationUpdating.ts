@@ -20,7 +20,7 @@ import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulation
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { getActiveAddresses, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
@@ -411,10 +411,9 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const userAccounts = [gnosisSafeMessage.activeAddress.address, ...(await getActiveAddresses()).map((entry) => entry.address)]
 		const [simulationStateAfterGnosisSafeMetaTransaction, safeSignatureRequirement] = await Promise.all([
 			appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides),
-			getSafeSignatureRequirement(ethereumClientService, simulationInput, gnosisSafeMessage.verifyingContract.address, userAccounts),
+			getSafeSignatureRequirement(ethereumClientService, simulationInput, gnosisSafeMessage.verifyingContract.address, gnosisSafeMessage.activeAddress.address),
 		])
 		const visualization = await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined)
 		return { success: true as const, result: safeSignatureRequirement === undefined ? visualization : { ...visualization, safeSignatureRequirement } }

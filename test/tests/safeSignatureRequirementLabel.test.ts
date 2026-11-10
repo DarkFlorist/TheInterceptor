@@ -17,20 +17,22 @@ const renderLabel = async (requirement: SafeSignatureRequirement | undefined) =>
 }
 
 describe('Safe signature requirement label', () => {
-	test('a 1 of 1 Safe the user owns shows the requirement without the note', async () => {
-		const text = await renderLabel({ threshold: 1n, ownerCount: 1n, userOwnerCount: 1n })
+	test('a 1 of 1 Safe the signer owns shows the requirement without the note', async () => {
+		const text = await renderLabel({ threshold: 1n, ownerCount: 1n, signerIsOwner: true })
 		assert.equal(text.includes('Needs 1 of 1 owner signatures'), true)
 		assert.equal(text.includes(OTHER_OWNERS_NOTE), false)
 	})
 
-	test('a 2 of 3 Safe with the user as one owner notes that other owners must sign', async () => {
-		const text = await renderLabel({ threshold: 2n, ownerCount: 3n, userOwnerCount: 1n })
+	test('a 2 of 3 Safe with the signer as one owner notes that other owners must sign', async () => {
+		const text = await renderLabel({ threshold: 2n, ownerCount: 3n, signerIsOwner: true })
 		assert.equal(text.includes('Needs 2 of 3 owner signatures'), true)
 		assert.equal(text.includes(OTHER_OWNERS_NOTE), true)
 	})
 
-	test('a 2 of 3 Safe with two of the user\'s accounts as owners needs no other owner', async () => {
-		assert.equal((await renderLabel({ threshold: 2n, ownerCount: 3n, userOwnerCount: 2n })).includes(OTHER_OWNERS_NOTE), false)
+	test('a 1 of 2 Safe the signer does not own notes that other owners must sign', async () => {
+		const text = await renderLabel({ threshold: 1n, ownerCount: 2n, signerIsOwner: false })
+		assert.equal(text.includes('Needs 1 of 2 owner signatures'), true)
+		assert.equal(text.includes(OTHER_OWNERS_NOTE), true)
 	})
 
 	test('a failed owner read shows nothing', async () => {

@@ -108,15 +108,19 @@ const stackWithSafeDeployment: SimulationStateInput = [{
 	simulateWithZeroBaseFee: false,
 }]
 
-const readRequirement = async (answerOwnerRead: OwnerReadAnswer, simulationInput: SimulationStateInput = []) => await getSafeSignatureRequirement(createNode(answerOwnerRead), simulationInput, SAFE, [USER])
+const readRequirement = async (answerOwnerRead: OwnerReadAnswer, simulationInput: SimulationStateInput = []) => await getSafeSignatureRequirement(createNode(answerOwnerRead), simulationInput, SAFE, USER)
 
 describe('Safe signature requirement', () => {
 	test('a 1 of 1 Safe owned by the user needs only the user', async () => {
-		assert.deepEqual(await readRequirement(() => ({ owners: [USER], threshold: 1n })), { threshold: 1n, ownerCount: 1n, userOwnerCount: 1n })
+		assert.deepEqual(await readRequirement(() => ({ owners: [USER], threshold: 1n })), { threshold: 1n, ownerCount: 1n, signerIsOwner: true })
 	})
 
 	test('a 2 of 3 Safe with the user as one owner needs another owner too', async () => {
-		assert.deepEqual(await readRequirement(() => ({ owners: [SECOND_OWNER, USER, THIRD_OWNER], threshold: 2n })), { threshold: 2n, ownerCount: 3n, userOwnerCount: 1n })
+		assert.deepEqual(await readRequirement(() => ({ owners: [SECOND_OWNER, USER, THIRD_OWNER], threshold: 2n })), { threshold: 2n, ownerCount: 3n, signerIsOwner: true })
+	})
+
+	test('a signer that is not an owner provides no signature', async () => {
+		assert.deepEqual(await readRequirement(() => ({ owners: [SECOND_OWNER, THIRD_OWNER], threshold: 1n })), { threshold: 1n, ownerCount: 2n, signerIsOwner: false })
 	})
 
 	test('a failed owner read gives no requirement instead of an error', async () => {
@@ -131,6 +135,6 @@ describe('Safe signature requirement', () => {
 	test('a Safe that exists only on the simulation stack is read on top of that stack', async () => {
 		const onlyOnStack: OwnerReadAnswer = (stackBlockCount) => stackBlockCount === 0 ? undefined : { owners: [USER, SECOND_OWNER], threshold: 2n }
 		assert.equal(await readRequirement(onlyOnStack), undefined)
-		assert.deepEqual(await readRequirement(onlyOnStack, stackWithSafeDeployment), { threshold: 2n, ownerCount: 2n, userOwnerCount: 1n })
+		assert.deepEqual(await readRequirement(onlyOnStack, stackWithSafeDeployment), { threshold: 2n, ownerCount: 2n, signerIsOwner: true })
 	})
 })
