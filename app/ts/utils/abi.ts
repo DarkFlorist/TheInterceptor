@@ -394,6 +394,19 @@ export const Erc1046ABI = [
 	},
 ] as const satisfies Abi
 
+// Every vote function of Compound's GovernorAlpha and GovernorBravo and of OpenZeppelin's Governor (4.x and 5.x). The by-signature variants changed shape between OpenZeppelin 4 and 5, so both are listed.
+export const GovernorVoteAbi = [
+	{ type: 'function', name: 'castVote', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'bool' }], outputs: [] },
+	{ type: 'function', name: 'submitVote', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'bool' }], outputs: [] },
+	{ type: 'function', name: 'castVote', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }], outputs: [] },
+	{ type: 'function', name: 'castVoteWithReason', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'reason', type: 'string' }], outputs: [] },
+	{ type: 'function', name: 'castVoteWithReasonAndParams', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'reason', type: 'string' }, { name: 'params', type: 'bytes' }], outputs: [] },
+	{ type: 'function', name: 'castVoteBySig', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'v', type: 'uint8' }, { name: 'r', type: 'bytes32' }, { name: 's', type: 'bytes32' }], outputs: [] },
+	{ type: 'function', name: 'castVoteBySig', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'voter', type: 'address' }, { name: 'signature', type: 'bytes' }], outputs: [] },
+	{ type: 'function', name: 'castVoteWithReasonAndParamsBySig', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'reason', type: 'string' }, { name: 'params', type: 'bytes' }, { name: 'v', type: 'uint8' }, { name: 'r', type: 'bytes32' }, { name: 's', type: 'bytes32' }], outputs: [] },
+	{ type: 'function', name: 'castVoteWithReasonAndParamsBySig', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }, { name: 'support', type: 'uint8' }, { name: 'voter', type: 'address' }, { name: 'reason', type: 'string' }, { name: 'params', type: 'bytes' }, { name: 'signature', type: 'bytes' }], outputs: [] },
+] as const satisfies Abi
+
 export const CompoundGovernanceAbi = [
 	{
 		type: 'function',
