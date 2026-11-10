@@ -26,8 +26,9 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 
 	return <>
 		<div class = 'notification transaction-importance-box'>
-			<div style = 'display: flex; justify-content: center;' >
-				<p style = { { 'font-size': 'var(--big-font-size)' } } >
+			<div style = 'display: flex; justify-content: center; min-width: 0;' >
+				{ /* An OpenZeppelin proposal id is a 78-digit hash, so it has to wrap to fit the window. */ }
+				<p style = { { 'font-size': 'var(--big-font-size)', 'overflow-wrap': 'anywhere', 'text-align': 'center', 'min-width': '0' } } >
 					Vote&nbsp;<b>{ interpretSupport(resolvedInputParams.support) }</b>&nbsp;{`for proposal: ${ resolvedInputParams.proposalId } `}
 				</p>
 			</div>
@@ -195,7 +196,8 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		activeAddress.value = param.activeAddress.value
 		simulateExecutionReply.value = undefined
 		resetGovernanceSimulationRequest()
-	}, [param.simTx.transactionIdentifier, param.governanceVoteInputParameters, param.activeAddress.value])
+	// identifyTransaction decodes the vote parameters again on every render, so they are a new object each time. They follow from the transaction, so its identifier is what tells a different vote apart.
+	}, [param.simTx.transactionIdentifier, param.activeAddress.value])
 
 	const simulateGovernanceVote = () => {
 		const transactionIdentifier = simTx.value?.transactionIdentifier

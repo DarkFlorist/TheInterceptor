@@ -1081,6 +1081,32 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
+	test('keeps the governance simulation result when the same vote renders again', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const renderVote = () => render(h(modules.GovernanceVoteVisualizer, {
+			simTx: createGovernanceTransactionFixture(5n),
+			activeAddress: signal(0x2n),
+			renameAddressCallBack: () => undefined,
+			editEnsNamedHashCallBack: () => undefined,
+			// identifyTransaction decodes the vote again on every render, so each render passes a new parameters object.
+			governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+		}), dom.document.body)
+
+		await act(() => { renderVote() })
+		await act(async () => {
+			await emitRuntimeMessage(createSimulationFailureBroadcast(5n, 'governance simulation result'))
+			await settleAsyncUpdates()
+		})
+		assert.equal(dom.document.body.textContent?.includes('governance simulation result'), true)
+
+		await act(() => { renderVote() })
+		await act(async () => { await settleAsyncUpdates() })
+
+		assert.equal(dom.document.body.textContent?.includes('governance simulation result'), true)
+		dom.restore()
+	})
+
 	test('matching governance broadcasts clear later missing direct-reply errors', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
