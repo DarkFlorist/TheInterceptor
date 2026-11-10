@@ -22,7 +22,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction, isAppliedEip7702Authorization, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -256,26 +256,14 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
 	const blockNumToUseForSim = blockTag === 'latest' || blockTag === 'pending' ? currentState.blockNumber + BigInt(currentState.simulatedBlocks.length) : blockTag
 	const blockNumToUseForChain = blockTag === 'latest' || blockTag === 'pending' ? blockTag : min(blockTag, await ethereumClientService.getBlockNumber(requestAbortController))
-	let addedTransactions = 0n
-	if (blockTag === 'latest' || blockTag === 'pending' || blockTag > currentState.blockNumber) {
-		// if we are on our simulated block, just count how many transactions we have sent in the simulation to increment transaction count
-		let index = 0
-		// The simulation input the simulated blocks came from, block for block, because only it carries the call the node ran for each transaction (getExecutedCallNonceContribution).
-		for (const block of currentState.simulationStateInput) {
-			const currBlockNum = currentState.blockNumber + BigInt(index) + 1n
-			if (blockNumToUseForSim < currBlockNum) {
-				break
-			}
-			for (const transaction of block.transactions) {
-				addedTransactions += getExecutedCallNonceContribution(transaction, address)
-			}
-			index++
-		}
-	}
-	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions
+	// On a simulated block, the transactions of the simulation input up to it raise the nonce: the input the simulated blocks came from, block for block, because only it carries the call the node ran for each transaction (getNonceRaisingCall).
+	const simulatedTransactions = blockTag === 'latest' || blockTag === 'pending' || blockTag > currentState.blockNumber
+		? currentState.simulationStateInput.filter((_block, index) => currentState.blockNumber + BigInt(index) + 1n <= blockNumToUseForSim).flatMap((block) => block.transactions)
+		: []
+	return await getTransactionCountAfterTransactions(ethereumClientService, requestAbortController, simulatedTransactions, address, blockNumToUseForChain)
 }
 
-// The nonce field of a Gnosis Safe execution's own call, which is a display and hash sequence, not the Safe's account nonce: no account sends that call (getExecutedCallNonceContribution). It is one more than the highest such field of the Safe's stacked executions, which stack removal never renumbers, so a removal can't make a stacked execution's number, and with it its hash, reusable. Its mock signature keeps it apart from ordinary transactions (getSignedTransactionForSimulation). Like ordinary transactions, two identical calls formed while both are pending confirmation still share a number and hash; that general mock-hash limitation is tracked in #1713.
+// The nonce field of a Gnosis Safe execution's own call, which is a display and hash sequence, not the Safe's account nonce: no account sends that call (getNonceRaisingCall). It is one more than the highest such field of the Safe's stacked executions, which stack removal never renumbers, so a removal can't make a stacked execution's number, and with it its hash, reusable. Its mock signature keeps it apart from ordinary transactions (getSignedTransactionForSimulation). Like ordinary transactions, two identical calls formed while both are pending confirmation still share a number and hash; that general mock-hash limitation is tracked in #1713.
 export const getSimulatedSafeCallNonce = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, safeAddress: bigint) => {
 	const stackedSafeCallNonces = simulationState.kind === 'passthrough' ? [] : simulationState.value.simulationStateInput.flatMap((block) => block.transactions)
 		.filter((transaction) => transaction.signedTransaction.from === safeAddress && authorizesExecutedCall(transaction.simulationOptions))
@@ -309,19 +297,25 @@ type SimulateBlockCallOptions = {
 const isInactivePrecompileRelocationError = (error: unknown) => error instanceof JsonRpcResponseError
 	&& error.message.toLowerCase().includes('not a precompile')
 
-const getTransactionNonceContribution = (transaction: EthereumSendableSignedTransaction, address: bigint) => {
-	const senderContribution = transaction.from === address ? 1n : 0n
-	if (transaction.type !== '7702') return senderContribution
-	return transaction.authorizationList.reduce(
-		(contribution, authorization) => authorization.authority === address ? contribution + 1n : contribution,
-		senderContribution,
-	)
-}
-
 // A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
-const getExecutedCallNonceContribution = (transaction: RpcTransaction, address: bigint) => {
-	if (transaction.executedTransaction === undefined && authorizesExecutedCall(transaction.simulationOptions)) return 0n
-	return getTransactionNonceContribution(getExecutedTransaction(transaction), address)
+const getNonceRaisingCall = (transaction: RpcTransaction) => transaction.executedTransaction === undefined && authorizesExecutedCall(transaction.simulationOptions) ? undefined : getExecutedTransaction(transaction)
+
+// The account's nonce after the transactions, from its on-chain nonce at the block tag. Each call raises its sender's nonce, then each of its EIP-7702 authorizations the node applies raises its authority's (isAppliedEip7702Authorization); one it skips raises nothing. The account's code only matters while it is an authority; it reads that code once, since an applied authorization only writes a delegation indicator.
+const getTransactionCountAfterTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, transactions: Iterable<RpcTransaction>, address: bigint, blockTag: EthereumBlockTag) => {
+	let nonce = await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
+	let code: Uint8Array | undefined
+	for (const transaction of transactions) {
+		const call = getNonceRaisingCall(transaction)
+		if (call === undefined) continue
+		if (call.from === address) nonce += 1n
+		if (call.type !== '7702') continue
+		for (const authorization of call.authorizationList) {
+			if (authorization.authority !== address) continue
+			code ??= await ethereumClientService.getCode(address, blockTag, requestAbortController)
+			if (isAppliedEip7702Authorization(authorization, { chainId: ethereumClientService.getChainId(), authorityNonce: nonce, authorityCode: code })) nonce += 1n
+		}
+	}
+	return nonce
 }
 
 const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBlockCalls['calls'][number] => {
@@ -703,7 +697,7 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 			}
 			const fixedTransaction = await fixTransaction()
 			processedTransactions.push(fixedTransaction)
-			// A Gnosis Safe execution raises no nonce of the Safe (getExecutedCallNonceContribution).
+			// A Gnosis Safe execution raises no nonce of the Safe (getNonceRaisingCall).
 			if (!authorizesExecutedCall(fixedTransaction.simulationOptions)) knownPreviousNonce.set(fromString, fixedTransaction.signedTransaction.nonce)
 		}
 		const oldBlock = simulationStateInput[blockIndex]
@@ -1038,13 +1032,8 @@ const getSimulatedTransactionCountFromPreparedInputContext = async (
 	}
 	const resolvedBlockTag = resolveSimulationBlockTag(baseBlockNumber, context.executionBlocks.length, blockTag)
 	const blockNumToUseForChain = typeof resolvedBlockTag === 'bigint' ? min(resolvedBlockTag, await ethereumClientService.getBlockNumber(requestAbortController)) : resolvedBlockTag
-	let addedTransactions = 0n
-	for (const block of getExecutionBlocksUpToTag(context, blockTag)) {
-		for (const transaction of block.inputBlock.transactions) {
-			addedTransactions += getExecutedCallNonceContribution(transaction, address)
-		}
-	}
-	return (await ethereumClientService.getTransactionCount(address, blockNumToUseForChain, requestAbortController)) + addedTransactions
+	const simulatedTransactions = getExecutionBlocksUpToTag(context, blockTag).flatMap((block) => block.inputBlock.transactions)
+	return await getTransactionCountAfterTransactions(ethereumClientService, requestAbortController, simulatedTransactions, address, blockNumToUseForChain)
 }
 
 export const getSimulatedTransactionCountFromInput = async (

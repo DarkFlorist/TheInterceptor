@@ -63,6 +63,29 @@ export const hasPartialEip7702AuthorizationSignature = (authorization: Eip7702Au
 	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
 }
 
+// secp256k1n / 2: EIP-7702 takes the s value of an authorization signature only up to this bound (EIP-2), although the authority still recovers from a higher one.
+const SECP256K1_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0n
+const EIP7702_AUTHORIZATION_NONCE_LIMIT = 2n ** 64n - 1n
+
+// An EIP-7702 delegation indicator (0xef0100 || address), which an account may hold and still accept an authorization.
+export const isEip7702DelegationIndicator = (code: Uint8Array) => code.length === 23 && code[0] === 0xef && code[1] === 0x01 && code[2] === 0x00
+
+type Eip7702AuthorityState = {
+	readonly chainId: bigint
+	readonly authorityNonce: bigint
+	readonly authorityCode: Uint8Array
+}
+
+// Whether a node applies the authorization under EIP-7702 for an authority in this state. A skipped one sets no delegate and raises no nonce: it needs a signature, chain ID 0 or this chain, a nonce below 2**64 - 1 that equals the authority's nonce, an s value of at most secp256k1n/2, and an authority whose code is empty or a delegation indicator. The authority is the signer recovered when the transaction was formed or parsed.
+export const isAppliedEip7702Authorization = (authorization: Eip7702Authorization, { chainId, authorityNonce, authorityCode }: Eip7702AuthorityState) => {
+	return hasEip7702AuthorizationSignature(authorization)
+		&& (authorization.chainId === 0n || authorization.chainId === chainId)
+		&& authorization.nonce < EIP7702_AUTHORIZATION_NONCE_LIMIT
+		&& authorization.s <= SECP256K1_HALF_ORDER
+		&& (authorityCode.length === 0 || isEip7702DelegationIndicator(authorityCode))
+		&& authorization.nonce === authorityNonce
+}
+
 const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => {
 	return EthereumAddress.parse(eip7702Authorization.getAuthority({
 		chainId: authorization.chainId,

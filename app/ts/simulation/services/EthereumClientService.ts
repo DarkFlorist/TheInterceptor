@@ -16,7 +16,7 @@ import { authorizesExecutedCall, type BlockTimeManipulation, type SimulationStat
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
-import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { isEip7702DelegationIndicator, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -239,7 +239,7 @@ export class EthereumClientService {
 
 	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const code = await this.getCode(address, blockTag, requestAbortController)
-		if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
+		if (!isEip7702DelegationIndicator(code)) return undefined
 		return BigInt(`0x${ dataString(code.slice(3)) }`)
 	}
 

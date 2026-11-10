@@ -1,6 +1,6 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { authorization as eip7702Authorization } from 'micro-eth-signer'
+import { addr, authorization as eip7702Authorization } from 'micro-eth-signer'
 import { isAbiDataDecodeError, keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
@@ -20,6 +20,7 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
+import { isAppliedEip7702Authorization, normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -104,6 +105,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public minimumSuccessfulGasLimit: bigint | undefined = undefined
 	public malformedGetCodeReturn = false
 	public balance = 0n
+	public readonly codeByAddress = new Map<bigint, string>()
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
 	public ethFeeHistoryCalls: EthereumJsonRpcRequest[] = []
@@ -121,6 +123,7 @@ class MockEthereumJSONRpcRequestHandler {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber': return `0x${ blockNumber.toString(16) }`
 			case 'eth_getTransactionCount': return '0x0'
+			case 'eth_getCode': return this.codeByAddress.get(rpcRequest.params[0]) ?? '0x'
 			case 'eth_getBalance':
 				this.ethGetBalanceCalls.push(rpcRequest)
 				return `0x${ this.balance.toString(16) }`
@@ -532,7 +535,7 @@ describe('SimulationModeEthereumClientService', () => {
 					signedTransaction: mockSignTransaction({
 						...example7702Transaction,
 						authorizationList: [{
-							chainId: example7702Transaction.chainId,
+							chainId: rpcNetwork.chainId,
 							address: 0n,
 							nonce: 0n,
 							authority,
@@ -564,7 +567,7 @@ describe('SimulationModeEthereumClientService', () => {
 					signedTransaction: mockSignTransaction({
 						...example7702Transaction,
 						authorizationList: [{
-							chainId: example7702Transaction.chainId,
+							chainId: rpcNetwork.chainId,
 							address: 0n,
 							nonce: 0n,
 							authority,
@@ -595,6 +598,97 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 			if ('error' in estimateGas) throw new Error(`estimate gas unexpectedly failed: ${ estimateGas.message }`)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallNonce, 1n)
+		})
+
+		describe('EIP-7702 authorization nonce accounting', () => {
+			const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+			const authorityPrivateKey = '0x000000000000000000000000000000000000000000000000000000000000beef'
+			const authority = EthereumAddress.parse(addr.fromPrivateKey(authorityPrivateKey))
+			const sponsor = exampleTransaction.from
+			const delegate = 0x00000000000000000000000000000000000d1e9an
+			const signAuthorization = (chainId: bigint, nonce: bigint) => {
+				const signed = eip7702Authorization.sign({ address: addressString(delegate), chainId, nonce }, authorityPrivateKey)
+				return { chainId, address: delegate, nonce, r: BigInt(signed.r), s: BigInt(signed.s), yParity: signed.yParity === 0 ? 'even' as const : 'odd' as const }
+			}
+			const withHighS = (authorization: ReturnType<typeof signAuthorization>) => ({ ...authorization, s: SECP256K1_ORDER - authorization.s, yParity: authorization.yParity === 'even' ? 'odd' as const : 'even' as const })
+			const authorizationTransaction = async (from: bigint, nonce: bigint, authorizations: readonly ReturnType<typeof signAuthorization>[], transactionIdentifier: bigint) => ({
+				signedTransaction: mockSignTransaction({ ...example7702Transaction, chainId: rpcNetwork.chainId, from, nonce, authorizationList: await normalizeEip7702AuthorizationList(authorizations) }),
+				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ type: '7702', authorizationList: [] }]},
+				transactionIdentifier,
+			} as const)
+			// One transaction per block, as the mocked eth_simulateV1 reply has one call per block.
+			const stackOf = (transactions: readonly Awaited<ReturnType<typeof authorizationTransaction>>[]) => transactions.map((transaction) => ({
+				stateOverrides: {},
+				transactions: [transaction],
+				signedMessages: [],
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const,
+				simulateWithZeroBaseFee: false,
+			}))
+			const authorityNonceAfter = async (transactions: readonly Awaited<ReturnType<typeof authorizationTransaction>>[]) => {
+				const simulationStateInput = stackOf(transactions)
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const fromState = await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(simulationState), authority)
+				const fromInput = await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), authority)
+				assert.equal(fromInput, fromState)
+				return fromState
+			}
+
+			test('a valid sponsored authorization raises its authority nonce', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 200n)]), 1n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(0n, 0n)], 201n)]), 1n)
+			})
+
+			test('an authorization with a nonce other than the authority nonce raises nothing', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 3n)], 202n)]), 0n)
+			})
+
+			test('an authorization for another chain raises nothing', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(1n, 0n)], 203n)]), 0n)
+			})
+
+			test('a high-s authorization raises nothing even though its authority recovers', async () => {
+				const highS = withHighS(signAuthorization(rpcNetwork.chainId, 0n))
+				const [recovered] = await normalizeEip7702AuthorizationList([highS])
+				assert.equal(recovered?.authority, authority)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [highS], 204n)]), 0n)
+			})
+
+			test('an authorization reusing a nonce an earlier one consumed raises nothing', async () => {
+				const authorization = signAuthorization(rpcNetwork.chainId, 0n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [authorization, authorization], 205n)]), 1n)
+				assert.equal(await authorityNonceAfter([
+					await authorizationTransaction(sponsor, 0n, [authorization], 206n),
+					await authorizationTransaction(sponsor, 1n, [authorization], 207n),
+				]), 1n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [authorization, signAuthorization(rpcNetwork.chainId, 1n)], 208n)]), 2n)
+			})
+
+			test('a self-sponsored authorization needs the nonce after the sender raised it', async () => {
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(authority, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 209n)]), 1n)
+				assert.equal(await authorityNonceAfter([await authorizationTransaction(authority, 0n, [signAuthorization(rpcNetwork.chainId, 1n)], 210n)]), 2n)
+			})
+
+			test('an authority with contract code accepts no authorization, one with a delegation indicator does', async () => {
+				try {
+					requestHandler.codeByAddress.set(authority, '0x6080604052')
+					assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 211n)]), 0n)
+					requestHandler.codeByAddress.set(authority, `0xef0100${ addressString(delegate).slice(2) }`)
+					assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 212n)]), 1n)
+				} finally {
+					requestHandler.codeByAddress.clear()
+				}
+			})
+
+			test('the s value bound is secp256k1n/2 and an unsigned authorization never applies', () => {
+				const authorityState = { chainId: rpcNetwork.chainId, authorityNonce: 0n, authorityCode: new Uint8Array() }
+				const authorization = { chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority, r: 1n, yParity: 'even' as const }
+				assert.equal(isAppliedEip7702Authorization({ ...authorization, s: SECP256K1_ORDER / 2n }, authorityState), true)
+				assert.equal(isAppliedEip7702Authorization({ ...authorization, s: SECP256K1_ORDER / 2n + 1n }, authorityState), false)
+				assert.equal(isAppliedEip7702Authorization({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority }, authorityState), false)
+			})
 		})
 
 		test('recoverAddress should fail for mocked transaction', async () => {
