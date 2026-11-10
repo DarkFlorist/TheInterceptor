@@ -8,7 +8,7 @@ import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchEr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { buildSimulationInput, captureSimulationSnapshot, getSimulationProviderForSnapshot, type BuiltSimulationInput, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { selectionChanged } from '../utils/simulationSelection.js'
+import { selectionChanged, type SimulationSelection } from '../utils/simulationSelection.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -19,9 +19,9 @@ import { simulationServicesAreCurrent } from '../simulation/serviceLifecycle.js'
 
 let abortController = new AbortController()
 
-// The one rule for acting on a refresh, asked of the authority for each half: the owner that installed the services it was handed must still have them installed, and any snapshot it would execute must not have changed from the current settings, because a queued snapshot only says what was selected at enqueue time. Whatever replaces services or changes the selection queues the refresh it needs (activeSettings.ts by selectionNeedsRefresh, built on the same selectionChanged), so a refresh failing this rule returns without cancelling or publishing.
-const refreshStillApplies = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined) => (
-	simulationServicesAreCurrent(ethereum) && (snapshot === undefined || !selectionChanged(snapshot, await getSettings()))
+// The one rule for acting on a refresh, asked of the authority for each half: the owner that installed the services it was handed must still have them installed, and any snapshot it would execute must not have changed from the current settings, because a queued snapshot only says what was selected at enqueue time. Whatever replaces services or changes the selection queues the refresh it needs (activeSettings.ts by selectionNeedsRefresh, built on the same selectionChanged), so a refresh failing this rule returns without cancelling or publishing. It is synchronous, so callers read the settings before calling it and nothing can install other services between the owner's answer and the step it guards.
+const refreshStillApplies = (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined, selection: SimulationSelection) => (
+	(snapshot === undefined || !selectionChanged(snapshot, selection)) && simulationServicesAreCurrent(ethereum)
 )
 
 function buildPassthroughVisualizedState(
@@ -95,7 +95,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			if (currentFingerprint === cachedFingerprint && (checkedSnapshot.richAddresses.length === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
 		// Nothing awaits between this check and the abort, so a refresh left behind by a selection change never cancels or invalidates the current selection's refresh. Only a supplied snapshot is checked: without one, execution reads the selection itself.
-		if (!await refreshStillApplies(ethereum, snapshot)) return await getPopupVisualisationState()
+		if (!refreshStillApplies(ethereum, snapshot, await getSettings())) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
@@ -154,7 +154,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 			const builtInput = await buildSimulationInput(capturedSnapshot)
 			// The selection can change after this refresh committed, including between the reads above and this check.
-			if (!await refreshStillApplies(ethereum, capturedSnapshot)) return
+			if (!refreshStillApplies(ethereum, capturedSnapshot, await getSettings())) return
 			const simulationState = await getUpdatedSimulationState(ethereum, builtInput)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
 			const numberOfAddressesMadeRich = capturedSnapshot.richAddresses.length

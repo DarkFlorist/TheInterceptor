@@ -190,11 +190,13 @@ function createNetworkSwitchFixture() {
 	}, async () => undefined, async () => undefined, otherEndpointNetwork)
 	const otherEndpointServices: SimulationServices = { ethereum: otherEndpointEthereum, tokenPriceService: new modules.TokenPriceService(otherEndpointEthereum, 60_000) }
 	let currentServices = firstEndpointServices
+	const otherEndpointInstalled = new Future<void>()
 	const simulationServicesOwner: SimulationServicesOwner = {
 		getCurrent: () => currentServices,
 		reset: () => {
 			currentServices = otherEndpointServices
 			recordInstalledServices(currentServices, simulationServicesOwner)
+			otherEndpointInstalled.resolve(undefined)
 			return currentServices
 		},
 	}
@@ -202,6 +204,7 @@ function createNetworkSwitchFixture() {
 	return {
 		firstEndpointServices,
 		simulationServicesOwner,
+		otherEndpointInstalled,
 		firstEndpointReadsBlockNumber,
 		releaseFirstEndpointBlockNumber,
 		holdNextFirstEndpointBlockNumber: () => { holdFirstEndpointBlockNumber = true },
@@ -570,6 +573,82 @@ for (const serviceReset of serviceResets) test(`after ${ serviceReset.name }, a 
 		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The stack was simulated with the replaced services')
 		await assertOtherEndpointPublishedTransaction()
 	} finally {
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
+})
+
+test('a reset landing while the execution guard reads the settings stops the replaced services from simulating', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const snapshot = await captureSimulationSnapshot()
+	const guardReadsSettings = new Future<void>()
+	const releaseGuardRead = new Future<void>()
+	let holdNextSettingsRead = true
+	// With a supplied snapshot, the execution guard is the first settings read: building the input reads only the stack and block time settings.
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (holdNextSettingsRead && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			holdNextSettingsRead = false
+			guardReadsSettings.resolve(undefined)
+			await releaseGuardRead
+		}
+		return readStoredItems()
+	})
+	const restoreSendMessage = openVisualisationConsumer()
+	try {
+		const execution = updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, undefined, true, snapshot)
+		await guardReadsSettings
+		// The replacement's own refresh waits for the semaphore this execution holds, so only the reset itself is awaited here.
+		const replacing = replaceRpcListWithOtherEndpointAsPrimary(fixture)
+		await fixture.otherEndpointInstalled
+		releaseGuardRead.resolve(undefined)
+		await execution
+		await replacing
+		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The replaced services simulated after the reset')
+		await assertOtherEndpointPublishedTransaction()
+	} finally {
+		releaseGuardRead.resolve(undefined)
+		fixture.releaseAll()
+		restoreSendMessage()
+	}
+})
+
+test('a refresh resuming from its pre-abort settings read after a reset does not cancel the refresh running on the replacement services', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const snapshot = await captureSimulationSnapshot()
+	const guardReadsSettings = new Future<void>()
+	const releaseGuardRead = new Future<void>()
+	let holdNextSettingsRead = true
+	// With a supplied snapshot and invalidation, which skips the unchanged-input check, the pre-abort guard is the first settings read.
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (holdNextSettingsRead && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			holdNextSettingsRead = false
+			guardReadsSettings.resolve(undefined)
+			await releaseGuardRead
+		}
+		return readStoredItems()
+	})
+	const restoreSendMessage = openVisualisationConsumer()
+	try {
+		// The call an older queue entry makes with the snapshot it was queued with.
+		const olderRefresh = updatePopupVisualisationIfNeeded(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { invalidateOldState: true, snapshot })
+		await guardReadsSettings
+		// The reset queues the refresh for the replacement services, held here while it simulates.
+		fixture.holdNextOtherEndpointSimulation()
+		const replacing = replaceRpcListWithOtherEndpointAsPrimary(fixture)
+		await fixture.otherEndpointSimulates
+		releaseGuardRead.resolve(undefined)
+		// The older refresh returns without waiting for that simulation; the bounded wait keeps one that instead queues behind it from deadlocking the test.
+		await Promise.race([olderRefresh, new Promise((resolve) => setTimeout(resolve, 200))])
+		fixture.releaseOtherEndpointSimulation.resolve(undefined)
+		await replacing
+		await olderRefresh
+		assert.equal(fixture.getOtherEndpointCancelledRequests(), 0, 'The older refresh cancelled the refresh running on the replacement services')
+		assert.equal(fixture.getFirstEndpointSimulations(), 0, 'The replaced services simulated after the reset')
+		await assertOtherEndpointPublishedTransaction()
+	} finally {
+		releaseGuardRead.resolve(undefined)
 		fixture.releaseAll()
 		restoreSendMessage()
 	}
