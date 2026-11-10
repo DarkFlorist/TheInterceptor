@@ -3,8 +3,8 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSenderDelegatesForTransactions, getSimulatedCode, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { type EthereumClientService, getDelegateFromCode, getExecutedTransaction } from '../simulation/services/EthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getSimulatedCodeFromInput, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
@@ -37,7 +37,6 @@ import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from './delegateClearingPolicy.js'
 import { getAppendedBlockStateOverrides } from '../utils/simulationStateOverrides.js'
-import { getNodeRecoveredEip7702Authority } from '../utils/eip7702Authorization.js'
 
 export { getGovernanceExecutionSimulationInput } from '../simulation/compoundGovernanceFaking.js'
 
@@ -222,33 +221,45 @@ async function withDelegationLookupReporting<T>(address: bigint, lookup: () => P
 	}
 }
 
+// The delegate each transaction's sender runs with, read from executed state rather than re-derived from EIP-7702's rules. Code only changes through authorizations, so before the stack's first transaction that carries any, a sender has its initial delegate: what the first block's effective overrides (including delegate clearing) set, else its on-chain one. From such a transaction on, the sender's code is read by re-running the stack up to and including that transaction with the code reader appended in its own block (getSimulatedCodeFromInput), so the stack's own blocks run exactly as simulated. A failed read shows no delegate.
 async function getDelegationEntriesForTransactions(
 	simulationState: SimulationState,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 ): Promise<readonly (readonly (AddressBookEntry | undefined)[])[]> {
 	const executionInput = getSimulationExecutionInputFromState(simulationState)
-	const transactions = executionInput.value.flatMap((block) => block.transactions)
-	// The authorities the node can recover; authority metadata alone never reaches the node.
-	const authorities = transactions.flatMap(({ signedTransaction }) => signedTransaction.type === '7702' ? signedTransaction.authorizationList.flatMap((authorization) => {
-		const authority = getNodeRecoveredEip7702Authority(authorization)
-		return authority === undefined ? [] : [authority]
-	}) : [])
-	// What the first block's effective overrides (including the initial account state) set needs no on-chain read; only authorities need their nonce.
-	const firstBlockOverrides = getAppendedBlockStateOverrides(0, executionInput.value[0]?.stateOverrides ?? {}, executionInput.simulationOverrides)
-	const accounts = Array.from(new Set([...transactions.map(({ signedTransaction }) => signedTransaction.from), ...authorities]))
-	const authoritySet = new Set(authorities)
-	const onChainAccounts = new Map(await promiseAllMapAbortSafe(accounts, async (account) => {
-		const accountOverride = firstBlockOverrides[addressString(account)]
-		const code = accountOverride?.code !== undefined ? undefined : await withDelegationLookupReporting(account, async () => await ethereum.getCode(account, 'latest', requestAbortController))
-		const nonce = !authoritySet.has(account) || accountOverride?.nonce !== undefined ? undefined : await withDelegationLookupReporting(account, async () => await ethereum.getTransactionCount(account, 'latest', requestAbortController))
-		return [addressString(account), { code, nonce }] as const
+	const blocks = executionInput.value
+	const firstBlockOverrides = getAppendedBlockStateOverrides(0, blocks[0]?.stateOverrides ?? {}, executionInput.simulationOverrides)
+	type DelegateSource = { readonly sender: bigint, readonly readAfter: { readonly blockIndex: number, readonly transactionIndex: number } | undefined }
+	let lastAuthorizationTransaction: DelegateSource['readAfter']
+	const sources: readonly (readonly DelegateSource[])[] = blocks.map((block, blockIndex) => block.transactions.map((transaction, transactionIndex) => {
+		const executedCall = getExecutedTransaction(transaction)
+		// A transaction's own call runs after its authorizations, so its sender's code is read after it.
+		if (executedCall.type === '7702' && executedCall.authorizationList.length > 0) lastAuthorizationTransaction = { blockIndex, transactionIndex }
+		return { sender: transaction.signedTransaction.from, readAfter: lastAuthorizationTransaction }
 	}))
-	const delegatesByTransaction = getSenderDelegatesForTransactions(executionInput, ethereum.getChainId(), onChainAccounts)
-	const delegates = Array.from(new Set(delegatesByTransaction.flat().filter((delegate): delegate is bigint => delegate !== undefined)))
+	const getSourceKey = ({ sender, readAfter }: DelegateSource) => readAfter === undefined ? `initial:${ addressString(sender) }` : `${ readAfter.blockIndex }:${ readAfter.transactionIndex }:${ addressString(sender) }`
+	const uniqueSources = Array.from(new Map(sources.flat().map((source) => [getSourceKey(source), source] as const)).values())
+	const readDelegate = async ({ sender, readAfter }: DelegateSource): Promise<bigint | undefined> => {
+		if (readAfter === undefined) {
+			const overriddenCode = firstBlockOverrides[addressString(sender)]?.code
+			if (overriddenCode !== undefined) return getDelegateFromCode(overriddenCode)
+			return await withDelegationLookupReporting(sender, async () => await ethereum.getDelegation(sender, 'latest', requestAbortController))
+		}
+		const block = blocks[readAfter.blockIndex]
+		if (block === undefined) throw new Error('Delegate read block index overflow')
+		const prefix = [...blocks.slice(0, readAfter.blockIndex), modifyObject(block, { transactions: block.transactions.slice(0, readAfter.transactionIndex + 1) })]
+		const code = await withDelegationLookupReporting(sender, async () => await getSimulatedCodeFromInput(ethereum, requestAbortController, createSimulatedExecutionInput(prefix, executionInput.simulationOverrides), sender))
+		return code?.statusCode === 'success' ? getDelegateFromCode(code.getCodeReturn) : undefined
+	}
+	const delegatesBySource = new Map(await promiseAllMapAbortSafe(uniqueSources, async (source) => [getSourceKey(source), await readDelegate(source)] as const))
+	const delegates = Array.from(new Set(Array.from(delegatesBySource.values()).filter((delegate): delegate is bigint => delegate !== undefined)))
 	const delegateEntries = new Map(await promiseAllMapAbortSafe(delegates, async (delegate) =>
 		[addressString(delegate), await withDelegationLookupReporting(delegate, async () => await identifyAddress(ethereum, requestAbortController, delegate))] as const))
-	return delegatesByTransaction.map((blockDelegates) => blockDelegates.map((delegate) => delegate === undefined ? undefined : delegateEntries.get(addressString(delegate))))
+	return sources.map((blockSources) => blockSources.map((source) => {
+		const delegate = delegatesBySource.get(getSourceKey(source))
+		return delegate === undefined ? undefined : delegateEntries.get(addressString(delegate))
+	}))
 }
 
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
