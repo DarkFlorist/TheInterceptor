@@ -388,8 +388,12 @@ export class EthereumClientService {
 			return transactionChunks
 		}
 
+		// Initial account state reaches the node only through the first block, so an input without blocks sends it in one call-less block instead of dropping it.
+		const blocksToSend: SimulationStateInputMinimalData = simulationStateInput.length === 0 && Object.keys(simulationOverrides).length > 0
+			? [{ transactions: [], stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }]
+			: simulationStateInput
 		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
-		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map(gasLimitTransaction) }))
+		const gasLimitedInput: SimulationStateInputMinimalData = blocksToSend.map((block) => ({ ...block, transactions: block.transactions.map(gasLimitTransaction) }))
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
 		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []
 		for (const inputBlock of gasLimitedInput) {

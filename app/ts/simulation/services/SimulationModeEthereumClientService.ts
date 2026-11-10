@@ -154,7 +154,7 @@ const createPreparedSimulationExecutionContext = async (
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (!hasSimulationBlocks(resolvedSimulationInput)) {
-		// Simulation-wide overrides can affect the next DApp call without an empty prefix RPC block.
+		// Simulation-wide overrides can affect the next DApp call without an empty prefix RPC block, so this skips prepareEthSimulateV1Input, which would send them in a call-less block of their own.
 		return {
 			simulationInput: simulationStateInput,
 			parentBlock,

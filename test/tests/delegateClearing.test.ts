@@ -22,7 +22,7 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
-import { type SimulationState, SimulationStateInputBlock, createSimulatedInput } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorSimulationExport, type SimulationState, SimulationStateInputBlock, createSimulatedInput } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 
@@ -801,5 +801,70 @@ describe('delegate clearing in simulation', () => {
 		releaseOldBlock('0x')
 		assert.equal(await pendingHint, undefined)
 		assert.equal(codeRequests, 1)
+	})
+
+	const createExportEthereum = () => {
+		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
+		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
+		if (parentBlock === null) throw new Error('Expected a parent block')
+		return new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
+				if (request.method === 'eth_blockNumber') return `0x${ parentBlock.number.toString(16) }`
+				throw new Error(`Unexpected RPC method ${ request.method }`)
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+	}
+
+	const exportBlockStateCalls = async (ethereum: EthereumClientService) => {
+		// Imported once the browser mock is installed, since the module loads the WebExtension polyfill.
+		const { requestInterceptorSimulationInput } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const reply = await requestInterceptorSimulationInput(ethereum)
+		if (!reply.ok) throw new Error(reply.message)
+		const exported = InterceptorSimulationExport.parse(JSON.parse(reply.ethSimulateV1InputString))
+		return serialize(EthSimulateV1Params, exported.eth_simulateV1).params[0].blockStateCalls
+	}
+
+	test('exports the cleared delegate code in the eth_simulateV1 request even with an empty stack', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
+		assert.equal((await getCurrentSimulationInput()).length, 0)
+		const blockStateCalls = await exportBlockStateCalls(createExportEthereum())
+		assert.equal(blockStateCalls.length, 1)
+		assert.deepEqual(blockStateCalls[0]?.calls, [])
+		assert.deepEqual(blockStateCalls[0]?.stateOverrides, { [addressString(activeAddress)]: { code: '0x' } })
+	})
+
+	test('exports a non-empty stack with the cleared delegate code on its first block and no extra block', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
+		await updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Transaction', preSimulationTransaction: transaction(1n) }] }))
+		const blockStateCalls = await exportBlockStateCalls(createExportEthereum())
+		assert.equal(blockStateCalls.length, 1)
+		assert.equal(blockStateCalls[0]?.calls.length, 1)
+		assert.equal(blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+	})
+
+	test('emits initial account state of an input without blocks as one call-less block, and nothing without it', async () => {
+		installBrowserMock()
+		const ethereum = createExportEthereum()
+		const simulationOverrides = { [addressString(activeAddress)]: { code: new Uint8Array() } }
+		const prepared = await ethereum.prepareEthSimulateV1Input({ kind: 'simulated', value: [], simulationOverrides }, 1n, undefined)
+		const request = serialize(EthSimulateV1Params, prepared.request)
+		assert.equal(request.params[0].blockStateCalls.length, 1)
+		assert.deepEqual(request.params[0].blockStateCalls[0]?.calls, [])
+		assert.deepEqual(request.params[0].blockStateCalls[0]?.stateOverrides, { [addressString(activeAddress)]: { code: '0x' } })
+		assert.equal(prepared.rpcBlocks.length, 1)
+		assert.equal(prepared.blockOverrides.length, 1)
+		assert.deepEqual(prepared.inputBlocks.map((block) => block.rpcBlockCount), [1])
+		const withoutOverrides = await ethereum.prepareEthSimulateV1Input({ kind: 'simulated', value: [], simulationOverrides: {} }, 1n, undefined)
+		assert.deepEqual(serialize(EthSimulateV1Params, withoutOverrides.request).params[0].blockStateCalls, [])
+		assert.equal(withoutOverrides.rpcBlocks.length, 0)
+		assert.equal(withoutOverrides.inputBlocks.length, 0)
 	})
 })
