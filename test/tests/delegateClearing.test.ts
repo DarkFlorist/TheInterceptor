@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, setSystemTime, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSenderDelegatesForTransactions, getSimulationInputForPreview, prepareSimulationInputForRpc, visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
+import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPreview, prepareSimulationInputForRpc, visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from '../../app/ts/background/delegateClearingPolicy.js'
 import { createDelegateClearingHintCache } from '../../app/ts/simulation/services/delegateClearingHintCache.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -12,8 +12,8 @@ import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEna
 import { getSettings } from '../../app/ts/background/settings.js'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { updateInterceptorTransactionStack } from '../../app/ts/background/storageVariables.js'
-import { appendTransactionsToInput, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustmentBalances, getSimulatedCode, getSimulatedCodeFromInput, mockSignTransaction, simulatedCallFromInput, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { addressString } from '../../app/ts/utils/bigint.js'
+import { type AccountCodeAndNonce, appendTransactionsToInput, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustmentBalances, getSenderDelegatesForTransactions, getSimulatedCode, getSimulatedCodeFromInput, mockSignTransaction, simulatedCallFromInput, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { getSimulatedStackV2 } from '../../app/ts/simulation/SimulationStackExtraction.js'
 import { getSimulationInputHash } from '../../app/ts/utils/simulationFingerprint.js'
 import { isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateClearingState.js'
@@ -22,7 +22,7 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
+import { EthSimulateV1Params, type StateOverrides } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
 import { InterceptorSimulationExport, type SimulationState, SimulationStateInputBlock, createSimulatedExecutionInput } from '../../app/ts/types/visualizer-types.js'
@@ -920,76 +920,140 @@ describe('delegate clearing in simulation', () => {
 
 	const onChainDelegate = 0x0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0dn
 	const restoredDelegate = 0xd00dd00dd00dd00dd00dd00dd00dd00dd00dd00dn
+	const delegationDesignator = (delegate: bigint) => `0xef0100${ addressString(delegate).slice(2) }`
 	const selfCall = (identifier: bigint) => ({
 		...transaction(identifier),
 		signedTransaction: mockSignTransaction({ type: '1559', from: activeAddress, to: activeAddress, value: 0n, input: new Uint8Array(), nonce: identifier - 1n, gas: 50_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n }),
 	})
-	const authorizationTransaction = (identifier: bigint, delegate: bigint, authority = activeAddress) => ({
+	// A self-sponsored authorization by default: the sender's nonce rises before its authorizations apply, so with an on-chain nonce of 0 the authorization in the stack's nth transaction needs nonce n.
+	const authorizationTransaction = (identifier: bigint, delegate: bigint, { authority = activeAddress, nonce = identifier, chainId = rpcEntry.chainId }: { authority?: bigint, nonce?: bigint, chainId?: bigint } = {}) => ({
 		...transaction(identifier),
-		signedTransaction: mockSignTransaction({ type: '7702', from: activeAddress, to: activeAddress, value: 0n, input: new Uint8Array(), nonce: identifier - 1n, gas: 100_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, authorizationList: [{ chainId: rpcEntry.chainId, address: delegate, nonce: identifier, authority }] }),
+		signedTransaction: mockSignTransaction({ type: '7702', from: activeAddress, to: activeAddress, value: 0n, input: new Uint8Array(), nonce: identifier - 1n, gas: 100_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, authorizationList: [{ chainId, address: delegate, nonce, authority }] }),
 	})
 	const blockOf = (transactions: readonly ReturnType<typeof selfCall>[]) => ({ stateOverrides: {}, transactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false })
-	const onChainDelegates = new Map([[addressString(activeAddress), onChainDelegate]])
+	const delegatedOnChain = new Map([[addressString(activeAddress), { code: stringToUint8Array(delegationDesignator(onChainDelegate)), nonce: 0n }]])
+	const clearedOnChainNonce = new Map([[addressString(activeAddress), { code: undefined, nonce: 0n }]])
+	const delegatesOf = (blocks: readonly (readonly ReturnType<typeof selfCall>[])[], simulationOverrides: StateOverrides, onChainAccounts: ReadonlyMap<string, AccountCodeAndNonce>) =>
+		getSenderDelegatesForTransactions(createSimulatedExecutionInput(blocks.map(blockOf), simulationOverrides), rpcEntry.chainId, onChainAccounts)
 
-	test('a cleared account runs with the delegate an authorization in the stack restores, from that transaction on', () => {
-		const input = [blockOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)]), blockOf([selfCall(4n)])]
-		assert.deepEqual(getSenderDelegatesForTransactions(input, clearedCode, new Map()), [[undefined, restoredDelegate, restoredDelegate], [restoredDelegate]])
+	test('a cleared account runs with the delegate a valid authorization in the stack restores, from that transaction on', () => {
+		assert.deepEqual(delegatesOf([[selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)], [selfCall(4n)]], clearedCode, clearedOnChainNonce), [[undefined, restoredDelegate, restoredDelegate], [restoredDelegate]])
+	})
+
+	test('an authorization valid on any chain (chain ID 0) applies too', () => {
+		assert.deepEqual(delegatesOf([[authorizationTransaction(1n, restoredDelegate, { chainId: 0n }), selfCall(2n)]], clearedCode, clearedOnChainNonce), [[restoredDelegate, restoredDelegate]])
 	})
 
 	test('a cleared account stays undelegated when nothing in the stack re-authorizes it', () => {
-		const input = [blockOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate, activeAddress + 1n), selfCall(3n)])]
-		assert.deepEqual(getSenderDelegatesForTransactions(input, clearedCode, onChainDelegates), [[undefined, undefined, undefined]])
+		assert.deepEqual(delegatesOf([[selfCall(1n), authorizationTransaction(2n, restoredDelegate, { authority: activeAddress + 1n }), selfCall(3n)]], clearedCode, delegatedOnChain), [[undefined, undefined, undefined]])
 	})
 
-	test('an account without clearing keeps its on-chain delegate until an authorization to the zero address clears it', () => {
-		const input = [blockOf([selfCall(1n), authorizationTransaction(2n, 0n), selfCall(3n)])]
-		assert.deepEqual(getSenderDelegatesForTransactions(input, {}, onChainDelegates), [[onChainDelegate, undefined, undefined]])
+	test('an authorization with an outdated nonce is ignored', () => {
+		assert.deepEqual(delegatesOf([[selfCall(1n), authorizationTransaction(2n, restoredDelegate, { nonce: 1n }), selfCall(3n)]], {}, delegatedOnChain), [[onChainDelegate, onChainDelegate, onChainDelegate]])
 	})
 
-	test('the visualised stack shows the restored delegate after re-authorization and none for a cleared account otherwise', async () => {
-		installBrowserMock()
+	test('an authorization for another chain is ignored', () => {
+		assert.deepEqual(delegatesOf([[selfCall(1n), authorizationTransaction(2n, restoredDelegate, { chainId: rpcEntry.chainId + 1n }), selfCall(3n)]], {}, delegatedOnChain), [[onChainDelegate, onChainDelegate, onChainDelegate]])
+	})
+
+	test('an invalid zero-address authorization does not hide the delegate, while a valid one clears it', () => {
+		assert.deepEqual(delegatesOf([[selfCall(1n), authorizationTransaction(2n, 0n, { nonce: 5n }), selfCall(3n)]], {}, delegatedOnChain), [[onChainDelegate, onChainDelegate, onChainDelegate]])
+		assert.deepEqual(delegatesOf([[selfCall(1n), authorizationTransaction(2n, 0n), selfCall(3n)]], {}, delegatedOnChain), [[onChainDelegate, undefined, undefined]])
+	})
+
+	test('a nonce consumed by an earlier valid authorization makes a replayed one invalid', () => {
+		const firstAuthorization = authorizationTransaction(2n, restoredDelegate)
+		const replayedNonce = authorizationTransaction(3n, 0n, { nonce: 2n })
+		assert.deepEqual(delegatesOf([[selfCall(1n), firstAuthorization, replayedNonce, selfCall(4n)]], clearedCode, clearedOnChainNonce), [[undefined, restoredDelegate, restoredDelegate, restoredDelegate]])
+	})
+
+	test('an authority with contract code or an unknown nonce accepts no authorization', () => {
+		const contractOnChain = new Map([[addressString(activeAddress), { code: new Uint8Array([0x60, 0x00]), nonce: 0n }]])
+		assert.deepEqual(delegatesOf([[authorizationTransaction(1n, restoredDelegate)]], {}, contractOnChain), [[undefined]])
+		const unknownNonce = new Map([[addressString(activeAddress), { code: new Uint8Array(), nonce: undefined }]])
+		assert.deepEqual(delegatesOf([[authorizationTransaction(1n, restoredDelegate)]], {}, unknownNonce), [[undefined]])
+	})
+
+	const createVisualizerEthereum = () => {
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
-		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
-		const ethereum = new EthereumClientService({
+		return new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
-				if (request.method === 'eth_getCode') return request.params[0] === activeAddress ? `0xef0100${ addressString(onChainDelegate).slice(2) }` : '0x'
+				if (request.method === 'eth_getCode') return request.params[0] === activeAddress ? delegationDesignator(onChainDelegate) : '0x'
+				if (request.method === 'eth_getTransactionCount') return '0x0'
 				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
 				// Address identification probes contract-looking addresses; a JSON-RPC error is its handled outcome.
 				if (request.method === 'eth_simulateV1') throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } })
 				throw new Error(`Unexpected RPC method ${ request.method }`)
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		const visualizedDelegates = async (transactions: readonly ReturnType<typeof selfCall>[]) => {
-			const failedState: SimulationState = {
-				success: false,
-				simulationStateInput: [blockOf(transactions)],
-				simulationOverrides: clearedCode,
-				jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Simulation failed' } },
-				blockNumber: 1n,
-				blockTimestamp: new Date('2026-01-01T00:00:00Z'),
-				baseFeePerGas: 1n,
-				simulationConductedTimestamp: new Date('2026-01-01T00:00:00Z'),
-				rpcNetwork: rpcEntry,
+	}
+
+	const visualizedDelegatesOf = async (simulationState: SimulationState) => {
+		const ethereum = createVisualizerEthereum()
+		// The recovered identification probes log warnings, which are not under test here.
+		const originalConsole = { warn: console.warn, error: console.error }
+		console.warn = () => undefined
+		console.error = () => undefined
+		const visualized = await (async () => {
+			try {
+				return await visualizeSimulatorState(simulationState, ethereum, new TokenPriceService(ethereum, 60000), undefined)
+			} finally {
+				console.warn = originalConsole.warn
+				console.error = originalConsole.error
 			}
-			// The recovered identification probes log warnings, which are not under test here.
-			const originalConsole = { warn: console.warn, error: console.error }
-			console.warn = () => undefined
-			console.error = () => undefined
-			const visualized = await (async () => {
-				try {
-					return await visualizeSimulatorState(failedState, ethereum, new TokenPriceService(ethereum, 60000), undefined)
-				} finally {
-					console.warn = originalConsole.warn
-					console.error = originalConsole.error
-				}
-			})()
-			return visualized.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions.map((visualizedTransaction) => visualizedTransaction.transaction.delegationAddress?.address))
-		}
-		assert.deepEqual(await visualizedDelegates([selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)]), [undefined, restoredDelegate, restoredDelegate])
-		assert.deepEqual(await visualizedDelegates([selfCall(1n), selfCall(2n)]), [undefined, undefined])
+		})()
+		return visualized.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions.map((visualizedTransaction) => visualizedTransaction.transaction.delegationAddress?.address))
+	}
+	const stateBase = {
+		blockNumber: 1n,
+		blockTimestamp: new Date('2026-01-01T00:00:00Z'),
+		baseFeePerGas: 1n,
+		simulationConductedTimestamp: new Date('2026-01-01T00:00:00Z'),
+		rpcNetwork: rpcEntry,
+	}
+
+	test('a failed visualised stack shows the restored delegate after re-authorization and none for a cleared account otherwise', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		const failedStateOf = (transactions: readonly ReturnType<typeof selfCall>[]): SimulationState => ({
+			...stateBase,
+			success: false,
+			simulationStateInput: [blockOf(transactions)],
+			simulationOverrides: clearedCode,
+			jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Simulation failed' } },
+		})
+		assert.deepEqual(await visualizedDelegatesOf(failedStateOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)])), [undefined, restoredDelegate, restoredDelegate])
+		assert.deepEqual(await visualizedDelegatesOf(failedStateOf([selfCall(1n), selfCall(2n)])), [undefined, undefined])
+	})
+
+	test('a successful visualised stack shows the delegate each transaction runs with', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		const successfulStateOf = (transactions: readonly ReturnType<typeof selfCall>[], simulationOverrides: StateOverrides): SimulationState => ({
+			...stateBase,
+			success: true,
+			simulationStateInput: [blockOf(transactions)],
+			simulationOverrides,
+			simulatedBlocks: [{
+				stateOverrides: simulationOverrides,
+				simulatedTransactions: transactions.map((preSimulationTransaction) => ({
+					realizedGasPrice: 1n,
+					preSimulationTransaction,
+					ethSimulateV1CallResult: { status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
+					tokenBalancesAfter: [],
+				})),
+				signedMessages: [],
+				blockTimestamp: new Date('2026-01-01T00:00:12Z'),
+				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+				blockBaseFeePerGas: 1n,
+			}],
+		})
+		assert.deepEqual(await visualizedDelegatesOf(successfulStateOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)], clearedCode)), [undefined, restoredDelegate, restoredDelegate])
+		assert.deepEqual(await visualizedDelegatesOf(successfulStateOf([selfCall(1n), selfCall(2n)], clearedCode)), [undefined, undefined])
+		assert.deepEqual(await visualizedDelegatesOf(successfulStateOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate, { nonce: 1n }), selfCall(3n)], {})), [onChainDelegate, onChainDelegate, onChainDelegate])
 	})
 
 	const createExportEthereum = () => {

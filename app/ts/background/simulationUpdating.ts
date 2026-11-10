@@ -4,7 +4,7 @@ import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSenderDelegatesForTransactions, getSimulatedCode, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
@@ -15,7 +15,7 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationExecutionInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedExecutionInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationExecutionInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedExecutionInput, getSimulationExecutionInputFromState, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -35,8 +35,8 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { isCodeClearedBySimulationOverrides } from '../utils/delegateClearingState.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from './delegateClearingPolicy.js'
+import { getAppendedBlockStateOverrides } from '../utils/simulationStateOverrides.js'
 
 export { getGovernanceExecutionSimulationInput } from '../simulation/compoundGovernanceFaking.js'
 
@@ -204,28 +204,6 @@ export async function getMetadataForSimulation(
 	}
 }
 
-// The delegate each transaction's sender runs with, by block and transaction. A sender starts with its on-chain delegate unless the initial overrides clear its code; an EIP-7702 authorization in the stack then sets its authority's delegate (the zero address clears it) for that transaction's own call, which runs after its authorizations, and every later one. Like the nonce accounting, an authorization takes effect when its recovered authority is known.
-export function getSenderDelegatesForTransactions(
-	simulationStateInput: SimulationStateInput,
-	simulationOverrides: StateOverrides,
-	onChainDelegates: ReadonlyMap<string, bigint | undefined>,
-): readonly (readonly (bigint | undefined)[])[] {
-	const authorizedDelegates = new Map<string, bigint | undefined>()
-	const getCurrentDelegate = (address: bigint) => {
-		const key = addressString(address)
-		if (authorizedDelegates.has(key)) return authorizedDelegates.get(key)
-		return isCodeClearedBySimulationOverrides(simulationOverrides, address) ? undefined : onChainDelegates.get(key)
-	}
-	return simulationStateInput.map((block) => block.transactions.map(({ signedTransaction }) => {
-		if (signedTransaction.type === '7702') {
-			for (const authorization of signedTransaction.authorizationList) {
-				if (authorization.authority !== undefined) authorizedDelegates.set(addressString(authorization.authority), authorization.address === 0n ? undefined : authorization.address)
-			}
-		}
-		return getCurrentDelegate(signedTransaction.from)
-	}))
-}
-
 async function withDelegationLookupReporting<T>(address: bigint, lookup: () => Promise<T>): Promise<T | undefined> {
 	try {
 		return await lookup()
@@ -244,18 +222,24 @@ async function withDelegationLookupReporting<T>(address: bigint, lookup: () => P
 }
 
 async function getDelegationEntriesForTransactions(
-	simulationStateInput: SimulationStateInput,
-	simulationOverrides: StateOverrides,
+	simulationState: SimulationState,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 ): Promise<readonly (readonly (AddressBookEntry | undefined)[])[]> {
-	// A sender whose code the initial overrides clear starts undelegated, so only the other senders need their on-chain delegate.
-	const sendersWithOnChainCode = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions
-		.map((transaction) => transaction.signedTransaction.from)
-		.filter((sender) => !isCodeClearedBySimulationOverrides(simulationOverrides, sender)))))
-	const onChainDelegates = new Map(await promiseAllMapAbortSafe(sendersWithOnChainCode, async (sender) =>
-		[addressString(sender), await withDelegationLookupReporting(sender, async () => await ethereum.getDelegation(sender, 'latest', requestAbortController))] as const))
-	const delegatesByTransaction = getSenderDelegatesForTransactions(simulationStateInput, simulationOverrides, onChainDelegates)
+	const executionInput = getSimulationExecutionInputFromState(simulationState)
+	const transactions = executionInput.value.flatMap((block) => block.transactions)
+	const authorities = transactions.flatMap(({ signedTransaction }) => signedTransaction.type === '7702' ? signedTransaction.authorizationList.flatMap((authorization) => authorization.authority === undefined ? [] : [authorization.authority]) : [])
+	// What the first block's effective overrides (including the initial account state) set needs no on-chain read; only authorities need their nonce.
+	const firstBlockOverrides = getAppendedBlockStateOverrides(0, executionInput.value[0]?.stateOverrides ?? {}, executionInput.simulationOverrides)
+	const accounts = Array.from(new Set([...transactions.map(({ signedTransaction }) => signedTransaction.from), ...authorities]))
+	const authoritySet = new Set(authorities)
+	const onChainAccounts = new Map(await promiseAllMapAbortSafe(accounts, async (account) => {
+		const accountOverride = firstBlockOverrides[addressString(account)]
+		const code = accountOverride?.code !== undefined ? undefined : await withDelegationLookupReporting(account, async () => await ethereum.getCode(account, 'latest', requestAbortController))
+		const nonce = !authoritySet.has(account) || accountOverride?.nonce !== undefined ? undefined : await withDelegationLookupReporting(account, async () => await ethereum.getTransactionCount(account, 'latest', requestAbortController))
+		return [addressString(account), { code, nonce }] as const
+	}))
+	const delegatesByTransaction = getSenderDelegatesForTransactions(executionInput, ethereum.getChainId(), onChainAccounts)
 	const delegates = Array.from(new Set(delegatesByTransaction.flat().filter((delegate): delegate is bigint => delegate !== undefined)))
 	const delegateEntries = new Map(await promiseAllMapAbortSafe(delegates, async (delegate) =>
 		[addressString(delegate), await withDelegationLookupReporting(delegate, async () => await identifyAddress(ethereum, requestAbortController, delegate))] as const))
@@ -484,7 +468,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
-	const delegationEntriesByTransaction = await getDelegationEntriesForTransactions(simulationState.simulationStateInput, simulationState.simulationOverrides ?? {}, ethereum, requestAbortController)
+	const delegationEntriesByTransaction = await getDelegationEntriesForTransactions(simulationState, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {

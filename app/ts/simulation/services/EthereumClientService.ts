@@ -123,6 +123,12 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
 }
 
+// The delegate an EIP-7702 delegation designator (0xef0100 followed by the delegate's address) points to, or undefined for any other code.
+export const getDelegateFromCode = (code: Uint8Array) => {
+	if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
+	return BigInt(`0x${ dataString(code.slice(3)) }`)
+}
+
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export type PreparedEthSimulateV1InputBlock = {
 	readonly inputBlock: SimulationStateInputMinimalDataBlock
@@ -247,9 +253,7 @@ export class EthereumClientService {
 	public readonly getDelegateClearingHint = async (address: bigint, abortController?: AbortController) => await this.delegateClearingHints.get(address, abortController)
 
 	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined, bypassCache = false) => {
-		const code = await this.getCode(address, blockTag, requestAbortController, bypassCache)
-		if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
-		return BigInt(`0x${ dataString(code.slice(3)) }`)
+		return getDelegateFromCode(await this.getCode(address, blockTag, requestAbortController, bypassCache))
 	}
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>

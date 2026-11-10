@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
+import { type EthereumClientService, getDelegateFromCode, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
@@ -328,9 +328,57 @@ const getTransactionNonceContribution = (transaction: EthereumSendableSignedTran
 }
 
 // A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
+const getNonceRaisingCall = (transaction: RpcTransaction) => transaction.executedTransaction === undefined && authorizesExecutedCall(transaction.simulationOptions) ? undefined : getExecutedTransaction(transaction)
+
 const getExecutedCallNonceContribution = (transaction: RpcTransaction, address: bigint) => {
-	if (transaction.executedTransaction === undefined && authorizesExecutedCall(transaction.simulationOptions)) return 0n
-	return getTransactionNonceContribution(getExecutedTransaction(transaction), address)
+	const call = getNonceRaisingCall(transaction)
+	return call === undefined ? 0n : getTransactionNonceContribution(call, address)
+}
+
+// An account's code as EIP-7702 sees it: its delegate, if any, and whether an authorization may set its code (empty code or a delegation designator).
+type AccountDelegationState = { readonly delegate: bigint | undefined, readonly acceptsAuthorization: boolean }
+const getAccountDelegationState = (code: Uint8Array): AccountDelegationState => {
+	const delegate = getDelegateFromCode(code)
+	return { delegate, acceptsAuthorization: code.length === 0 || delegate !== undefined }
+}
+
+// An account's state at the parent block; undefined fields are unknown.
+export type AccountCodeAndNonce = { readonly code: Uint8Array | undefined, readonly nonce: bigint | undefined }
+
+// The delegate each transaction's sender runs with, by block and transaction, following EIP-7702 through the stack. Each block's effective state overrides (the initial account state on the first) set code and nonces; each call the node runs raises its sender's nonce (getNonceRaisingCall), then applies its authorizations in order. An authorization takes effect only if it is valid: chain ID 0 or this chain, a known authority whose code is empty or a delegation, and a nonce equal to the authority's tracked nonce. A valid one raises that nonce and sets the delegate (the zero address clears it). An account whose code or nonce is unknown gets no delegate and accepts no authorization.
+export function getSenderDelegatesForTransactions(executionInput: SimulationExecutionInput, chainId: bigint, onChainAccounts: ReadonlyMap<string, AccountCodeAndNonce>): readonly (readonly (bigint | undefined)[])[] {
+	const delegationStates = new Map<string, AccountDelegationState | undefined>()
+	const nonces = new Map<string, bigint | undefined>()
+	const getDelegationState = (key: string) => {
+		if (delegationStates.has(key)) return delegationStates.get(key)
+		const code = onChainAccounts.get(key)?.code
+		return code === undefined ? undefined : getAccountDelegationState(code)
+	}
+	const getNonce = (key: string) => nonces.has(key) ? nonces.get(key) : onChainAccounts.get(key)?.nonce
+	return mapBlocksWithEffectiveStateOverrides(executionInput.value, executionInput.simulationOverrides, (block) => block.stateOverrides, (block, effectiveStateOverrides) => {
+		for (const [key, accountOverride] of Object.entries(effectiveStateOverrides)) {
+			if (accountOverride === undefined) continue
+			if (accountOverride.code !== undefined) delegationStates.set(key, getAccountDelegationState(accountOverride.code))
+			if (accountOverride.nonce !== undefined) nonces.set(key, accountOverride.nonce)
+		}
+		return block.transactions.map((transaction) => {
+			const call = getNonceRaisingCall(transaction)
+			if (call !== undefined) {
+				const senderKey = addressString(call.from)
+				const senderNonce = getNonce(senderKey)
+				nonces.set(senderKey, senderNonce === undefined ? undefined : senderNonce + 1n)
+				for (const authorization of call.type === '7702' ? call.authorizationList : []) {
+					if (authorization.authority === undefined || (authorization.chainId !== 0n && authorization.chainId !== chainId)) continue
+					const authorityKey = addressString(authorization.authority)
+					const authorityNonce = getNonce(authorityKey)
+					if (getDelegationState(authorityKey)?.acceptsAuthorization !== true || authorityNonce === undefined || authorityNonce !== authorization.nonce) continue
+					nonces.set(authorityKey, authorityNonce + 1n)
+					delegationStates.set(authorityKey, { delegate: authorization.address === 0n ? undefined : authorization.address, acceptsAuthorization: true })
+				}
+			}
+			return getDelegationState(addressString(transaction.signedTransaction.from))?.delegate
+		})
+	})
 }
 
 const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBlockCalls['calls'][number] => {
