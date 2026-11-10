@@ -23,7 +23,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { createEip1559Or7702Transaction, type Eip7702AuthorityState, isApplicableEip7702Authorization, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction, type Eip7702AuthorityState, getApplicableEip7702Authority, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -345,7 +345,7 @@ const getAccountDelegationState = (code: Uint8Array): AccountDelegationState => 
 // An account's state at the parent block; undefined fields are unknown.
 export type AccountCodeAndNonce = { readonly code: Uint8Array | undefined, readonly nonce: bigint | undefined }
 
-// The delegate each transaction's sender runs with, by block and transaction, following EIP-7702 through the stack. Each block's effective state overrides (the initial account state on the first) set code and nonces; each call the node runs raises its sender's nonce (getNonceRaisingCall), then applies its authorizations in order. Only an authorization valid under isApplicableEip7702Authorization takes effect, raising the authority's tracked nonce and setting its delegate (the zero address clears it). An account whose code or nonce is unknown gets no delegate and accepts no authorization.
+// The delegate each transaction's sender runs with, by block and transaction, following EIP-7702 through the stack. Each block's effective state overrides (the initial account state on the first) set code and nonces; each call the node runs raises its sender's nonce (getNonceRaisingCall), then applies its authorizations in order. Only an authorization getApplicableEip7702Authority accepts takes effect, raising its recovered authority's tracked nonce and setting that authority's delegate (the zero address clears it). An account whose code or nonce is unknown gets no delegate and accepts no authorization.
 export function getSenderDelegatesForTransactions(executionInput: SimulationExecutionInput, chainId: bigint, onChainAccounts: ReadonlyMap<string, AccountCodeAndNonce>): readonly (readonly (bigint | undefined)[])[] {
 	const delegationStates = new Map<string, AccountDelegationState | undefined>()
 	const nonces = new Map<string, bigint | undefined>()
@@ -372,9 +372,10 @@ export function getSenderDelegatesForTransactions(executionInput: SimulationExec
 				const senderNonce = getNonce(senderKey)
 				nonces.set(senderKey, senderNonce === undefined ? undefined : senderNonce + 1n)
 				for (const authorization of call.type === '7702' ? call.authorizationList : []) {
-					// An invalid authorization is skipped before it can raise the authority's nonce or set its delegate.
-					if (!isApplicableEip7702Authorization(authorization, chainId, getAuthorityState)) continue
-					const authorityKey = addressString(authorization.authority)
+					// An authorization the node skips is skipped here before it can raise a nonce or set a delegate; the authority is the one the node recovers, not authority metadata.
+					const authority = getApplicableEip7702Authority(authorization, chainId, getAuthorityState)
+					if (authority === undefined) continue
+					const authorityKey = addressString(authority)
 					nonces.set(authorityKey, authorization.nonce + 1n)
 					delegationStates.set(authorityKey, { delegate: authorization.address === 0n ? undefined : authorization.address, acceptsAuthorization: true })
 				}

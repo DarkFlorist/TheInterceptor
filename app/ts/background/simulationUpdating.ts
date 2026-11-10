@@ -37,6 +37,7 @@ import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from './delegateClearingPolicy.js'
 import { getAppendedBlockStateOverrides } from '../utils/simulationStateOverrides.js'
+import { getNodeRecoveredEip7702Authority } from '../utils/eip7702Authorization.js'
 
 export { getGovernanceExecutionSimulationInput } from '../simulation/compoundGovernanceFaking.js'
 
@@ -228,7 +229,11 @@ async function getDelegationEntriesForTransactions(
 ): Promise<readonly (readonly (AddressBookEntry | undefined)[])[]> {
 	const executionInput = getSimulationExecutionInputFromState(simulationState)
 	const transactions = executionInput.value.flatMap((block) => block.transactions)
-	const authorities = transactions.flatMap(({ signedTransaction }) => signedTransaction.type === '7702' ? signedTransaction.authorizationList.flatMap((authorization) => authorization.authority === undefined ? [] : [authorization.authority]) : [])
+	// The authorities the node can recover; authority metadata alone never reaches the node.
+	const authorities = transactions.flatMap(({ signedTransaction }) => signedTransaction.type === '7702' ? signedTransaction.authorizationList.flatMap((authorization) => {
+		const authority = getNodeRecoveredEip7702Authority(authorization)
+		return authority === undefined ? [] : [authority]
+	}) : [])
 	// What the first block's effective overrides (including the initial account state) set needs no on-chain read; only authorities need their nonce.
 	const firstBlockOverrides = getAppendedBlockStateOverrides(0, executionInput.value[0]?.stateOverrides ?? {}, executionInput.simulationOverrides)
 	const accounts = Array.from(new Set([...transactions.map(({ signedTransaction }) => signedTransaction.from), ...authorities]))
