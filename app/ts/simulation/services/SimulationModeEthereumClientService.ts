@@ -955,7 +955,7 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 	return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 }
 
-// Code cleared here comes from the user's opt-in delegate-clearing what-if, which getSimulationOverridesForPurpose applies in simulation mode only; signing-mode inputs carry no such override and read on-chain code.
+// Code cleared here comes from the user's opt-in delegate-clearing what-if, which getSimulationOverridesForPreview applies in simulation mode only; signing-mode inputs carry no such override and read on-chain code.
 const getIdleSimulationCodeOverride = (simulationInput: SimulatedInput, address: bigint, blockTag: EthereumBlockTag) => {
 	if (hasSimulationBlocks(simulationInput.value)) return undefined
 	if (blockTag !== 'latest' && blockTag !== 'pending') return undefined
@@ -1159,7 +1159,7 @@ const withEthSimulateV1VisibleParentHash = (
 	return [{ ...firstResultBlock, parentHash }, ...remainingResultBlocks]
 }
 
-// Website eth_simulateV1 calls in simulation mode deliberately run on the same what-if state as the simulated stack; signing-mode website inputs get no simulation-wide overrides from getSimulationOverridesForPurpose.
+// Website eth_simulateV1 calls in simulation mode deliberately run on the same what-if state as the simulated stack; signing-mode website inputs get no simulation-wide overrides from getSimulationOverridesForPreview.
 const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationInput: SimulatedInput, precedingBlockStateCalls: readonly SimulateBlockCalls[]): EthSimulateV1Params => {
 	const [firstBlock, ...remainingBlocks] = request.params[0].blockStateCalls
 	if (firstBlock === undefined) return request

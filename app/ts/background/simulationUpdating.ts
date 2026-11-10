@@ -36,7 +36,7 @@ import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { isCodeClearedBySimulationOverrides } from '../utils/delegateClearingState.js'
-import { getSimulationOverridesForPurpose, type SimulationPreviewPurpose } from './delegateClearingPolicy.js'
+import { getSimulationOverridesForPreview, type SimulationPreviewContext } from './delegateClearingPolicy.js'
 
 export { getGovernanceExecutionSimulationInput } from '../simulation/compoundGovernanceFaking.js'
 
@@ -134,8 +134,8 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export const getSimulationInputForPurpose = async (purpose: SimulationPreviewPurpose, settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
-	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPurpose(purpose, settings))
+export const getSimulationInputForPreview = async (preview: SimulationPreviewContext, settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
+	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPreview(preview, settings))
 
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
@@ -145,19 +145,18 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-export async function captureSimulationSnapshotForPurpose(purpose: SimulationPreviewPurpose): Promise<SimulationSnapshot> {
+export async function captureSimulationSnapshotForPreview(preview: SimulationPreviewContext): Promise<SimulationSnapshot> {
 	const settings = await getSettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
-		simulationInput: await getSimulationInputForPurpose(purpose, settings, richAddresses),
+		simulationInput: await getSimulationInputForPreview(preview, settings, richAddresses),
 		numberOfAddressesMadeRich: richAddresses.length,
 	}
 }
 
-export const captureWhatIfSimulationSnapshot = async () => await captureSimulationSnapshotForPurpose('what-if')
-export const captureSigningSimulationSnapshot = async () => await captureSimulationSnapshotForPurpose('signing-or-execution')
+export const captureSimulationStackSnapshot = async () => await captureSimulationSnapshotForPreview({ kind: 'simulation-stack' })
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
 	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum
@@ -178,7 +177,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const snapshot = await captureWhatIfSimulationSnapshot()
+	const snapshot = await captureSimulationStackSnapshot()
 	return {
 		simulationInput: snapshot.simulationInput,
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
@@ -265,8 +264,8 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
-		// The execution preview continues the vote's own preview, so it shares its what-if state: the opt-in delegate clearing applies only in simulation mode, where nothing is signed, and getSimulationOverridesForPurpose returns no override in signing mode.
-		const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc(await getSimulationInputForPurpose('what-if', settingsSnapshot), ethereum)
+		// The execution preview continues the vote's own preview, so it shares its what-if state: the opt-in delegate clearing applies only in simulation mode, where nothing is signed, and getSimulationOverridesForPreview returns no override in signing mode.
+		const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc(await getSimulationInputForPreview({ kind: 'governance-execution-on-stack' }, settingsSnapshot), ethereum)
 		const executionTransactionMetadata = {
 			website: pendingTransaction.transactionToSimulate.website,
 			created: new Date(),
@@ -303,7 +302,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
-		const signingSnapshot = await captureSigningSimulationSnapshot()
+		const signingSnapshot = await captureSimulationSnapshotForPreview({ kind: 'safe-transaction-signature' })
 		const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc(signingSnapshot.simulationInput, ethereumClientService)
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol

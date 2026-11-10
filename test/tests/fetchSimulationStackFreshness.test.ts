@@ -80,7 +80,7 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 		simulateWithZeroBaseFee: false,
 	}]
 	return {
-		simulationInput: { kind: 'simulated', value: simulationInput },
+		simulationInput: { kind: 'simulated', value: simulationInput, simulationOverrides: {} },
 		simulationState: {
 			kind: 'simulated',
 			value: {

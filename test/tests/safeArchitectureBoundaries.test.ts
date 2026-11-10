@@ -59,8 +59,8 @@ test('everything that sends the simulation stack to the node runs its Gnosis Saf
 	// A captured simulation input keeps its initial account state (simulationOverrides) and prepares its blocks with prepareSafeExecutionsForRpc.
 	assert.match(simulationUpdatingSource, /export const prepareSafeExecutionsOfSimulationInputForRpc = [^\n]*\(\{ \.\.\.simulationInput, value: await prepareSafeExecutionsForRpc\(simulationInput\.value, ethereum\) \}\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,3}?\t\tconst simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc\(signingSnapshot\.simulationInput, ethereumClientService\)/u)
-	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc\(await getSimulationInputForPurpose\('what-if', settings\), ethereumClientService\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc\(await getSimulationInputForPurpose\('what-if', settingsSnapshot\), ethereum\)/u)
+	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc\(await getSimulationInputForPreview\(\{ kind: 'simulation-stack' \}, settings\), ethereumClientService\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc\(await getSimulationInputForPreview\(\{ kind: 'governance-execution-on-stack' \}, settingsSnapshot\), ethereum\)/u)
 })
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {
