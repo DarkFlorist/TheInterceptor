@@ -20,6 +20,9 @@ import { isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateC
 import { getAppendedBlockStateOverrides, mapBlocksWithEffectiveStateOverrides } from '../../app/ts/utils/simulationStateOverrides.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
+import { addr, authorization as eip7702Signing } from 'micro-eth-signer'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
 import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Params, type StateOverrides } from '../../app/ts/types/ethSimulate-types.js'
@@ -972,6 +975,46 @@ describe('delegate clearing in simulation', () => {
 		assert.deepEqual(delegatesOf([[authorizationTransaction(1n, restoredDelegate)]], {}, contractOnChain), [[undefined]])
 		const unknownNonce = new Map([[addressString(activeAddress), { code: new Uint8Array(), nonce: undefined }]])
 		assert.deepEqual(delegatesOf([[authorizationTransaction(1n, restoredDelegate)]], {}, unknownNonce), [[undefined]])
+	})
+
+	test('the authorization validity rules use half the secp256k1 order as the highest s', () => {
+		assert.equal(SECP256K1_HALF_ORDER, secp256k1.CURVE.n / 2n)
+	})
+
+	test('a malleated high-s authorization neither changes the delegate nor consumes the authority\'s nonce, while the original still applies', async () => {
+		// A real signature, malleated the standard way: s becomes n - s and yParity flips, which still recovers the same authority.
+		const authorityPrivateKey = `0x${ '11'.repeat(32) }`
+		const authority = BigInt(addr.fromPrivateKey(authorityPrivateKey))
+		const signedAuthorization = async (delegate: bigint) => {
+			const signed = eip7702Signing.sign({ chainId: rpcEntry.chainId, address: addressString(delegate), nonce: 0n }, authorityPrivateKey)
+			const original = { chainId: signed.chainId, address: delegate, nonce: signed.nonce, r: signed.r, s: signed.s, yParity: signed.yParity === 0 ? 'even' as const : 'odd' as const }
+			const malleated = { ...original, s: secp256k1.CURVE.n - original.s, yParity: original.yParity === 'even' ? 'odd' as const : 'even' as const }
+			const [normalizedOriginal, normalizedMalleated] = await normalizeEip7702AuthorizationList([original, malleated])
+			if (normalizedOriginal === undefined || normalizedMalleated === undefined) throw new Error('Expected two normalized authorizations')
+			assert.equal(normalizedOriginal.authority, authority)
+			assert.equal(normalizedMalleated.authority, authority)
+			assert.equal(normalizedMalleated.s !== undefined && normalizedMalleated.s > SECP256K1_HALF_ORDER, true)
+			return { original: normalizedOriginal, malleated: normalizedMalleated }
+		}
+		const sponsoredAuthorization = (identifier: bigint, authorization: Awaited<ReturnType<typeof signedAuthorization>>['original']) => ({
+			...transaction(identifier),
+			signedTransaction: mockSignTransaction({ type: '7702', from: activeAddress, to: activeAddress, value: 0n, input: new Uint8Array(), nonce: identifier - 1n, gas: 100_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, authorizationList: [authorization] }),
+		})
+		const authorityCall = (identifier: bigint) => ({
+			...transaction(identifier),
+			signedTransaction: mockSignTransaction({ type: '1559', from: authority, to: authority, value: 0n, input: new Uint8Array(), nonce: 0n, gas: 50_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n }),
+		})
+		const onChainAccounts = new Map([
+			[addressString(authority), { code: stringToUint8Array(delegationDesignator(onChainDelegate)), nonce: 0n }],
+			[addressString(activeAddress), { code: new Uint8Array(), nonce: 0n }],
+		])
+		for (const delegate of [restoredDelegate, 0n]) {
+			const { original, malleated } = await signedAuthorization(delegate)
+			// The authority keeps its on-chain delegate after the malleated authorization.
+			assert.deepEqual(delegatesOf([[sponsoredAuthorization(1n, malleated), authorityCall(2n)]], {}, onChainAccounts), [[undefined, onChainDelegate]])
+			// The original, signed for the same nonce 0, still applies after it, so the malleated one consumed no nonce.
+			assert.deepEqual(delegatesOf([[sponsoredAuthorization(1n, malleated), sponsoredAuthorization(2n, original), authorityCall(3n)]], {}, onChainAccounts), [[undefined, undefined, delegate === 0n ? undefined : delegate]])
+		}
 	})
 
 	const createVisualizerEthereum = () => {

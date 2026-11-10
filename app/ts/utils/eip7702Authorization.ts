@@ -63,6 +63,29 @@ export const hasPartialEip7702AuthorizationSignature = (authorization: Eip7702Au
 	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
 }
 
+// Half the secp256k1 group order. EIP-7702 rejects an authorization whose s is above it: replacing s with n - s and flipping yParity yields a second signature that recovers the same authority.
+export const SECP256K1_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0n
+
+// The authority's account state an authorization is checked against; undefined fields are unknown.
+export type Eip7702AuthorityState = {
+	readonly nonce: bigint | undefined
+	// Whether the authority's code may be replaced: empty code or a delegation designator.
+	readonly acceptsAuthorization: boolean | undefined
+}
+
+// The single owner of EIP-7702's per-authorization validity rules: a known authority, chain ID 0 or the current chain, an s no greater than half the curve order, an authority whose code is empty or a delegation, and a nonce equal to the authority's current nonce. Unknown authority state fails closed. Without a signature (s undefined) the authority comes from metadata and there is no s to check.
+export const isApplicableEip7702Authorization = <TAuthorization extends Eip7702Authorization>(
+	authorization: TAuthorization,
+	chainId: bigint,
+	getAuthorityState: (authority: bigint) => Eip7702AuthorityState,
+): authorization is TAuthorization & { readonly authority: bigint } => {
+	if (authorization.authority === undefined) return false
+	if (authorization.chainId !== 0n && authorization.chainId !== chainId) return false
+	if (authorization.s !== undefined && authorization.s > SECP256K1_HALF_ORDER) return false
+	const authorityState = getAuthorityState(authorization.authority)
+	return authorityState.acceptsAuthorization === true && authorityState.nonce !== undefined && authorityState.nonce === authorization.nonce
+}
+
 const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => {
 	return EthereumAddress.parse(eip7702Authorization.getAuthority({
 		chainId: authorization.chainId,
