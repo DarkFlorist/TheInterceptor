@@ -4,9 +4,10 @@ import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/t
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
-import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { addressString, dataStringWith0xStart, stringifyJSONWithBigInts, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
-import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
 
 type RuntimeMessage = {
@@ -286,6 +287,15 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 	return safeMessage
 }
 
+// Answers the owner reads of the Safe signature requirement as a 1 of 1 Safe owned by the given owner, and undefined for any other call.
+function getSafeOwnerReadReply(call: unknown, safeAddress: bigint, owner: bigint) {
+	if (typeof call !== 'object' || call === null || !('to' in call) || call.to !== safeAddress || !('input' in call) || !(call.input instanceof Uint8Array)) return undefined
+	const callData = dataStringWith0xStart(call.input)
+	if (callData === encodeFunctionCall(SAFE_ABI, 'getOwners', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getOwners', [[addressString(owner)]]))
+	if (callData === encodeFunctionCall(SAFE_ABI, 'getThreshold', [])) return stringToUint8Array(encodeFunctionReturn(SAFE_ABI, 'getThreshold', [1n]))
+	return undefined
+}
+
 describe('Gnosis Safe stack simulation', () => {
 	test('governance execution token balances are queried on top of stack plus execution transaction', async () => {
 		await browserMock.reset()
@@ -455,6 +465,7 @@ describe('Gnosis Safe stack simulation', () => {
 		const fakeBlock = makeFakeBlock(123n)
 		let gasEstimationCount = 0
 		let delegateCallSimulationCount = 0
+		const ownerReadBlockCounts: number[] = []
 		const fakeRequestHandler = {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
 			clearCache() { return undefined },
@@ -484,6 +495,11 @@ describe('Gnosis Safe stack simulation', () => {
 							throw new Error('Missing calls in eth_simulateV1 block')
 						}
 						const lastCall = lastBlock.calls[lastBlock.calls.length - 1]
+						const ownerReadReply = getSafeOwnerReadReply(lastCall, activeAddress.address, activeAddress.address)
+						if (ownerReadReply !== undefined) {
+							ownerReadBlockCounts.push(callCount)
+							return makeEthSimulateBlocks(callCount, ownerReadReply)
+						}
 						const stateOverrides = 'stateOverrides' in lastBlock ? lastBlock.stateOverrides : undefined
 						const hasSafeDelegateCallTarget = typeof lastCall === 'object'
 							&& lastCall !== null
@@ -600,5 +616,8 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(reply.result.visualizedSimulationState.visualizedBlocks[1]?.simulatedAndVisualizedTransactions.length, seedStack ? 1 : undefined)
 		assert.equal(gasEstimationCount, 1)
 		assert.equal(delegateCallSimulationCount, operation === 1n ? 2 : 0)
+		// Both owner reads run on top of the stack the preview runs on: one block for the read, after the seeded stack block.
+		assert.deepEqual(ownerReadBlockCounts, seedStack ? [2, 2] : [1, 1])
+		assert.deepEqual(reply.result.safeSignatureRequirement, { threshold: 1n, ownerCount: 1n, userOwnerCount: 1n })
 	})
 })
