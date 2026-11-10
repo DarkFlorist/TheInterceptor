@@ -122,8 +122,9 @@ export function doWalletSendCallsMatchSimulatedTransactions(request: WalletSendC
 }
 
 // EIP-5792 status codes: 200 when every call succeeded, 500 when every call reverted and 600 when only some did.
-const getCallsStatusCode = (receipts: readonly WalletCallsReceipt[]) => {
+export const getCallsStatusCode = (receipts: readonly Pick<WalletCallsReceipt, 'status'>[]) => {
 	if (receipts.every((receipt) => receipt.status === 'success')) return 200
+	// The EIP-5792 status table defines 500 as "Batch reverted completely" and 600 as "Batch reverted partially".
 	if (receipts.every((receipt) => receipt.status === 'failure')) return 500
 	return 600
 }
@@ -140,6 +141,8 @@ export async function getSimulatedCallsStatus(ethereum: EthereumClientService, s
 		.flatMap((block) => block.simulatedTransactions)
 		.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction)
 		.filter((transaction) => batchTransactionIdentifiers.includes(transaction.transactionIdentifier))
+	// A bundle is only reported while every one of its calls is on the simulation stack. EIP-5792's status codes describe how submitted calls executed, and a non-atomic status must list receipts for all of them, so a bundle the user removed calls from is no longer the bundle that was submitted and is answered like an unknown one (5730).
+	if (!batchTransactionIdentifiers.every((transactionIdentifier) => batchTransactions.some((transaction) => transaction.transactionIdentifier === transactionIdentifier))) return errorReply(request.method, unknownBundleIdError)
 	const [firstTransaction] = batchTransactions
 	if (firstTransaction === undefined) return errorReply(request.method, unknownBundleIdError)
 	const receipts: WalletCallsReceipt[] = []

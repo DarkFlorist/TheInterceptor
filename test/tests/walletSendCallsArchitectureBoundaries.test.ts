@@ -171,7 +171,7 @@ test('both confirmation flows share the simulation run machinery from a neutral 
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'confirmationSimulationRun.js'), true)
 	assert.equal(importsFrom(confirmTransactionSimulationSource, 'confirmationSimulationRun.js'), true)
 	for (const flowModule of ['windows/confirmTransaction.js', 'confirmTransactionSimulation.js', 'walletSendCallsConfirmation.js']) assert.equal(importsFrom(confirmationSimulationRunSource, flowModule), false, flowModule)
-	for (const runState of ['let confirmTransactionAbortController', 'let runningConfirmationSimulation', 'let latestConfirmationRunId']) {
+	for (const runState of ['const inFlightConfirmationRuns = new Map<string,', 'let latestConfirmationRunId']) {
 		assert.ok(confirmationSimulationRunSource.includes(runState), runState)
 		assert.ok(!confirmTransactionSimulationSource.includes(runState), runState)
 	}
@@ -236,11 +236,14 @@ test('confirmation run ids are only taken by the run module, before a run reads 
 
 test('both confirmation flows run and record a simulation run only through the shared run protocol', () => {
 	// Starting a run is private to the protocol, so no flow can start, visualize or record a run on its own.
-	assert.match(confirmationSimulationRunSource, /^function startConfirmTransactionSimulation\(/mu)
+	assert.match(confirmationSimulationRunSource, /^function startConfirmationRun\(/mu)
+	assert.match(confirmationSimulationRunSource, /^function finishConfirmationRun\(/mu)
+	// Runs are only tracked per request, so no module-wide abort controller lets one confirmation abort another's run.
+	assert.doesNotMatch(confirmationSimulationRunSource, /^let \w*AbortController\b/mu)
 	assert.match(confirmationSimulationRunSource, /^export async function simulateConfirmationRun\(request: ConfirmationSimulationRunRequest\): Promise<ConfirmationSimulationRecord \| undefined> \{$/mu)
 	for (const flowSource of [confirmTransactionSimulationSource, walletSendCallsConfirmationSource]) {
 		assert.equal(flowSource.match(/await simulateConfirmationRun\(\{/gu)?.length, 1)
-		assert.doesNotMatch(flowSource, /startConfirmTransactionSimulation|visualizeSimulatorState\(|JSON_RPC_ERROR_CODE_INTERNAL_ERROR|blockNumber: 0n|simulationConductedTimestamp|getTabState\(/u)
+		assert.doesNotMatch(flowSource, /startConfirmationRun|finishConfirmationRun|visualizeSimulatorState\(|JSON_RPC_ERROR_CODE_INTERNAL_ERROR|blockNumber: 0n|simulationConductedTimestamp|getTabState\(/u)
 	}
 	// A batch stores the run's record as it is.
 	assert.match(accessRequestTypesSource, /^export const ConfirmTransactionBatchVisualization = ConfirmationSimulationRecord$/mu)

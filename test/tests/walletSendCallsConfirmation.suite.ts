@@ -929,6 +929,22 @@ const getCallsStatusCode = async (batchId: string) => {
 	return isRecord(status.result) ? status.result.status : undefined
 }
 
+test('wallet_getCallsStatus answers a bundle with a call removed from the simulation stack as unknown instead of reporting the remaining calls', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	assert.equal(await getCallsStatusCode('0x01'), 200)
+	const [firstCall, secondCall] = await getStackBatchTransactions()
+	if (firstCall === undefined || secondCall === undefined) throw new Error('Missing batch calls on the simulation stack')
+
+	await modules.updateInterceptorTransactionStack((stack) => ({ operations: stack.operations.filter((operation) => operation.type !== 'Transaction' || operation.preSimulationTransaction.transactionIdentifier !== secondCall.transactionIdentifier) }))
+
+	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => transaction.transactionIdentifier), [firstCall.transactionIdentifier])
+	assert.equal(await getCallsStatusCode('0x01'), 5730)
+	// The remaining call keeps the id in use, so it cannot be taken by a new bundle while the old one is partly on the stack.
+	assert.equal(await isBatchIdInUse('0x01'), true)
+})
+
 // Approves a batch, then restores storage as it was right after the approval added the calls to the simulation stack, as a restart at that point leaves it: the calls are on the stack and the batch is still in the confirmation queue, unanswered.
 async function restoreApprovalInterruptedAfterItsCommit() {
 	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()

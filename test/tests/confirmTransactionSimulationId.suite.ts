@@ -94,3 +94,52 @@ test('an older transaction refresh that finishes preparing after a newer refresh
 
 	assert.equal(await getPreparedNonce(), 0n)
 })
+
+test('confirmation runs of different requests overlap without aborting each other, while a newer run of the same request aborts the older one', async () => {
+	const { getInFlightConfirmationRunAbortController, runConfirmationSimulation, simulateConfirmationRun } = await import('../../app/ts/background/confirmationSimulationRun.js')
+	const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
+	// Each run waits before it reads its simulation input until the test releases it, so runs started one after another are in flight together.
+	const startHeldRun = async (request: typeof uniqueRequestIdentifier) => {
+		const inFlight = createDeferredValue<void>()
+		const released = createDeferredValue<void>()
+		const record = runConfirmationSimulation(request, async (confirmationRun) => await simulateConfirmationRun({
+			ethereum: simulator.ethereum,
+			tokenPriceService: simulator.tokenPriceService,
+			confirmationRun,
+			activeAddress,
+			simulationMode: true,
+			calledContracts: [],
+			getSimulationInput: async () => {
+				inFlight.resolve()
+				await released.promise
+				return await getCurrentSimulationInput()
+			},
+		}))
+		await inFlight.promise
+		return { record, abortController: getInFlightConfirmationRunAbortController(request), release: () => released.resolve() }
+	}
+	const otherRequest = { requestId: 2, requestSocket: uniqueRequestIdentifier.requestSocket }
+
+	const transactionRun = await startHeldRun(uniqueRequestIdentifier)
+	const otherRequestRun = await startHeldRun(otherRequest)
+	assert.ok(transactionRun.abortController !== undefined && otherRequestRun.abortController !== undefined)
+	assert.notEqual(transactionRun.abortController, otherRequestRun.abortController)
+	assert.equal(transactionRun.abortController.signal.aborted, false)
+	transactionRun.release()
+	otherRequestRun.release()
+	assert.equal((await transactionRun.record)?.statusCode, 'success')
+	assert.equal((await otherRequestRun.record)?.statusCode, 'success')
+	assert.equal(otherRequestRun.abortController.signal.aborted, false)
+	// A finished run is no longer in flight.
+	assert.equal(getInFlightConfirmationRunAbortController(uniqueRequestIdentifier), undefined)
+
+	const olderRun = await startHeldRun(uniqueRequestIdentifier)
+	const newerRun = await startHeldRun(uniqueRequestIdentifier)
+	assert.equal(olderRun.abortController?.signal.aborted, true)
+	assert.equal(newerRun.abortController?.signal.aborted, false)
+	olderRun.release()
+	newerRun.release()
+	await olderRun.record
+	assert.equal((await newerRun.record)?.statusCode, 'success')
+	assert.equal(getInFlightConfirmationRunAbortController(uniqueRequestIdentifier), undefined)
+})

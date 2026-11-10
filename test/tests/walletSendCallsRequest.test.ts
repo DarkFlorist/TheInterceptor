@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { canonicalizeWalletSendCalls, doWalletSendCallsMatchSimulatedTransactions, getSigningModeWalletCallsReply, getWalletSendCallsParseFailureReply, getWalletSendCallsTransactionParams, WALLET_SEND_CALLS_MAX_CALLS } from '../../app/ts/background/walletSendCalls.js'
+import { canonicalizeWalletSendCalls, doWalletSendCallsMatchSimulatedTransactions, getCallsStatusCode, getSigningModeWalletCallsReply, getWalletSendCallsParseFailureReply, getWalletSendCallsTransactionParams, WALLET_SEND_CALLS_MAX_CALLS } from '../../app/ts/background/walletSendCalls.js'
 import { EthereumJsonRpcRequest, WalletSendCalls } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
@@ -144,6 +144,13 @@ describe('wallet_sendCalls request validation', () => {
 		assert.equal(getErrorCode(createRequest({ capabilities: { paymasterService: { url: 'https://paymaster.example' } } })), 5700)
 		assert.equal(getErrorCode(createRequest({}, [{ to: addressString(firstRecipient), capabilities: { permissions: { optional: false } } }])), 5700)
 		assert.equal(getErrorCode(createRequest({ from: addressString(account) })), undefined)
+	})
+
+	test('reports bundle outcomes with the EIP-5792 status codes: 200 confirmed, 500 reverted completely, 600 reverted partially', () => {
+		assert.equal(getCallsStatusCode([{ status: 'success' }, { status: 'success' }]), 200)
+		assert.equal(getCallsStatusCode([{ status: 'failure' }, { status: 'failure' }]), 500)
+		assert.equal(getCallsStatusCode([{ status: 'success' }, { status: 'failure' }]), 600)
+		assert.equal(getCallsStatusCode([{ status: 'failure' }, { status: 'success' }]), 600)
 	})
 
 	test('only matches simulated transactions with the same calls in the same order', () => {

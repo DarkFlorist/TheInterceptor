@@ -7,14 +7,14 @@ import type { PreSimulationTransaction, SimulationStateInput, WebsiteCreatedEthe
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
-import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
+import { getUniqueRequestIdentifierString, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, visualizeSimulatorState } from './simulationUpdating.js'
 import { getTabState } from './storageVariables.js'
 
-// The confirmation simulation runs that the confirmation window shows, whichever flow starts them: single transactions, Gnosis Safe confirmations and wallet_sendCalls batches. One run simulates at a time, run ids order the results a confirmation stores, and simulateConfirmationRun is the one protocol every flow runs and records a run with.
+// The confirmation simulation runs that the confirmation window shows, whichever flow starts them: single transactions, Gnosis Safe confirmations and wallet_sendCalls batches. Each request has at most one run in flight, run ids order the results a confirmation stores, and simulateConfirmationRun is the one protocol every flow runs and records a run with.
 
 export const toPreSimulationTransaction = (transaction: WebsiteCreatedEthereumTransaction): PreSimulationTransaction => ({
 	signedTransaction: getSignedTransactionForSimulation(transaction),
@@ -25,13 +25,11 @@ export const toPreSimulationTransaction = (transaction: WebsiteCreatedEthereumTr
 	...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
 })
 
-let confirmTransactionAbortController = new AbortController()
-export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 // One confirmation simulation run: the request it simulates and the id it was handed out for that request. Flows pass it on as it is, so the run protocol never pairs an id with another request.
 export type ConfirmationRun = { readonly uniqueRequestIdentifier: UniqueRequestIdentifier, readonly confirmationRunId: ConfirmationRunId }
 
-// The confirmation simulation run that started simulating last, which owns confirmTransactionAbortController.
-let runningConfirmationSimulation: ConfirmationRun | undefined
+// The confirmation simulation run in flight of each request, keyed by getUniqueRequestIdentifierString, with the controller that aborts it. A run only ever supersedes a run of its own request, so independent confirmations never abort each other. An entry is removed when its run finishes, so the map only holds runs in flight.
+const inFlightConfirmationRuns = new Map<string, { readonly confirmationRunId: ConfirmationRunId, readonly abortController: AbortController }>()
 
 let latestConfirmationRunId: ConfirmationRunId = 0
 // Every confirmation simulation run gets a new id, which the confirmation metadata refresh uses to tell the run it re-visualized from a newer one, and which keeps a newer stored run from being replaced by an older run that finishes later; stored timestamps keep only whole seconds, so they cannot. Callers take the id before the run reads the simulation stack or prepares its transactions, so a run with a newer id never works from older inputs. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards.
@@ -45,18 +43,26 @@ export async function runConfirmationSimulation<T>(uniqueRequestIdentifier: Uniq
 	return await run({ uniqueRequestIdentifier, confirmationRunId: getNextConfirmationRunId() })
 }
 
-// Each confirmation simulation supersedes the one still running, whose results would be stale by the time they arrive. A run is superseded itself when a newer run of the same confirmation has already started simulating, for example because this run's preparation took longer: it then starts nothing, aborts nothing and returns undefined.
-function startConfirmTransactionSimulation(confirmationRun: ConfirmationRun) {
-	if (runningConfirmationSimulation !== undefined
-		&& runningConfirmationSimulation.confirmationRunId > confirmationRun.confirmationRunId
-		&& doesUniqueRequestIdentifiersMatch(runningConfirmationSimulation.uniqueRequestIdentifier, confirmationRun.uniqueRequestIdentifier)
-	) return undefined
+// Each confirmation simulation run supersedes the run of the same request still in flight, whose results would be stale by the time they arrive. A run is superseded itself when a newer run of its request is already in flight, for example because this run's preparation took longer: it then starts nothing, aborts nothing and returns undefined.
+function startConfirmationRun(confirmationRun: ConfirmationRun) {
+	const requestKey = getUniqueRequestIdentifierString(confirmationRun.uniqueRequestIdentifier)
+	const inFlight = inFlightConfirmationRuns.get(requestKey)
+	if (inFlight !== undefined && inFlight.confirmationRunId > confirmationRun.confirmationRunId) return undefined
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	runningConfirmationSimulation = confirmationRun
-	return confirmTransactionAbortController
+	inFlight?.abortController.abort(NEW_BLOCK_ABORT)
+	const abortController = new AbortController()
+	inFlightConfirmationRuns.set(requestKey, { confirmationRunId: confirmationRun.confirmationRunId, abortController })
+	return abortController
 }
+
+// Ends a run that started, unless a newer run of its request already replaced it.
+function finishConfirmationRun(confirmationRun: ConfirmationRun, abortController: AbortController) {
+	const requestKey = getUniqueRequestIdentifierString(confirmationRun.uniqueRequestIdentifier)
+	if (inFlightConfirmationRuns.get(requestKey)?.abortController === abortController) inFlightConfirmationRuns.delete(requestKey)
+}
+
+// The abort controller of the request's run in flight, if any, for work that is outdated once a newer run of that request starts.
+export const getInFlightConfirmationRunAbortController = (uniqueRequestIdentifier: UniqueRequestIdentifier) => inFlightConfirmationRuns.get(getUniqueRequestIdentifierString(uniqueRequestIdentifier))?.abortController
 
 export type ConfirmationSimulationRunRequest = {
 	readonly ethereum: EthereumClientService
@@ -103,12 +109,9 @@ async function decodeRunError(request: ConfirmationSimulationRunRequest, abortCo
 	return decodeEthereumError(errorAbis, error).reason
 }
 
-// The protocol of one confirmation simulation run, which every flow runs: start the run, which supersedes the run in flight, simulate and visualize the flow's input, and record the outcome as a success or a failure. A superseded run, or one interrupted by a new block or an unreachable RPC, records nothing and returns undefined, so the stored preview stays in place.
-export async function simulateConfirmationRun(request: ConfirmationSimulationRunRequest): Promise<ConfirmationSimulationRecord | undefined> {
+// Simulates a started run and records its outcome as a success or a failure, or returns undefined when a new block or an unreachable RPC interrupted it.
+async function recordStartedRun(request: ConfirmationSimulationRunRequest, abortController: AbortController, signerName: Awaited<ReturnType<typeof getTabState>>['signerName']): Promise<ConfirmationSimulationRecord | undefined> {
 	const { uniqueRequestIdentifier, confirmationRunId } = request.confirmationRun
-	const signerName = (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName
-	const abortController = startConfirmTransactionSimulation(request.confirmationRun)
-	if (abortController === undefined) return undefined
 	const runData = { uniqueRequestIdentifier, simulationMode: request.simulationMode, activeAddress: request.activeAddress, signerName, simulationStartedTimestamp: new Date(), confirmationRunId }
 	const outcome = await simulateAndVisualize(request, abortController)
 	if (outcome === undefined) return undefined
@@ -120,5 +123,17 @@ export async function simulateConfirmationRun(request: ConfirmationSimulationRun
 	} catch (decodingError: unknown) {
 		if (isExpectedInfrastructureError(decodingError)) return undefined
 		throw decodingError
+	}
+}
+
+// The protocol of one confirmation simulation run, which every flow runs: start the run, which supersedes the run of the same request in flight, simulate and visualize the flow's input, record the outcome as a success or a failure, and finish the run. A superseded run, or one interrupted by a new block or an unreachable RPC, records nothing and returns undefined, so the stored preview stays in place.
+export async function simulateConfirmationRun(request: ConfirmationSimulationRunRequest): Promise<ConfirmationSimulationRecord | undefined> {
+	const signerName = (await getTabState(request.confirmationRun.uniqueRequestIdentifier.requestSocket.tabId)).signerName
+	const abortController = startConfirmationRun(request.confirmationRun)
+	if (abortController === undefined) return undefined
+	try {
+		return await recordStartedRun(request, abortController, signerName)
+	} finally {
+		finishConfirmationRun(request.confirmationRun, abortController)
 	}
 }
