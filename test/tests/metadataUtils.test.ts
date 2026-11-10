@@ -3,6 +3,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { MockRequestHandler } from '../MockRequestHandler.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 const requestHandler = new MockRequestHandler()
 
@@ -16,7 +17,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry, alwaysCurrent)
 
 describe('getAddressMetaData', () => {
 	test('contain USDC Coin', async () => {

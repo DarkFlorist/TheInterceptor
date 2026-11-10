@@ -15,13 +15,12 @@ import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycl
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 import { getSettings } from './settings.js'
-import { simulationServicesAreCurrent } from '../simulation/serviceLifecycle.js'
 
 let abortController = new AbortController()
 
-// The one rule for acting on a refresh, asked of the authority for each half: the owner that installed the services it was handed must still have them installed, and any snapshot it would execute must not have changed from the current settings, because a queued snapshot only says what was selected at enqueue time. Whatever replaces services or changes the selection queues the refresh it needs (activeSettings.ts by selectionNeedsRefresh, built on the same selectionChanged), so a refresh failing this rule returns without cancelling or publishing. It is synchronous, so callers read the settings before calling it and nothing can install other services between the owner's answer and the step it guards.
+// The one rule for acting on a refresh, asked of the authority for each half: the client it was handed must report that its owner still has it installed, and any snapshot it would execute must not have changed from the current settings, because a queued snapshot only says what was selected at enqueue time. Whatever replaces services or changes the selection queues the refresh it needs (activeSettings.ts by selectionNeedsRefresh, built on the same selectionChanged), so a refresh failing this rule returns without cancelling or publishing. It is synchronous, so callers read the settings before calling it and nothing can install other services between the owner's answer and the step it guards.
 const refreshStillApplies = (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined, selection: SimulationSelection) => (
-	(snapshot === undefined || !selectionChanged(snapshot, selection)) && simulationServicesAreCurrent(ethereum)
+	(snapshot === undefined || !selectionChanged(snapshot, selection)) && ethereum.isCurrent()
 )
 
 function buildPassthroughVisualizedState(

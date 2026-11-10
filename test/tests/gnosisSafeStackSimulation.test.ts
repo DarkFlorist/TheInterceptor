@@ -8,6 +8,7 @@ import { addressString, stringifyJSONWithBigInts, stringToUint8Array } from '../
 import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -346,7 +347,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysCurrent)
 		const currentStackTransaction = modules.mockSignTransaction({
 			type: '1559',
 			from: activeAddress.address,
@@ -541,7 +542,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysCurrent)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 
 		const currentStackTransaction = modules.mockSignTransaction({

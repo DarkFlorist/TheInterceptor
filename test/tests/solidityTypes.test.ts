@@ -10,6 +10,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 const OWNER_ADDRESS = 0x1000000000000000000000000000000000000001n
 const TOKEN_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -218,7 +219,7 @@ const createTestEthereumClientService = () => {
 			throw new Error(`Unexpected RPC request during parseInputData test: ${ rpcRequest.method }`)
 		},
 	} satisfies IEthereumJSONRpcRequestHandler
-	return new EthereumClientService(requestHandler, async () => undefined, async () => undefined, testRpcEntry)
+	return new EthereumClientService(requestHandler, async () => undefined, async () => undefined, testRpcEntry, alwaysCurrent)
 }
 
 const encodeEventData = (event: AbiEvent, values: readonly unknown[]) => {

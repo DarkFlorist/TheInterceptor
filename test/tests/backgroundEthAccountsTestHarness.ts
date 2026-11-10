@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { recordInstalledServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -8,6 +8,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 type Listener = () => void
 type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -220,7 +221,7 @@ export function createEthereumWithGetBlockCounter(
 			new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc),
 			async () => undefined,
 			async () => undefined,
-			rpcEntry,
+			rpcEntry, alwaysCurrent,
 	),
 		{
 			get(target, property, receiver) {
@@ -258,14 +259,12 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current = initial
-	const owner: SimulationServicesOwner = {
+	// The clients state their own currency when the test constructs them; this owner only swaps which pair it hands out.
+	return {
 		getCurrent: () => current,
 		reset: network => {
 			current = reset === undefined ? current : reset(network)
-			recordInstalledServices(current, owner)
 			return current
 		},
 	}
-	recordInstalledServices(current, owner)
-	return owner
 }

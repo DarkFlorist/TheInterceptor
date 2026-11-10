@@ -6,7 +6,7 @@ import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
-import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
@@ -104,9 +104,9 @@ const exportPayload = {
 }
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
-// Serves the default selected network, so the refresh after import reaches the provider and stops at its expected failure.
+// A client still installed, so the refresh after import reaches the provider and stops at its expected failure.
 const expectedInfrastructureEthereum = {
-	getRpcEntry: () => DEFAULT_RPCS[0],
+	isCurrent: alwaysCurrent,
 	getBlock: async () => { throw NEW_BLOCK_ABORT },
 }
 

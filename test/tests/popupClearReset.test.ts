@@ -12,6 +12,7 @@ import { getActiveStackContext } from '../../app/ts/utils/activeStackContext.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -263,6 +264,7 @@ function buildStalePopupVisualisationState(
 function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 	let blockPolling = false
 	return {
+		isCurrent: alwaysCurrent,
 		isBlockPolling() {
 			return blockPolling
 		},
@@ -431,7 +433,7 @@ const otherChainEthereum = new EthereumClientService({
 			default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 		}
 	},
-}, async () => undefined, async () => undefined, otherChainRpcNetwork)
+}, async () => undefined, async () => undefined, otherChainRpcNetwork, alwaysCurrent)
 const otherChainServices = { ethereum: otherChainEthereum, tokenPriceService: new TokenPriceService(otherChainEthereum, 60_000) }
 
 describe('popup clear reset', () => {

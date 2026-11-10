@@ -2,6 +2,7 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -176,7 +177,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
@@ -270,7 +271,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
@@ -334,7 +335,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const websiteTabConnections = new Map([[socket.tabId, {
@@ -457,7 +458,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		try {
 			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 9)
 		} finally {
@@ -541,7 +542,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		try {
 			await requestNewHomeData(ethereum, new Map(), false, false, undefined, 12)
 		} finally {
@@ -645,7 +646,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 
 		try {
 			await requestNewHomeData(ethereum, websiteTabConnections, false, false, undefined, 1)
@@ -709,7 +710,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
@@ -766,7 +767,7 @@ describe('refreshHomeData', () => {
 			async jsonRpcRequest() {
 				return await new Promise<never>(() => undefined)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 		const socket = { tabId: 1, connectionName: 0n }
 		const { messages, port } = createPort(socket.tabId)

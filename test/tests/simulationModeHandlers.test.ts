@@ -5,6 +5,7 @@ import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 Object.defineProperty(globalThis, 'chrome', {
 	value: { runtime: { id: 'test-extension' } },
@@ -36,7 +37,7 @@ describe('simulation mode handlers', () => {
 				if (request.method !== 'eth_getStorageAt') throw new Error(`Unexpected RPC request: ${ request.method }`)
 				return bytes32String(0x1234n)
 			},
-		}, async () => undefined, async () => undefined, rpcEntry)
+		}, async () => undefined, async () => undefined, rpcEntry, alwaysCurrent)
 		const request = {
 			method: 'eth_getStorageAt',
 			params: [0x1234n, 0x42n, 'latest'],

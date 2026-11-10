@@ -16,6 +16,7 @@ import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -332,7 +333,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			params: [dataStringWith0xStart(signedTransactionBytes)],
 		})
 		const transactionToSimulate = await formSendRawTransaction(
-			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 			request,
 			{ websiteOrigin: 'test', icon: undefined, title: undefined },
 			new Date('2024-01-01T00:00:00.000Z'),
@@ -344,7 +345,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 
 		await resolvePendingTransactionOrMessage(
-			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 			{} as never,
 			browserMock.websiteTabConnections,
 			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
@@ -431,7 +432,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
-				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 				undefined,
 				EthereumAddress.parse(sponsor.address),
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -492,7 +493,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
-				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 				undefined,
 				EthereumAddress.parse(sponsor.address),
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -531,7 +532,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			})
 			const createTransaction = async (balance: bigint) => await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(balance), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createFailedGasEstimationRequestHandler(balance), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -561,7 +562,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			})
 			const metadataFailureTransaction = await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -575,7 +576,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			assert.equal(metadataFailureTransaction.error.message, 'execution reverted')
 
 			const balanceFailureTransaction = await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(new Error('balance unavailable')), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createFailedGasEstimationRequestHandler(new Error('balance unavailable')), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -590,7 +591,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 
 			await assert.rejects(
 				async () => await formEthSendTransaction(
-					new EthereumClientService(createFailedGasEstimationRequestHandler(new Error(NEW_BLOCK_ABORT)), async () => undefined, async () => undefined, rpcNetwork),
+					new EthereumClientService(createFailedGasEstimationRequestHandler(new Error(NEW_BLOCK_ABORT)), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 					undefined,
 					sender,
 					{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -613,7 +614,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			})
 			const insufficientTokenBalanceTransaction = await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, 1_000_000n), async () => undefined, async () => undefined, rpcNetwork),
+				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, 1_000_000n), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent),
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },

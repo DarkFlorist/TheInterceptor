@@ -4,6 +4,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { TIME_BETWEEN_BLOCKS, MAX_BLOCK_CACHE } from '../../app/ts/utils/constants.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -33,7 +34,7 @@ describe('EthereumClientService cache expiry', () => {
 			},
 			async () => undefined,
 			async () => undefined,
-			rpcNetwork,
+			rpcNetwork, alwaysCurrent,
 		)
 
 		const block = parseRequest<NonNullable<ReturnType<typeof service.getCachedBlock>>>(eth_getBlockByNumber_goerli_8443561_true)

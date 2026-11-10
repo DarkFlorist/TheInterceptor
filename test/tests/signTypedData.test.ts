@@ -10,6 +10,7 @@ import { serialize } from '../../app/ts/types/wire-types.js'
 import { getMessageAndDomainHash, verifyEip712Message } from '../../app/ts/utils/eip712.js'
 import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
 import { jsonParserWithNumbersAsStringsConverter } from '../../app/ts/utils/json.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 
 const rpcEntry = {
@@ -22,7 +23,7 @@ const rpcEntry = {
 	minimized: true,
 }
 
-const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcEntry, alwaysCurrent)
 
 describe('EIP712', () => {
 	test('can convert oversized number to bigint', () => {

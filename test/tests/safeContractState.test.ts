@@ -5,12 +5,13 @@ import { createSafeContractValidationFailure } from '../../app/ts/safe/safeCore.
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 const activeRpc = { name: 'Optimism', chainId: 10n, httpsRpc: 'https://optimism.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 const safeRpc = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://ethereum.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 
 function createEthereum(rpcEntry = activeRpc) {
-	return new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc), async () => undefined, async () => undefined, rpcEntry)
+	return new EthereumClientService(new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc), async () => undefined, async () => undefined, rpcEntry, alwaysCurrent)
 }
 
 describe('Safe contract state error boundary', () => {

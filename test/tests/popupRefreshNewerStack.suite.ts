@@ -7,8 +7,9 @@ import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimula
 import { Future } from '../../app/ts/utils/future.js'
 import { buildSimulationInput, captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import { recordInstalledServices, type SimulationServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { queuePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
 
 // Both entry points: a direct refresh captures its snapshot itself, the interactive queue supplies one captured before it runs.
 const olderRefreshEntryPoints = [
@@ -46,7 +47,7 @@ for (const entryPoint of olderRefreshEntryPoints) test(`${ entryPoint.name } hel
 			}
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysCurrent)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 
 	const originalSendMessage = browser.runtime.sendMessage
@@ -84,7 +85,7 @@ for (const entryPoint of olderRefreshEntryPoints) test(`${ entryPoint.name } hel
 
 test('a refresh skipped as unchanged does not stop an earlier refresh from finishing an updating visualisation', async () => {
 	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork })
-	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysCurrent)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	// An updating visualisation for the current input, as a refresh whose RPC fetch failed leaves it: a skipIfUnchanged refresh finds it unchanged.
 	const currentSnapshot = await captureSimulationSnapshot()
@@ -165,7 +166,7 @@ function createNetworkSwitchFixture() {
 			}
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, () => currentServices === firstEndpointServices)
 	const firstEndpointServices: SimulationServices = { ethereum: firstEndpointEthereum, tokenPriceService: new modules.TokenPriceService(firstEndpointEthereum, 60_000) }
 	const otherEndpointSimulates = new Future<void>()
 	const releaseOtherEndpointSimulation = new Future<void>()
@@ -187,7 +188,7 @@ function createNetworkSwitchFixture() {
 			}
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, otherEndpointNetwork)
+	}, async () => undefined, async () => undefined, otherEndpointNetwork, () => currentServices === otherEndpointServices)
 	const otherEndpointServices: SimulationServices = { ethereum: otherEndpointEthereum, tokenPriceService: new modules.TokenPriceService(otherEndpointEthereum, 60_000) }
 	let currentServices = firstEndpointServices
 	const otherEndpointInstalled = new Future<void>()
@@ -195,12 +196,10 @@ function createNetworkSwitchFixture() {
 		getCurrent: () => currentServices,
 		reset: () => {
 			currentServices = otherEndpointServices
-			recordInstalledServices(currentServices, simulationServicesOwner)
 			otherEndpointInstalled.resolve(undefined)
 			return currentServices
 		},
 	}
-	recordInstalledServices(firstEndpointServices, simulationServicesOwner)
 	return {
 		firstEndpointServices,
 		simulationServicesOwner,
@@ -456,7 +455,7 @@ test('a queue entry for a previously selected endpoint publishes nothing after a
 
 test('a queue entry publishes a stack edit made after it was queued, even when the stack it was queued with is unchanged', async () => {
 	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork })
-	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysCurrent)
 	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
 	// A finished visualisation of the stack the entry is queued with, so only an input built after the edit shows anything to do.
 	const queuedSnapshot = await captureSimulationSnapshot()

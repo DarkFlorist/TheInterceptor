@@ -6,6 +6,9 @@ const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const serviceLifecycleSource = await Bun.file(new URL('../../app/ts/simulation/serviceLifecycle.ts', import.meta.url)).text()
+const ethereumClientServiceSource = await Bun.file(new URL('../../app/ts/simulation/services/EthereumClientService.ts', import.meta.url)).text()
+const popupVisualisationUpdaterSource = await Bun.file(new URL('../../app/ts/background/popupVisualisationUpdater.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
@@ -167,4 +170,12 @@ test('Safe message approval encoding and review matching have domain owners', as
 	for (const source of [safeTransactionConfirmationSource, details]) assert.match(source, /matchesSafeMessageApproval\(/u)
 	assert.match(delegates, /decodeSafeMessageApproval\(/u)
 	for (const source of [policy, safeTransactionConfirmationSource, details]) assert.doesNotMatch(source, /SAFE_SIGN_MESSAGE_ABI|getSafeMessageDigest/u)
+})
+
+test('whether services are still installed is a capability of each client, not a module-level owner registry', () => {
+	// A registry fails open for any client that was never registered; a required constructor argument cannot be left out.
+	assert.doesNotMatch(serviceLifecycleSource, /new WeakMap|new WeakSet|new Map\(|installingOwners|recordInstalledServices|simulationServicesAreCurrent/u)
+	assert.match(ethereumClientServiceSource, /rpcEntry: RpcEntry, currency: ClientCurrency\)/u)
+	assert.match(popupVisualisationUpdaterSource, /&& ethereum\.isCurrent\(\)/u)
+	assert.doesNotMatch(popupVisualisationUpdaterSource, /from '\.\.\/simulation\/serviceLifecycle\.js'/u)
 })
