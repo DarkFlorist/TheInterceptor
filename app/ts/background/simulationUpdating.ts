@@ -204,39 +204,62 @@ export async function getMetadataForSimulation(
 	}
 }
 
-async function getDelegationAddressesForSimulation(
+// The delegate each transaction's sender runs with, by block and transaction. A sender starts with its on-chain delegate unless the initial overrides clear its code; an EIP-7702 authorization in the stack then sets its authority's delegate (the zero address clears it) for that transaction's own call, which runs after its authorizations, and every later one. Like the nonce accounting, an authorization takes effect when its recovered authority is known.
+export function getSenderDelegatesForTransactions(
+	simulationStateInput: SimulationStateInput,
+	simulationOverrides: StateOverrides,
+	onChainDelegates: ReadonlyMap<string, bigint | undefined>,
+): readonly (readonly (bigint | undefined)[])[] {
+	const authorizedDelegates = new Map<string, bigint | undefined>()
+	const getCurrentDelegate = (address: bigint) => {
+		const key = addressString(address)
+		if (authorizedDelegates.has(key)) return authorizedDelegates.get(key)
+		return isCodeClearedBySimulationOverrides(simulationOverrides, address) ? undefined : onChainDelegates.get(key)
+	}
+	return simulationStateInput.map((block) => block.transactions.map(({ signedTransaction }) => {
+		if (signedTransaction.type === '7702') {
+			for (const authorization of signedTransaction.authorizationList) {
+				if (authorization.authority !== undefined) authorizedDelegates.set(addressString(authorization.authority), authorization.address === 0n ? undefined : authorization.address)
+			}
+		}
+		return getCurrentDelegate(signedTransaction.from)
+	}))
+}
+
+async function withDelegationLookupReporting<T>(address: bigint, lookup: () => Promise<T>): Promise<T | undefined> {
+	try {
+		return await lookup()
+	} catch(error: unknown) {
+		if (isExpectedInfrastructureError(error)) throw error
+		const addressText = addressString(address)
+		const errorMessage = getErrorMessage(error) ?? 'Unknown error'
+		await reportUnexpectedError(error, {
+			displayMessage: `Failed to retrieve EIP-7702 delegation for ${ addressText }: ${ errorMessage }`,
+			code: 'delegation_lookup_failed',
+			details: { address: addressText },
+			suppressExpectedHandledErrors: false,
+		})
+		return undefined
+	}
+}
+
+async function getDelegationEntriesForTransactions(
 	simulationStateInput: SimulationStateInput,
 	simulationOverrides: StateOverrides,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-) {
-	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions
-		.filter((transaction) => !isCodeClearedBySimulationOverrides(simulationOverrides, transaction.signedTransaction.from))
-		.map((transaction) => transaction.signedTransaction.from))))
-	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
-		try {
-			const delegationAddress = await ethereum.getDelegation(senderAddress, 'latest', requestAbortController)
-			if (delegationAddress === undefined) return undefined
-			return {
-				senderAddress,
-				delegationEntry: await identifyAddress(ethereum, requestAbortController, delegationAddress),
-			}
-		} catch(error: unknown) {
-			if (isExpectedInfrastructureError(error)) throw error
-			const senderAddressString = addressString(senderAddress)
-			const errorMessage = getErrorMessage(error) ?? 'Unknown error'
-			await reportUnexpectedError(error, {
-				displayMessage: `Failed to retrieve EIP-7702 delegation for ${ senderAddressString }: ${ errorMessage }`,
-				code: 'delegation_lookup_failed',
-				details: { senderAddress: senderAddressString },
-				suppressExpectedHandledErrors: false,
-			})
-			return undefined
-		}
-	})
-	return new Map(resolvedDelegations
-		.filter((entry): entry is { senderAddress: bigint, delegationEntry: AddressBookEntry } => entry !== undefined)
-		.map((entry) => [addressString(entry.senderAddress), entry.delegationEntry] as const))
+): Promise<readonly (readonly (AddressBookEntry | undefined)[])[]> {
+	// A sender whose code the initial overrides clear starts undelegated, so only the other senders need their on-chain delegate.
+	const sendersWithOnChainCode = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions
+		.map((transaction) => transaction.signedTransaction.from)
+		.filter((sender) => !isCodeClearedBySimulationOverrides(simulationOverrides, sender)))))
+	const onChainDelegates = new Map(await promiseAllMapAbortSafe(sendersWithOnChainCode, async (sender) =>
+		[addressString(sender), await withDelegationLookupReporting(sender, async () => await ethereum.getDelegation(sender, 'latest', requestAbortController))] as const))
+	const delegatesByTransaction = getSenderDelegatesForTransactions(simulationStateInput, simulationOverrides, onChainDelegates)
+	const delegates = Array.from(new Set(delegatesByTransaction.flat().filter((delegate): delegate is bigint => delegate !== undefined)))
+	const delegateEntries = new Map(await promiseAllMapAbortSafe(delegates, async (delegate) =>
+		[addressString(delegate), await withDelegationLookupReporting(delegate, async () => await identifyAddress(ethereum, requestAbortController, delegate))] as const))
+	return delegatesByTransaction.map((blockDelegates) => blockDelegates.map((delegate) => delegate === undefined ? undefined : delegateEntries.get(addressString(delegate))))
 }
 
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
@@ -461,7 +484,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
-	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, simulationState.simulationOverrides ?? {}, ethereum, requestAbortController)
+	const delegationEntriesByTransaction = await getDelegationEntriesForTransactions(simulationState.simulationStateInput, simulationState.simulationOverrides ?? {}, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {
@@ -477,7 +500,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
-			const blockDelegations = delegationAddressBySender
+			const blockDelegations = delegationEntriesByTransaction[blockIndex] ?? []
 			const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
 			if (parsedInputDataForBlock === undefined) throw new Error('Block index overflow')
 
@@ -498,7 +521,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 						parsedInputData,
 						transaction: {
 							...getFromAndToMetadata(transaction.signedTransaction, updatedMetadata.addressBookEntries),
-							...(blockDelegations.get(addressString(transaction.signedTransaction.from)) !== undefined ? { delegationAddress: blockDelegations.get(addressString(transaction.signedTransaction.from)) } : {}),
+							...(blockDelegations[index] !== undefined ? { delegationAddress: blockDelegations[index] } : {}),
 							rpcNetwork: settings.activeRpcNetwork,
 							...otherFields,
 						},
@@ -563,7 +586,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined || inputBlock === undefined) throw new Error('Block index overflow')
 		return {
 			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
-			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationAddressBySender),
+			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationEntriesByTransaction[blockIndex] ?? []),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
 	})

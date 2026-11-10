@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, setSystemTime, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPreview, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
+import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSenderDelegatesForTransactions, getSimulationInputForPreview, prepareSimulationInputForRpc, visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from '../../app/ts/background/delegateClearingPolicy.js'
 import { createDelegateClearingHintCache } from '../../app/ts/simulation/services/delegateClearingHintCache.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -19,6 +19,7 @@ import { getSimulationInputHash } from '../../app/ts/utils/simulationFingerprint
 import { isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateClearingState.js'
 import { getAppendedBlockStateOverrides, mapBlocksWithEffectiveStateOverrides } from '../../app/ts/utils/simulationStateOverrides.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
+import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
@@ -915,6 +916,80 @@ describe('delegate clearing in simulation', () => {
 		const stack = appendTransactionsToInput([], [transaction(1n)])
 		await assert.rejects(getSimulatedCodeFromInput(ethereum, undefined, createSimulatedExecutionInput(stack, clearedCode), activeAddress), /Captured simulation request/)
 		assert.equal(ethSimulateRequests.length, 1)
+	})
+
+	const onChainDelegate = 0x0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0dn
+	const restoredDelegate = 0xd00dd00dd00dd00dd00dd00dd00dd00dd00dd00dn
+	const selfCall = (identifier: bigint) => ({
+		...transaction(identifier),
+		signedTransaction: mockSignTransaction({ type: '1559', from: activeAddress, to: activeAddress, value: 0n, input: new Uint8Array(), nonce: identifier - 1n, gas: 50_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n }),
+	})
+	const authorizationTransaction = (identifier: bigint, delegate: bigint, authority = activeAddress) => ({
+		...transaction(identifier),
+		signedTransaction: mockSignTransaction({ type: '7702', from: activeAddress, to: activeAddress, value: 0n, input: new Uint8Array(), nonce: identifier - 1n, gas: 100_000n, chainId: rpcEntry.chainId, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, authorizationList: [{ chainId: rpcEntry.chainId, address: delegate, nonce: identifier, authority }] }),
+	})
+	const blockOf = (transactions: readonly ReturnType<typeof selfCall>[]) => ({ stateOverrides: {}, transactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false })
+	const onChainDelegates = new Map([[addressString(activeAddress), onChainDelegate]])
+
+	test('a cleared account runs with the delegate an authorization in the stack restores, from that transaction on', () => {
+		const input = [blockOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)]), blockOf([selfCall(4n)])]
+		assert.deepEqual(getSenderDelegatesForTransactions(input, clearedCode, new Map()), [[undefined, restoredDelegate, restoredDelegate], [restoredDelegate]])
+	})
+
+	test('a cleared account stays undelegated when nothing in the stack re-authorizes it', () => {
+		const input = [blockOf([selfCall(1n), authorizationTransaction(2n, restoredDelegate, activeAddress + 1n), selfCall(3n)])]
+		assert.deepEqual(getSenderDelegatesForTransactions(input, clearedCode, onChainDelegates), [[undefined, undefined, undefined]])
+	})
+
+	test('an account without clearing keeps its on-chain delegate until an authorization to the zero address clears it', () => {
+		const input = [blockOf([selfCall(1n), authorizationTransaction(2n, 0n), selfCall(3n)])]
+		assert.deepEqual(getSenderDelegatesForTransactions(input, {}, onChainDelegates), [[onChainDelegate, undefined, undefined]])
+	})
+
+	test('the visualised stack shows the restored delegate after re-authorization and none for a cleared account otherwise', async () => {
+		installBrowserMock()
+		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method === 'eth_getCode') return request.params[0] === activeAddress ? `0xef0100${ addressString(onChainDelegate).slice(2) }` : '0x'
+				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
+				// Address identification probes contract-looking addresses; a JSON-RPC error is its handled outcome.
+				if (request.method === 'eth_simulateV1') throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } })
+				throw new Error(`Unexpected RPC method ${ request.method }`)
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const visualizedDelegates = async (transactions: readonly ReturnType<typeof selfCall>[]) => {
+			const failedState: SimulationState = {
+				success: false,
+				simulationStateInput: [blockOf(transactions)],
+				simulationOverrides: clearedCode,
+				jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Simulation failed' } },
+				blockNumber: 1n,
+				blockTimestamp: new Date('2026-01-01T00:00:00Z'),
+				baseFeePerGas: 1n,
+				simulationConductedTimestamp: new Date('2026-01-01T00:00:00Z'),
+				rpcNetwork: rpcEntry,
+			}
+			// The recovered identification probes log warnings, which are not under test here.
+			const originalConsole = { warn: console.warn, error: console.error }
+			console.warn = () => undefined
+			console.error = () => undefined
+			const visualized = await (async () => {
+				try {
+					return await visualizeSimulatorState(failedState, ethereum, new TokenPriceService(ethereum, 60000), undefined)
+				} finally {
+					console.warn = originalConsole.warn
+					console.error = originalConsole.error
+				}
+			})()
+			return visualized.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions.map((visualizedTransaction) => visualizedTransaction.transaction.delegationAddress?.address))
+		}
+		assert.deepEqual(await visualizedDelegates([selfCall(1n), authorizationTransaction(2n, restoredDelegate), selfCall(3n)]), [undefined, restoredDelegate, restoredDelegate])
+		assert.deepEqual(await visualizedDelegates([selfCall(1n), selfCall(2n)]), [undefined, undefined])
 	})
 
 	const createExportEthereum = () => {
