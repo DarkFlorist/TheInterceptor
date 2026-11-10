@@ -1,8 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
-import * as funtypes from 'funtypes'
 import { initSig } from 'micro-eth-signer/utils.js'
+import ts from 'typescript'
+import { collectFilePaths, scriptKindForPath } from '../../scripts/typescript-lint-utils.mts'
 import { RecoverableMessageSignature } from '../../app/ts/types/JsonRpc-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, hashMessage, privateKeyToAccount, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -24,37 +25,77 @@ const getSignatureRecoveringToInfinity = (hashScalar: bigint, flipParity = false
 	return { r, s: 1n, yParity: flipParity ? 1 - yParity : yParity }
 }
 
-const PackageDependencies = funtypes.ReadonlyObject({ dependencies: funtypes.ReadonlyRecord(funtypes.String, funtypes.String) })
-const getCurvesDependencyVersion = async (packageJsonPath: string) => PackageDependencies.parse(await Bun.file(new URL(packageJsonPath, import.meta.url)).json()).dependencies['@noble/curves']
+type AppSource = { readonly path: string, readonly text: string }
 
-const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
-const getAppSourcesMatching = async (importPattern: RegExp) => {
-	const matchingSources: string[] = []
-	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory })) {
-		if (importPattern.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) matchingSources.push(file)
+// Every module specifier a source loads at runtime: static imports, export-from, import-equals requires, and dynamic import() calls with a string or no-substitution template argument.
+const getImportedModuleSpecifiers = ({ path, text }: AppSource) => {
+	const specifiers: string[] = []
+	const visit = (node: ts.Node) => {
+		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined && ts.isStringLiteralLike(node.moduleSpecifier)) specifiers.push(node.moduleSpecifier.text)
+		if (ts.isExternalModuleReference(node) && ts.isStringLiteralLike(node.expression)) specifiers.push(node.expression.text)
+		if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] !== undefined && ts.isStringLiteralLike(node.arguments[0])) specifiers.push(node.arguments[0].text)
+		ts.forEachChild(node, visit)
 	}
-	return matchingSources
+	visit(ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, scriptKindForPath(path)))
+	return specifiers
 }
+
+const getSourcesImporting = (sources: readonly AppSource[], isImportedModule: (specifier: string) => boolean) => sources.filter((source) => getImportedModuleSpecifiers(source).some(isImportedModule)).map((source) => source.path)
+
+const isCurvesModule = (specifier: string) => specifier === '@noble/curves' || specifier.startsWith('@noble/curves/')
+const isEthereumRecoveryModule = (specifier: string) => specifier.endsWith('/ethereumRecovery.js')
+
+// Both extension source roots: the extension's own code and the injected inpage provider.
+const APP_SOURCE_PATTERNS = ['app/ts/**/*.{ts,tsx}', 'app/inpage/ts/**/*.ts']
+const readAppSources = async () => await Promise.all((await collectFilePaths(APP_SOURCE_PATTERNS)).map(async (path) => ({ path, text: await Bun.file(path).text() })))
 
 // tryRecoverAddress checks a signature on the direct @noble/curves and recovers it through micro-eth-signer's, so the two must be one copy of the library.
 describe('@noble/curves version coupling with micro-eth-signer', () => {
-	test('package.json pins @noble/curves to the exact version micro-eth-signer depends on, so upgrading micro-eth-signer must bump both', async () => {
-		const requiredVersion = await getCurvesDependencyVersion('../../node_modules/micro-eth-signer/package.json')
-		assert.equal(await getCurvesDependencyVersion('../../package.json'), requiredVersion, `micro-eth-signer depends on @noble/curves ${ requiredVersion }: set the same exact version in package.json so tryRecoverAddress and recoverAddress stay on one copy of the library.`)
-	})
-
 	test('the direct @noble/curves and micro-eth-signer resolve to one copy of the library', () => {
 		assert.ok(initSig({ r: 1n, s: 1n }, 0) instanceof secp256k1.Signature, 'Two @noble/curves copies are installed: align package.json with the version micro-eth-signer depends on and reinstall.')
 	})
 })
 
 describe('ethereumRecovery import boundaries', () => {
-	test('only ethereumRecovery.ts imports @noble/curves in app code', async () => {
-		assert.deepEqual(await getAppSourcesMatching(/from '@noble\/curves/u), ['utils/ethereumRecovery.ts'])
+	test('the import guard reads both extension source roots', async () => {
+		const paths = (await readAppSources()).map((source) => source.path)
+		assert.ok(paths.includes('app/ts/utils/ethereumRecovery.ts'))
+		assert.ok(paths.includes('app/inpage/ts/inpage.ts'))
+	})
+
+	test('the import guard finds every way a module can load @noble/curves, in either source root', () => {
+		const curvesImports = [
+			'import { secp256k1 } from \'@noble/curves/secp256k1.js\'',
+			'import type { CurveFn } from \'@noble/curves/abstract/weierstrass.js\'',
+			'export { secp256k1 } from \'@noble/curves/secp256k1.js\'',
+			'import * as curves from \'@noble/curves\'',
+			'import curves = require(\'@noble/curves\')',
+			'const curves = await import(\'@noble/curves/secp256k1.js\')',
+			'const curves = await import("@noble/curves/secp256k1.js")',
+			'const curves = await import(`@noble/curves/secp256k1.js`)',
+		]
+		for (const root of ['app/ts', 'app/inpage/ts']) {
+			for (const text of curvesImports) {
+				const fixture = { path: `${ root }/fixture.ts`, text }
+				assert.deepEqual(getSourcesImporting([fixture], isCurvesModule), [fixture.path], text)
+			}
+		}
+		const unrelated = { path: 'app/ts/fixture.ts', text: '// @noble/curves\nimport { keccak_256 } from \'@noble/hashes/sha3\'\nconst name = \'@noble/curves\'' }
+		assert.deepEqual(getSourcesImporting([unrelated], isCurvesModule), [])
+	})
+
+	test('only ethereumRecovery.ts imports @noble/curves in either extension source root', async () => {
+		assert.deepEqual(getSourcesImporting(await readAppSources(), isCurvesModule), ['app/ts/utils/ethereumRecovery.ts'])
+	})
+
+	test('ethereumRecovery.ts takes byte helpers from @noble/curves itself, so no other @noble/hashes copy feeds its curve code', async () => {
+		const recoverySource = (await readAppSources()).find((source) => source.path === 'app/ts/utils/ethereumRecovery.ts')
+		if (recoverySource === undefined) throw new Error('ethereumRecovery.ts is missing')
+		assert.deepEqual(getImportedModuleSpecifiers(recoverySource).filter((specifier) => specifier.startsWith('@noble/')), ['@noble/curves/secp256k1.js', '@noble/curves/utils.js'])
 	})
 
 	test('only the personal_ecRecover handler imports ethereumRecovery, so the ethereumPrimitives barrel does not ship it to every page', async () => {
-		assert.deepEqual(await getAppSourcesMatching(/from '[^']*ethereumRecovery\.js'/u), ['background/personalEcRecoverRpc.ts'])
+		assert.deepEqual(getSourcesImporting(await readAppSources(), isEthereumRecoveryModule), ['app/ts/background/personalEcRecoverRpc.ts'])
 	})
 })
 

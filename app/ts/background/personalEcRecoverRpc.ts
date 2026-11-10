@@ -1,12 +1,12 @@
 import type { RPCReply } from '../types/interceptor-messages.js'
-import { RecoverableMessageSignature, type PersonalEcRecover } from '../types/JsonRpc-types.js'
+import type { PersonalEcRecover, RecoverableMessageSignature } from '../types/JsonRpc-types.js'
 import type { SignedMessageTransaction } from '../types/visualizer-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
 import { hexOrUtf8StringToBytes } from '../utils/ethereumBytes.js'
 import { hashMessage, type Hex } from '../utils/ethereumPrimitives.js'
 import { tryRecoverAddress } from '../utils/ethereumRecovery.js'
-import { getSimulatedMessageSignature, getSimulatedPersonalSignHashOfHexMessage } from '../simulation/services/simulationPersonalSigning.js'
+import { findSimulatedPersonalSignSigner } from '../simulation/services/simulationPersonalSigning.js'
 
 const invalidPersonalEcRecoverRequest = (message: string): RPCReply => ({
 	type: 'result',
@@ -27,32 +27,21 @@ const recoverSigner = async (messageHash: Hex, signature: RecoverableMessageSign
 	return recovery.type === 'recovered' ? BigInt(recovery.address) : undefined
 }
 
-const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => first.r === second.r && first.s === second.s && first.yParity === second.yParity
-
 // Any page can compute a mock signature, so only messages the requesting website itself simulated-signed may resolve to a simulated signer, keeping other websites' signers hidden. For a Safe this signer is its simulation owner, validated against the Safe's public owner list, just as a real owner signature recovers to that owner; Safe signing mode's stack holds no messages, so its wallet-selected owner never reaches this lookup.
 const getMessagesSignedForWebsite = (simulatedSignedMessages: readonly SignedMessageTransaction[], requestingWebsiteOrigin: string) => simulatedSignedMessages.filter((signedMessage) => signedMessage.website.websiteOrigin === requestingWebsiteOrigin)
 
-// The simulated signer lookup decodes differently from real recovery: a signing stacked under the same message string was decoded exactly as signing decodes this one, a hex message also matches under signing's decoding (which reads '0X6869' as the bytes 0x6869), and the MetaMask hash still lets 'hello' find a signing stacked as '0x68656c6c6f'.
-const getSimulatedSignerLookupHashes = (message: string) => new Set([hashPersonalEcRecoverMessage(message), getSimulatedPersonalSignHashOfHexMessage(message)].filter((hash) => hash !== undefined))
-
-const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMessageTransaction[], message: string, signature: RecoverableMessageSignature) => {
-	const lookupHashes = getSimulatedSignerLookupHashes(message)
-	// Newest first: one message signed for different simulated signers yields a single shared mock-key signature, so the most recent signing wins.
-	for (const signedMessage of [...signedMessages].reverse()) {
-		if (signedMessage.originalRequestParameters.method !== 'personal_sign') continue
-		const simulatedSignature = await getSimulatedMessageSignature(signedMessage)
-		// The hash simulated signing computed from the bytes it signed.
-		if (signedMessage.originalRequestParameters.params[0] !== message && !lookupHashes.has(simulatedSignature.messageHash)) continue
-		if (areSameSignatures(RecoverableMessageSignature.parse(simulatedSignature.signature), signature)) return simulatedSignature.signer
-	}
-	return undefined
-}
+// Generous for any real personal_sign message (1 MiB of hex-encoded bytes) and checked before any decoding or hashing, because a page reaches this handler without a confirmation dialog.
+export const MAX_PERSONAL_EC_RECOVER_MESSAGE_LENGTH = 2 + 2 * 1024 * 1024
 
 // Answered locally in every mode: recovery is pure computation. Signatures the simulation handed out for personal_sign resolve to their simulated signer instead of the mock signing key, keeping the simulation consistent for the page: only messages on the simulation stack match, which the user put there by approving a simulated signing or importing a stack in the popup, and only for the website origin stored with the message; for an approved signing this repeats the signer the simulated personal_sign reply already gave that website. Anyone recovering the signature outside the Interceptor gets the public mock key address, so no real signature verification is affected.
 export async function personalEcRecover(request: PersonalEcRecover, simulatedSignedMessages: readonly SignedMessageTransaction[], requestingWebsiteOrigin: string): Promise<RPCReply> {
 	const [message, signature] = request.params
+	if (message.length > MAX_PERSONAL_EC_RECOVER_MESSAGE_LENGTH) return invalidPersonalEcRecoverRequest(`Invalid personal_ecRecover message. Messages longer than ${ MAX_PERSONAL_EC_RECOVER_MESSAGE_LENGTH } characters (1 MiB of hex-encoded bytes) are not supported.`)
 	const messageHash = hashPersonalEcRecoverMessage(message)
-	const signer = await findSimulatedPersonalSignSigner(getMessagesSignedForWebsite(simulatedSignedMessages, requestingWebsiteOrigin), message, signature) ?? await recoverSigner(messageHash, signature)
+	const websiteSignedMessages = getMessagesSignedForWebsite(simulatedSignedMessages, requestingWebsiteOrigin)
+	// With nothing this website simulated-signed there is no simulated signer to find, so the lookup is skipped.
+	const simulatedSigner = websiteSignedMessages.length === 0 ? undefined : await findSimulatedPersonalSignSigner(websiteSignedMessages, message, messageHash, signature)
+	const signer = simulatedSigner ?? await recoverSigner(messageHash, signature)
 	if (signer === undefined) return invalidPersonalEcRecoverRequest('Invalid personal_ecRecover signature. The signature does not recover to any address.')
 	return { type: 'result', method: request.method, result: signer }
 }
