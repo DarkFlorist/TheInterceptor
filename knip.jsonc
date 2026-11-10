@@ -16,7 +16,6 @@
 				"app/ts/settingsView.ts",
 				"app/ts/websiteAccess.ts",
 				"app/ts/watchAsset.ts",
-				"app/inpage/ts/document_start.ts",
 				"app/inpage/ts/inpage.ts",
 				"app/inpage/ts/listenContentScript.ts",
 				"app/inpage/ts/listenContentScriptBootstrap.ts",

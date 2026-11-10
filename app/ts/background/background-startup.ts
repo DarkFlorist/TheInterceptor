@@ -18,7 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
+import { updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -126,8 +126,9 @@ const manifestVersion = browser.runtime.getManifest().manifest_version
 const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
+// The MV3 service worker registers the content scripts itself in backgroundServiceWorker.ts.
 if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
+	updateContentScriptInjectionStrategy()
 }
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally

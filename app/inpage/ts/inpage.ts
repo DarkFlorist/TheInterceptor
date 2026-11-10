@@ -634,7 +634,7 @@ function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnos
 	}
 }
 
-function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
+function formatForwardedDiagnostics(source: 'inpage' | 'content-script', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
 	return [
 		`${ source }: ${ summary }`,
 		`phase: ${ phase }`,
@@ -689,7 +689,7 @@ function getLegacyWeb3WithoutInvokingAccessors(target: InpageWindow): LegacyWeb3
 	return descriptor.value
 }
 
-function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
+function serializeForwardedDiagnostics(source: 'inpage' | 'content-script', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
 	return formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 }
 

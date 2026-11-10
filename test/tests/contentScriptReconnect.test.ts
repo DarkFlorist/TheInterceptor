@@ -14,15 +14,12 @@ type ContentScriptMockState = {
 	readonly failNextPost: () => void
 }
 
-type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
-async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
+async function withContentScriptMock(run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
-	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
-	const interceptorInjectedDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'interceptorInjected')
 	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
 	const backgroundMessageListeners: ((message: unknown) => void)[] = []
 	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
@@ -37,7 +34,6 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const browserMock = {
 		runtime: {
 			get lastError() { return runtime.lastError },
-			getURL: (path: string) => `browser-extension://test/${ path }`,
 			connect: ({ name }: { name: string }) => {
 				connectionCount += 1
 				connectionNames.push(name)
@@ -63,36 +59,17 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
-	const scriptContainer = {
-		children: [{}, {}],
-		insertBefore: () => undefined,
-		removeChild: () => undefined,
-	}
-	Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: {
-		head: scriptContainer,
-		documentElement: scriptContainer,
-		createElement: () => ({
-			setAttribute: () => undefined,
-			src: '',
-			textContent: '',
-		}),
-	} })
 
 	try {
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
-		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
-		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
+		await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
 		if (addEventListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, 'addEventListener')
 		else Object.defineProperty(globalThis, 'addEventListener', addEventListenerDescriptor)
-		if (documentDescriptor === undefined) Reflect.deleteProperty(globalThis, 'document')
-		else Object.defineProperty(globalThis, 'document', documentDescriptor)
-		if (interceptorInjectedDescriptor === undefined) Reflect.deleteProperty(globalThis, 'interceptorInjected')
-		else Object.defineProperty(globalThis, 'interceptorInjected', interceptorInjectedDescriptor)
 		if (contentScriptListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, contentScriptListenerGlobalKey)
 		else Object.defineProperty(globalThis, contentScriptListenerGlobalKey, contentScriptListenerDescriptor)
 	}
@@ -134,8 +111,8 @@ async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOr
 	return { receivedMessages, close }
 }
 
-async function verifyContentScriptReconnect(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount, failNextPost }) => {
+async function verifyContentScriptReconnect() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount, failNextPost }) => {
 		assert.equal(getConnectionCount(), 1)
 		assert.equal(disconnectListeners.length, 1)
 
@@ -189,8 +166,8 @@ async function verifyContentScriptReconnect(source: ContentScriptSource) {
 	})
 }
 
-async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ disconnectListeners, eventListeners, postedMessages, runtimeMessageListeners, connectionNames, runtime, getConnectionCount }) => {
+async function verifyRequestQueuedDuringReconnect() {
+	await withContentScriptMock(async ({ disconnectListeners, eventListeners, postedMessages, runtimeMessageListeners, connectionNames, runtime, getConnectionCount }) => {
 		runtime.lastError = { message: 'Could not establish connection. Receiving end does not exist.' }
 		disconnectListeners[0]?.()
 		assert.equal(getConnectionCount(), 1)
@@ -215,8 +192,8 @@ async function verifyRequestQueuedDuringReconnect(source: ContentScriptSource) {
 	})
 }
 
-async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+async function verifyUnacknowledgedRequestReplayedAfterDisconnect() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		await dispatchBridgeRequest(eventListeners)
 		assert.equal(postedMessages.length, 1)
 
@@ -233,8 +210,8 @@ async function verifyUnacknowledgedRequestReplayedAfterDisconnect(source: Conten
 	})
 }
 
-async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		const inpageBridge = await dispatchBridgeRequest(eventListeners, 'example_replayableMethod', true, true)
 		assert.equal(postedMessages.length, 1)
 		assert.deepEqual(postedMessages[0], { data: {
@@ -278,8 +255,8 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 	})
 }
 
-async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+async function verifyRpcMethodDoesNotImplicitlyEnableReplay() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		await dispatchBridgeRequest(eventListeners, 'eth_requestAccounts')
 		assert.equal(postedMessages.length, 1)
 		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
@@ -291,8 +268,8 @@ async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScrip
 	})
 }
 
-async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages }) => {
+async function verifyRetainedRequestsReplayBeforeNewerPendingRequests() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages }) => {
 		const channel = new MessageChannel()
 		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 		channel.port1.postMessage({
@@ -333,8 +310,8 @@ async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: Co
 	})
 }
 
-async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource, settleFromStalePort: boolean) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+async function verifySettlementRemovesInFlightReplay(settleFromStalePort: boolean) {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		await dispatchBridgeRequest(eventListeners, 'example_replayableMethod', true)
 		backgroundMessageListeners[0]?.({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: 1 })
 		disconnectListeners[0]?.()
@@ -356,8 +333,8 @@ async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource
 	})
 }
 
-async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
+async function verifyAcknowledgementAdvancesQueuedRequests() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
 		const channel = new MessageChannel()
 		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 		for (const requestId of [1, 2]) {
@@ -400,8 +377,8 @@ async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScript
 	})
 }
 
-async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSource) {
-	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, postedMessages, getConnectionCount }) => {
+async function verifyStalePortAcknowledgementIsIgnored() {
+	await withContentScriptMock(async ({ backgroundMessageListeners, disconnectListeners, postedMessages, getConnectionCount }) => {
 		disconnectListeners[0]?.()
 		assert.equal(getConnectionCount(), 2)
 
@@ -421,88 +398,58 @@ async function verifyStalePortAcknowledgementIsIgnored(source: ContentScriptSour
 
 if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 	test('standalone content script recovers its background port without reconnect churn', async () => {
-		await verifyContentScriptReconnect('standalone-listener')
+		await verifyContentScriptReconnect()
 	})
 
-	test('manifest v2 document-start content script recovers its background port without reconnect churn', async () => {
-		await verifyContentScriptReconnect('manifest-v2-document-start')
-	})
 
 	test('standalone content script queues requests while its background port reconnects', async () => {
-		await verifyRequestQueuedDuringReconnect('standalone-listener')
+		await verifyRequestQueuedDuringReconnect()
 	})
 
-	test('manifest v2 document-start queues requests while its background port reconnects', async () => {
-		await verifyRequestQueuedDuringReconnect('manifest-v2-document-start')
-	})
 
 	test('standalone content script replays an unacknowledged request after disconnect', async () => {
-		await verifyUnacknowledgedRequestReplayedAfterDisconnect('standalone-listener')
+		await verifyUnacknowledgedRequestReplayedAfterDisconnect()
 	})
 
-	test('manifest v2 document-start replays an unacknowledged request after disconnect', async () => {
-		await verifyUnacknowledgedRequestReplayedAfterDisconnect('manifest-v2-document-start')
-	})
 
 	test('standalone content script replays an acknowledged flagged request until a marked terminal reply', async () => {
-		await verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled('standalone-listener')
+		await verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled()
 	})
 
-	test('manifest v2 document-start replays an acknowledged flagged request until a marked terminal reply', async () => {
-		await verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled('manifest-v2-document-start')
-	})
 
 	test('standalone content script does not infer replay policy from the RPC method', async () => {
-		await verifyRpcMethodDoesNotImplicitlyEnableReplay('standalone-listener')
+		await verifyRpcMethodDoesNotImplicitlyEnableReplay()
 	})
 
-	test('manifest v2 document-start does not infer replay policy from the RPC method', async () => {
-		await verifyRpcMethodDoesNotImplicitlyEnableReplay('manifest-v2-document-start')
-	})
 
 	test('standalone content script replays retained requests before newer pending requests', async () => {
-		await verifyRetainedRequestsReplayBeforeNewerPendingRequests('standalone-listener')
+		await verifyRetainedRequestsReplayBeforeNewerPendingRequests()
 	})
 
-	test('manifest v2 document-start replays retained requests before newer pending requests', async () => {
-		await verifyRetainedRequestsReplayBeforeNewerPendingRequests('manifest-v2-document-start')
-	})
 
 	test('standalone content script removes an in-flight replay when its terminal reply arrives before acknowledgement', async () => {
-		await verifySettlementRemovesInFlightReplay('standalone-listener', false)
+		await verifySettlementRemovesInFlightReplay(false)
 	})
 
-	test('manifest v2 document-start removes an in-flight replay when its terminal reply arrives before acknowledgement', async () => {
-		await verifySettlementRemovesInFlightReplay('manifest-v2-document-start', false)
-	})
 
 	test('standalone content script accepts settlement from a stale port while the replay is in flight', async () => {
-		await verifySettlementRemovesInFlightReplay('standalone-listener', true)
+		await verifySettlementRemovesInFlightReplay(true)
 	})
 
-	test('manifest v2 document-start accepts settlement from a stale port while the replay is in flight', async () => {
-		await verifySettlementRemovesInFlightReplay('manifest-v2-document-start', true)
-	})
 
 	test('standalone content script advances queued requests only after the matching acknowledgement', async () => {
-		await verifyAcknowledgementAdvancesQueuedRequests('standalone-listener')
+		await verifyAcknowledgementAdvancesQueuedRequests()
 	})
 
-	test('manifest v2 document-start advances queued requests only after the matching acknowledgement', async () => {
-		await verifyAcknowledgementAdvancesQueuedRequests('manifest-v2-document-start')
-	})
 
 	test('standalone content script ignores acknowledgements from a stale port without diagnostics', async () => {
-		await verifyStalePortAcknowledgementIsIgnored('standalone-listener')
+		await verifyStalePortAcknowledgementIsIgnored()
 	})
 
-	test('manifest v2 document-start ignores acknowledgements from a stale port without diagnostics', async () => {
-		await verifyStalePortAcknowledgementIsIgnored('manifest-v2-document-start')
-	})
 
 	test('does not redefine a non-configurable legacy content script listener', async () => {
 		const legacyListener = () => undefined
-		await withContentScriptMock('standalone-listener', async ({ getConnectionCount }) => {
+		await withContentScriptMock(async ({ getConnectionCount }) => {
 			assert.equal(Reflect.get(globalThis, 'listenContentScript'), legacyListener)
 			assert.equal(getConnectionCount(), 1)
 		}, { configurable: false, value: legacyListener })
