@@ -5,13 +5,10 @@ import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createSimulatedInput } from '../../app/ts/types/visualizer-types.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 
-Object.defineProperty(globalThis, 'chrome', {
-	value: { runtime: { id: 'test-extension' } },
-	configurable: true,
-	writable: true,
-})
-
+// The handlers' import chain registers browser listeners at load time, so the browser mock (which also stubs chrome.runtime.id) is installed before the import.
+installBrowserMock()
 const { getStorageAt } = await import('../../app/ts/background/simulationModeHandlers.js')
 
 const rpcEntry = {
