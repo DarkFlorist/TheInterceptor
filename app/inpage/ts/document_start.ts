@@ -11,13 +11,25 @@ function injectPageWorldScripts() {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
+		const insertAndRemoveScript = (script: HTMLScriptElement) => {
+			container.insertBefore(script, container.children[1])
+			container.removeChild(script)
+		}
+		// The build fills in this file's compatibility-mode provider, both as source and as its extension URL.
+		const pageWorldProviderSource = '[[pageWorldProviderSource]]'
 		const pageWorldProviderScriptPath = '[[pageWorldProviderScriptPath]]'
-		const scriptTag = document.createElement('script')
-		scriptTag.async = false
-		scriptTag.src = browser.runtime.getURL(pageWorldProviderScriptPath)
-		container.insertBefore(scriptTag, container.children[1])
+		// An inline script runs synchronously when inserted, so the provider exists before any later page script. The provider's first statement marks its script element, which this content script shares, so a missing mark means the page CSP blocked inline scripts.
+		const providerRanAttribute = 'data-interceptor-provider-ran'
+		const inlineProviderScript = document.createElement('script')
+		inlineProviderScript.textContent = `document.currentScript.setAttribute('${ providerRanAttribute }', '');\n${ pageWorldProviderSource }`
+		insertAndRemoveScript(inlineProviderScript)
+		if (!inlineProviderScript.hasAttribute(providerRanAttribute)) {
+			// Firefox exempts extension resources from the page CSP, so the provider still loads from its URL there, though asynchronously.
+			const externalProviderScript = document.createElement('script')
+			externalProviderScript.src = browser.runtime.getURL(pageWorldProviderScriptPath)
+			insertAndRemoveScript(externalProviderScript)
+		}
 		;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
-		container.removeChild(scriptTag)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.error('Interceptor: Provider injection failed.', error)

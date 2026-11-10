@@ -2,14 +2,15 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
-import { inlineDocumentStartInjectionConfiguration } from '../../scripts/inline-inpage-document-start.mts'
+import { getManifestV2DocumentStartScriptPath } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { generateInpageArtifacts } from '../../scripts/inline-inpage-document-start.mts'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
 	readonly runtimeMessageListeners: ((message: unknown) => unknown)[]
 	readonly disconnectListeners: (() => void)[]
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
-	readonly injectedScripts: readonly { readonly async: boolean, readonly src: string, readonly textContent: string }[]
+	readonly injectedScripts: readonly { readonly src: string, readonly textContent: string }[]
 	readonly postedMessages: unknown[]
 	readonly connectionNames: string[]
 	readonly runtime: { lastError: { message?: string } | undefined }
@@ -19,6 +20,8 @@ type ContentScriptMockState = {
 
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
+// A stand-in provider with the compatibility-mode marker the build fills in, so tests can tell which mode's provider document-start inlined.
+const stubPageWorldProviderSource = 'const metamaskCompatibilityModeAtPageLoad = false // [[metamaskCompatibilityModeAtPageLoad]]'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, metamaskCompatibilityMode = false) {
@@ -31,7 +34,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
-	const injectedScripts: { readonly async: boolean, readonly src: string, readonly textContent: string }[] = []
+	const injectedScripts: { readonly src: string, readonly textContent: string }[] = []
 	const postedMessages: unknown[] = []
 	const connectionNames: string[] = []
 	const runtime: { lastError: { message?: string } | undefined } = { lastError: undefined }
@@ -69,19 +72,25 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 	const scriptContainer = {
 		children: [{}, {}],
-		insertBefore: (script: { readonly async: boolean, readonly src: string, readonly textContent: string }) => {
-			injectedScripts.push({ async: script.async, src: script.src, textContent: script.textContent })
+		// An inline provider marks its script element as soon as it runs; this mock does not run it, so it sets that mark itself as a page without a blocking CSP would.
+		insertBefore: (script: { readonly src: string, readonly textContent: string, readonly setAttribute: (name: string, value: string) => void }) => {
+			if (script.src === '') script.setAttribute('data-interceptor-provider-ran', '')
+			injectedScripts.push({ src: script.src, textContent: script.textContent })
 		},
 		removeChild: () => undefined,
 	}
 	Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: {
 		head: scriptContainer,
 		documentElement: scriptContainer,
-		createElement: () => ({
-			async: true,
-			src: '',
-			textContent: '',
-		}),
+		createElement: () => {
+			const attributes = new Set<string>()
+			return {
+				src: '',
+				textContent: '',
+				setAttribute: (name: string) => { attributes.add(name) },
+				hasAttribute: (name: string) => attributes.has(name),
+			}
+		},
 	} })
 
 	try {
@@ -93,8 +102,9 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 			const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
 				compilerOptions,
 			}).outputText
-			const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, metamaskCompatibilityMode)
-			Function(generatedDocumentStart)()
+			const generatedDocumentStart = generateInpageArtifacts(compiledDocumentStart, stubPageWorldProviderSource).find(({ path }) => path === getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode))
+			if (generatedDocumentStart === undefined) throw new Error('Missing generated document-start script')
+			Function(generatedDocumentStart.source)()
 		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, injectedScripts, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
@@ -442,11 +452,11 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		await verifyContentScriptReconnect('manifest-v2-document-start')
 	})
 
-	test('manifest v2 document-start injects the external provider artifact for active compatibility mode', async () => {
+	test('manifest v2 document-start injects the inline provider for the active compatibility mode', async () => {
 		await withContentScriptMock('manifest-v2-document-start', async ({ injectedScripts }) => {
 			assert.equal(injectedScripts.length, 1)
-			assert.equal(injectedScripts[0]?.src, 'browser-extension://test/inpage/js/inpage-metamask-compatibility.js')
-			assert.equal(injectedScripts[0]?.textContent, '')
+			assert.equal(injectedScripts[0]?.src, '')
+			assert.equal(injectedScripts[0]?.textContent.includes('const metamaskCompatibilityModeAtPageLoad = true'), true)
 		}, undefined, true)
 	})
 

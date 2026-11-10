@@ -92,3 +92,7 @@ The transient RPC failure scenario expects the rich setting to be saved while th
 The wallet-response deadline and a later dapp request on the same signer connection are covered by focused tests using a shortened timeout. Per-command IDs prevent expired or reordered wallet replies from completing another switch; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.
+
+## Firefox provider injection check
+
+`bun run test:firefox-provider-injection` loads the Firefox build (`bun run setup-firefox` first) through geckodriver and opens local pages with and without a CSP that blocks inline scripts. On a page without such a CSP, the provider must already be defined when the page observes its inline script element being added. On a page with that CSP, the inline provider must be blocked and the extension-URL fallback must still install the provider. The MV2 injection starts after a `webNavigation` round trip to the background, so on a page that loads this fast it can land after the page's first script; the check accepts either order. Set `FIREFOX_BIN` or `GECKODRIVER_BIN` to use other binaries.
