@@ -1,5 +1,7 @@
 import * as assert from 'assert'
+import * as fs from 'node:fs'
 import { beforeEach, describe, test } from 'bun:test'
+import * as ts from 'typescript'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
@@ -109,12 +111,59 @@ function createBrowserStorageMock() {
 }
 
 const browserMock = createBrowserStorageMock()
-const settingsModulePromise = import('../../app/ts/background/settings.js').then((settingsModule) => ({
+const settingsModulePromise = Promise.all([import('../../app/ts/background/settings.js'), import('../../app/ts/background/settingsImport.js')]).then(([settingsModule, settingsImportModule]) => ({
 	...settingsModule,
+	...settingsImportModule,
 	setMetamaskCompatibilityMode: settingsModule.persistMetamaskCompatibilityMode,
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
+
+const settingsStorageModulePaths = {
+	settings: 'app/ts/background/settings.ts',
+	storageVariables: 'app/ts/background/storageVariables.ts',
+	settingsImport: 'app/ts/background/settingsImport.ts',
+	settingsStorageTransaction: 'app/ts/background/settingsStorageTransaction.ts',
+}
+
+const parseSourceFile = (path: string) => ts.createSourceFile(path, fs.readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
+
+const forEachDescendant = (node: ts.Node, visit: (descendant: ts.Node) => void) => {
+	ts.forEachChild(node, (child) => {
+		visit(child)
+		forEachDescendant(child, visit)
+	})
+}
+
+const getStringLiterals = (node: ts.Node) => {
+	const literals: string[] = []
+	forEachDescendant(node, (descendant) => { if (ts.isStringLiteral(descendant) || ts.isNoSubstitutionTemplateLiteral(descendant)) literals.push(descendant.text) })
+	return literals
+}
+
+const getObjectLiteralPropertyNames = (objectLiteral: ts.ObjectLiteralExpression) => objectLiteral.properties.flatMap((property) => (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? [property.name.text] : [])
+
+const isStorageWriteFunctionName = (name: string) => name.endsWith('StorageWrite')
+
+// An object literal passed straight to an owner's …StorageWrite function is that owner's input, whose fields may share a key's name; any other object literal naming a key builds raw storage items.
+const isOwnerStorageWriteArgument = (objectLiteral: ts.ObjectLiteralExpression) => ts.isCallExpression(objectLiteral.parent) && ts.isIdentifier(objectLiteral.parent.expression) && isStorageWriteFunctionName(objectLiteral.parent.expression.text)
+
+const getStorageItemObjectKeys = (node: ts.Node) => {
+	const keys: string[] = []
+	forEachDescendant(node, (descendant) => { if (ts.isObjectLiteralExpression(descendant) && !isOwnerStorageWriteArgument(descendant)) keys.push(...getObjectLiteralPropertyNames(descendant)) })
+	return keys
+}
+
+// The keys a module writes through its own …StorageWrite functions, which makes it the owner of those keys.
+const getKeysWrittenByStorageWriteFunctions = (sourceFile: ts.SourceFile) => {
+	const keys: string[] = []
+	forEachDescendant(sourceFile, (node) => {
+		const isStorageWriteFunction = (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && isStorageWriteFunctionName(node.name.text)) || (ts.isFunctionDeclaration(node) && node.name !== undefined && isStorageWriteFunctionName(node.name.text))
+		if (!isStorageWriteFunction) return
+		keys.push(...getStorageItemObjectKeys(node))
+	})
+	return keys
+}
 
 const readWholeStorage = async () => structuredClone(await browser.storage.local.get(null))
 
@@ -664,5 +713,82 @@ describe('settings import', () => {
 		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['imported.example', 'later.example'])
 		assert.deepEqual((await getSigningAddressPreferences()).map(({ signerAddress }) => signerAddress), [importedSignerAddress, laterSignerAddress])
 		assert.deepEqual((await getUserAddressBookEntries()).map(({ name }) => name), ['Imported contact', 'Later contact'])
+	})
+
+	test('an import queued behind an in-flight address book write replaces its stale value and later writers apply on top of the import', async () => {
+		const laterSignerAddress = 0x9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9an
+		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
+		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const version15Import = (await buildImportOfEveryVersion()).find(({ exportedSettings }) => exportedSettings.version === '1.5')
+		if (version15Import === undefined) throw new Error('Expected a version 1.5 import fixture')
+		const inFlightWriteGate = browserMock.blockNextAddressBookWrite()
+		const inFlightAddressBookWrite = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'In-flight contact', address: 0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9bn, entrySource: 'User', useAsActiveAddress: false }])
+		await inFlightWriteGate.started
+
+		const settingsImport = importSettingsAndAddressBook(version15Import.exportedSettings)
+		const laterWebsiteAccessUpdate = updateWebsiteAccess((entries) => [...entries, { website: { websiteOrigin: 'later.example', icon: undefined, title: 'Later' }, access: false }])
+		const laterPreferenceUpdate = rememberSigningAddressPreference({ signerAddress: laterSignerAddress, selection: 'signer', chainId: testRpcNetwork.chainId })
+		inFlightWriteGate.release()
+		await Promise.all([inFlightAddressBookWrite, settingsImport, laterWebsiteAccessUpdate, laterPreferenceUpdate])
+
+		assert.deepEqual((await getUserAddressBookEntries()).map(({ name }) => name), ['Version 1.5 signing Safe'])
+		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['later.example'])
+		assert.deepEqual((await getSigningAddressPreferences()).map(({ signerAddress }) => signerAddress), [0xa3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3n, laterSignerAddress])
+	})
+
+	test('website access, signing preference and address book writers share the one settings storage lock', async () => {
+		const { getWebsiteAccess, getSigningAddressPreferences, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
+		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
+		const addressBookWrite = updateUserAddressBookEntries((entries) => entries)
+		await addressBookWriteGate.started
+
+		const websiteAccessUpdate = updateWebsiteAccess(() => [{ website: { websiteOrigin: 'queued.example', icon: undefined, title: 'Queued' }, access: true }])
+		const preferenceUpdate = rememberSigningAddressPreference(preImportSigningPreference)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(await getWebsiteAccess(), [], 'a website access update ran while an address book write held the lock')
+		assert.deepEqual(await getSigningAddressPreferences(), [], 'a signing preference update ran while an address book write held the lock')
+		addressBookWriteGate.release()
+		await Promise.all([addressBookWrite, websiteAccessUpdate, preferenceUpdate])
+		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['queued.example'])
+	})
+
+	test('the settings storage lock is created in exactly one place', () => {
+		assert.equal(fs.readFileSync(settingsStorageModulePaths.settingsStorageTransaction, 'utf8').match(/new Semaphore\(/g)?.length, 1)
+		for (const path of [settingsStorageModulePaths.settings, settingsStorageModulePaths.storageVariables, settingsStorageModulePaths.settingsImport]) {
+			assert.doesNotMatch(fs.readFileSync(path, 'utf8'), /(websiteAccess|signingAddressPreferences|userAddressBookEntries)\w*Semaphore/, `${ path } keeps its own lock for a settings storage writer`)
+		}
+	})
+
+	const getKeysWrittenByEveryImport = async () => {
+		const { importSettingsAndAddressBook } = await settingsModulePromise
+		const writtenKeys = new Set<string>()
+		for (const { exportedSettings } of await buildImportOfEveryVersion()) {
+			browserMock.reset()
+			await importSettingsAndAddressBook(exportedSettings)
+			for (const items of browserMock.takeSetCalls()) for (const key of Object.keys(items)) writtenKeys.add(key)
+		}
+		return [...writtenKeys]
+	}
+
+	test('the settings import and the storage transaction name none of the storage keys the import writes', async () => {
+		const writtenKeys = await getKeysWrittenByEveryImport()
+		assert.notDeepEqual(writtenKeys, [])
+		for (const path of [settingsStorageModulePaths.settingsImport, settingsStorageModulePaths.settingsStorageTransaction]) {
+			const sourceFile = parseSourceFile(path)
+			const namedKeys = [...getStringLiterals(sourceFile), ...getStorageItemObjectKeys(sourceFile)].filter((name) => writtenKeys.includes(name))
+			assert.deepEqual(namedKeys, [], `${ path } names storage keys instead of composing their owners' writes`)
+		}
+	})
+
+	test('every storage key the import writes has exactly one owner, and no other settings storage module names it', async () => {
+		const writtenKeys = await getKeysWrittenByEveryImport()
+		const modules = Object.values(settingsStorageModulePaths).map((path) => ({ path, sourceFile: parseSourceFile(path) }))
+		for (const key of writtenKeys) {
+			const owners = modules.filter(({ sourceFile }) => getKeysWrittenByStorageWriteFunctions(sourceFile).includes(key)).map(({ path }) => path)
+			assert.equal(owners.length, 1, `${ key } is written by the …StorageWrite functions of ${ owners.length === 0 ? 'no module' : owners.join(' and ') }`)
+			const modulesNamingKey = modules.filter(({ sourceFile }) => getStringLiterals(sourceFile).includes(key)).map(({ path }) => path)
+			assert.deepEqual(modulesNamingKey.filter((path) => !owners.includes(path)), [], `${ key } is named outside its owner ${ owners.join('') }`)
+		}
 	})
 })
