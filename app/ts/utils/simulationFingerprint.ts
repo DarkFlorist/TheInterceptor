@@ -1,9 +1,9 @@
 import { stringToBytes, keccak256 } from './ethereumPrimitives.js'
 import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from './ethereum.js'
-import type { SimulatedInput } from '../types/visualizer-types.js'
+import type { SimulatedExecutionInput } from '../types/visualizer-types.js'
 
-export function getSimulationInputHash({ value: simulationStateInput, simulationOverrides }: SimulatedInput) {
+export function getSimulationInputHash({ value: simulationStateInput, simulationOverrides }: SimulatedExecutionInput) {
 	const messages = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.signedMessages.map((signedMessage) => ({
 		fakeSignedFor: signedMessage.fakeSignedFor,
 		originalRequestParameters: signedMessage.originalRequestParameters,

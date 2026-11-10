@@ -302,14 +302,15 @@ export const ResolvedSimulationState = funtypes.Union(
 	})
 )
 
-export type SimulatedInput<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
+// What one eth_simulateV1 run executes: the simulation blocks (SimulationStateInput, in value) together with the initial account state applied before them.
+export type SimulatedExecutionInput<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
 	readonly kind: 'simulated'
 	readonly value: TInput
 	/** Canonical account state applied before the first simulated block; derive block-level overrides only through utils/simulationStateOverrides.ts. */
 	readonly simulationOverrides: StateOverrides
 }
-export type SimulationInput = SimulatedInput<SimulationStateInput>
-export type ResolvedSimulationInput = PassthroughState | SimulationInput
+export type SimulationExecutionInput = SimulatedExecutionInput<SimulationStateInput>
+export type ResolvedSimulationInput = PassthroughState | SimulationExecutionInput
 export const ResolvedSimulationInput = funtypes.Union(
 	PassthroughState,
 	funtypes.ReadonlyObject({
@@ -320,9 +321,9 @@ export const ResolvedSimulationInput = funtypes.Union(
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const createSimulatedInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides = {}): SimulatedInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
+export const createSimulatedExecutionInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides = {}): SimulatedExecutionInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
 // Reconstruct the exact captured input for a persisted result, independent of later preference changes.
-export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => createSimulatedInput(state.simulationStateInput, state.simulationOverrides)
+export const getSimulationExecutionInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationExecutionInput => createSimulatedExecutionInput(state.simulationStateInput, state.simulationOverrides)
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

@@ -2,7 +2,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
-import { createPassthroughCompleteVisualizedSimulation, getSimulationInputFromState, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { createPassthroughCompleteVisualizedSimulation, getSimulationExecutionInputFromState, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -78,7 +78,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
 			const currentFingerprint = getPopupVisualisationFingerprint({ kind: 'simulated', value: currentSimulationInput.simulationStateInput, simulationOverrides: currentSimulationInput.simulationOverrides }, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
-				getSimulationInputFromState(popupVisualisation.simulationState.value),
+				getSimulationExecutionInputFromState(popupVisualisation.simulationState.value),
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
 			)

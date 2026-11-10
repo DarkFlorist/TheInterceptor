@@ -1,10 +1,10 @@
 import { stringToBytes, keccak256 } from '../utils/ethereumPrimitives.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import type { SimulationInput } from '../types/visualizer-types.js'
+import type { SimulationExecutionInput } from '../types/visualizer-types.js'
 import { getSimulationInputHash } from '../utils/simulationFingerprint.js'
 
-export function getPopupVisualisationFingerprint(simulationInput: SimulationInput, rpcNetwork: RpcNetwork, blockNumber: bigint) {
+export function getPopupVisualisationFingerprint(simulationInput: SimulationExecutionInput, rpcNetwork: RpcNetwork, blockNumber: bigint) {
 	return keccak256(stringToBytes(stringifyJSONWithBigInts([getSimulationInputHash(simulationInput), normalizeRpcNetworkForFingerprint(rpcNetwork), blockNumber])))
 }
 

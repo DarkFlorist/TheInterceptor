@@ -12,7 +12,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import { authorizesExecutedCall, type BlockTimeManipulation, type SimulatedInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type BlockTimeManipulation, type SimulatedExecutionInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
@@ -347,10 +347,10 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
-		const simulationStateInput = simulationInput.value
+	public readonly prepareEthSimulateV1Input = async (executionInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+		const simulationStateInput = executionInput.value
 		// This service applies caller-supplied initial account state; mode and preference selection happen upstream.
-		const simulationOverrides = simulationInput.simulationOverrides
+		const simulationOverrides = executionInput.simulationOverrides
 		// Every simulation input reaches the node through here, so this enforces, in both directions, that a transaction runs a call other than its signedTransaction exactly when its simulation options authorize one (authorizesExecutedCall). A transaction whose options ask for an executed call but whose input was not prepared with one would otherwise run as the call it shows. Both throws are internal invariant failures (a caller skipped preparing its input), not user-facing errors, so they stay reported as unexpected errors. Their messages stay protocol-agnostic so this RPC layer names no Safe or background helper.
 		if (simulationStateInput.some((block) => block.transactions.some((transaction) => authorizesExecutedCall(transaction.simulationOptions) && transaction.executedTransaction === undefined))) throw createUnpreparedSimulationInputError('missing-executed-call', 'A transaction whose simulation options require a prepared executed call reached the node without one.')
 		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !authorizesExecutedCall(transaction.simulationOptions)))) throw createUnpreparedSimulationInputError('unauthorized-executed-call', 'A transaction reached the node with an executed call other than its signed transaction, which its simulation options do not authorize.')
@@ -484,11 +484,11 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly ethSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+	public readonly ethSimulateV1Input = async (simulationInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
 		return (await this.prepareEthSimulateV1Input(simulationInput, blockNumber, requestAbortController)).request
 	}
 
-	public readonly simulatePrepared = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+	public readonly simulatePrepared = async (simulationInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
 		const prepared = await this.prepareEthSimulateV1Input(simulationInput, blockNumber, requestAbortController)
 		return {
 			prepared,
@@ -496,7 +496,7 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly simulate = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
+	public readonly simulate = async (simulationInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
 		const input = await this.ethSimulateV1Input(simulationInput, blockNumber, requestAbortController)
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
 	}

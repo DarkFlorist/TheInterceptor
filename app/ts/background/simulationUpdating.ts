@@ -15,7 +15,7 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationExecutionInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedExecutionInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -134,13 +134,13 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export const getSimulationInputForPreview = async (preview: SimulationPreviewContext, settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
-	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPreview(preview, settings))
+export const getSimulationInputForPreview = async (preview: SimulationPreviewContext, settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationExecutionInput> =>
+	createSimulatedExecutionInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPreview(preview, settings))
 
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
-	readonly simulationInput: SimulationInput
+	readonly simulationInput: SimulationExecutionInput
 	readonly numberOfAddressesMadeRich: number
 }
 
@@ -411,12 +411,12 @@ export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationSta
 }
 
 // prepareSafeExecutionsForRpc for a captured simulation input. The Safe executions' approvals and executor funding go into the first block's stateOverrides, while the captured initial account state (such as delegate clearing) stays in simulationOverrides; prepareEthSimulateV1Input merges both per account into the first block, so neither replaces the other.
-export const prepareSafeExecutionsOfSimulationInputForRpc = async (simulationInput: SimulationInput, ethereum: EthereumClientService): Promise<SimulationInput> => ({ ...simulationInput, value: await prepareSafeExecutionsForRpc(simulationInput.value, ethereum) })
+export const prepareSafeExecutionsOfSimulationInputForRpc = async (simulationInput: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => ({ ...simulationInput, value: await prepareSafeExecutionsForRpc(simulationInput.value, ethereum) })
 
 // The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Safe layer owns it (createSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Safe execution simulation.
 export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment) => gasPayment === 'simulated-safe-executor' ? createSafeExecutionCallFormation(ethereum) : undefined
 
-export const prepareSimulationInputForRpc = async (input: SimulationInput, ethereum: EthereumClientService): Promise<SimulationInput> => {
+export const prepareSimulationInputForRpc = async (input: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => {
 	let simulationInput = input.value
 	const { simulationOverrides } = input
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
@@ -429,25 +429,25 @@ export const prepareSimulationInputForRpc = async (input: SimulationInput, ether
 		if (parentBlock === undefined) return simulationInput
 		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []
 		for (const block of simulationInput) {
-			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput(baseFeeFixedInputStateBlocks, simulationOverrides), block)
+			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedExecutionInput(baseFeeFixedInputStateBlocks, simulationOverrides), block)
 			baseFeeFixedInputStateBlocks.push(modifyObject(block, { transactions }))
 		}
 		return baseFeeFixedInputStateBlocks
 	}
 	const baseFeeFixedInputStateBlocks = await getBaseFeeFixedInputStateBlocks()
-	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, createSimulatedInput(baseFeeFixedInputStateBlocks, simulationOverrides))
+	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, createSimulatedExecutionInput(baseFeeFixedInputStateBlocks, simulationOverrides))
 	return nonceFixed.simulationInput
 }
 
-export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationInput, ethereum: EthereumClientService) => {
+export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationExecutionInput, ethereum: EthereumClientService) => {
 	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
 }
 
-export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationInput, ethereum: EthereumClientService): Promise<ExecutionSimulationState> => {
+export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationExecutionInput, ethereum: EthereumClientService): Promise<ExecutionSimulationState> => {
 	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput)
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationInput, ethereum: EthereumClientService) => {
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationExecutionInput, ethereum: EthereumClientService) => {
 	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
 }
 

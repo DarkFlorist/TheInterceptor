@@ -2,6 +2,7 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import type { SimulationServices } from '../../simulation/serviceLifecycle.js'
 import type { Settings } from '../../types/interceptor-messages.js'
 import { isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
+import { getRpcNetworkChange, isSignerOnlyNetwork } from '../../utils/rpcNetworkChange.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from '../popupRefreshGeneration.js'
 import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
@@ -9,9 +10,9 @@ import { getSettings, setDelegateClearingEnabled } from '../settings.js'
 
 export async function requestDelegateClearing(settings: Settings, ethereum: EthereumClientService, address: bigint, chainId: bigint) {
 	const network = settings.activeRpcNetwork
-	const providerNetwork = ethereum.getRpcEntry()
+	// Endpoint identity comes from rpcNetworkChange.ts, so the hint is only read from the service that simulates the selected endpoint.
 	if (!settings.simulationMode || settings.activeSimulationAddress !== address || network.chainId !== chainId
-		|| network.httpsRpc === undefined || providerNetwork.chainId !== chainId || providerNetwork.httpsRpc !== network.httpsRpc) {
+		|| isSignerOnlyNetwork(network) || getRpcNetworkChange(network, ethereum.getRpcEntry()).endpointChanged) {
 		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {

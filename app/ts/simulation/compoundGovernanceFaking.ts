@@ -11,7 +11,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { mergeStateOverrides } from '../utils/simulationStateOverrides.js'
-import type { PreSimulationTransaction, SimulationInput, SimulationStateInput } from '../types/visualizer-types.js'
+import type { PreSimulationTransaction, SimulationExecutionInput, SimulationStateInput } from '../types/visualizer-types.js'
 
 export const getGovernanceExecutionSimulationInput = (
 	simulationInput: SimulationStateInput,
@@ -33,7 +33,7 @@ export const simulateCompoundGovernanceExecution = async (
 	ethereumClientService: EthereumClientService,
 	governanceContract: AddressBookEntry,
 	proposalId: EthereumQuantity,
-	simulationInput: SimulationInput,
+	simulationInput: SimulationExecutionInput,
 	executionTransactionMetadata: Omit<PreSimulationTransaction, 'signedTransaction'>,
 ) => {
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)

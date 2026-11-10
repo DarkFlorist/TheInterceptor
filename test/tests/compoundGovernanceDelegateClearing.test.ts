@@ -7,7 +7,7 @@ import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { createSimulatedInput } from '../../app/ts/types/visualizer-types.js'
+import { createSimulatedExecutionInput } from '../../app/ts/types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
@@ -61,7 +61,7 @@ test('governance execution preserves clearing, timelock overrides, and earlier c
 	}
 	const emptyStackExecution = await simulateCompoundGovernanceExecution(ethereum, {
 		type: 'contract', name: 'Governor', address: governanceAddress, entrySource: 'User', abi: JSON.stringify(governanceAbi),
-	}, 1n, createSimulatedInput([], simulationOverrides), executionTransactionMetadata)
+	}, 1n, createSimulatedExecutionInput([], simulationOverrides), executionTransactionMetadata)
 	assert.equal(emptyStackExecution.executionGasLimit, 30_000_000n)
 	assert.equal(emptyStackExecution.ethSimulateV1CallResult.gasUsed < emptyStackExecution.executionGasLimit, true)
 	assert.equal(requests.length, 2)
@@ -88,7 +88,7 @@ test('governance execution preserves clearing, timelock overrides, and earlier c
 	}]
 	await simulateCompoundGovernanceExecution(ethereum, {
 		type: 'contract', name: 'Governor', address: governanceAddress, entrySource: 'User', abi: JSON.stringify(governanceAbi),
-	}, 1n, createSimulatedInput(prefix, simulationOverrides), executionTransactionMetadata)
+	}, 1n, createSimulatedExecutionInput(prefix, simulationOverrides), executionTransactionMetadata)
 	assert.equal(requests.length, 2)
 	for (const request of requests) {
 		const blocks = serialize(EthSimulateV1Params, request).params[0].blockStateCalls

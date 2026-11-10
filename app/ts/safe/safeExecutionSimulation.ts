@@ -4,7 +4,7 @@ import { getGasEstimateFromSimulation } from '../simulation/services/simulationG
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import { authorizesExecutedCall, getSimulationInputFromState, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInput, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, getSimulationExecutionInputFromState, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationExecutionInput, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
@@ -141,7 +141,7 @@ type SafeCallFields = Pick<PreSimulationTransaction, 'website' | 'created' | 'or
 export async function estimateSafeExecutionGas(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-	simulationInput: SimulationInput,
+	simulationInput: SimulationExecutionInput,
 	safeCallWithoutGas: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
 	safeCallFields: SafeCallFields,
 ): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> {
@@ -191,6 +191,6 @@ export const createSafeExecutionCallFormation = (ethereum: EthereumClientService
 	estimateGas: async (requestAbortController, simulationState, transaction, safeCallFields) => {
 		if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
-		return await estimateSafeExecutionGas(ethereum, requestAbortController, getSimulationInputFromState(simulationState.value), transaction, safeCallFields)
+		return await estimateSafeExecutionGas(ethereum, requestAbortController, getSimulationExecutionInputFromState(simulationState.value), transaction, safeCallFields)
 	},
 })

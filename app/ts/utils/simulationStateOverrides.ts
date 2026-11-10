@@ -10,15 +10,15 @@ export function mergeStateOverrides(baseOverrides: StateOverrides, overridingOve
 	return merged
 }
 
-// SimulatedInput.simulationOverrides is the canonical initial account state; every block-level view of it must be derived through the two helpers below.
+// SimulatedExecutionInput.simulationOverrides is the canonical initial account state; every block-level view of it must be derived through the two helpers below.
 const getStateOverridesForBlockAt = (blockIndex: number, blockOverrides: StateOverrides, initialOverrides: StateOverrides): StateOverrides => {
 	// Initial overrides describe state before the first simulated block, so only that block applies them and later blocks inherit its result.
 	return blockIndex === 0 ? mergeStateOverrides(blockOverrides, initialOverrides) : blockOverrides
 }
 
-/** Effective overrides for a block that runs right after `precedingBlocks` in the same simulated block sequence. */
-export function getAppendedBlockStateOverrides(precedingBlocks: readonly unknown[], blockOverrides: StateOverrides, initialOverrides: StateOverrides): StateOverrides {
-	return getStateOverridesForBlockAt(precedingBlocks.length, blockOverrides, initialOverrides)
+/** Effective overrides for a block that runs after `precedingBlockCount` blocks of the same eth_simulateV1 request; it is that block's index, so only a count of 0 applies the initial overrides. */
+export function getAppendedBlockStateOverrides(precedingBlockCount: number, blockOverrides: StateOverrides, initialOverrides: StateOverrides): StateOverrides {
+	return getStateOverridesForBlockAt(precedingBlockCount, blockOverrides, initialOverrides)
 }
 
 /** Maps every block of a simulated block sequence together with its effective overrides. */
