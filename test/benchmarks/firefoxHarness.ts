@@ -113,6 +113,8 @@ async function createWebDriverSession(port: number) {
 		prefs: {
 			'browser.shell.checkDefaultBrowser': false,
 			'browser.startup.page': 0,
+			// Firefox asks before opening a URL with a user name for a site that does not require one, which would block navigation to the credential-bearing test URLs.
+			'network.http.phishy-userpass-length': 255,
 		},
 	}
 	if (process.env.FIREFOX_BIN !== undefined && process.env.FIREFOX_BIN.length > 0) firefoxOptions.binary = process.env.FIREFOX_BIN

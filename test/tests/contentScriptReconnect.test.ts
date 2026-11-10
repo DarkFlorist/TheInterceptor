@@ -16,8 +16,9 @@ type ContentScriptMockState = {
 
 let contentScriptMockImportId = 0
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
+const contentScriptBridgeMarkerKey = Symbol.for('TheInterceptor.contentScriptBridge')
 
-async function withContentScriptMock(run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
+async function withContentScriptMock(run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, documentMarkedAsDisabled = false) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const contentScriptListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, contentScriptListenerGlobalKey)
@@ -59,6 +60,9 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
+	// Each scenario stands for a new document, whose isolated world has no bridge yet unless a registration marked its origin as disabled.
+	Reflect.deleteProperty(globalThis, contentScriptBridgeMarkerKey)
+	if (documentMarkedAsDisabled) Reflect.defineProperty(globalThis, contentScriptBridgeMarkerKey, { value: true, configurable: true })
 
 	try {
 		contentScriptMockImportId += 1
@@ -72,6 +76,7 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 		else Object.defineProperty(globalThis, 'addEventListener', addEventListenerDescriptor)
 		if (contentScriptListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, contentScriptListenerGlobalKey)
 		else Object.defineProperty(globalThis, contentScriptListenerGlobalKey, contentScriptListenerDescriptor)
+		Reflect.deleteProperty(globalThis, contentScriptBridgeMarkerKey)
 	}
 }
 
@@ -446,6 +451,20 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		await verifyStalePortAcknowledgementIsIgnored()
 	})
 
+
+	test('connects the content script bridge once per document when two registrations inject it', async () => {
+		await withContentScriptMock(async ({ getConnectionCount }) => {
+			await import(`../../app/inpage/ts/listenContentScript.js?second-registration-${ contentScriptMockImportId }`)
+			await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?second-registration-${ contentScriptMockImportId }`)
+			assert.equal(getConnectionCount(), 1)
+		})
+	})
+
+	test('does not connect the content script bridge in a document whose origin a registration marked as disabled', async () => {
+		await withContentScriptMock(async ({ getConnectionCount }) => {
+			assert.equal(getConnectionCount(), 0)
+		}, undefined, true)
+	})
 
 	test('does not redefine a non-configurable legacy content script listener', async () => {
 		const legacyListener = () => undefined

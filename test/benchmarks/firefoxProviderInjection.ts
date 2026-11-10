@@ -21,6 +21,7 @@ const strictCspPath = '/strict-csp'
 const noCspPath = '/no-csp'
 const strictContentSecurityPolicy = `script-src 'sha256-${ firstPageScriptHash }'`
 const pageLoadsPerPath = 5
+const transitionCycles = 6
 const accessApproveButtonSelector = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 
 type InjectionObservations = {
@@ -42,7 +43,8 @@ function sleep(milliseconds: number) {
 async function startPageServer(): Promise<PageServer> {
 	const server = createServer((request, response) => {
 		const path = request.url?.split('?')[0] ?? ''
-		if (path !== noCspPath && path !== strictCspPath) {
+		// A path under /no-csp lets a URL carry another origin's host and port in its path.
+		if (path !== noCspPath && !path.startsWith(`${ noCspPath }/`) && path !== strictCspPath) {
 			response.writeHead(404, { 'Cache-Control': 'no-store' })
 			response.end()
 			return
@@ -75,6 +77,17 @@ async function readObservations(page: FirefoxPage) {
 }
 
 // Waits until the page's own poll has seen the provider or given up, so a provider that arrives late, or never, is told apart from one that arrived in time.
+async function readObservationsAcrossReload(page: FirefoxPage) {
+	for (let attempt = 0; attempt < 5; attempt += 1) {
+		try {
+			return await waitForProviderObservation(page, 5000)
+		} catch {
+			await sleep(200)
+		}
+	}
+	return undefined
+}
+
 async function waitForProviderObservation(page: FirefoxPage, timeoutMilliseconds: number) {
 	const deadline = Date.now() + timeoutMilliseconds
 	while (true) {
@@ -189,17 +202,30 @@ async function main() {
 		}
 		report.compatibility = compatibility
 
-		// Disabling the Interceptor for one origin must keep the provider out of exactly that host and port and keep it, before the first script, on the same host's other port. Firefox ignores ports in match patterns, so this is checked in the page rather than in the registered patterns.
+		// Disabling the Interceptor for one origin must keep the provider out of exactly that origin, also when the URL carries credentials, and keep it, before the first script, on the same host's other port, also when that URL names the disabled origin in its path or query. Firefox ignores ports in match patterns, so this is checked in the page rather than in the registered patterns.
 		const website = { websiteOrigin: pageServer.origin, icon: undefined, title: undefined }
+		const otherPortAuthority = otherPortPageServer.origin
 		await sendPopupMessage(controlPage, { method: 'popup_setDisableInterceptor', data: { interceptorDisabled: true, website } })
 		const disabledRegistration = await readRegisteredContentScripts(controlPage)
-		const disabledPage = await session.openPage(`${ pageServer.baseUrl }${ noCspPath }?disabled`)
-		const disabledObservations = await waitForProviderObservation(disabledPage, 2000)
-		await disabledPage.close()
-		const otherPortPage = await session.openPage(`${ otherPortPageServer.baseUrl }${ noCspPath }?other-port`)
-		const otherPortObservations = await waitForProviderObservation(otherPortPage, 10000)
-		const otherPortChainId = await requestChainId(otherPortPage)
-		await otherPortPage.close()
+		const disabledOriginPages: Record<string, boolean> = {}
+		for (const url of [`${ pageServer.baseUrl }${ noCspPath }?disabled`, `http://user@${ pageServer.origin }${ noCspPath }?credentials`, `http://user:secret@${ pageServer.origin }${ noCspPath }?credentials-and-password`]) {
+			const page = await session.openPage(url)
+			const observations = await waitForProviderObservation(page, 2000)
+			await page.close()
+			disabledOriginPages[url] = observations.providerSeenAt !== undefined
+			expect(observations.providerSeenAt === undefined, `disabled site: the provider was injected into the disabled origin at ${ url }`)
+		}
+		const otherOriginPages: Record<string, unknown> = {}
+		for (const url of [`${ otherPortPageServer.baseUrl }${ noCspPath }?other-port`, `${ otherPortPageServer.baseUrl }${ noCspPath }/x/@${ pageServer.origin }/`, `${ otherPortPageServer.baseUrl }${ noCspPath }?next=@${ pageServer.origin }/`, `http://user@${ otherPortAuthority }${ noCspPath }?credentials`]) {
+			const page = await session.openPage(url)
+			const observations = await waitForProviderObservation(page, 10000)
+			const chainId = await requestChainId(page)
+			await page.close()
+			otherOriginPages[url] = { providerAtFirstPageScript: observations.providerAtFirstPageScript, bridgePortMessages: observations.bridgePortMessages, chainId }
+			expect(observations.providerAtFirstPageScript, `disabled site: ${ url } did not get the provider before its first script`)
+			expect(observations.bridgePortMessages === 1, `disabled site: the provider at ${ url } connected ${ observations.bridgePortMessages } times instead of once`)
+			expect(chainId?.startsWith('0x') === true, `disabled site: eth_chainId was not answered at ${ url } (${ chainId })`)
+		}
 		await sendPopupMessage(controlPage, { method: 'popup_setDisableInterceptor', data: { interceptorDisabled: false, website } })
 		const reenabledRegistration = await readRegisteredContentScripts(controlPage)
 		const reenabledPage = await session.openPage(`${ pageServer.baseUrl }${ noCspPath }?reenabled`)
@@ -210,17 +236,11 @@ async function main() {
 			otherPortOrigin: otherPortPageServer.origin,
 			disabledRegistration,
 			reenabledRegistration,
-			disabledPageProviderSeen: disabledObservations.providerSeenAt !== undefined,
-			otherPortProviderAtFirstPageScript: otherPortObservations.providerAtFirstPageScript,
-			otherPortBridgePortMessages: otherPortObservations.bridgePortMessages,
-			otherPortChainId,
+			disabledOriginProviderSeen: disabledOriginPages,
+			otherOriginPages,
 			reenabledProviderAtFirstPageScript: reenabledObservations.providerAtFirstPageScript,
 		}
 		expect(Array.isArray(disabledRegistration) && disabledRegistration.length === 2, `disabled site: the content scripts are not registered: ${ JSON.stringify(disabledRegistration) }`)
-		expect(disabledObservations.providerSeenAt === undefined, 'disabled site: the provider was injected into the disabled origin')
-		expect(otherPortObservations.providerAtFirstPageScript, 'disabled site: the same host on another port did not get the provider before its first script')
-		expect(otherPortObservations.bridgePortMessages === 1, `disabled site: the provider on the same host's other port connected ${ otherPortObservations.bridgePortMessages } times instead of once`)
-		expect(otherPortChainId?.startsWith('0x') === true, `disabled site: eth_chainId was not answered on the same host's other port (${ otherPortChainId })`)
 		// Firefox reports an empty exclusion list as a missing one.
 		expect(Array.isArray(reenabledRegistration) && reenabledRegistration.length === 2 && reenabledRegistration.every(({ excludeMatches }) => (excludeMatches ?? []).length === 0), `disabled site: re-enabling did not clear the exclusion: ${ JSON.stringify(reenabledRegistration) }`)
 		expect(reenabledObservations.providerAtFirstPageScript, 'disabled site: re-enabling did not restore the provider before the first script')
@@ -242,6 +262,31 @@ async function main() {
 		expect(Array.isArray(requestedAccounts) && requestedAccounts.length > 0, `access: approving access did not return accounts: ${ JSON.stringify(requestedAccounts) }`)
 		expect(revokedEventSeen, 'access: removing access did not send accountsChanged with no accounts')
 		expect(Array.isArray(accountsAfterRevocation) && accountsAfterRevocation.length === 0, `access: eth_accounts after removing access returned ${ JSON.stringify(accountsAfterRevocation) }`)
+
+		// Pages on the same host's other port keep loading while the origin is disabled and enabled again, so some load while the registrations change. Each must still get exactly one provider before its first script. Disabling reloads connected tabs, so a page read during a reload is read again.
+		let toggling = true
+		const toggle = async () => {
+			for (let cycle = 0; cycle < transitionCycles; cycle += 1) {
+				await sendPopupMessage(controlPage, { method: 'popup_setDisableInterceptor', data: { interceptorDisabled: true, website } })
+				await sendPopupMessage(controlPage, { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: pageServer.origin } })
+			}
+			toggling = false
+		}
+		const transitionLoads: { readonly providerAtFirstPageScript: boolean, readonly bridgePortMessages: number }[] = []
+		const loadDuringTransitions = async () => {
+			while (toggling) {
+				const page = await session.openPage(`${ otherPortPageServer.baseUrl }${ noCspPath }?transition=${ transitionLoads.length }`)
+				const observations = await readObservationsAcrossReload(page)
+				await page.close().catch(() => undefined)
+				if (observations !== undefined) transitionLoads.push({ providerAtFirstPageScript: observations.providerAtFirstPageScript, bridgePortMessages: observations.bridgePortMessages })
+				// Paced so the page loads do not starve the background that is changing the registrations.
+				await sleep(100)
+			}
+		}
+		await Promise.all([toggle(), loadDuringTransitions()])
+		report.transitions = { cycles: transitionCycles, pageLoads: transitionLoads.length, withoutProviderAtFirstScript: transitionLoads.filter(({ providerAtFirstPageScript }) => !providerAtFirstPageScript).length, withMoreThanOneProvider: transitionLoads.filter(({ bridgePortMessages }) => bridgePortMessages > 1).length }
+		expect(transitionLoads.length > 0, 'transitions: no page loaded while the site was disabled and enabled again')
+		expect(transitionLoads.every(({ providerAtFirstPageScript, bridgePortMessages }) => providerAtFirstPageScript && bridgePortMessages === 1), `transitions: a page on the other port did not get exactly one provider before its first script: ${ JSON.stringify(transitionLoads) }`)
 
 		// An update restarts the background; pages loaded afterwards must get exactly one provider before their first script, and the background must not register duplicates.
 		const pageBeforeUpdate = await session.openPage(`${ pageServer.baseUrl }${ noCspPath }?before-update`)

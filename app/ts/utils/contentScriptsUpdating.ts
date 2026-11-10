@@ -44,11 +44,10 @@ export function getContentScriptExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-// Firefox matches a pattern's host and ignores the URL's port, so a pattern that names a port matches no URL at all (Firefox bugs 1362809 and 1468162). Firefox therefore excludes each disabled origin's whole host from the registered content scripts, and registers the same scripts again for that host's other origins with URL globs that leave out exactly the disabled origins.
+// Firefox matches a pattern's host and ignores the URL's port, so a pattern that names a port matches no URL at all (Firefox bugs 1362809 and 1468162). Firefox therefore excludes each disabled origin's whole host from the registered content scripts, and registers the same scripts again for each such host, behind a first script that leaves out exactly the host's disabled origins.
 export function getFirefoxContentScriptExclusions(exactOriginExcludeMatches: readonly string[]) {
 	const excludeMatches = new Set<string>()
-	const otherOriginMatches = new Set<string>()
-	const otherOriginExcludeGlobs = new Set<string>()
+	const disabledHosts = new Map<string, { readonly matches: Set<string>, readonly disabledOrigins: Set<string> }>()
 	for (const pattern of exactOriginExcludeMatches) {
 		const url = new URL(pattern.slice(0, -1))
 		if (url.protocol === 'file:') {
@@ -57,21 +56,31 @@ export function getFirefoxContentScriptExclusions(exactOriginExcludeMatches: rea
 		}
 		const hostPattern = `${ url.protocol }//${ url.hostname }/*`
 		excludeMatches.add(hostPattern)
-		otherOriginMatches.add(hostPattern)
-		// A URL's origin leaves out its scheme's default port, as the URL itself does, and the glob covers the URLs that also carry credentials.
-		otherOriginExcludeGlobs.add(`${ url.origin }/*`)
-		otherOriginExcludeGlobs.add(`${ url.protocol }//*@${ url.host }/*`)
+		const disabledHost = disabledHosts.get(url.hostname) ?? { matches: new Set<string>(), disabledOrigins: new Set<string>() }
+		disabledHost.matches.add(hostPattern)
+		// A URL's origin leaves out its scheme's default port, as window.origin does.
+		disabledHost.disabledOrigins.add(url.origin)
+		disabledHosts.set(url.hostname, disabledHost)
 	}
-	return { excludeMatches: [...excludeMatches], otherOriginMatches: [...otherOriginMatches], otherOriginExcludeGlobs: [...otherOriginExcludeGlobs] }
+	return {
+		excludeMatches: [...excludeMatches],
+		disabledHosts: [...disabledHosts.values()].map(({ matches, disabledOrigins }) => ({ matches: [...matches], disabledOrigins: [...disabledOrigins] })),
+	}
 }
 
-// The browser polyfill types do not expose the MAIN world or matchOriginAsFallback options, which Chrome and Firefox 128 accept.
-type ContentScriptDefinition = { readonly id: string, readonly js: string[], readonly world: 'MAIN' | 'ISOLATED' }
+// Each content script runs once per document: its first statement claims a marker in its world, which inpage.ts and listenContentScriptBootstrap.ts define under the same keys.
+type ContentScriptDefinition = { readonly id: string, readonly js: string[], readonly world: 'MAIN' | 'ISOLATED', readonly documentMarker: { readonly global: 'window' | 'globalThis', readonly key: string } }
 const contentScriptDefinitions: readonly ContentScriptDefinition[] = [
-	{ id: 'inpage2', js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'], world: 'ISOLATED' },
-	{ id: 'inpage', js: ['/inpage/js/inpage.js'], world: 'MAIN' },
+	{ id: 'inpage2', js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'], world: 'ISOLATED', documentMarker: { global: 'globalThis', key: 'TheInterceptor.contentScriptBridge' } },
+	{ id: 'inpage', js: ['/inpage/js/inpage.js'], world: 'MAIN', documentMarker: { global: 'window', key: 'TheInterceptor.pageProvider' } },
 ]
+// The browser polyfill types do not expose the MAIN world or matchOriginAsFallback options, which Chrome and Firefox 128 accept.
 const sharedContentScriptOptions: { readonly allFrames: true, readonly runAt: 'document_start', readonly matchOriginAsFallback: true } = { allFrames: true, runAt: 'document_start', matchOriginAsFallback: true }
+
+// Firefox matches URL globs against the URL with its credentials, and a glob's * also matches /, so no glob names exactly one origin. This first script compares the document's origin instead, and claims the script's document marker when the origin is disabled, so the scripts after it do nothing. An opaque origin ("null") counts as disabled, because it cannot be told apart.
+export function getDisabledOriginCheckCode(disabledOrigins: readonly string[], documentMarker: ContentScriptDefinition['documentMarker']) {
+	return `if (window.origin === 'null' || ${ JSON.stringify(disabledOrigins) }.includes(window.origin)) Reflect.defineProperty(${ documentMarker.global }, Symbol.for(${ JSON.stringify(documentMarker.key) }), { value: true, configurable: true })`
+}
 
 async function updateRegisteredContentScripts(excludeMatches: string[]) {
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
@@ -88,15 +97,51 @@ async function updateRegisteredContentScripts(excludeMatches: string[]) {
 	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 }
 
-// Firefox's own contentScripts API accepts URL globs but keeps a registration only while the background page that made it is loaded, which for the persistent MV2 background is the whole session; it is used only for the other origins of disabled hosts.
-let firefoxOtherOriginContentScripts: readonly browser.contentScripts.RegisteredContentScript[] = []
-async function updateFirefoxOtherOriginContentScripts(matches: string[], excludeGlobs: string[]) {
-	// Unregistering before registering leaves a page that loads in between without the provider, rather than with two. A handle is forgotten only once it is unregistered, and kept as soon as it is registered, so a failed call leaves the next update able to unregister it.
-	for (const contentScript of firefoxOtherOriginContentScripts) await contentScript.unregister()
-	firefoxOtherOriginContentScripts = []
+// Firefox's own contentScripts API takes code and keeps a registration only while the background page that made it is loaded, which for the persistent MV2 background is the whole session. It is used only for disabled hosts, keyed by each host's patterns and disabled origins so an unchanged host keeps its registration.
+type DisabledHost = ReturnType<typeof getFirefoxContentScriptExclusions>['disabledHosts'][number]
+const firefoxDisabledHostContentScripts = new Map<string, browser.contentScripts.RegisteredContentScript[]>()
+const getDisabledHostKey = (disabledHost: DisabledHost) => JSON.stringify(disabledHost)
+
+async function registerFirefoxDisabledHostContentScripts(disabledHost: DisabledHost) {
 	type FixedContentScriptOptions = browser.contentScripts.RegisteredContentScriptOptions & { world: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
-	const contentScripts: FixedContentScriptOptions[] = matches.length === 0 ? [] : contentScriptDefinitions.map(({ js, world }) => ({ js: js.map((file) => ({ file })), world, matches, excludeGlobs, ...sharedContentScriptOptions }))
-	for (const contentScript of contentScripts) firefoxOtherOriginContentScripts = [...firefoxOtherOriginContentScripts, await browser.contentScripts.register(contentScript)]
+	const registeredContentScripts: browser.contentScripts.RegisteredContentScript[] = []
+	try {
+		for (const { js, world, documentMarker } of contentScriptDefinitions) {
+			const contentScript: FixedContentScriptOptions = { js: [{ code: getDisabledOriginCheckCode(disabledHost.disabledOrigins, documentMarker) }, ...js.map((file) => ({ file }))], world, matches: disabledHost.matches, ...sharedContentScriptOptions }
+			registeredContentScripts.push(await browser.contentScripts.register(contentScript))
+		}
+	} catch (error: unknown) {
+		// A host is tracked only with both of its scripts, so a host that failed half way is registered again by the next update.
+		for (const contentScript of registeredContentScripts) await contentScript.unregister()
+		throw error
+	}
+	firefoxDisabledHostContentScripts.set(getDisabledHostKey(disabledHost), registeredContentScripts)
+}
+
+async function unregisterFirefoxDisabledHostContentScripts(key: string) {
+	const registeredContentScripts = firefoxDisabledHostContentScripts.get(key) ?? []
+	while (registeredContentScripts.length > 0) {
+		await registeredContentScripts[0]?.unregister()
+		registeredContentScripts.shift()
+	}
+	firefoxDisabledHostContentScripts.delete(key)
+}
+
+// Two registrations that match a page at once are harmless, because each script runs once per document, while a moment with none leaves a page without the provider. So a disabled host's own registration is added before the registered scripts stop matching that host, and removed only after they match it again.
+async function updateFirefoxContentScripts(exactOriginExcludeMatches: readonly string[]) {
+	const { excludeMatches, disabledHosts } = getFirefoxContentScriptExclusions(exactOriginExcludeMatches)
+	const desiredDisabledHostKeys = new Set(disabledHosts.map(getDisabledHostKey))
+	const registrationErrors: unknown[] = []
+	for (const disabledHost of disabledHosts) {
+		if (firefoxDisabledHostContentScripts.has(getDisabledHostKey(disabledHost))) continue
+		// A host whose own registration failed is still excluded below, because giving its disabled origin the provider would ignore the user's setting; its other origins go without the provider until the next update registers it again.
+		await registerFirefoxDisabledHostContentScripts(disabledHost).catch((error: unknown) => { registrationErrors.push(error) })
+	}
+	await updateRegisteredContentScripts(excludeMatches)
+	for (const key of [...firefoxDisabledHostContentScripts.keys()]) {
+		if (!desiredDisabledHostKeys.has(key)) await unregisterFirefoxDisabledHostContentScripts(key)
+	}
+	if (registrationErrors.length > 0) throw registrationErrors[0]
 }
 
 // Settings changes and startup can update the registrations at the same time, and each update reads and replaces the previous registrations.
@@ -110,9 +155,7 @@ export const updateContentScriptInjectionStrategy = async () => await contentScr
 			await updateRegisteredContentScripts(exactOriginExcludeMatches)
 			return
 		}
-		const { excludeMatches, otherOriginMatches, otherOriginExcludeGlobs } = getFirefoxContentScriptExclusions(exactOriginExcludeMatches)
-		await updateRegisteredContentScripts(excludeMatches)
-		await updateFirefoxOtherOriginContentScripts(otherOriginMatches, otherOriginExcludeGlobs)
+		await updateFirefoxContentScripts(exactOriginExcludeMatches)
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}

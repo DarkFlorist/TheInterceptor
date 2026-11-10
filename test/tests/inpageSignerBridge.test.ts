@@ -4184,3 +4184,33 @@ test('Safe SDK settings belong to the page and survive background connection rei
 		assert.equal(proposalCount, 2)
 	})
 })
+
+describe('inpage provider once per document', () => {
+	test('runs the provider once per document when two content script registrations inject it', async () => {
+		let connections = 0
+		const { fakeWindow } = createFakeWindow({ onConnectedToSignerRequest: () => { connections += 1 } })
+		const providerFromFirstInjection = await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?once-per-document-first', async () => {
+			await waitFor(() => connections === 1)
+			return fakeWindow.ethereum
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?once-per-document-second', async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50))
+		})
+
+		assert.equal(connections, 1)
+		assert.equal(fakeWindow.ethereum, providerFromFirstInjection)
+	})
+
+	test('does not run the provider in a document whose origin a registration marked as disabled', async () => {
+		let connections = 0
+		const { fakeWindow } = createFakeWindow({ onConnectedToSignerRequest: () => { connections += 1 } })
+		const signerBeforeInjection = fakeWindow.ethereum
+		Reflect.defineProperty(fakeWindow, Symbol.for('TheInterceptor.pageProvider'), { value: true })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?marked-disabled-origin', async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50))
+		})
+
+		assert.equal(connections, 0)
+		assert.equal(fakeWindow.ethereum, signerBeforeInjection)
+	})
+})

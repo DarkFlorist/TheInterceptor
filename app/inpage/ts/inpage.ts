@@ -1,3 +1,5 @@
+// Claims this document for the first provider, as the first statement, so the provider runs once even when two content script registrations match the page while the background swaps them, or when a registration has already marked the page's origin as disabled. contentScriptsUpdating.ts writes the same key.
+const isFirstInterceptorProviderInDocument = !Reflect.has(window, Symbol.for('TheInterceptor.pageProvider')) && Reflect.defineProperty(window, Symbol.for('TheInterceptor.pageProvider'), { value: true, configurable: true })
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -1988,4 +1990,4 @@ function injectInterceptor() {
 	window.dispatchEvent(new Event('ethereum#initialized'))
 }
 
-injectInterceptor()
+if (isFirstInterceptorProviderInDocument) injectInterceptor()
