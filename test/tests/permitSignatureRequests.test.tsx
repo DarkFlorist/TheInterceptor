@@ -139,7 +139,7 @@ function assertIncludesAll(text: string, expectedSnippets: readonly string[]) {
 async function assertShowsUnidentifiedTokenApproval(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, rawAmount: string) {
 	const { text, copyableAddresses } = await renderExpandedSignatureCard(visualizedPersonalSignRequest, (body) => ({ text: body.textContent ?? '', copyableAddresses: getCopyableAddresses(body) }))
 	assertIncludesAll(text, [
-		'The permitted token is not an identified ERC20 token',
+		'The permitted token could not be confirmed as an ERC20 token and may be an NFT or another contract',
 		'Spender: Uniswap Universal Router',
 		`Token: ${ checksummedAddress(EthereumAddress.parse(unidentifiedTokenAddress)) }`,
 		`Raw amount: ${ rawAmount }`,
@@ -354,8 +354,40 @@ describe('Permit2 signature requests', () => {
 		allTokensUnidentified.message.details[0].token = unidentifiedTokenAddress
 		allTokensUnidentified.message.details[1].token = unidentifiedTokenAddress
 		const allUnidentifiedText = await renderSignatureCardText(await visualizeTypedData(JSON.stringify(allTokensUnidentified)))
-		assertIncludesAll(allUnidentifiedText, ['These permitted tokens are not identified ERC20 tokens', 'Spender: Uniswap Universal Router', `Raw amount: ${ usdcAmount }`, 'Raw amount: 5000000'])
+		assertIncludesAll(allUnidentifiedText, ['These permitted tokens could not be confirmed as ERC20 tokens and may be NFTs or other contracts', 'Spender: Uniswap Universal Router', `Raw amount: ${ usdcAmount }`, 'Raw amount: 5000000'])
 		assert.equal(allUnidentifiedText.includes('To Spend'), false)
+	})
+
+	test('never shows a token that is not an identified ERC20 as a standard approval, whatever its entry type', async () => {
+		const tokenAddress = EthereumAddress.parse('0x2222222222222222222222222222222222222222')
+		const notConfirmedErc20Tokens: Readonly<Record<string, AddressBookEntry>> = {
+			'contract that did not answer the token probes': { type: 'contract', name: 'Unknown Collection', address: tokenAddress, entrySource: 'OnChain' },
+			'contact filled in after a failed lookup': { type: 'contact', name: checksummedAddress(tokenAddress), address: tokenAddress, entrySource: 'FilledIn' },
+			'address book contact': { type: 'contact', name: 'My NFT Collection', address: tokenAddress, entrySource: 'User' },
+			'address book contract': { type: 'contract', name: 'My Vault', address: tokenAddress, entrySource: 'User' },
+			'safe': { type: 'safe', name: 'Team Safe', address: tokenAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: false },
+			'ERC721': { type: 'ERC721', name: 'Samurai', symbol: 'SAM', address: tokenAddress, entrySource: 'OnChain' },
+			'ERC1155': { type: 'ERC1155', name: 'Items', symbol: 'ITM', decimals: undefined, address: tokenAddress, entrySource: 'OnChain' },
+		}
+		const single = await visualizeTypedData(permit2Message)
+		const transfer = await visualizeTypedData(permit2TransferFromMessage)
+		const batch = await visualizeTypedData(permit2PermitBatchMessage)
+		if (single.type !== 'Permit2' || transfer.type !== 'Permit2SignatureTransfer' || batch.type !== 'Permit2Batch') throw new Error('Expected a PermitSingle, a PermitTransferFrom and a PermitBatch')
+		const [usdcDetails, secondDetails] = batch.details
+		if (usdcDetails === undefined || secondDetails === undefined) throw new Error('Expected two PermitBatch entries')
+		const singleTokenWarning = 'The permitted token could not be confirmed as an ERC20 token and may be an NFT or another contract'
+
+		for (const [entryKind, token] of Object.entries(notConfirmedErc20Tokens)) {
+			for (const request of [{ ...single, token }, { ...transfer, permitted: [{ token, amount: 1000000n }] }]) {
+				const text = await renderSignatureCardText(request)
+				assertIncludesAll(text, [singleTokenWarning, 'Spender: ', `Token: ${ token.name }`, 'Raw amount: '])
+				for (const approvalBoxText of ['Allow', 'To Spend', 'ALL']) assert.equal(text.includes(approvalBoxText), false, `${ request.type } with a ${ entryKind } shows "${ approvalBoxText }"`)
+			}
+			// The warning comes before the approval box, so the token that is not an ERC20 cannot sit unnoticed below a routine looking USDC approval.
+			const batchText = await renderSignatureCardText({ ...batch, details: [usdcDetails, { ...secondDetails, token }] })
+			assertIncludesAll(batchText, [singleTokenWarning, `Token: ${ token.name }`, `Raw amount: ${ secondDetails.amount.toString(10) }`, 'Allow', 'To Spend', 'USDC'])
+			assert.equal(batchText.indexOf(singleTokenWarning) < batchText.indexOf('Allow'), true, `PermitBatch with a ${ entryKind } shows the approval box first`)
+		}
 	})
 
 	test('quarantines Permit2 transfers for a different chain than the active one', async () => {
@@ -556,7 +588,8 @@ describe('EIP-2612 permit signature requests', () => {
 	test('keeps the spender and raw amount visible when the permit token is not an identified ERC20 token', async () => {
 		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.domain.verifyingContract = unidentifiedTokenAddress }))
 		assert.notEqual(visualized.verifyingContract.type, 'ERC20')
-		await assertShowsUnidentifiedTokenApproval(visualized, '1000000000')
+		const text = await assertShowsUnidentifiedTokenApproval(visualized, '1000000000')
+		for (const approvalBoxText of ['Allow', 'To Spend']) assert.equal(text.includes(approvalBoxText), false, approvalBoxText)
 	})
 
 	test('identifies a permit whose domain version is not an integer', async () => {
