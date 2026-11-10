@@ -23,7 +23,7 @@ const getWalletSendCallTransactionIdentifiers = (pendingBatch: PendingTransactio
 export const isTransactionBatchOnStack = (pendingBatch: PendingTransactionBatch, stack: InterceptorTransactionStack) => hasTransactionOnStack(getWalletSendCallTransactionIdentifiers(pendingBatch), stack)
 
 const isWalletSendCallsBatchIdRecordInUse = (record: WalletSendCallsBatchIdRecord, pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[], stack: InterceptorTransactionStack) =>
-	pendingTransactionsAndMessages.some((pending) => pending.type === 'TransactionBatch' && isRecordOfBatchId(pending.website.websiteOrigin, pending.batchId)(record))
+	pendingTransactionsAndMessages.some((pending) => pending.type === 'TransactionBatch' && isRecordOfBatchId(pending.binding.websiteOrigin, pending.batchId)(record))
 	|| hasTransactionOnStack(record.transactionIdentifiers, stack)
 
 // Only admissions add records, and they run one at a time while holding the confirmation lock, so an id found free here stays free until the caller adds its batch.
@@ -35,7 +35,7 @@ export async function isWalletSendCallsIdInUse(websiteOrigin: string, batchId: s
 }
 
 export async function addPendingTransactionBatch(pendingBatch: PendingTransactionBatch) {
-	const record = { websiteOrigin: pendingBatch.website.websiteOrigin, batchId: pendingBatch.batchId, transactionIdentifiers: getWalletSendCallTransactionIdentifiers(pendingBatch) }
+	const record = { websiteOrigin: pendingBatch.binding.websiteOrigin, batchId: pendingBatch.batchId, transactionIdentifiers: getWalletSendCallTransactionIdentifiers(pendingBatch) }
 	await updatePendingTransactionsAndWalletSendCallsBatchIds(async ({ pendingTransactionsAndMessages, walletSendCallsBatchIds }) => {
 		const stack = await getInterceptorTransactionStack()
 		return {
@@ -49,7 +49,7 @@ const withoutPendingBatch = (pendingTransactionsAndMessages: readonly PendingTra
 
 // Removes a batch that was not approved from the confirmation queue and releases its id.
 export async function releasePendingTransactionBatch(pendingBatch: PendingTransactionBatch) {
-	const isRecordOfThisBatch = isRecordOfBatchId(pendingBatch.website.websiteOrigin, pendingBatch.batchId)
+	const isRecordOfThisBatch = isRecordOfBatchId(pendingBatch.binding.websiteOrigin, pendingBatch.batchId)
 	await updatePendingTransactionsAndWalletSendCallsBatchIds(async ({ pendingTransactionsAndMessages, walletSendCallsBatchIds }) => ({
 		pendingTransactionsAndMessages: withoutPendingBatch(pendingTransactionsAndMessages, pendingBatch),
 		walletSendCallsBatchIds: walletSendCallsBatchIds.filter((record) => !isRecordOfThisBatch(record)),

@@ -36,11 +36,10 @@ const safeConfirmationSources = await Promise.all([
 const batchConfirmationFunctions = [
 	'toWalletSendCallStackOperation',
 	'formWalletSendCallsTransactions',
-	'simulateConfirmTransactionBatch',
 	'simulatePendingTransactionBatch',
 	'storeTransactionBatchSimulation',
 	'refreshPendingTransactionBatchSimulation',
-	'openConfirmTransactionDialogForTransactionBatch',
+	'admitTransactionBatch',
 	'resolvePendingTransactionBatch',
 	'finishApprovedTransactionBatch',
 	'rejectTransactionBatch',
@@ -87,10 +86,36 @@ test('each shared confirmation concern has one owner module, which both confirma
 	}
 })
 
-test('the confirmation window hands batches to the batch owner at one dispatch point', () => {
-	assert.match(confirmTransactionSource, /import \{ resolvePendingTransactionBatch \} from '\.\.\/walletSendCallsConfirmation\.js'/u)
+test('the confirmation window hands batches to the batch owner at one admission point and one dispatch point', () => {
+	assert.match(confirmTransactionSource, /import \{ admitTransactionBatch, resolvePendingTransactionBatch, type TransactionBatchRequest \} from '\.\.\/walletSendCallsConfirmation\.js'/u)
 	assert.match(confirmTransactionSource, /if \(storedPending\.type === 'TransactionBatch'\) return await resolvePendingTransactionBatch\(/u)
+	assert.equal(confirmTransactionSource.match(/await admitTransactionBatch\(/gu)?.length, 1)
 	assert.doesNotMatch(confirmTransactionSource, /excludeTransactionBatch/u)
+})
+
+const simulationModeHandlersSource = await readSource('background/simulationModeHandlers.ts')
+
+test('every confirmation opener supplies the closed-window answerer of the generic dispatch, and the RPC layer supplies none', async () => {
+	// The answerer is private to the module that owns the dispatch, so no other module can build or pass one.
+	assert.match(confirmTransactionSource, /^const answerRequestsOfClosedConfirmationWindow = /mu)
+	assert.doesNotMatch(confirmTransactionSource, /^export const answerRequestsOfClosedConfirmationWindow\b/mu)
+	const openers = ['openConfirmTransactionDialogForMessage', 'openConfirmTransactionDialogForTransaction', 'openConfirmTransactionDialogForTransactionBatch']
+	for (const opener of openers) {
+		const start = confirmTransactionSource.indexOf(`export async function ${ opener }(`)
+		assert.ok(start >= 0, opener)
+		assert.match(confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start)), /answerRequestsOfClosedConfirmationWindow\(ethereumClientService, tokenPriceService, websiteTabConnections\)/u, opener)
+	}
+	// The RPC layer only calls the openers: it neither builds an answerer nor reaches the batch owner around the confirmation window.
+	assert.doesNotMatch(simulationModeHandlersSource, /answerRequestsOfClosedConfirmationWindow|AnswerRequestsOfClosedWindow/u)
+	assert.equal(importsFrom(simulationModeHandlersSource, 'walletSendCallsConfirmation.js'), false)
+	const confirmationWindowImport = simulationModeHandlersSource.match(/^import \{ ([^}]*) \} from '\.\/windows\/confirmTransaction\.js'$/mu)?.[1]
+	assert.deepEqual(confirmationWindowImport?.split(', ').sort(), openers)
+	// Only the confirmation window admits batches.
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory, absolute: true })) {
+		if (file.endsWith('/background/windows/confirmTransaction.ts') || file.endsWith('/background/walletSendCallsConfirmation.ts')) continue
+		assert.doesNotMatch(await Bun.file(file).text(), /admitTransactionBatch/u, file)
+	}
 })
 
 test('the Gnosis Safe confirmation flow is typed without wallet_sendCalls batches', () => {
@@ -196,15 +221,35 @@ test('the simulation stack is written in one critical section', () => {
 
 test('confirmation run ids are only taken by the run module, before a run reads its inputs', async () => {
 	assert.match(confirmationSimulationRunSource, /^function getNextConfirmationRunId\(\) \{$/mu)
-	assert.match(confirmationSimulationRunSource, /^export async function runConfirmationSimulation<T>\(run: \(confirmationRunId: number\) => Promise<T>\): Promise<T> \{\n\treturn await run\(getNextConfirmationRunId\(\)\)\n\}$/mu)
+	assert.match(confirmationSimulationRunSource, /^export async function runConfirmationSimulation<T>\(uniqueRequestIdentifier: UniqueRequestIdentifier, run: \(confirmationRun: ConfirmationRun\) => Promise<T>\): Promise<T> \{\n\treturn await run\(\{ uniqueRequestIdentifier, confirmationRunId: getNextConfirmationRunId\(\) \}\)\n\}$/mu)
 	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
 	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory, absolute: true })) {
 		if (file.endsWith('/background/confirmationSimulationRun.ts')) continue
 		assert.doesNotMatch(await Bun.file(file).text(), /getNextConfirmationRunId/u, file)
 	}
 	// Every flow that starts a confirmation simulation run does its preparation inside the run.
-	const runsIn = (source: string) => source.match(/await runConfirmationSimulation\(async \(confirmationRunId\) =>/gu)?.length ?? 0
+	const runsIn = (source: string) => source.match(/await runConfirmationSimulation\([\w.]+\.uniqueRequestIdentifier, async \(confirmationRun\) =>/gu)?.length ?? 0
 	assert.equal(runsIn(confirmTransactionSource), 2)
 	assert.equal(runsIn(popupMessageHandlersSource), 1)
 	assert.equal(runsIn(walletSendCallsConfirmationSource), 1)
+})
+
+test('both confirmation flows run and record a simulation run only through the shared run protocol', () => {
+	// Starting a run is private to the protocol, so no flow can start, visualize or record a run on its own.
+	assert.match(confirmationSimulationRunSource, /^function startConfirmTransactionSimulation\(/mu)
+	assert.match(confirmationSimulationRunSource, /^export async function simulateConfirmationRun\(request: ConfirmationSimulationRunRequest\): Promise<ConfirmationSimulationRecord \| undefined> \{$/mu)
+	for (const flowSource of [confirmTransactionSimulationSource, walletSendCallsConfirmationSource]) {
+		assert.equal(flowSource.match(/await simulateConfirmationRun\(\{/gu)?.length, 1)
+		assert.doesNotMatch(flowSource, /startConfirmTransactionSimulation|visualizeSimulatorState\(|JSON_RPC_ERROR_CODE_INTERNAL_ERROR|blockNumber: 0n|simulationConductedTimestamp|getTabState\(/u)
+	}
+	// A batch stores the run's record as it is.
+	assert.match(accessRequestTypesSource, /^export const ConfirmTransactionBatchVisualization = ConfirmationSimulationRecord$/mu)
+})
+
+test('a batch stores its website origin and account only in its binding', () => {
+	const batchBaseStart = accessRequestTypesSource.indexOf('const PendingTransactionBatchBase = ')
+	const batchBase = accessRequestTypesSource.slice(batchBaseStart, accessRequestTypesSource.indexOf('\n}))\n', batchBaseStart))
+	assert.match(batchBase, /\tbinding: WalletSendCallsBinding,/u)
+	assert.doesNotMatch(batchBase, /\t(?:activeAddress|website|websiteOrigin|account):/u)
+	for (const source of [walletSendCallsConfirmationSource, walletSendCallsBatchIdsSource, walletSendCallsBindingSource]) assert.doesNotMatch(source, /pendingBatch\.(?:activeAddress|website)\b|pending\.website\b/u)
 })

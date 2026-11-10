@@ -56,7 +56,8 @@ describe('wallet_sendCalls request validation', () => {
 		const invalidRequests = [
 			createRequest({ version: '1.0' }),
 			createRequest({ chainId: '0x01' }),
-			createRequest({ atomicRequired: undefined }),
+			createRequest({ atomicRequired: 'false' }),
+			createRequest({ calls: undefined }),
 			createRequest({ unexpected: true }),
 			createRequest({}, [{ to: '0x1234' }]),
 			createRequest({}, [{ to: addressString(firstRecipient), data: 'a9059cbb' }]),
@@ -74,13 +75,34 @@ describe('wallet_sendCalls request validation', () => {
 			method: 'wallet_sendCalls',
 			error: { code: -32602, message: 'Unsupported wallet_sendCalls version 1.0. The Interceptor supports EIP-5792 version 2.0.0.' },
 		})
-		for (const malformedRequest of [createRequest({ chainId: '0x01' }), createRequest({ atomicRequired: undefined })]) {
+		for (const malformedRequest of [createRequest({ chainId: '0x01' }), createRequest({ atomicRequired: 'false' }), createRequest({ calls: undefined })]) {
 			const reply = getWalletSendCallsParseFailureReply(createInterceptedRequest(malformedRequest))
 			const message = reply?.type === 'result' && 'error' in reply ? reply.error.message : ''
-			assert.match(message, /^Invalid wallet_sendCalls version 2\.0\.0 parameters: chainId, atomicRequired and calls are required/u)
+			assert.match(message, /^Invalid wallet_sendCalls version 2\.0\.0 parameters: chainId and calls are required, atomicRequired must be a boolean when present/u)
 		}
 		assert.equal(getWalletSendCallsParseFailureReply(createInterceptedRequest({ method: 'wallet_getCallsStatus', params: [5] }))?.type, 'result')
 		assert.equal(getWalletSendCallsParseFailureReply(createInterceptedRequest({ method: 'eth_sendTransaction', params: [] })), undefined)
+	})
+
+	test('accepts a viem-shaped request that omits atomicRequired and treats it as non-atomic', () => {
+		const viemRequest = {
+			method: 'wallet_sendCalls',
+			params: [{
+				version: '2.0.0',
+				chainId: '0x1',
+				from: addressString(account),
+				calls: [
+					{ to: addressString(firstRecipient), value: '0x1' },
+					{ to: addressString(secondRecipient), data: '0xa9059cbb' },
+				],
+			}],
+		}
+		const parsed = EthereumJsonRpcRequest.safeParse(viemRequest)
+		assert.equal(parsed.success, true, parsed.success ? '' : parsed.message)
+		const canonical = canonicalizeWalletSendCalls(parseRequest(viemRequest), account, chainId)
+		if (!canonical.success) throw new Error(canonical.error.message)
+		assert.equal(canonical.value.params[0].atomicRequired, false)
+		assert.equal(canonical.value.params[0].calls.length, 2)
 	})
 
 	test('canonicalizes the batch for the bound account and chain', () => {

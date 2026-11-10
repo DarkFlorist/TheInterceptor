@@ -1,22 +1,22 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { ConfirmTransactionBatchVisualization, PendingTransactionBatch, WalletSendCallsBinding } from '../types/accessRequest.js'
+import { getTransactionBatchWebsite, type PendingTransactionBatch } from '../types/accessRequest.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { TransactionConfirmation } from '../types/interceptor-messages.js'
 import type { WalletSendCalls } from '../types/JsonRpc-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { type SimulationStateInput, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
-import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
-import { JsonRpcResponseError, isExpectedInfrastructureError, reportLocalRecovery, reportUnexpectedError } from '../utils/errors.js'
+import { METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import { isExpectedInfrastructureError, reportLocalRecovery } from '../utils/errors.js'
 import { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString } from '../utils/requests.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
-import { runConfirmationSimulation, startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
+import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
-import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
 import { addPendingTransactionBatch, getWalletSendCallTransactionIdentifier, isTransactionBatchOnStack, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
@@ -30,7 +30,7 @@ import { formEthSendTransactionOnSimulationState } from './transactionPreparatio
 import { isSimulationModeSafeAccount } from './safeTransactionConfirmation.js'
 import { getTransactionBatchCallGasPayment } from '../safe/safePendingFlow.js'
 
-// Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window's generic dispatch hands every batch to resolvePendingTransactionBatch.
+// Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window admits every batch through admitTransactionBatch, and its generic dispatch hands every batch to resolvePendingTransactionBatch.
 
 // The stack operation that approval adds for one prepared call of a batch.
 const toWalletSendCallStackOperation = (transaction: WebsiteCreatedEthereumTransaction) => ({ type: 'Transaction' as const, preSimulationTransaction: toPreSimulationTransaction(transaction) })
@@ -44,54 +44,28 @@ async function formWalletSendCallsTransactions(ethereumClientService: EthereumCl
 		const simulationState = toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(getSimulationInputForStack(stackContext, preparedOperations, true), ethereumClientService))
 		const transactionIdentifier = getWalletSendCallTransactionIdentifier(pendingBatch.uniqueRequestIdentifier, callIndex)
 		const gasPayment = getTransactionBatchCallGasPayment(pendingBatch.executeCallsThroughSafe === true, transactionParams, pendingBatch.binding.account)
-		const transactionToSimulate = await formEthSendTransactionOnSimulationState(ethereumClientService, undefined, simulationState, pendingBatch.binding.account, pendingBatch.website, transactionParams, pendingBatch.created, transactionIdentifier, pendingBatch.simulationMode, gasPayment, 'appendedToSimulation')
+		const transactionToSimulate = await formEthSendTransactionOnSimulationState(ethereumClientService, undefined, simulationState, pendingBatch.binding.account, getTransactionBatchWebsite(pendingBatch), transactionParams, pendingBatch.created, transactionIdentifier, pendingBatch.simulationMode, gasPayment, 'appendedToSimulation')
 		transactionsToSimulate.push(transactionToSimulate)
 		if (transactionToSimulate.success) preparedOperations.push(toWalletSendCallStackOperation(transactionToSimulate))
 	}
 	return { transactionsToSimulate, simulationInputWithBatch: getSimulationInputForStack(stackContext, preparedOperations) }
 }
 
-// Simulates and visualizes a simulation input that already contains every prepared batch call. Protectors run over each call while the simulation is visualized. Like the single-transaction simulation, it returns undefined when it was superseded or the RPC was unreachable, so the previous results stay in place.
-async function simulateConfirmTransactionBatch(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	activeAddress: bigint,
-	simulationMode: boolean,
-	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	confirmationRunId: number,
-	simulationInputWithBatch: SimulationStateInput,
-): Promise<ConfirmTransactionBatchVisualization | undefined> {
-	const info = {
-		uniqueRequestIdentifier,
-		simulationMode,
-		activeAddress,
-		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
-		simulationStartedTimestamp: new Date(),
-		confirmationRunId,
-	}
-	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, confirmationRunId)
-	if (thisConfirmTransactionAbortController === undefined) return undefined
-	try {
-		const visualizedSimulatorState = await visualizeSimulatorState(await createSimulationStateWithNonceAndBaseFeeFixing(simulationInputWithBatch, ethereum), ethereum, tokenPriceService, thisConfirmTransactionAbortController)
-		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
-			const error = visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error
-			return { statusCode: 'failed', data: { ...info, error: { ...error, decodedErrorMessage: error.message }, simulationState: { blockNumber: visualizedSimulatorState.simulationState.blockNumber, simulationConductedTimestamp: new Date() } } }
-		}
-		return { statusCode: 'success', data: { ...info, ...visualizedSimulatorState } }
-	} catch (error) {
-		if (isExpectedInfrastructureError(error)) return undefined
-		if (!(error instanceof JsonRpcResponseError)) await reportUnexpectedError(error, { code: 'confirm_transaction_batch_simulation_failed' })
-		const message = error instanceof Error ? error.message : 'Unknown simulation error'
-		const code = error instanceof JsonRpcResponseError ? error.code : JSON_RPC_ERROR_CODE_INTERNAL_ERROR
-		return { statusCode: 'failed', data: { ...info, error: { code, message, decodedErrorMessage: message }, simulationState: { blockNumber: 0n, simulationConductedTimestamp: new Date() } } }
-	}
-}
-
+// Prepares the batch's calls on top of the current simulation stack and simulates them with the shared run protocol. Like every run, it returns undefined when it was superseded or interrupted, so the previous results stay in place.
 async function simulatePendingTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
-	return await runConfirmationSimulation(async (confirmationRunId) => {
+	return await runConfirmationSimulation(pendingBatch.uniqueRequestIdentifier, async (confirmationRun) => {
 		const { context: stackContext } = await captureStackSimulationContext()
 		const { transactionsToSimulate, simulationInputWithBatch } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
-		const popupVisualisation = await simulateConfirmTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch.activeAddress, pendingBatch.simulationMode, pendingBatch.uniqueRequestIdentifier, confirmationRunId, simulationInputWithBatch)
+		// Protectors run over each call while the run visualizes the simulation.
+		const popupVisualisation = await simulateConfirmationRun({
+			ethereum: ethereumClientService,
+			tokenPriceService,
+			confirmationRun,
+			activeAddress: pendingBatch.binding.account,
+			simulationMode: pendingBatch.simulationMode,
+			getSimulationInput: async () => simulationInputWithBatch,
+			calledContracts: pendingBatch.originalRequestParameters.params[0].calls.flatMap((call) => call.to === undefined ? [] : [call.to]),
+		})
 		if (popupVisualisation === undefined) return undefined
 		return {
 			transactionsToSimulate,
@@ -204,23 +178,32 @@ async function resolveTransactionBatchSerially<T>(ethereum: EthereumClientServic
 	})
 }
 
-export async function openConfirmTransactionDialogForTransactionBatch(
+// A wallet_sendCalls request that the RPC layer validated and canonicalized for the website's account and network (see canonicalizeWalletSendCalls).
+export type TransactionBatchRequest = {
+	readonly request: InterceptedRequest
+	readonly walletSendCalls: WalletSendCalls
+	readonly website: Website
+	readonly account: bigint
+	readonly chainId: bigint
+	readonly batchId: string
+}
+
+// Admits a batch to the confirmation queue and shows its preview. Only windows/confirmTransaction.ts calls it, with the answerer that its generic dispatch provides, because answering the requests of a closed window dispatches every kind of request, batches included, back to their owners.
+export async function admitTransactionBatch(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
-	request: InterceptedRequest,
-	walletSendCalls: WalletSendCalls,
-	binding: WalletSendCallsBinding,
-	batchId: string,
-	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
-	// Passed in by the caller: answering the requests of a closed window dispatches every kind of request, batches included, back to this module.
+	batchRequest: TransactionBatchRequest,
 	answerRequestsOfClosedWindow: AnswerRequestsOfClosedWindow,
 ) {
+	const { request, walletSendCalls, website, batchId } = batchRequest
+	// The binding is the batch's only website origin and account; the website's icon and title are kept for display only.
+	const binding = { websiteOrigin: website.websiteOrigin, account: batchRequest.account, chainId: batchRequest.chainId }
 	// Decided before the confirmation lock, as a single transaction's Gnosis Safe preparation is.
 	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, binding.account)
 	const outcome = await runWithPendingConfirmationLock(async () => {
 		// Checked and recorded while holding the confirmation lock, so two concurrent requests cannot both claim the same batch id.
-		if (await isWalletSendCallsIdInUse(website.websiteOrigin, batchId)) return formRejectMessage(walletSendCallsIdInUseError.code, walletSendCallsIdInUseError.message)
+		if (await isWalletSendCallsIdInUse(binding.websiteOrigin, batchId)) return formRejectMessage(walletSendCallsIdInUseError.code, walletSendCallsIdInUseError.message)
 		const openedDialog = await getPendingTransactionWindow(answerRequestsOfClosedWindow)
 		if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
 		const pendingBatch = {
@@ -229,11 +212,10 @@ export async function openConfirmTransactionDialogForTransactionBatch(
 			originalRequestParameters: walletSendCalls,
 			uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 			simulationMode: true as const,
-			activeAddress: binding.account,
 			created: new Date(),
-			website,
 			approvalStatus: { status: 'WaitingForUser' as const },
 			binding,
+			websiteDisplay: { icon: website.icon, title: website.title },
 			batchId,
 			...(executeCallsThroughSafe ? { executeCallsThroughSafe: true as const } : {}),
 			transactionOrMessageCreationStatus: 'Crafting' as const,

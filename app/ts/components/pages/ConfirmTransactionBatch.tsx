@@ -1,5 +1,5 @@
 import { type ReadonlySignal, type Signal, useComputed } from '@preact/signals'
-import type { PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { getTransactionBatchWebsite, type PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { RpcConnectionStatus, RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { MaybeSimulatedTransaction } from '../../types/visualizer-types.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
@@ -54,7 +54,7 @@ type TransactionBatchCardParams = {
 
 export function TransactionBatchCard(param: TransactionBatchCardParams) {
 	const batch = useComputed(() => getSimulatedTransactionBatch(param.currentPendingTransaction.value))
-	const activeAddress = useComputed(() => batch.value?.activeAddress)
+	const activeAddress = useComputed(() => batch.value?.binding.account)
 	const addressMetaData = useComputed(() => batch.value?.popupVisualisation.statusCode === 'success' ? batch.value.popupVisualisation.data.addressBookEntries : [])
 	const currentBatch = batch.value
 	if (currentBatch === undefined) return <></>
@@ -78,7 +78,7 @@ export function TransactionBatchCard(param: TransactionBatchCardParams) {
 	return <div class = 'card'>
 		<header class = 'card-header'>
 			<p class = 'card-header-title' style = 'white-space: nowrap;'>{ getTransactionBatchTitle(currentBatch) }</p>
-			<WebsiteOriginText website = { currentBatch.website } class = 'card-header-website' />
+			<WebsiteOriginText website = { getTransactionBatchWebsite(currentBatch) } class = 'card-header-website' />
 		</header>
 		<div class = 'card-content' style = 'padding-bottom: 5px;'>
 			<p class = 'paragraph' style = 'margin-bottom: 10px;'>Approving adds all of these calls, in this order, to the simulation stack as separate transactions.</p>

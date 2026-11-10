@@ -15,7 +15,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import { getPendingRequestActiveAddress, getPendingRequestWebsite, getTransactionBatchWebsite, type PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, type SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -157,14 +157,14 @@ function UnderTransactions(param: UnderTransactionsParams) {
 							? pendingTransaction.type === 'TransactionBatch' ? getTransactionBatchErrorMessage(pendingTransaction) ?? 'Simulation failed' : pendingTransaction.transactionToSimulate.error.message
 							: 'Simulating...' }
 					</p>
-					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
+					<WebsiteOriginText website = { getPendingRequestWebsite(pendingTransaction) } class = 'card-header-website' />
 				</header>
 				<div style = { absoluteStyle }></div>
 			</div>
 			if (pendingTransaction.type === 'TransactionBatch') return <div key = { stackItemKey } class = 'card' style = { style }>
 				<header class = 'card-header'>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>{ getTransactionBatchTitle(pendingTransaction) }</p>
-					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
+					<WebsiteOriginText website = { getTransactionBatchWebsite(pendingTransaction) } class = 'card-header-website' />
 				</header>
 				<div style = { absoluteStyle }></div>
 			</div>
@@ -628,7 +628,7 @@ type NetworkErrorParams = {
 const WebsiteErrors = ({ currentPendingTransactionOrSignableMessage }: NetworkErrorParams) => {
 	const current = currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
-	const message = getWebsiteWarningMessage(current.website.websiteOrigin, current.simulationMode)
+	const message = getWebsiteWarningMessage(getPendingRequestWebsite(current).websiteOrigin, current.simulationMode)
 	if (message === undefined) return <></>
 	if (message.suggestedAlternative === undefined) return <ErrorComponent warning = { true } text = { message.message }/>
 	return <ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { current.uniqueRequestIdentifier.requestSocket } /> </> }/>
@@ -1095,7 +1095,7 @@ export function ConfirmTransaction() {
 		return <>
 				<main>
 					<Hint>
-						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
+						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value === undefined ? undefined : getPendingRequestActiveAddress(currentPendingTransactionOrSignableMessage.value) } rpcEntries = { rpcEntries }/>
 						<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
 							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
 								<CenterToPageTextSpinner text = { loadingText }/>
@@ -1107,7 +1107,7 @@ export function ConfirmTransaction() {
 	return (
 			<main>
 				<Hint>
-					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
+					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value === undefined ? undefined : getPendingRequestActiveAddress(currentPendingTransactionOrSignableMessage.value) } rpcEntries = { rpcEntries }/>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<div style = 'position: sticky; top: 0; z-index: 1;'>
 							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>

@@ -196,6 +196,62 @@ test('simulates a wallet_sendCalls batch and only adds it to the simulation stac
 	assert.equal(await approveBatch(websiteTabConnections), undefined)
 })
 
+test('a batch stores its website origin and account only in its binding, and is labelled and registered from it', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	// Shaped like viem's request, which omits atomicRequired unless atomic execution is required.
+	const { atomicRequired: _atomicRequired, ...viemBatch } = withBatchId('0xbound').params[0]
+	assert.deepEqual(await requestBatch(websiteTabConnections, { method: 'wallet_sendCalls', params: [viemBatch] }), { type: 'doNotReply' })
+	const pending = await getPendingBatch()
+	assert.equal('activeAddress' in pending, false)
+	assert.equal('website' in pending, false)
+	assert.deepEqual(pending.binding, { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId: fakeRpcNetwork.chainId })
+	const { getPendingRequestActiveAddress, getPendingRequestWebsite, getTransactionBatchWebsite } = await import('../../app/ts/types/accessRequest.js')
+	assert.deepEqual(getTransactionBatchWebsite(pending), website)
+	assert.deepEqual(getPendingRequestWebsite(pending), website)
+	assert.equal(getPendingRequestActiveAddress(pending), activeAddress)
+	assert.equal(pending.popupVisualisation.data.activeAddress, activeAddress)
+	assert.deepEqual(pending.transactionsToSimulate.map((transaction) => [transaction.website.websiteOrigin, transaction.success ? transaction.transaction.from : undefined]), [[website.websiteOrigin, activeAddress], [website.websiteOrigin, activeAddress]])
+	assert.deepEqual((await getBatchIdRecords()).map((record) => [record.websiteOrigin, record.batchId]), [[website.websiteOrigin, '0xbound']])
+})
+
+// The ABI encoding of Error(string), the revert data of a failed require.
+const encodeRevertReason = (reason: string) => {
+	const reasonHex = Buffer.from(reason, 'utf8').toString('hex')
+	return `0x08c379a0${ (32).toString(16).padStart(64, '0') }${ (reasonHex.length / 2).toString(16).padStart(64, '0') }${ reasonHex.padEnd(Math.ceil(reasonHex.length / 64) * 64, '0') }`
+}
+
+// A failure record without what identifies the request and the run and when it ran, and without the transaction a single confirmation adds to it.
+function withoutRunIdentity(record: { readonly statusCode: 'success' | 'failed', readonly data: object }) {
+	if (record.statusCode !== 'failed' || !isRecord(record.data)) throw new Error('Expected a failure record')
+	const { uniqueRequestIdentifier: _uniqueRequestIdentifier, confirmationRunId: _confirmationRunId, simulationStartedTimestamp: _simulationStartedTimestamp, transactionToSimulate: _transactionToSimulate, simulationState, ...recordedFailure } = record.data
+	return { statusCode: record.statusCode, ...recordedFailure, blockNumber: isRecord(simulationState) ? simulationState.blockNumber : undefined }
+}
+
+test('a transaction and a batch whose simulation fails with the same error store the same failure record', async () => {
+	const revertReason = 'insufficient balance'
+	const failures = [
+		// The RPC reverts the simulation, which records the block it ran on and decodes the revert data.
+		{ createError: () => new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: 3, message: 'execution reverted', data: encodeRevertReason(revertReason) } }), error: { code: 3, message: 'execution reverted', data: encodeRevertReason(revertReason), decodedErrorMessage: revertReason }, blockNumber: fakeBlock.number },
+		// The simulation throws an internal error, so there is no simulated block and no revert data.
+		{ createError: () => new Error('eth_simulateV1 unavailable'), error: { code: -32603, message: 'eth_simulateV1 unavailable', decodedErrorMessage: 'eth_simulateV1 unavailable' }, blockNumber: 0n },
+	]
+	for (const failure of failures) {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		const { websiteTabConnections } = await setUpWalletSendCallsTest()
+		// Each flow prepares its transactions and then fails in the simulation of the whole confirmation with the same error.
+		fakeSafeContract.getEthSimulateFailure = failWholeBatchSimulationWith(failure.createError())
+		await withSilencedConsole(async () => await requestBatch(websiteTabConnections))
+		const batchRecord = (await getPendingBatch()).popupVisualisation
+		fakeSafeContract.getEthSimulateFailure = (rpcRequest) => getSimulatedBlocks(rpcRequest).some((block) => getBlockCalls(block).some((call) => isRecord(call) && 'r' in call)) ? failure.createError() : undefined
+		const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+		const { runConfirmationSimulation } = await import('../../app/ts/background/confirmationSimulationRun.js')
+		const transactionRecord = await withSilencedConsole(async () => await runConfirmationSimulation(pendingTransaction.uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, activeAddress, true, confirmationRun, pendingTransaction.transactionToSimulate)))
+		if (transactionRecord === undefined) throw new Error('Missing transaction simulation record')
+		assert.deepEqual(withoutRunIdentity(transactionRecord), withoutRunIdentity(batchRecord), failure.error.message)
+		assert.deepEqual(withoutRunIdentity(batchRecord), { statusCode: 'failed', simulationMode: true, activeAddress, signerName: 'MetaMask', error: failure.error, blockNumber: failure.blockNumber })
+	}
+})
+
 test('the confirmation queue of the transaction, message and Gnosis Safe flows leaves out wallet_sendCalls batches', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })

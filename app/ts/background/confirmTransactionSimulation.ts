@@ -6,115 +6,59 @@ import type { ConfirmTransactionTransactionSingleVisualization } from '../types/
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
-import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
-import type { UniqueRequestIdentifier } from '../utils/requests.js'
-import { identifyAddress } from './metadataUtils.js'
-import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
-import { startConfirmTransactionSimulation, toPreSimulationTransaction } from './confirmationSimulationRun.js'
+import { getCurrentSimulationInput } from './simulationUpdating.js'
+import { getInterceptorTransactionStack } from './storageVariables.js'
+import { type ConfirmationRun, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 
+// The simulation input of a single transaction's confirmation: the current simulation, or a Gnosis Safe signing request's own input, with the prepared transaction appended.
+async function getSingleTransactionSimulationInput(transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed, safeSigningRequest: SafeTransactionSigningRequest | undefined) {
+	const simulationInput = safeSigningRequest === undefined
+		? await getCurrentSimulationInput()
+		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+	if (!transactionToSimulate.success) return simulationInput
+	const preSimulationTransaction = safeSigningRequest === undefined
+		? toPreSimulationTransaction(transactionToSimulate)
+		: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
+	return appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
+}
+
+// Runs the shared confirmation simulation protocol for one transaction and adds the transaction to its record: with the nonce it was simulated with, or with its preparation error decoded by the ABIs the simulation identified.
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	activeAddress: bigint,
 	simulationMode: boolean,
-	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	confirmationRunId: number,
+	confirmationRun: ConfirmationRun,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	const info = {
-		uniqueRequestIdentifier,
-		transactionToSimulate,
-		simulationMode,
+	const requestParams = transactionToSimulate.originalRequestParameters.params[0]
+	const record = await simulateConfirmationRun({
+		ethereum,
+		tokenPriceService,
+		confirmationRun,
 		activeAddress,
-		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
-		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
-		confirmationRunId,
-	}
-	const thisConfirmTransactionAbortController = startConfirmTransactionSimulation(uniqueRequestIdentifier, confirmationRunId)
-	if (thisConfirmTransactionAbortController === undefined) return undefined
-	const simulationStartedTimestamp = new Date()
-	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput()
-		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
-	try {
-		const getNewVisualizedSimulationState = async () => {
-			const preSimulationTransaction = transactionToSimulate.success
-				? safeSigningRequest === undefined
-					? toPreSimulationTransaction(transactionToSimulate)
-					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
-				: undefined
-			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
-				? simulationInput
-				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
-			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
-			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
-		}
-		const visualizedSimulatorState = await getNewVisualizedSimulationState()
-		const availableAbis = visualizedSimulatorState.addressBookEntries
-			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
-			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
-		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
-			return { statusCode: 'failed', data: {
-				...info,
-				simulationStartedTimestamp,
-				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
-				simulationState: {
-					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
-					simulationConductedTimestamp: new Date(),
-				}
-			} }
-		}
-		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
-		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
-		return {
-			statusCode: 'success',
-			data: {
-				...info,
-				simulationStartedTimestamp,
-				...visualizedSimulatorState,
-				transactionToSimulate: {
-					...transactionToSimulate,
-					...transactionToSimulate.success ? {
-						transaction: {
-							...transactionToSimulate.transaction,
-							nonce: lastTransaction ? lastTransaction.transaction.nonce : transactionToSimulate.transaction.nonce,
-						} }
-					: { error: {
-						...transactionToSimulate.error,
-						decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason
-					} }
-				}
-			}
-		}
-	} catch (error) {
-		if (isNewBlockAbort(error)) return undefined
-		if (isFailedToFetchError(error)) return undefined
-		const isJsonRpcResponseError = error instanceof JsonRpcResponseError
-		if (!isJsonRpcResponseError) await reportUnexpectedError(error, { code: 'confirm_transaction_simulation_failed' })
-
-		const baseError = isJsonRpcResponseError
-			? { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }
-			: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: error instanceof Error ? error.message : 'Unknown simulation error', data: '0x' }
-		const extractToAbi = async (): Promise<readonly string[]> => {
-			const params = transactionToSimulate.originalRequestParameters.params[0]
-			if (!('to' in params)) return []
-			if (params.to === undefined || params.to === null) return []
-			const recipient = params.to
-			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
-		}
-		return { statusCode: 'failed', data: {
-			...info,
-			simulationStartedTimestamp,
-			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
-			simulationState: {
-				blockNumber: 0n,
-				simulationConductedTimestamp: new Date()
-			}
-		} }
+		simulationMode,
+		getSimulationInput: async () => await getSingleTransactionSimulationInput(transactionToSimulate, safeSigningRequest),
+		calledContracts: 'to' in requestParams && requestParams.to !== undefined && requestParams.to !== null ? [requestParams.to] : [],
+	})
+	if (record === undefined) return undefined
+	if (record.statusCode === 'failed') return { statusCode: 'failed', data: { ...record.data, transactionToSimulate } }
+	const lastTransaction = last(last(record.data.visualizedSimulationState.success ? record.data.visualizedSimulationState.visualizedBlocks : [])?.simulatedAndVisualizedTransactions ?? [])
+	const availableAbis = record.data.addressBookEntries
+		.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
+		.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
+	return {
+		statusCode: 'success',
+		data: {
+			...record.data,
+			transactionToSimulate: {
+				...transactionToSimulate,
+				...transactionToSimulate.success
+					? { transaction: { ...transactionToSimulate.transaction, nonce: lastTransaction ? lastTransaction.transaction.nonce : transactionToSimulate.transaction.nonce } }
+					: { error: { ...transactionToSimulate.error, decodedErrorMessage: decodeEthereumError(availableAbis, transactionToSimulate.error).reason } },
+			},
+		},
 	}
 }

@@ -363,9 +363,10 @@ export const WalletSendCalls = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(funtypes.Sealed(funtypes.ReadonlyObject({
 		version: funtypes.Literal(WALLET_SEND_CALLS_VERSION),
 		chainId: CanonicalEthereumQuantity,
-		atomicRequired: funtypes.Boolean,
 		calls: funtypes.ReadonlyArray(WalletSendCallsCall),
 	}).And(funtypes.ReadonlyPartial({
+		// EIP-5792 makes atomicRequired optional with a default of false, and viem omits it when atomic execution is not requested.
+		atomicRequired: funtypes.Boolean,
 		id: WalletCallsId,
 		from: EthereumAddress,
 		capabilities: WalletSendCallsCapabilities,

@@ -576,7 +576,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const safeFlow = getSafePendingFlow(firstTxn)
 	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
-	const { transactionToSimulate, refreshMessage } = await runConfirmationSimulation(async (confirmationRunId) => {
+	const { transactionToSimulate, refreshMessage } = await runConfirmationSimulation(firstTxn.uniqueRequestIdentifier, async (confirmationRun) => {
 		const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
 			? await formEthSendTransaction(
 				ethereum,
@@ -595,8 +595,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 			tokenPriceService,
 			firstTxn.activeAddress,
 			firstTxn.simulationMode,
-			firstTxn.uniqueRequestIdentifier,
-			confirmationRunId,
+			confirmationRun,
 			transactionToSimulate,
 			proposalSafeTransaction,
 		)

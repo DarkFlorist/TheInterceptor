@@ -30,6 +30,10 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
+// Names one confirmation simulation run. Only confirmationSimulationRun.ts hands ids out and compares them with the run in flight; everything else treats an id as opaque.
+export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunId>
+export const ConfirmationRunId = funtypes.Number
+
 type ConfirmationSimulationCommonData = funtypes.Static<typeof ConfirmationSimulationCommonData>
 const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
@@ -39,7 +43,7 @@ const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
 	signerName: SignerName,
 }).And(funtypes.ReadonlyPartial({
 	// Names one confirmation simulation run of this pending transaction: the run that produced this visualisation. Confirmations stored by older versions have none.
-	confirmationRunId: funtypes.Number,
+	confirmationRunId: ConfirmationRunId,
 }))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
@@ -85,9 +89,9 @@ const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
-// A batch is visualized as one simulation in which every successfully prepared call is appended, in order, on top of the current simulation stack.
-export type ConfirmTransactionBatchVisualization = funtypes.Static<typeof ConfirmTransactionBatchVisualization>
-export const ConfirmTransactionBatchVisualization = funtypes.Union(
+// What one confirmation simulation run records, whichever flow ran it. simulateConfirmationRun in confirmationSimulationRun.ts is the only producer, so every flow's success and failure records have the same shape.
+export type ConfirmationSimulationRecord = funtypes.Static<typeof ConfirmationSimulationRecord>
+export const ConfirmationSimulationRecord = funtypes.Union(
 	funtypes.ReadonlyObject({
 		statusCode: funtypes.Literal('success'),
 		data: funtypes.Intersect(ConfirmationSimulationCommonData, VisualizedConfirmationSimulation),
@@ -97,6 +101,10 @@ export const ConfirmTransactionBatchVisualization = funtypes.Union(
 		data: funtypes.Intersect(ConfirmationSimulationCommonData, FailedConfirmationSimulation),
 	}),
 )
+
+// A batch is visualized as one simulation in which every successfully prepared call is appended, in order, on top of the current simulation stack. It stores the run's record as it is, a single transaction adds its prepared transaction to it.
+export type ConfirmTransactionBatchVisualization = ConfirmationSimulationRecord
+export const ConfirmTransactionBatchVisualization = ConfirmationSimulationRecord
 
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
 const PendingTransactionApprovalStatus = funtypes.Union(
@@ -171,6 +179,13 @@ export const WalletSendCallsBinding = funtypes.ReadonlyObject({
 	chainId: EthereumQuantity,
 })
 
+// How the website that requested a batch is shown. Its origin is not repeated here: the binding's origin is the only one a batch has (see getTransactionBatchWebsite).
+type WebsiteDisplay = funtypes.Static<typeof WebsiteDisplay>
+const WebsiteDisplay = funtypes.ReadonlyObject({
+	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	title: funtypes.Union(funtypes.String, funtypes.Undefined),
+})
+
 type PendingTransactionBatchBase = funtypes.Static<typeof PendingTransactionBatchBase>
 const PendingTransactionBatchBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('TransactionBatch'),
@@ -180,11 +195,11 @@ const PendingTransactionBatchBase = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	// Signing mode refuses wallet_sendCalls (see getSigningModeWalletCallsReply), so every batch belongs to simulation mode.
 	simulationMode: funtypes.Literal(true),
-	activeAddress: EthereumAddress,
 	created: EthereumTimestamp,
-	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
+	// The batch's only record of its website origin, account and network. Unlike the other confirmations, a batch stores no separate activeAddress or website, so the account and origin that form, label, authorize and register it cannot diverge.
 	binding: WalletSendCallsBinding,
+	websiteDisplay: WebsiteDisplay,
 	// Returned to the website when the batch is added to the simulation stack.
 	batchId: funtypes.String,
 }).And(funtypes.ReadonlyPartial({
@@ -207,6 +222,9 @@ export const PendingTransactionBatch = funtypes.Intersect(
 		}),
 	),
 )
+
+// The website a batch is shown with: the binding's origin, which every other batch module also reads, with the stored display metadata.
+export const getTransactionBatchWebsite = (pendingBatch: Pick<PendingTransactionBatch, 'binding' | 'websiteDisplay'>): Website => ({ websiteOrigin: pendingBatch.binding.websiteOrigin, ...pendingBatch.websiteDisplay })
 
 // One wallet_sendCalls batch id that a website uses, with the calls that approving its batch adds to the simulation stack (see walletSendCallsBatchIds.ts for when records are added and removed).
 export type WalletSendCallsBatchIdRecord = funtypes.Static<typeof WalletSendCallsBatchIdRecord>
@@ -267,3 +285,7 @@ export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSig
 export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction | PendingTransactionBatch
 const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction, PendingTransactionBatch)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype
+
+// The website and account of a confirmation of any kind. A batch derives both from its binding, the other kinds store them.
+export const getPendingRequestWebsite = (pending: PendingTransactionOrSignableMessage | PopupPendingTransactionOrSignableMessage): Website => pending.type === 'TransactionBatch' ? getTransactionBatchWebsite(pending) : pending.website
+export const getPendingRequestActiveAddress = (pending: PendingTransactionOrSignableMessage | PopupPendingTransactionOrSignableMessage) => pending.type === 'TransactionBatch' ? pending.binding.account : pending.activeAddress

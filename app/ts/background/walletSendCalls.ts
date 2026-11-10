@@ -48,7 +48,7 @@ export function getWalletSendCallsParseFailureReply(request: InterceptedRequest)
 			const requestedVersion = RequestedWalletSendCallsVersion.safeParse(request)
 			const message = requestedVersion.success && requestedVersion.value.params[0].version !== WALLET_SEND_CALLS_VERSION
 				? `Unsupported wallet_sendCalls version ${ requestedVersion.value.params[0].version }. The Interceptor supports EIP-5792 version ${ WALLET_SEND_CALLS_VERSION }.`
-				: `Invalid wallet_sendCalls version ${ WALLET_SEND_CALLS_VERSION } parameters: chainId, atomicRequired and calls are required, calls may only contain to, data, value and capabilities, hex values must be 0x-prefixed, and unknown fields are rejected.`
+				: `Invalid wallet_sendCalls version ${ WALLET_SEND_CALLS_VERSION } parameters: chainId and calls are required, atomicRequired must be a boolean when present, calls may only contain to, data, value and capabilities, hex values must be 0x-prefixed, and unknown fields are rejected.`
 			return errorReply(request.method, { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message })
 		}
 		case 'wallet_getCallsStatus':

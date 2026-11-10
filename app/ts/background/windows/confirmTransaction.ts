@@ -38,7 +38,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { resolvePendingTransactionBatch } from '../walletSendCallsConfirmation.js'
+import { admitTransactionBatch, resolvePendingTransactionBatch, type TransactionBatchRequest } from '../walletSendCallsConfirmation.js'
 import { runWithPendingConfirmationLock } from '../confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from '../confirmationDialogUpdates.js'
 import { shouldReplacePopupVisualisation } from '../confirmationPreviews.js'
@@ -59,7 +59,7 @@ async function refreshDirectSafeExecutionSimulation(
 	pending = flow.pending
 	const originalRequestParameters = pending.originalRequestParameters
 	if (originalRequestParameters.method !== 'eth_sendTransaction') return pending
-	const { transactionToSimulate, popupVisualisation } = await runConfirmationSimulation(async (confirmationRunId) => {
+	const { transactionToSimulate, popupVisualisation } = await runConfirmationSimulation(pending.uniqueRequestIdentifier, async (confirmationRun) => {
 		const transactionToSimulate = await formEthSendTransaction(
 			ethereum,
 			undefined,
@@ -76,8 +76,7 @@ async function refreshDirectSafeExecutionSimulation(
 			tokenPriceService,
 			pending.activeAddress,
 			false,
-			pending.uniqueRequestIdentifier,
-			confirmationRunId,
+			confirmationRun,
 			transactionToSimulate,
 		)
 		return { transactionToSimulate, popupVisualisation }
@@ -387,9 +386,14 @@ function schedulePendingNoResponseRetry(transaction: PendingTransactionOrSignabl
 	pendingNoResponseRetryTimers.set(identifier, retryTimer)
 }
 
-// Answers the requests of a closed confirmation window as unanswered, through the same dispatch as every other resolution.
-export const answerRequestsOfClosedConfirmationWindow = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections): AnswerRequestsOfClosedWindow => async (pendingRequests) => {
+// Answers the requests of a closed confirmation window as unanswered, through the same dispatch as every other resolution. It stays private to this module, which owns that dispatch, so every confirmation opener here uses it and no other module can supply an answerer that skips a kind of request.
+const answerRequestsOfClosedConfirmationWindow = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections): AnswerRequestsOfClosedWindow => async (pendingRequests) => {
 	await resolveAllPendingTransactionsAndMessageAsNoResponse(pendingRequests, ethereum, tokenPriceService, websiteTabConnections)
+}
+
+// Opens the confirmation of a wallet_sendCalls batch, which walletSendCallsConfirmation.ts owns. Like the transaction and message openers, it supplies the answerer of a closed confirmation window itself.
+export async function openConfirmTransactionDialogForTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, batchRequest: TransactionBatchRequest, websiteTabConnections: WebsiteTabConnections) {
+	return await admitTransactionBatch(ethereumClientService, tokenPriceService, websiteTabConnections, batchRequest, answerRequestsOfClosedConfirmationWindow(ethereumClientService, tokenPriceService, websiteTabConnections))
 }
 
 export async function openConfirmTransactionDialogForMessage(
@@ -532,7 +536,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		gasPayment,
 		preparationMessage: safePreparationMessage,
 	} = safePreparation
-	const outcome = await runConfirmationSimulation(async (confirmationRunId) => {
+	const outcome = await runConfirmationSimulation(request.uniqueRequestIdentifier, async (confirmationRun) => {
 		const transactionToSimulatePromise = safePreparationMessage !== undefined
 			? Promise.resolve({
 				website,
@@ -593,8 +597,7 @@ export async function openConfirmTransactionDialogForTransaction(
 					tokenPriceService,
 					transactionExecutor,
 					simulationMode,
-					request.uniqueRequestIdentifier,
-					confirmationRunId,
+					confirmationRun,
 					transactionToSimulate,
 					safeTransaction,
 				))
