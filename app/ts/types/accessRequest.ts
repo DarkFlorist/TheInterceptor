@@ -285,7 +285,3 @@ export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSig
 export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction | PendingTransactionBatch
 const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction, PendingTransactionBatch)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype
-
-// The website and account of a confirmation of any kind. A batch derives both from its binding, the other kinds store them.
-export const getPendingRequestWebsite = (pending: PendingTransactionOrSignableMessage | PopupPendingTransactionOrSignableMessage): Website => pending.type === 'TransactionBatch' ? getTransactionBatchWebsite(pending) : pending.website
-export const getPendingRequestActiveAddress = (pending: PendingTransactionOrSignableMessage | PopupPendingTransactionOrSignableMessage) => pending.type === 'TransactionBatch' ? pending.binding.account : pending.activeAddress

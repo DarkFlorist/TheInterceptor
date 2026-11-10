@@ -14,7 +14,6 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
-import { getSimulationSettingsSnapshot } from './settings.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
@@ -291,11 +290,11 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 			const batchOperations = pendingBatch.transactionsToSimulate
 				.filter((transaction): transaction is WebsiteCreatedEthereumTransaction => transaction.success)
 				.map(toWalletSendCallStackOperation)
+			// The account is looked up before the stack's write lock is taken, so other stack writers never wait for it. getWalletSendCallsBindingError then confirms against the commit snapshot that the settings it was resolved with still hold.
+			const accountLookup = await lookUpWalletSendCallsAccount(websiteTabConnections, pendingBatch)
 			const commitRefusal = await updateInterceptorTransactionStackUnlessRefused(
-				async (currentStack) => {
-					const accountLookup = await lookUpWalletSendCallsAccount(websiteTabConnections, pendingBatch)
-					// The commit boundary. Settings writers do not wait for stack writes, so everything the binding and the preview depend on besides the stack (settings, website access, time manipulation and rich addresses) is taken from this one storage read, after every other lookup, and nothing is awaited between it and the write: a change saved after this read counts as made after approval.
-					const snapshot = await getSimulationSettingsSnapshot()
+				// The commit boundary. Settings writers do not wait for stack writes, so everything the binding and the preview depend on besides the stack (settings, website access, time manipulation and rich addresses) is taken from the snapshot that storageVariables.ts reads under the stack's write lock right before the write: a change saved after that read counts as made after approval.
+				(currentStack, snapshot) => {
 					// A changed binding means the batch cannot be approved at all, so it takes precedence over a preview that only needs simulating again.
 					const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, snapshot)
 					if (bindingError !== undefined) return { reason: 'bindingChanged' as const, error: bindingError }

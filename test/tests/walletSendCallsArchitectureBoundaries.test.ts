@@ -22,6 +22,7 @@ const getConfirmationSupportSource = (module: keyof typeof confirmationSupportMo
 const transactionPreparationSource = await readSource('background/transactionPreparation.ts')
 const accessRequestTypesSource = await readSource('types/accessRequest.ts')
 const storageVariablesSource = await readSource('background/storageVariables.ts')
+const storedSettingsSource = await readSource('background/storedSettings.ts')
 const backgroundSource = await readSource('background/background.ts')
 const confirmationSimulationRunSource = await readSource('background/confirmationSimulationRun.ts')
 const popupMessageHandlersSource = await readSource('background/popupMessageHandlers.ts')
@@ -212,13 +213,19 @@ test('the appended gas estimate and simulation preparation fill RPC blocks by on
 })
 
 test('the simulation stack is written in one critical section', () => {
+	// The critical section stays private, and its conditional write reads its inputs itself and decides synchronously, so no caller code runs under the stack's write lock.
+	assert.doesNotMatch(storageVariablesSource, /^export async function updateInterceptorTransactionStackOrRefuse\b/mu)
+	assert.match(storageVariablesSource, /await updateInterceptorTransactionStackOrRefuse\(getSimulationSettingsSnapshot, \(prevStack, settingsSnapshot\)/u)
+	assert.match(storageVariablesSource, /getRefusal: \(currentStack: InterceptorTransactionStack, settingsSnapshot: SimulationSettingsSnapshot\) => Refusal \| undefined/u)
+	// storedSettings.ts imports no background module, so storageVariables.ts can read a settings snapshot without an import cycle.
+	assert.deepEqual(importedModules(storedSettingsSource).filter((path) => path.startsWith('./')), [])
 	assert.equal(storageVariablesSource.match(/setLargeStateValue\('interceptorTransactionStack'/gu)?.length, 1)
 	assert.match(storageVariablesSource, /async function updateInterceptorTransactionStackOrRefuse</u)
 	for (const wrapper of ['updateInterceptorTransactionStack', 'updateInterceptorTransactionStackUnlessRefused']) {
 		const start = storageVariablesSource.search(new RegExp(`export async function ${ wrapper }[<(]`, 'u'))
 		assert.ok(start >= 0, wrapper)
 		const body = storageVariablesSource.slice(start, storageVariablesSource.indexOf('\n}\n', start))
-		assert.match(body, /await updateInterceptorTransactionStackOrRefuse</u, wrapper)
+		assert.match(body, /await updateInterceptorTransactionStackOrRefuse[<(]/u, wrapper)
 		assert.doesNotMatch(body, /transactionStateSemaphore|assertUniqueInterceptorTransactionIds|setLargeStateValue/u, wrapper)
 	}
 })
@@ -270,5 +277,21 @@ test('both confirmation flows decide whether an account is a simulation-mode Gno
 	for (const flowSource of [safeTransactionConfirmationSource, walletSendCallsConfirmationSource]) {
 		assert.doesNotMatch(flowSource, /function isSimulationModeSafeAccount\b/u)
 		assert.match(flowSource, /^import \{[^}\n]*\bisSimulationModeSafeAccount\b[^}\n]*\} from '\.\.\/safe\/safeExecutionRouting\.js'$/mu)
+	}
+})
+
+test('the confirmation window picks what it shows and gates per kind of confirmation at one exhaustive switch', async () => {
+	const confirmTransactionPageSource = await readSource('components/pages/ConfirmTransaction.tsx')
+	const switchStart = confirmTransactionPageSource.indexOf('export function getConfirmationKindView(')
+	assert.ok(switchStart >= 0)
+	const kindSwitch = confirmTransactionPageSource.slice(switchStart, confirmTransactionPageSource.indexOf('\n}\n', switchStart))
+	assert.match(kindSwitch, /switch \(pending\.type\) \{[\s\S]*default: return assertNever\(pending\)/u)
+	// The batch and message kinds are only named where their view is defined and selected, so no inline branch can let a new kind fall through to another kind's rendering or approval.
+	const kindLiteralLines = (kind: string) => confirmTransactionPageSource.split('\n').filter((line) => line.includes(`'${ kind }'`))
+	for (const [kind, viewName] of [['TransactionBatch', 'getTransactionBatchView'], ['SignableMessage', 'getSignableMessageView']]) {
+		const lines = kindLiteralLines(kind)
+		assert.equal(lines.length, 2, kind)
+		assert.match(lines[0] ?? '', new RegExp(`^function ${ viewName }\\(pending: PendingConfirmationOfKind<'${ kind }'>\\): ConfirmationKindView \\{$`, 'u'), kind)
+		assert.match(lines[1] ?? '', new RegExp(`^\\t\\tcase '${ kind }': return ${ viewName }\\(pending\\)$`, 'u'), kind)
 	}
 })

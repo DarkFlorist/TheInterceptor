@@ -205,10 +205,11 @@ test('a batch stores its website origin and account only in its binding, and is 
 	assert.equal('activeAddress' in pending, false)
 	assert.equal('website' in pending, false)
 	assert.deepEqual(pending.binding, { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId: fakeRpcNetwork.chainId })
-	const { getPendingRequestActiveAddress, getPendingRequestWebsite, getTransactionBatchWebsite } = await import('../../app/ts/types/accessRequest.js')
+	const { getTransactionBatchWebsite } = await import('../../app/ts/types/accessRequest.js')
+	const { getConfirmationKindView } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 	assert.deepEqual(getTransactionBatchWebsite(pending), website)
-	assert.deepEqual(getPendingRequestWebsite(pending), website)
-	assert.equal(getPendingRequestActiveAddress(pending), activeAddress)
+	assert.deepEqual(getConfirmationKindView(pending).website, website)
+	assert.equal(getConfirmationKindView(pending).activeAddress, activeAddress)
 	assert.equal(pending.popupVisualisation.data.activeAddress, activeAddress)
 	assert.deepEqual(pending.transactionsToSimulate.map((transaction) => [transaction.website.websiteOrigin, transaction.success ? transaction.transaction.from : undefined]), [[website.websiteOrigin, activeAddress], [website.websiteOrigin, activeAddress]])
 	assert.deepEqual((await getBatchIdRecords()).map((record) => [record.websiteOrigin, record.batchId]), [[website.websiteOrigin, '0xbound']])
@@ -928,6 +929,37 @@ const getCallsStatusCode = async (batchId: string) => {
 	if ('error' in status) return status.error.code
 	return isRecord(status.result) ? status.result.status : undefined
 }
+
+test('approving a batch looks up its account without holding the simulation stack write lock, so other stack writers do not wait for it', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections)
+	const commitLookupReached = createDeferredValue<void>()
+	const commitLookupReleased = createDeferredValue<void>()
+	let settingsSnapshotReads = 0
+	// Approval reads settings snapshots for its approval check (two reads), for the account lookup of its commit (the third read) and under the stack's write lock (the fourth). The third is held.
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (Array.isArray(keys) && keys.includes('fixedAddressRichList')) {
+			settingsSnapshotReads += 1
+			if (settingsSnapshotReads === 3) {
+				commitLookupReached.resolve()
+				await commitLookupReleased.promise
+			}
+		}
+		return readStoredItems()
+	})
+	const approval = approveBatch(websiteTabConnections)
+	await commitLookupReached.promise
+
+	const otherStackWrite = modules.updateInterceptorTransactionStack((stack) => stack).then(() => 'written' as const)
+	const timeout = new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 1_000))
+	assert.equal(await Promise.race([otherStackWrite, timeout]), 'written')
+
+	commitLookupReleased.resolve()
+	assert.equal(await approval, true)
+	browserMock.setStorageGetHandler(undefined)
+	assert.equal(settingsSnapshotReads, 4)
+	assert.equal((await getStackBatchTransactions()).length, 2)
+})
 
 test('wallet_getCallsStatus answers a bundle with a call removed from the simulation stack as unknown instead of reporting the remaining calls', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()

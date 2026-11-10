@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { getSimulationSettingsSnapshot, type SimulationSettingsSnapshot } from './storedSettings.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -429,6 +430,7 @@ export async function addEnsLabelHash(label: string) {
 	})
 }
 
+// The simulation stack's write lock. Lock order: code holding the confirmation queue's lock may read the stack, as addPendingTransactionBatch does, but nothing holding this lock takes the queue's lock. Every body run under it is this module's own: decisions passed in are synchronous, so no caller can add a read of the queue, or any other wait, inside it.
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
 // What an update of the simulation stack decides after reading it: the stack to write, or a refusal that leaves the stack as it is.
@@ -436,10 +438,11 @@ type InterceptorTransactionStackUpdate<Refusal> =
 	| { readonly kind: 'write', readonly stack: InterceptorTransactionStack }
 	| { readonly kind: 'refuse', readonly refusal: Refusal }
 
-// The one critical section that writes the simulation stack: it reads the stack, lets decide pick what to write, checks the transaction ids and writes, all inside the stack's write lock, so no other stack update comes between the read and the write, and nothing is awaited between decide's last read and the write.
-async function updateInterceptorTransactionStackOrRefuse<Refusal>(decide: (prevStack: InterceptorTransactionStack) => Promise<InterceptorTransactionStackUpdate<Refusal>>): Promise<InterceptorTransactionStackUpdate<Refusal>> {
+// The one critical section that writes the simulation stack: it reads the stack, then the inputs the decision needs with this module's own readInputs, lets decide pick what to write, checks the transaction ids and writes, all inside the stack's write lock. decide is synchronous, so no other stack update comes between the reads and the write, nothing is awaited between the last read and the write, and the lock is never held for a caller's I/O.
+async function updateInterceptorTransactionStackOrRefuse<Inputs, Refusal>(readInputs: () => Promise<Inputs>, decide: (prevStack: InterceptorTransactionStack, inputs: Inputs) => InterceptorTransactionStackUpdate<Refusal>): Promise<InterceptorTransactionStackUpdate<Refusal>> {
 	return await transactionStateSemaphore.execute(async () => {
-		const update = await decide(await getInterceptorTransactionStack())
+		const prevStack = await getInterceptorTransactionStack()
+		const update = decide(prevStack, await readInputs())
 		if (update.kind === 'refuse') return update
 		assertUniqueInterceptorTransactionIds(update.stack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, update.stack)
@@ -448,15 +451,18 @@ async function updateInterceptorTransactionStackOrRefuse<Refusal>(decide: (prevS
 }
 
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
-	const update = await updateInterceptorTransactionStackOrRefuse<never>(async (prevStack) => ({ kind: 'write', stack: updateFunc(prevStack) }))
+	const update = await updateInterceptorTransactionStackOrRefuse<undefined, never>(async () => undefined, (prevStack) => ({ kind: 'write', stack: updateFunc(prevStack) }))
 	if (update.kind === 'refuse') return assertNever(update.refusal)
 	return update.stack
 }
 
-// Asks getRefusal about the current stack as the last step before writing, and writes nothing when it returns a refusal.
-export async function updateInterceptorTransactionStackUnlessRefused<Refusal>(getRefusal: (currentStack: InterceptorTransactionStack) => Promise<Refusal | undefined>, updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<Refusal | undefined> {
-	const update = await updateInterceptorTransactionStackOrRefuse<Refusal>(async (prevStack) => {
-		const refusal = await getRefusal(prevStack)
+// Why a conditional stack write was refused. A refusal is a plain object with a reason, which a promise is not, so a refusal decision cannot be async.
+export type InterceptorTransactionStackRefusal = { readonly reason: string }
+
+// Writes updateFunc's stack unless getRefusal refuses it. getRefusal decides synchronously on the current stack and on a simulation settings snapshot that this module reads under the stack's write lock right before the write, so a settings change saved after that read counts as made after the write. Anything else the decision needs is read by the caller before calling and passed in through the closure as data.
+export async function updateInterceptorTransactionStackUnlessRefused<Refusal extends InterceptorTransactionStackRefusal>(getRefusal: (currentStack: InterceptorTransactionStack, settingsSnapshot: SimulationSettingsSnapshot) => Refusal | undefined, updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<Refusal | undefined> {
+	const update = await updateInterceptorTransactionStackOrRefuse(getSimulationSettingsSnapshot, (prevStack, settingsSnapshot): InterceptorTransactionStackUpdate<Refusal> => {
+		const refusal = getRefusal(prevStack, settingsSnapshot)
 		return refusal === undefined ? { kind: 'write', stack: updateFunc(prevStack) } : { kind: 'refuse', refusal }
 	})
 	return update.kind === 'refuse' ? update.refusal : undefined

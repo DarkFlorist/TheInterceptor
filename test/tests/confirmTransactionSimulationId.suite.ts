@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, browserMock, created, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, modules, popupVisualisation, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, modules, popupVisualisation, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 
@@ -142,4 +142,32 @@ test('confirmation runs of different requests overlap without aborting each othe
 	await olderRun.record
 	assert.equal((await newerRun.record)?.statusCode, 'success')
 	assert.equal(getInFlightConfirmationRunAbortController(uniqueRequestIdentifier), undefined)
+})
+
+test('an eth_sendRawTransaction confirmation is prepared, simulated and stored', async () => {
+	const { Transaction } = await import('micro-eth-signer')
+	const { SendRawTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { sendTransaction } = await import('../../app/ts/background/simulationModeHandlers.js')
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork, useSignersAddressAsActiveAddress: false, independentActiveSimulationAddress: activeAddress })
+	const rawTransaction = Transaction.prepare({ type: 'eip1559', chainId: fakeRpcNetwork.chainId, nonce: 0n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, gasLimit: 21_000n, to: addressString(recipientAddress), value: 1n, data: '0x', accessList: [] }, false)
+		.signBy('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+		.toHex()
+	const parameters = SendRawTransactionParams.parse({ method: 'eth_sendRawTransaction', params: [rawTransaction] })
+	const rawRequestIdentifier = { requestId: 42, requestSocket: uniqueRequestIdentifier.requestSocket }
+	const reply = await sendTransaction(simulator.ethereum, simulator.tokenPriceService, activeAddress, { kind: 'transaction', parameters }, { ...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: rawRequestIdentifier }, popupVisualisation.data.transactionToSimulate.website, new Map())
+
+	assert.deepEqual(reply, { type: 'doNotReply' })
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.uniqueRequestIdentifier.requestId === rawRequestIdentifier.requestId)
+	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus === 'Crafting') throw new Error('Missing the raw transaction confirmation')
+	assert.equal(pending.originalRequestParameters.method, 'eth_sendRawTransaction')
+	assert.equal(pending.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(pending.popupVisualisation.statusCode, 'success')
+	// A refresh simulates the stored raw transaction again with a newer run.
+	const storedRunId = pending.popupVisualisation.data.confirmationRunId
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	const refreshed = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.uniqueRequestIdentifier.requestId === rawRequestIdentifier.requestId)
+	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus === 'Crafting') throw new Error('Missing the refreshed raw transaction confirmation')
+	assert.equal(refreshed.popupVisualisation.statusCode, 'success')
+	assert.ok(storedRunId !== undefined && (refreshed.popupVisualisation.data.confirmationRunId ?? 0) > storedRunId)
 })

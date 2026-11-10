@@ -52,7 +52,7 @@ test('settings that do not decide the simulation input leave the stack simulatio
 test('the general simulation path and the wallet_sendCalls path build the same input from the same stored state', async () => {
 	await storeSimulationState()
 	const { captureSimulationSnapshot, captureStackSimulationContext, getCurrentSimulationInput, getSimulationInputForStack, getStackSimulationContextFingerprint, toStackSimulationContext } = await import('../../app/ts/background/simulationUpdating.js')
-	const { getSimulationSettingsSnapshot } = await import('../../app/ts/background/settings.js')
+	const { getSimulationSettingsSnapshot } = await import('../../app/ts/background/storedSettings.js')
 	// The wallet_sendCalls approval rebuilds the context from a snapshot and the stack it reads inside the stack's write lock.
 	const batchCommitContext = toStackSimulationContext(await getSimulationSettingsSnapshot(), await modules.getInterceptorTransactionStack())
 	const generalInput = await getCurrentSimulationInput()
