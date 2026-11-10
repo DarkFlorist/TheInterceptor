@@ -2,10 +2,11 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { publishFailedPopupVisualisation, relabelPopupVisualisation, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import type { SimulationRunToRelabel } from '../../app/ts/background/simulationRelabel.js'
-import { getPopupVisualisationState, removePendingTransactionOrMessage, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getAddressBookRevision, getPopupVisualisationState, getUserAddressBookEntries, removePendingTransactionOrMessage, setUserAddressBookEntries, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
+import type { StoredConfirmationRun } from '../../app/ts/background/confirmationRunStorage.js'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { CompleteVisualizedSimulation, type SignedMessageTransaction, type StoredCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction, type VisualizedSimulationState, type WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
@@ -27,7 +28,9 @@ import { activeAddress, addressString, browserMock, hexToBytes, created, createS
 const { addOrModifyAddressBookEntry, changePreSimulationBlockTimeManipulation, refreshPopupConfirmTransactionMetadata, removeAddressBookEntry, requestCompleteVisualizedSimulation, requestNewHomeData, setEnsNameForHash } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
 const { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
+const { relabelDisplayedConfirmationSimulation, relabelStoredRunIfAddressBookChangedDuringIt } = await import('../../app/ts/background/confirmationRelabel.js')
+const { storeConfirmationRun } = await import('../../app/ts/background/confirmationRunStorage.js')
+const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 const { relabelStoredSimulation } = await import('../../app/ts/background/simulationRelabel.js')
 const { visualizeSimulatorStateAndRecordLookups } = await import('../../app/ts/background/simulationUpdating.js')
 const { createWatchAssetResolutionDependencies } = await import('../../app/ts/background/windows/watchAsset.js')
@@ -314,8 +317,43 @@ test('address-book changes re-label the stored confirmation and stack without si
 })
 
 // What the stored runs keep for re-labels in background storage only, never in a popup message.
-const BACKGROUND_ONLY_RUN_RECORD_FIELDS = ['recordedVisualisationLookups', 'confirmationRunId', 'identifiedAddressBookEntries', 'protectorChainReads']
+const BACKGROUND_ONLY_RUN_RECORD_FIELDS = ['recordedVisualisationLookups', 'confirmationRunId', 'addressBookRevisionBeforeLookups', 'identifiedAddressBookEntries', 'protectorChainReads']
 const carriesBackgroundOnlyRunRecord = (message: unknown) => BACKGROUND_ONLY_RUN_RECORD_FIELDS.some((field) => stringifyJSONWithBigInts(message).includes(`"${ field }"`))
+
+// Every own property name of value and of the objects and arrays it holds, read from the value itself rather than from a serialization of it.
+function collectOwnKeys(value: unknown, keys = new Set<string>()): ReadonlySet<string> {
+	// Stored objects are parsed without a prototype, so instanceof Object would miss them; !value leaves out the one falsy object.
+	if (typeof value !== 'object' || !value || value instanceof Date || value instanceof Uint8Array) return keys
+	for (const [key, nested] of Object.entries(value)) {
+		if (!Array.isArray(value)) keys.add(key)
+		collectOwnKeys(nested, keys)
+	}
+	return keys
+}
+
+test('the popup projection of a stored confirmation holds none of its run record, without serializing it', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const [storedTransaction] = await modules.getPendingTransactionsAndMessages()
+	if (storedTransaction?.type !== 'Transaction' || storedTransaction.transactionOrMessageCreationStatus !== 'Simulated' || storedTransaction.popupVisualisation.statusCode !== 'success') throw new Error('Expected a simulated pending transaction')
+	// A failed run stores the same record. Built from the successful run, it also holds that run's other fields, which the projection leaves out as well.
+	const storedFailedRun: PendingTransactionOrSignableMessage = { ...storedTransaction, popupVisualisation: { statusCode: 'failed', data: { ...storedTransaction.popupVisualisation.data, error: { code: 1, message: 'failed', data: '0x', decodedErrorMessage: 'failed' } } } }
+	const [storedMessage] = await storeSimulatedPersonalSignMessages([uniqueRequestIdentifier])
+	const storedConfirmations = [
+		{ description: 'a transaction with a successful run', stored: storedTransaction },
+		{ description: 'a transaction with a failed run', stored: storedFailedRun },
+		{ description: 'a signable message', stored: getDefined(storedMessage, 'a stored signable message') },
+	]
+	// The stored confirmations carry each background-only field, so the projection has every one of them to leave out.
+	assert.deepEqual(BACKGROUND_ONLY_RUN_RECORD_FIELDS.filter((field) => !storedConfirmations.some(({ stored }) => collectOwnKeys(stored).has(field))), [])
+
+	for (const { description, stored } of storedConfirmations) {
+		const projection = toPopupPendingTransactionOrSignableMessage(stored)
+		assert.notEqual(projection, stored, description)
+		assert.deepEqual(BACKGROUND_ONLY_RUN_RECORD_FIELDS.filter((field) => collectOwnKeys(projection).has(field)), [], description)
+		// It keeps every field the dialog's codec would have sent.
+		assert.deepEqual(projection, PopupPendingTransactionOrSignableMessage.parse(PopupPendingTransactionOrSignableMessage.serialize(stored)), description)
+	}
+})
 
 test('popup messages and replies carrying the stored stack and confirmation leave out their runs\' records, which a later re-label still replays', async () => {
 	await openSimulationModeConfirmationSendingEther()
@@ -1360,12 +1398,12 @@ async function storeSimulationModeStackWithoutConfirmation() {
 }
 
 // Opens the request's confirmation as a website's eth_sendTransaction does, which stores the request's first simulation run; a confirmation of the request left by an earlier call is resolved first.
-async function openConfirmationThroughFirstRun() {
-	await removePendingTransactionOrMessage(uniqueRequestIdentifier)
+async function openConfirmationThroughFirstRunOf(request: UniqueRequestIdentifier) {
+	await removePendingTransactionOrMessage(request)
 	const reply = await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
-		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...sendEtherRequestParameters },
+		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: request, ...sendEtherRequestParameters },
 		{ kind: 'transaction', parameters: sendEtherRequestParameters },
 		true,
 		sender,
@@ -1374,6 +1412,8 @@ async function openConfirmationThroughFirstRun() {
 	)
 	assert.deepEqual(reply, { type: 'doNotReply' })
 }
+
+const openConfirmationThroughFirstRun = async () => await openConfirmationThroughFirstRunOf(uniqueRequestIdentifier)
 
 const resimulateDisplayedConfirmation = async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 
@@ -1427,7 +1467,7 @@ for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
 		assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
 	})
 
-	// The run compares the published change count from before its lookups with the count once stored, so it re-labels itself without waiting for the publication to finish.
+	// The workflow compares the address-book revision the run read when it started with the settled revision once the run is stored, so the run is re-labelled without waiting for the publication to finish.
 	test(`${ kind } stored while the publication of an address-book change made during it is still broadcasting ends with the new names`, async () => {
 		await open()
 		const broadcastReleased = createDeferred()
@@ -1452,12 +1492,11 @@ for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
 		await publication
 	})
 
-	// However late a change is published, as when its publication awaits before anything else, the re-label it starts reaches the run stored before it.
-	test(`${ kind } that looked up names before an address-book change was stored ends with the new names when the change is published only after the run is stored`, async () => {
+	// The address-book write advances the revision, not its publication, so however late the change is published, the run that overlapped it is re-labelled once stored.
+	test(`${ kind } that looked up names before an address-book change was stored ends with the new names once stored, before the change is published`, async () => {
 		await open()
 
-		assert.equal(await simulateAndStoreRunningDuringLastLookup(simulateAndStore, addRecipientContactWithoutBroadcast), 0)
-		await changeAddressBookAndWaitForItsRelabel(async () => undefined)
+		assert.notEqual(await simulateAndStoreRunningDuringLastLookup(simulateAndStore, addRecipientContactWithoutBroadcast), 0)
 
 		assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
 	})
@@ -1477,10 +1516,10 @@ for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
 		assert.equal(addressBookReadsAfterRun, lookupsPerRelabel)
 	})
 
-	test(`${ kind } during which no address-book change was published is not re-labelled after it is stored`, async () => {
+	test(`${ kind } during which the address book was not written is not re-labelled after it is stored`, async () => {
 		const runsWithoutChange = [
 			{ description: 'nothing else runs', duringLastLookup: async () => undefined },
-			// Only a published change counts; the stack re-label runs without one, as do other confirmation runs' catch-up re-labels.
+			// Only an address-book write advances the revision; the stack re-label writes none, as other confirmation runs' catch-up re-labels do not.
 			{ description: 'the stack is re-labelled without an address-book change', duringLastLookup: relabelStoredStack },
 		]
 		for (const { description, duringLastLookup } of runsWithoutChange) {
@@ -1490,6 +1529,86 @@ for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
 		}
 	})
 }
+
+// A request opened while the displayed confirmation waits, so its confirmation is pending behind the displayed one.
+const requestBehindDisplayed: UniqueRequestIdentifier = { ...uniqueRequestIdentifier, requestId: uniqueRequestIdentifier.requestId + 1 }
+
+// Keeps the displayed confirmation's dialog open, so a request opened behind it joins that dialog instead of resolving the confirmations of a closed one.
+async function openSimulationModeConfirmationWithOpenDialog() {
+	await openSimulationModeConfirmationSendingEther()
+	const [displayed] = await modules.getPendingTransactionsAndMessages()
+	browserMock.setLiveWindowIds([getDefined(displayed, 'the displayed confirmation').popupOrTabId.id])
+}
+
+async function getStoredVisualisationOf(request: UniqueRequestIdentifier) {
+	return getSimulatedPendingTransaction((await modules.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === request.requestId))
+}
+
+test('an address-book change written during the run of a confirmation behind the displayed one re-labels that run, not the displayed confirmation', async () => {
+	await openSimulationModeConfirmationWithOpenDialog()
+	const displayedBefore = await getStoredPendingTransactionVisualisation()
+
+	// Written without a publication, so only the catch-up of the run that overlapped it can show the new name.
+	await simulateAndStoreRunningDuringLastLookup(async () => await openConfirmationThroughFirstRunOf(requestBehindDisplayed), addRecipientContactWithoutBroadcast)
+
+	const [displayed, behindDisplayed] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(displayed?.uniqueRequestIdentifier.requestId, uniqueRequestIdentifier.requestId)
+	assert.equal(behindDisplayed?.uniqueRequestIdentifier.requestId, requestBehindDisplayed.requestId)
+	assert.equal(getRecipientName((await getStoredVisualisationOf(requestBehindDisplayed)).visualizedSimulationState), recipientContact.name)
+	assert.deepEqual(await getStoredPendingTransactionVisualisation(), displayedBefore)
+})
+
+test('the run of a confirmation behind the displayed one during which the address book was not written is not re-labelled after it is stored', async () => {
+	await openSimulationModeConfirmationWithOpenDialog()
+
+	assert.equal(await simulateAndStoreRunningDuringLastLookup(async () => await openConfirmationThroughFirstRunOf(requestBehindDisplayed), async () => undefined), 0)
+})
+
+test('storing a confirmation run only stores it and returns it, leaving the catch-up re-label to the workflow that stored it', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const run = await simulateDisplayedConfirmation()
+	if (run?.statusCode !== 'success') throw new Error('Expected a successful confirmation simulation')
+	await addRecipientContactWithoutBroadcast()
+	let storedRun: StoredConfirmationRun | undefined
+
+	const addressBookReads = await countAddressBookReads(async () => {
+		storedRun = await storeConfirmationRun(uniqueRequestIdentifier, async (current) => {
+			if (current.type !== 'Transaction') throw new Error('Expected a pending transaction')
+			return { ...current, transactionOrMessageCreationStatus: 'Simulated', transactionToSimulate: sendEtherWebsiteTransaction, popupVisualisation: run }
+		})
+	})
+
+	// The writer looked nothing up, so the run keeps the names it looked up before the change, although the address book changed during it.
+	assert.equal(addressBookReads, 0)
+	assert.deepEqual(storedRun, { uniqueRequestIdentifier, confirmationRunId: run.data.confirmationRunId, addressBookRevisionBeforeLookups: run.data.addressBookRevisionBeforeLookups })
+	assert.notEqual(await getStoredConfirmationRecipientName(), recipientContact.name)
+	await relabelStoredRunIfAddressBookChangedDuringIt(fakeRpcNetwork, storedRun)
+	assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
+})
+
+test('every write of the names a lookup reads advances the address-book revision, and a write that stores nothing does not', async () => {
+	await storeSimulationModeSettings([senderAddressBookEntry])
+	const writes = [
+		{ description: 'an address-book update', write: async () => await modules.updateUserAddressBookEntries((entries) => entries) },
+		{ description: 'an entry cached by an identification', write: async () => await addUserAddressBookEntryIfItDoesNotExist(recipientContact) },
+		{ description: 'an address book replaced by the migration', write: async () => await setUserAddressBookEntries([senderAddressBookEntry]) },
+		{ description: 'an ENS name', write: async () => await addEnsNodeHash('revision.eth') },
+		{ description: 'an ENS label', write: async () => await addEnsLabelHash('revision') },
+		{ description: 'an unreadable address book reset when read', write: async () => {
+			await browser.storage.local.set({ userAddressBookEntriesV3: 'unreadable' })
+			await withSilencedConsole(async () => await getUserAddressBookEntries())
+		} },
+	]
+	for (const { description, write } of writes) {
+		const revisionBefore = getAddressBookRevision()
+		await write()
+		assert.equal(getAddressBookRevision(), revisionBefore + 1, description)
+	}
+	const revisionBefore = getAddressBookRevision()
+	await addUserAddressBookEntryIfItDoesNotExist(senderAddressBookEntry)
+	await addEnsLabelHash('revision')
+	assert.equal(getAddressBookRevision(), revisionBefore)
+})
 
 test('a request\'s first run that finished its lookups before an address-book change was published, but is stored after the re-label ran, ends with the new names', async () => {
 	await storeSimulationModeStackWithoutConfirmation()

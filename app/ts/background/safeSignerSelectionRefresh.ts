@@ -14,7 +14,8 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
-import { simulateAndStoreConfirmationRun, type StoreConfirmationRun } from './confirmationRunStorage.js'
+import { storeConfirmationRun } from './confirmationRunStorage.js'
+import { relabelStoredRunIfAddressBookChangedDuringIt } from './confirmationRelabel.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -435,12 +436,12 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
-async function refreshAndStoreSafeSignerSelection(
+// A refreshed direct Safe execution carries a new confirmation run, so the refresh is stored with storeConfirmationRun, and a run it stored is caught up on address-book changes made during it, as every confirmation workflow does.
+export async function refreshAndPersistSafeSignerSelection(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
 	selectedSigner: bigint,
 	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
-	storeRun: StoreConfirmationRun,
 ): Promise<SafeSignerSelectionRefreshPersistence> {
 	const recoveredMessage = await recoverSafeMessageReview(ethereum, pending, selectedSigner)
 	if (recoveredMessage !== undefined) return recoveredMessage
@@ -474,7 +475,7 @@ async function refreshAndStoreSafeSignerSelection(
 		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
-	await storeRun(pending.uniqueRequestIdentifier, async (current) => {
+	const storedRun = await storeConfirmationRun(pending.uniqueRequestIdentifier, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
@@ -483,15 +484,6 @@ async function refreshAndStoreSafeSignerSelection(
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
 		return persistedPending
 	})
+	await relabelStoredRunIfAddressBookChangedDuringIt(ethereum.getRpcEntry(), storedRun)
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
-}
-
-// A refreshed direct Safe execution carries a new confirmation run, so the refresh is simulated and stored through simulateAndStoreConfirmationRun, the only writer that knows when the run began its lookups and so whether an address-book change published since needs a re-label.
-export async function refreshAndPersistSafeSignerSelection(
-	ethereum: EthereumClientService,
-	pending: PendingTransactionOrSignableMessage,
-	selectedSigner: bigint,
-	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
-): Promise<SafeSignerSelectionRefreshPersistence> {
-	return await simulateAndStoreConfirmationRun(ethereum.getRpcEntry(), async (storeRun) => await refreshAndStoreSafeSignerSelection(ethereum, pending, selectedSigner, refreshDirectSafeExecutionSimulation, storeRun))
 }

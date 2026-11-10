@@ -30,7 +30,7 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
-type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
+export type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
@@ -80,11 +80,13 @@ const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
 
-// What background storage keeps with a confirmation run besides what the confirmation dialog is sent; popup messages carry the run as ConfirmTransactionTransactionSingleVisualization, whose codec has no field for it, so serializing a message drops it. Confirmations stored by older versions have none of it.
+// What background storage keeps with a confirmation run besides what the confirmation dialog is sent; toPopupPendingTransactionOrSignableMessage in confirmTransaction.ts selects only the dialog's fields, so a popup message never carries it. Confirmations stored by older versions have none of it.
 const ConfirmationRunRecord = funtypes.ReadonlyPartial({
 	// Identifies the confirmation simulation run that produced this visualisation.
 	confirmationRunId: funtypes.Number,
 	recordedVisualisationLookups: RecordedVisualisationLookups,
+	// The address-book revision (getAddressBookRevision in storageVariables.ts) the run read when it started, before its first lookup; only the workflow that stores the run compares it, within the same background session.
+	addressBookRevisionBeforeLookups: funtypes.Number,
 })
 
 // A confirmation run as background storage keeps it in its pending transaction.
@@ -104,7 +106,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
-type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
+export type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
 const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('Transaction'),
 	popupOrTabId: PopupOrTabId,
@@ -172,7 +174,7 @@ export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
 
 // A pending transaction as popups are sent it, without its confirmation run's record.
-type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
+export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
 const PopupPendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, PopupSimulatedPendingTransaction)
 
 type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
@@ -198,7 +200,7 @@ const PendingSignableMessage = funtypes.Intersect(
 	)
 )
 
-type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
+export type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('SignableMessage'),
 	popupOrTabId: PopupOrTabId,

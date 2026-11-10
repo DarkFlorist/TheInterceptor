@@ -15,7 +15,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { getAddressBookRevision, getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
@@ -27,7 +27,7 @@ function getNextConfirmationRunId() {
 	return latestConfirmationRunId
 }
 
-// Returns the run without storing it; the confirmation workflows store it through simulateAndStoreConfirmationRun in confirmationRunStorage.ts.
+// Returns the run without storing it; the confirmation workflows store it with storeConfirmationRun in confirmationRunStorage.ts and then catch it up on address-book changes made during it (relabelStoredRunIfAddressBookChangedDuringIt in confirmationRelabel.ts).
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -45,6 +45,8 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 		confirmationRunId: getNextConfirmationRunId(),
+		// Read once as the run starts, before its first lookup, so the workflow that stores the run can tell whether the address book changed during it.
+		addressBookRevisionBeforeLookups: getAddressBookRevision(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)

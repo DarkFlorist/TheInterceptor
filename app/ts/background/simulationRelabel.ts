@@ -1,4 +1,4 @@
-// The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the displayed confirmation re-label (relabelDisplayedConfirmationSimulation); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
+// The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the confirmation re-labels (confirmationRelabel.ts); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationState } from '../types/visualizer-types.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'

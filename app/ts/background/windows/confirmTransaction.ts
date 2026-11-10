@@ -12,7 +12,8 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { simulateAndStoreConfirmationRun } from '../confirmationRunStorage.js'
+import { storeConfirmationRun } from '../confirmationRunStorage.js'
+import { relabelStoredRunIfAddressBookChangedDuringIt } from '../confirmationRelabel.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -23,7 +24,7 @@ import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
-import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { ConfirmTransactionSimulationBaseData, ConfirmTransactionTransactionSingleVisualization, PendingTransaction, PendingTransactionOrSignableMessage, PopupPendingSignableMessageBase, PopupPendingTransaction, PopupPendingTransactionOrSignableMessage, SimulatedPendingTransactionBase, StoredConfirmTransactionVisualization } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
@@ -182,12 +183,83 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
+// Selects the run's dialog fields one by one, so the projection carries none of its background-only record (ConfirmationRunRecord in accessRequest.ts) whichever codec a send site serializes it with. Each object literal is annotated with or returned as its popup type, whose excess-property check rejects a field the dialog is not sent.
+function toPopupConfirmationVisualisation(stored: StoredConfirmTransactionVisualization): ConfirmTransactionTransactionSingleVisualization {
+	const base: ConfirmTransactionSimulationBaseData = {
+		activeAddress: stored.data.activeAddress,
+		simulationMode: stored.data.simulationMode,
+		simulationStartedTimestamp: stored.data.simulationStartedTimestamp,
+		uniqueRequestIdentifier: stored.data.uniqueRequestIdentifier,
+		transactionToSimulate: stored.data.transactionToSimulate,
+		signerName: stored.data.signerName,
+	}
+	switch (stored.statusCode) {
+		case 'failed':
+			return {
+				statusCode: stored.statusCode,
+				data: {
+					...base,
+					error: stored.data.error,
+					simulationState: { blockNumber: stored.data.simulationState.blockNumber, simulationConductedTimestamp: stored.data.simulationState.simulationConductedTimestamp },
+				},
+			}
+		case 'success':
+			return {
+				statusCode: stored.statusCode,
+				data: {
+					...base,
+					addressBookEntries: stored.data.addressBookEntries,
+					tokenPriceEstimates: stored.data.tokenPriceEstimates,
+					namedTokenIds: stored.data.namedTokenIds,
+					simulationState: stored.data.simulationState,
+					visualizedSimulationState: stored.data.visualizedSimulationState,
+				},
+			}
+		default:
+			return assertNever(stored)
+	}
+}
+
+// Selects the transaction's dialog fields one by one, as the signable-message branch below does, for the same reason as toPopupConfirmationVisualisation.
+function toPopupPendingTransaction(pending: PendingTransaction): PopupPendingTransaction {
+	const base: SimulatedPendingTransactionBase = {
+		type: pending.type,
+		popupOrTabId: pending.popupOrTabId,
+		originalRequestParameters: pending.originalRequestParameters,
+		uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+		simulationMode: pending.simulationMode,
+		activeAddress: pending.activeAddress,
+		created: pending.created,
+		transactionIdentifier: pending.transactionIdentifier,
+		website: pending.website,
+		approvalStatus: pending.approvalStatus,
+		...(pending.safeTransaction === undefined ? {} : { safeTransaction: pending.safeTransaction }),
+		...(pending.safeExecutionSignerAddress === undefined ? {} : { safeExecutionSignerAddress: pending.safeExecutionSignerAddress }),
+		...(pending.safeExecutionOriginalRequestParameters === undefined ? {} : { safeExecutionOriginalRequestParameters: pending.safeExecutionOriginalRequestParameters }),
+		...(pending.safeExecutionReviewedSafeState === undefined ? {} : { safeExecutionReviewedSafeState: pending.safeExecutionReviewedSafeState }),
+		...(pending.executeThroughSafe === undefined ? {} : { executeThroughSafe: pending.executeThroughSafe }),
+	}
+	switch (pending.transactionOrMessageCreationStatus) {
+		case 'Crafting':
+			return { ...base, transactionOrMessageCreationStatus: pending.transactionOrMessageCreationStatus }
+		case 'Simulating':
+			return { ...base, transactionOrMessageCreationStatus: pending.transactionOrMessageCreationStatus, transactionToSimulate: pending.transactionToSimulate }
+		case 'Simulated':
+			return { ...base, transactionOrMessageCreationStatus: pending.transactionOrMessageCreationStatus, transactionToSimulate: pending.transactionToSimulate, popupVisualisation: toPopupConfirmationVisualisation(pending.popupVisualisation) }
+		case 'FailedToSimulate':
+			return { ...base, transactionOrMessageCreationStatus: pending.transactionOrMessageCreationStatus, transactionToSimulate: pending.transactionToSimulate, popupVisualisation: toPopupConfirmationVisualisation(pending.popupVisualisation) }
+		default:
+			return assertNever(pending)
+	}
+}
+
+// The pending confirmation as the confirmation dialog is sent it: a new value holding only the dialog's fields, never the stored object itself.
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction':
-			return pending
+			return toPopupPendingTransaction(pending)
 		case 'SignableMessage': {
-			const base = {
+			const base: PopupPendingSignableMessageBase = {
 				type: pending.type,
 				popupOrTabId: pending.popupOrTabId,
 				originalRequestParameters: pending.originalRequestParameters,
@@ -909,32 +981,31 @@ export async function openConfirmTransactionDialogForTransaction(
 			await appendPendingTransactionOrMessage(pendingTransaction)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
-			await simulateAndStoreConfirmationRun(ethereumClientService.getRpcEntry(), async (storeRun) => {
-				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
-					ethereumClientService,
-					tokenPriceService,
-					transactionExecutor,
-					simulationMode,
-					request.uniqueRequestIdentifier,
-					transactionToSimulate,
-					safeTransaction,
-				))
-				if (transactionToSimulate.success) {
-					await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
-					await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
+				ethereumClientService,
+				tokenPriceService,
+				transactionExecutor,
+				simulationMode,
+				request.uniqueRequestIdentifier,
+				transactionToSimulate,
+				safeTransaction,
+			))
+			if (transactionToSimulate.success) {
+				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
+				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+			}
+			const popupVisualisation = await simulationResultsPromise
+			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
+			const storedRun = await storeConfirmationRun(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+				if (transaction.type !== 'Transaction') return transaction
+				if (popupVisualisation === undefined) return transaction
+				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
+					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
 				}
-				const popupVisualisation = await simulationResultsPromise
-				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
-				await storeRun(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
-					if (transaction.type !== 'Transaction') return transaction
-					if (popupVisualisation === undefined) return transaction
-					if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
-						if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
-					}
-					if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
-					return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
-				})
+				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
+				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 			})
+			await relabelStoredRunIfAddressBookChangedDuringIt(ethereumClientService.getRpcEntry(), storedRun)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }

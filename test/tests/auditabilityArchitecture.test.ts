@@ -21,7 +21,7 @@ const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePend
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const confirmationRunStorageSource = await Bun.file(new URL('../../app/ts/background/confirmationRunStorage.ts', import.meta.url)).text()
 const confirmationRelabelSource = await Bun.file(new URL('../../app/ts/background/confirmationRelabel.ts', import.meta.url)).text()
-const addressBookChangeCountSource = await Bun.file(new URL('../../app/ts/background/addressBookChangeCount.ts', import.meta.url)).text()
+const storageVariablesSource = await Bun.file(new URL('../../app/ts/background/storageVariables.ts', import.meta.url)).text()
 const addressBookChangePublicationSource = await Bun.file(new URL('../../app/ts/background/addressBookChangePublication.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const storedRunVisualisationSource = await Bun.file(new URL('../../app/ts/background/storedRunVisualisation.ts', import.meta.url)).text()
@@ -134,7 +134,7 @@ test('popup method guards reject inherited object keys', () => {
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
 	// A refreshed direct Safe execution carries a new confirmation run, so the refresh persists through the confirmation-run writer.
-	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?simulateAndStoreConfirmationRun\(/u)
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?storeConfirmationRun\(/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
@@ -154,24 +154,31 @@ test('the simulation and utils layers take the metadata lookup types from types/
 	assert.deepEqual(offendingFiles, [])
 })
 
-test('confirmation runs are stored through the confirmation-run storage, which catches up on address-book changes published during a run', () => {
-	// The publish step only counts its change; each run reads the count before its lookups and after it is stored, so no module marks runs from a distance.
-	assert.match(addressBookChangePublicationSource, /countPublishedAddressBookChange\(\)[\s\S]*?relabelDisplayedConfirmationSimulation\(/u)
-	assert.doesNotMatch(addressBookChangePublicationSource, /from '\.\/confirmationRunStorage\.js'/u)
-	// The count lives in its own module, so the run storage depends on neither the publication nor the re-labels it starts.
-	assert.doesNotMatch(confirmationRunStorageSource, /from '\.\/addressBookChangePublication\.js'/u)
-	assert.doesNotMatch(addressBookChangeCountSource, /^import /mu)
-	assert.match(confirmationRunStorageSource, /getPublishedAddressBookChangeCount\(\)[\s\S]*?await simulateAndStore\([\s\S]*?getPublishedAddressBookChangeCount\(\)/u)
-	// The re-label does not depend on the storage, so the storage can request it without an import cycle.
-	assert.doesNotMatch(confirmationRelabelSource, /from '\.\/confirmationRunStorage\.js'/u)
-	// Every workflow that stores a confirmation run depends on the storage, not on the re-label.
+test('the confirmation-run writer only stores, and each confirmation workflow catches the run it stored up on address-book changes made during it', () => {
+	// The writer depends only on the pending-confirmation storage: no re-label, publication or address-book revision.
+	assert.deepEqual([...confirmationRunStorageSource.matchAll(/^import .* from '([^']+)'$/gmu)].map(([, module]) => module), ['../types/accessRequest.js', '../utils/requests.js', './storageVariables.js'])
+	assert.doesNotMatch(confirmationRunStorageSource, /[Rr]elabel\w*\(|AddressBookRevision/u)
+	// The publication starts its re-labels and knows nothing of runs in flight; the address-book write itself advances the revision.
+	assert.doesNotMatch(addressBookChangePublicationSource, /confirmationRunStorage\.js|AddressBookRevision/u)
+	// Every workflow that stores a confirmation run stores it with the writer and then requests the catch-up for the run the writer returned.
 	for (const [name, source] of [['windows/confirmTransaction.ts', confirmTransactionSource], ['safeSignerSelectionRefresh.ts', safeSignerSelectionRefreshSource], ['popupMessageHandlers.ts', popupMessageHandlersSource]] as const) {
-		assert.doesNotMatch(source, /from '[^']*confirmationRelabel\.js'/u, name)
-		assert.match(source, /simulateAndStoreConfirmationRun\(/u, name)
+		const storeCalls = [...source.matchAll(/const (\w+) = await storeConfirmationRun\(/gu)].map(([, storedRun]) => storedRun)
+		assert.notDeepEqual(storeCalls, [], name)
+		assert.equal(storeCalls.length, [...source.matchAll(/storeConfirmationRun\(/gu)].length, name)
+		for (const storedRun of storeCalls) assert.match(source, new RegExp(`await relabelStoredRunIfAddressBookChangedDuringIt\\([^,]+, ${ storedRun }\\)`, 'u'), name)
 	}
-	// Only simulateAndStoreConfirmationRun hands out the writer, and it reads the count before the run's first lookup, so no stored run can skip the catch-up re-label.
-	assert.match(confirmationRunStorageSource, /export type StoreConfirmationRun\b/u)
-	assert.doesNotMatch(confirmationRunStorageSource, /export (?:const|async function|function) storeConfirmationRun\b/u)
+})
+
+test('only the address-book storage writes the stored names a metadata lookup reads, through the one writer that advances the address-book revision', async () => {
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const lookupStorageKeyWrite = /browserStorageLocalSet2?\(\{[^}]*\b(?:userAddressBookEntriesV3|ensNameHashes|ensLabelHashes)\b/u
+	const offendingFiles: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory })) {
+		if (lookupStorageKeyWrite.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) offendingFiles.push(file)
+	}
+	assert.deepEqual(offendingFiles, [])
+	assert.match(storageVariablesSource, /async function writeAddressBookStorage\(items: AddressBookStorageItems\) \{\n\tawait addressBookRevisionSemaphore\.execute\(async \(\) => \{\n\t\tawait browserStorageLocalSet\(items\)\n\t\taddressBookRevision \+= 1\n/u)
+	assert.equal([...storageVariablesSource.matchAll(/addressBookRevision \+= 1/gu)].length, 1)
 })
 
 test('the stored-data visualisation of a re-label lives apart from live simulation and builds the same typed lookups', () => {
