@@ -16,7 +16,7 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { getSimulationSettingsSnapshot } from './settings.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
 import { addPendingTransactionBatch, getWalletSendCallTransactionIdentifier, isTransactionBatchOnStack, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
@@ -27,7 +27,7 @@ import { refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './
 import { formRejectMessage } from './confirmationReplies.js'
 import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, updateViewAfterPendingRequestRemoved } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
-import { isSimulationModeSafeAccount } from './safeTransactionConfirmation.js'
+import { isSimulationModeSafeAccount } from '../safe/safeExecutionRouting.js'
 import { getTransactionBatchCallGasPayment } from '../safe/safePendingFlow.js'
 
 // Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window admits every batch through admitTransactionBatch, and its generic dispatch hands every batch to resolvePendingTransactionBatch.
@@ -200,7 +200,7 @@ export async function admitTransactionBatch(
 	// The binding is the batch's only website origin and account; the website's icon and title are kept for display only.
 	const binding = { websiteOrigin: website.websiteOrigin, account: batchRequest.account, chainId: batchRequest.chainId }
 	// Decided before the confirmation lock, as a single transaction's Gnosis Safe preparation is.
-	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, binding.account)
+	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()), binding.account)
 	const outcome = await runWithPendingConfirmationLock(async () => {
 		// Checked and recorded while holding the confirmation lock, so two concurrent requests cannot both claim the same batch id.
 		if (await isWalletSendCallsIdInUse(binding.websiteOrigin, batchId)) return formRejectMessage(walletSendCallsIdInUseError.code, walletSendCallsIdInUseError.message)

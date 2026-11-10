@@ -59,6 +59,10 @@ const importsFrom = (source: string, modulePath: string) => new RegExp(`^import 
 
 test('the batch owner depends on the shared confirmation support modules, not on the confirmation window it is dispatched from', () => {
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'windows/confirmTransaction.js'), false)
+	// Nor on any module of the single-transaction, message or Gnosis Safe confirmation flows.
+	for (const singleTransactionModule of ['confirmTransactionSimulation.js', 'safeTransactionConfirmation.js', 'safeConfirmationResolver.js', 'safeConfirmationPersistence.js', 'safeSignerSelectionRefresh.js', 'safeStackState.js', 'popupMessageHandlers.js', 'windows/personalSign.js']) {
+		assert.equal(importsFrom(walletSendCallsConfirmationSource, singleTransactionModule), false, singleTransactionModule)
+	}
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'transactionPreparation.js'), true)
 	for (const supportSource of [...Object.values(confirmationSupportSources), transactionPreparationSource]) {
 		assert.equal(importsFrom(supportSource, 'windows/confirmTransaction.js'), false)
@@ -255,4 +259,16 @@ test('a batch stores its website origin and account only in its binding', () => 
 	assert.match(batchBase, /\tbinding: WalletSendCallsBinding,/u)
 	assert.doesNotMatch(batchBase, /\t(?:activeAddress|website|websiteOrigin|account):/u)
 	for (const source of [walletSendCallsConfirmationSource, walletSendCallsBatchIdsSource, walletSendCallsBindingSource]) assert.doesNotMatch(source, /pendingBatch\.(?:activeAddress|website)\b|pending\.website\b/u)
+})
+
+test('both confirmation flows decide whether an account is a simulation-mode Gnosis Safe with one predicate from the shared Safe layer', async () => {
+	const safeExecutionRoutingSource = await readSource('safe/safeExecutionRouting.ts')
+	const safeTransactionConfirmationSource = await readSource('background/safeTransactionConfirmation.ts')
+	assert.match(safeExecutionRoutingSource, /^export async function isSimulationModeSafeAccount\(/mu)
+	// The shared Safe layer reads no extension storage; its callers pass the address book entries of the chain.
+	assert.doesNotMatch(safeExecutionRoutingSource, /from '\.\.\/background\//u)
+	for (const flowSource of [safeTransactionConfirmationSource, walletSendCallsConfirmationSource]) {
+		assert.doesNotMatch(flowSource, /function isSimulationModeSafeAccount\b/u)
+		assert.match(flowSource, /^import \{[^}\n]*\bisSimulationModeSafeAccount\b[^}\n]*\} from '\.\.\/safe\/safeExecutionRouting\.js'$/mu)
+	}
 })
