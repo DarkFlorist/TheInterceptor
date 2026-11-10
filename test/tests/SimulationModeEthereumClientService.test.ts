@@ -20,7 +20,8 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
-import { isAppliedEip7702Authorization, normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
+import { getApplicableEip7702Authority, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -302,6 +303,13 @@ describe('SimulationModeEthereumClientService', () => {
 		type: '7702',
 		authorizationList: [],
 	} as const
+	// The node recovers an authorization's authority from its signature alone, so tests sign with test keys instead of naming an authority.
+	const testAuthorityPrivateKey = '0x000000000000000000000000000000000000000000000000000000000000beef'
+	const testAuthority = EthereumAddress.parse(addr.fromPrivateKey(testAuthorityPrivateKey))
+	const signTestAuthorization = (chainId: bigint, nonce: bigint, address = 0n, privateKey = testAuthorityPrivateKey) => {
+		const signed = eip7702Authorization.sign({ address: addressString(address), chainId, nonce }, privateKey)
+		return { chainId, address, nonce, r: BigInt(signed.r), s: BigInt(signed.s), yParity: signed.yParity === 0 ? 'even' as const : 'odd' as const }
+	}
 
 	test('preserves the 20-byte sender width when deriving contract addresses', () => {
 		const senderWithLeadingZeroBytes = 1n
@@ -528,21 +536,13 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('sponsored 7702 authorizations increment both the sponsor and authority nonces', async () => {
-			const authority = 0x0000000000000000000000000000000000000004n
+			const authority = testAuthority
 			const simulationState = await createSimulationState(ethereum, undefined, [{
 				stateOverrides: {},
 				transactions: [{
 					signedTransaction: mockSignTransaction({
 						...example7702Transaction,
-						authorizationList: [{
-							chainId: rpcNetwork.chainId,
-							address: 0n,
-							nonce: 0n,
-							authority,
-							r: 1n,
-							s: 2n,
-							yParity: 'even',
-						}],
+						authorizationList: [{ ...signTestAuthorization(rpcNetwork.chainId, 0n), authority }],
 					}),
 					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 					created: new Date(),
@@ -560,21 +560,13 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('input-based nonce and estimation account for sponsored 7702 authorities', async () => {
-			const authority = 0x0000000000000000000000000000000000000004n
+			const authority = testAuthority
 			const simulationStateInput = [{
 				stateOverrides: {},
 				transactions: [{
 					signedTransaction: mockSignTransaction({
 						...example7702Transaction,
-						authorizationList: [{
-							chainId: rpcNetwork.chainId,
-							address: 0n,
-							nonce: 0n,
-							authority,
-							r: 1n,
-							s: 2n,
-							yParity: 'even',
-						}],
+						authorizationList: [{ ...signTestAuthorization(rpcNetwork.chainId, 0n), authority }],
 					}),
 					website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 					created: new Date(),
@@ -602,17 +594,16 @@ describe('SimulationModeEthereumClientService', () => {
 
 		describe('EIP-7702 authorization nonce accounting', () => {
 			const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
-			const authorityPrivateKey = '0x000000000000000000000000000000000000000000000000000000000000beef'
-			const authority = EthereumAddress.parse(addr.fromPrivateKey(authorityPrivateKey))
+			const authority = testAuthority
 			const sponsor = exampleTransaction.from
 			const delegate = 0x00000000000000000000000000000000000d1e9an
-			const signAuthorization = (chainId: bigint, nonce: bigint) => {
-				const signed = eip7702Authorization.sign({ address: addressString(delegate), chainId, nonce }, authorityPrivateKey)
-				return { chainId, address: delegate, nonce, r: BigInt(signed.r), s: BigInt(signed.s), yParity: signed.yParity === 0 ? 'even' as const : 'odd' as const }
-			}
+			const signAuthorization = (chainId: bigint, nonce: bigint) => signTestAuthorization(chainId, nonce, delegate)
 			const withHighS = (authorization: ReturnType<typeof signAuthorization>) => ({ ...authorization, s: SECP256K1_ORDER - authorization.s, yParity: authorization.yParity === 'even' ? 'odd' as const : 'even' as const })
-			const authorizationTransaction = async (from: bigint, nonce: bigint, authorizations: readonly ReturnType<typeof signAuthorization>[], transactionIdentifier: bigint) => ({
-				signedTransaction: mockSignTransaction({ ...example7702Transaction, chainId: rpcNetwork.chainId, from, nonce, authorizationList: await normalizeEip7702AuthorizationList(authorizations) }),
+			type StackedAuthorization = Parameters<typeof mockSignTransaction>[0] extends infer Transaction ? Transaction extends { readonly authorizationList: readonly (infer Authorization)[] } ? Authorization : never : never
+			// Authorizations as they reach the stack: website ones normalized (their authority recovered), or as given, like an imported stack's that keep metadata next to their signature.
+			const authorizationTransaction = async (from: bigint, nonce: bigint, authorizations: readonly ReturnType<typeof signAuthorization>[], transactionIdentifier: bigint) => stackedTransaction(from, nonce, await normalizeEip7702AuthorizationList(authorizations), transactionIdentifier)
+			const stackedTransaction = (from: bigint, nonce: bigint, authorizationList: readonly StackedAuthorization[], transactionIdentifier: bigint) => ({
+				signedTransaction: mockSignTransaction({ ...example7702Transaction, chainId: rpcNetwork.chainId, from, nonce, authorizationList }),
 				website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 				created: new Date(),
 				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ type: '7702', authorizationList: [] }]},
@@ -671,7 +662,7 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(await authorityNonceAfter([await authorizationTransaction(authority, 0n, [signAuthorization(rpcNetwork.chainId, 1n)], 210n)]), 2n)
 			})
 
-			test('an authority with contract code accepts no authorization, one with a delegation indicator does', async () => {
+			test('an authority with contract code accepts no authorization, one with a delegation designator does', async () => {
 				try {
 					requestHandler.codeByAddress.set(authority, '0x6080604052')
 					assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 211n)]), 0n)
@@ -682,12 +673,79 @@ describe('SimulationModeEthereumClientService', () => {
 				}
 			})
 
-			test('the s value bound is secp256k1n/2 and an unsigned authorization never applies', () => {
-				const authorityState = { chainId: rpcNetwork.chainId, authorityNonce: 0n, authorityCode: new Uint8Array() }
-				const authorization = { chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority, r: 1n, yParity: 'even' as const }
-				assert.equal(isAppliedEip7702Authorization({ ...authorization, s: SECP256K1_ORDER / 2n }, authorityState), true)
-				assert.equal(isAppliedEip7702Authorization({ ...authorization, s: SECP256K1_ORDER / 2n + 1n }, authorityState), false)
-				assert.equal(isAppliedEip7702Authorization({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority }, authorityState), false)
+			test('a mock-signed authorization (r = s = 0) whose metadata names the account raises nothing', async () => {
+				const mockSigned = stackedTransaction(sponsor, 0n, [{ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority }], 213n)
+				const [authorization] = mockSigned.signedTransaction.type === '7702' ? mockSigned.signedTransaction.authorizationList : []
+				assert.deepEqual([authorization?.r, authorization?.s, authorization?.authority], [0n, 0n, authority])
+				assert.equal(await authorityNonceAfter([mockSigned]), 0n)
+			})
+
+			test('an imported authorization counts for the account its signature recovers, not the one its metadata names', async () => {
+				const otherSigner = signTestAuthorization(rpcNetwork.chainId, 0n, delegate, '0x000000000000000000000000000000000000000000000000000000000000cafe')
+				const otherSignerAddress = getNodeRecoveredEip7702Authority(otherSigner)
+				if (otherSignerAddress === undefined || otherSignerAddress === authority) throw new Error('expected a second signer')
+				const imported = stackedTransaction(sponsor, 0n, [{ ...otherSigner, authority }], 214n)
+				assert.equal(await authorityNonceAfter([imported]), 0n)
+				const simulationState = await createSimulationState(ethereum, undefined, stackOf([imported]))
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(simulationState), otherSignerAddress), 1n)
+			})
+		})
+
+		describe('EIP-7702 authorization validity (getApplicableEip7702Authority)', () => {
+			const accepting = (nonce: bigint) => () => ({ nonce, acceptsAuthorization: true })
+			const delegate = 0x00000000000000000000000000000000000d1e9an
+
+			test('the nonce must be below 2**64 - 1', () => {
+				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 2n, delegate), rpcNetwork.chainId, accepting(2n ** 64n - 2n)), testAuthority)
+				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 1n, delegate), rpcNetwork.chainId, accepting(2n ** 64n - 1n)), undefined)
+			})
+
+			test('the chain ID must be 0 or this chain', () => {
+				assert.equal(getApplicableEip7702Authority(signTestAuthorization(0n, 0n, delegate), rpcNetwork.chainId, accepting(0n)), testAuthority)
+				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 0n, delegate), rpcNetwork.chainId, accepting(0n)), testAuthority)
+				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId + 1n, 0n, delegate), rpcNetwork.chainId, accepting(0n)), undefined)
+			})
+
+			test('s may be at most secp256k1n/2, and r and s must be nonzero', () => {
+				// r = 1 is the x coordinate of a curve point, so these signatures recover some authority.
+				const authorization = { chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, r: 1n, yParity: 'even' as const }
+				assert.notEqual(getApplicableEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER }, rpcNetwork.chainId, accepting(0n)), undefined)
+				assert.equal(getApplicableEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER + 1n }, rpcNetwork.chainId, accepting(0n)), undefined)
+				assert.equal(getNodeRecoveredEip7702Authority({ ...authorization, s: 0n }), undefined)
+				assert.equal(getNodeRecoveredEip7702Authority({ ...authorization, r: 0n, s: 1n }), undefined)
+				assert.equal(getNodeRecoveredEip7702Authority({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority: testAuthority }), undefined)
+			})
+
+			test('an in-range signature no public key recovers from is skipped, not thrown', () => {
+				const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+				const request = { chainId: rpcNetwork.chainId, address: addressString(delegate), nonce: 0n }
+				const toAuthorization = (r: bigint, s: bigint, yParity: 0 | 1) => ({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, r, s, yParity: yParity === 0 ? 'even' as const : 'odd' as const })
+				// r = 5 is no curve point's x coordinate.
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: 5n, s: 7n, yParity: 0 }), /^Error: bad point:/)
+				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(5n, 7n, 0)), undefined)
+				// With R = kG and s = e / k, recovery gives r^-1 (sR - eG), the point at infinity; the low-s form recovers the same.
+				const messageHash = BigInt(dataStringWith0xStart(eip7702Authorization._getHash(request))) % SECP256K1_ORDER
+				const k = 123456789n
+				const point = secp256k1.ProjectivePoint.BASE.multiply(k).toAffine()
+				const inverse = (value: bigint) => {
+					let result = 1n
+					for (let base = value, exponent = SECP256K1_ORDER - 2n; exponent > 0n; base = base * base % SECP256K1_ORDER, exponent >>= 1n) if ((exponent & 1n) === 1n) result = result * base % SECP256K1_ORDER
+					return result
+				}
+				const highOrLowS = messageHash * inverse(k) % SECP256K1_ORDER
+				const yParity = point.y % 2n === 0n ? 0 : 1
+				const [s, lowSParity] = highOrLowS <= SECP256K1_HALF_ORDER ? [highOrLowS, yParity] as const : [SECP256K1_ORDER - highOrLowS, 1 - yParity === 0 ? 0 : 1] as const
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: point.x, s, yParity: lowSParity }), /^Error: invalid recovery:/)
+				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(point.x, s, lowSParity)), undefined)
+			})
+
+			test('the authority must accept authorizations and have the authorization nonce', () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, () => ({ nonce: 0n, acceptsAuthorization: false })), undefined)
+				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, () => ({ nonce: 0n, acceptsAuthorization: undefined })), undefined)
+				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, () => ({ nonce: undefined, acceptsAuthorization: true })), undefined)
+				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, accepting(1n)), undefined)
 			})
 		})
 

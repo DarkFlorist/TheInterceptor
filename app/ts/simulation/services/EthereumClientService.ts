@@ -16,7 +16,7 @@ import { authorizesExecutedCall, type BlockTimeManipulation, type SimulationStat
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
-import { isEip7702DelegationIndicator, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -119,6 +119,12 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
 	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit))
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
+}
+
+// The delegate an EIP-7702 delegation designator (0xef0100 followed by the delegate's address) points to, or undefined for any other code.
+export const getDelegateFromCode = (code: Uint8Array) => {
+	if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
+	return BigInt(`0x${ dataString(code.slice(3)) }`)
 }
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
@@ -238,9 +244,7 @@ export class EthereumClientService {
 	}
 
 	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const code = await this.getCode(address, blockTag, requestAbortController)
-		if (!isEip7702DelegationIndicator(code)) return undefined
-		return BigInt(`0x${ dataString(code.slice(3)) }`)
+		return getDelegateFromCode(await this.getCode(address, blockTag, requestAbortController))
 	}
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>

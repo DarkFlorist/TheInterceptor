@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
+import { type EthereumClientService, getDelegateFromCode, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
@@ -22,7 +22,7 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { createEip1559Or7702Transaction, isAppliedEip7702Authorization, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction, getApplicableEip7702Authority, getNodeRecoveredEip7702Authority, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -300,19 +300,23 @@ const isInactivePrecompileRelocationError = (error: unknown) => error instanceof
 // A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
 const getNonceRaisingCall = (transaction: RpcTransaction) => transaction.executedTransaction === undefined && authorizesExecutedCall(transaction.simulationOptions) ? undefined : getExecutedTransaction(transaction)
 
-// The account's nonce after the transactions, from its on-chain nonce at the block tag. Each call raises its sender's nonce, then each of its EIP-7702 authorizations the node applies raises its authority's (isAppliedEip7702Authorization); one it skips raises nothing. The account's code only matters while it is an authority; it reads that code once, since an applied authorization only writes a delegation indicator.
+// The account's nonce after the transactions, from its on-chain nonce at the block tag. Each call raises its sender's nonce, then each of its EIP-7702 authorizations the node applies raises its recovered authority's (getApplicableEip7702Authority); one it skips raises nothing, and authority metadata is never trusted. The account's code only matters while it is a recovered authority; it reads that code once, since an applied authorization only writes a delegation designator.
 const getTransactionCountAfterTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, transactions: Iterable<RpcTransaction>, address: bigint, blockTag: EthereumBlockTag) => {
 	let nonce = await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
-	let code: Uint8Array | undefined
+	let acceptsAuthorization: boolean | undefined
+	const getAuthorityState = (authority: bigint) => authority === address ? { nonce, acceptsAuthorization } : { nonce: undefined, acceptsAuthorization: undefined }
 	for (const transaction of transactions) {
 		const call = getNonceRaisingCall(transaction)
 		if (call === undefined) continue
 		if (call.from === address) nonce += 1n
 		if (call.type !== '7702') continue
 		for (const authorization of call.authorizationList) {
-			if (authorization.authority !== address) continue
-			code ??= await ethereumClientService.getCode(address, blockTag, requestAbortController)
-			if (isAppliedEip7702Authorization(authorization, { chainId: ethereumClientService.getChainId(), authorityNonce: nonce, authorityCode: code })) nonce += 1n
+			if (getNodeRecoveredEip7702Authority(authorization) !== address) continue
+			if (acceptsAuthorization === undefined) {
+				const code = await ethereumClientService.getCode(address, blockTag, requestAbortController)
+				acceptsAuthorization = code.length === 0 || getDelegateFromCode(code) !== undefined
+			}
+			if (getApplicableEip7702Authority(authorization, ethereumClientService.getChainId(), getAuthorityState) === address) nonce += 1n
 		}
 	}
 	return nonce
