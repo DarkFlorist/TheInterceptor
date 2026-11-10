@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
-import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
+import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
@@ -493,33 +493,120 @@ describe('settings import', () => {
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 
-	const buildExportsOfEveryVersion = async () => {
-		const { exportSettingsAndAddressBook } = await settingsModulePromise
-		return [
-			buildVersion10Import(),
-			buildVersion12Import(true, true),
-			buildVersion13Import(),
-			buildVersion14Import(true, true, [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, access: true }]),
-			await exportSettingsAndAddressBook(),
-		]
-	}
+	const preImportSigningPreference = { signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
 
 	const storePreImportSettings = async () => {
 		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: testRpcNetwork, activeSimulationAddress: 0x9292929292929292929292929292929292929292n, activeSigningAddress: 0x9393939393939393939393939393939393939393n, activeSigningSafeAddress: 0x9494949494949494949494949494949494949494n })
-		await rememberSigningAddressPreference({ signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer', chainId: testRpcNetwork.chainId })
+		await rememberSigningAddressPreference(preImportSigningPreference)
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'pre-import.example', icon: undefined, title: 'Pre-import' }, access: false }])
 		await setPage({ page: 'Home' })
 		await setUseTabsInsteadOfPopup(false)
 		await setSafeAppsCompatibilityMode(true)
-		await persistMetamaskCompatibilityMode(false)
+		await persistMetamaskCompatibilityMode(true)
 	}
+
+	// One export per accepted version, each with a check of the values that version imports or preserves over storePreImportSettings.
+	const buildImportOfEveryVersion = async () => {
+		const settings = await settingsModulePromise
+		const version15SimulationAddress = 0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1n
+		const version15SigningSafeAddress = 0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2n
+		const version15SigningPreference = { signerAddress: 0xa3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3n, selection: 'safe' as const, safeAddress: version15SigningSafeAddress, chainId: testRpcNetwork.chainId }
+		const version11Import: ExportedSettings = {
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.1',
+			exportedDate: '2026-05-21',
+			settings: {
+				activeSimulationAddress: 0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4n,
+				rpcNetwork: testRpcNetwork,
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: true,
+				addressInfos: [],
+				contacts: undefined,
+				useTabsInsteadOfPopup: true,
+			},
+		}
+		const version15Import: ExportedSettings = {
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.5',
+			exportedDate: '2026-05-21',
+			settings: {
+				activeSimulationAddress: version15SimulationAddress,
+				activeSigningSafeAddress: version15SigningSafeAddress,
+				signingAddressPreferences: [version15SigningPreference],
+				rpcNetwork: testRpcNetwork,
+				openedPage: { page: 'Settings' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: false,
+				addressBookEntries: [{ type: 'safe', name: 'Version 1.5 signing Safe', address: version15SigningSafeAddress, chainId: testRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [version15SigningPreference.signerAddress] }],
+				useTabsInsteadOfPopup: false,
+				metamaskCompatibilityMode: false,
+			},
+		}
+		const assertResetsSigningState = async () => {
+			assert.deepEqual(await settings.getSigningAddressPreferences(), [])
+			assert.equal((await settings.getSettings()).activeSigningSafeAddress, undefined)
+			assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+		}
+		return [
+			{ exportedSettings: buildVersion10Import(), assertImportedValues: async () => {
+				await assertResetsSigningState()
+				assert.equal((await settings.getSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
+				assert.equal(await settings.getMetamaskCompatibilityMode(), true, 'version 1.0 has no compatibility mode, so the stored one is kept')
+			} },
+			{ exportedSettings: version11Import, assertImportedValues: async () => {
+				await assertResetsSigningState()
+				assert.equal((await settings.getSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
+				assert.deepEqual((await settings.getSettings()).activeRpcNetwork, testRpcNetwork)
+				assert.equal((await settings.getSettings()).simulationMode, true)
+				assert.equal(await settings.getUseTabsInsteadOfPopup(), true)
+				assert.equal(await settings.getMetamaskCompatibilityMode(), true, 'version 1.1 has no compatibility mode, so the stored one is kept')
+			} },
+			{ exportedSettings: buildVersion12Import(true, false), assertImportedValues: async () => {
+				await assertResetsSigningState()
+				assert.equal(await settings.getUseTabsInsteadOfPopup(), true)
+				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
+			} },
+			{ exportedSettings: buildVersion13Import(), assertImportedValues: async () => {
+				await assertResetsSigningState()
+				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
+				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
+			} },
+			{ exportedSettings: buildVersion14Import(true, false, [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, access: true }]), assertImportedValues: async () => {
+				await assertResetsSigningState()
+				assert.deepEqual((await settings.getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['imported.example'])
+				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
+			} },
+			{ exportedSettings: version15Import, assertImportedValues: async () => {
+				const importedSettings = await settings.getSettings()
+				assert.equal(importedSettings.activeSimulationAddress, version15SimulationAddress)
+				assert.equal(importedSettings.activeSigningSafeAddress, version15SigningSafeAddress)
+				assert.deepEqual(await settings.getSigningAddressPreferences(), [version15SigningPreference])
+				assert.equal(await settings.getSafeAppsCompatibilityMode(), false, 'version 1.5 has no Safe Apps compatibility, so it is reset')
+				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
+				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
+			} },
+			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
+				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
+				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
+			} },
+		]
+	}
+
+	test('the per-version import fixtures cover every export version the import accepts', async () => {
+		const acceptedVersions = ExportedSettings.alternatives.map((alternative) => alternative.fields.version.value)
+		const fixtureVersions = (await buildImportOfEveryVersion()).map(({ exportedSettings }) => exportedSettings.version)
+		assert.deepEqual([...fixtureVersions].sort(), [...acceptedVersions].sort())
+	})
 
 	test('every export version writes all of its storage changes in a single storage set', async () => {
 		const { importSettingsAndAddressBook } = await settingsModulePromise
-		for (const exportedSettings of await buildExportsOfEveryVersion()) {
+		for (const { exportedSettings, assertImportedValues } of await buildImportOfEveryVersion()) {
 			browserMock.reset()
 			await storePreImportSettings()
 			browserMock.takeSetCalls()
@@ -527,12 +614,13 @@ describe('settings import', () => {
 			await importSettingsAndAddressBook(exportedSettings)
 
 			assert.equal(browserMock.takeSetCalls().length, 1, `version ${ exportedSettings.version } import wrote storage more than once`)
+			await assertImportedValues()
 		}
 	})
 
 	test('a failed import storage write leaves storage unchanged for every export version', async () => {
 		const { importSettingsAndAddressBook } = await settingsModulePromise
-		for (const exportedSettings of await buildExportsOfEveryVersion()) {
+		for (const { exportedSettings, assertImportedValues } of await buildImportOfEveryVersion()) {
 			browserMock.reset()
 			await storePreImportSettings()
 			const storageBeforeImport = await readWholeStorage()
@@ -542,6 +630,7 @@ describe('settings import', () => {
 			await assert.rejects(importSettingsAndAddressBook(exportedSettings), writeFailure)
 
 			assert.deepEqual(await readWholeStorage(), storageBeforeImport, `version ${ exportedSettings.version } import changed storage although its write failed`)
+			await assert.rejects(assertImportedValues(), assert.AssertionError, `version ${ exportedSettings.version } fixture imports nothing that differs from the stored settings`)
 		}
 	})
 
@@ -551,7 +640,7 @@ describe('settings import', () => {
 		const laterContactAddress = 0x9898989898989898989898989898989898989898n
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
-		const currentVersionExport = (await buildExportsOfEveryVersion()).at(-1)
+		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
 		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
