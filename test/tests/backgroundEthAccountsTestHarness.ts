@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { recordInstalledServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -258,8 +258,14 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current = initial
-	return {
+	const owner: SimulationServicesOwner = {
 		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		reset: network => {
+			current = reset === undefined ? current : reset(network)
+			recordInstalledServices(current, owner)
+			return current
+		},
 	}
+	recordInstalledServices(current, owner)
+	return owner
 }

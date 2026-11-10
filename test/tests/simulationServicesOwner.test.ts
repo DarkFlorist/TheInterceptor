@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createEthereumClientService, createSimulationServicesOwner, simulationServicesAreCurrent } from '../../app/ts/simulation/serviceLifecycle.js'
 
 test('the service owner publishes the exact pair returned by every reset', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -43,5 +43,24 @@ test('a captured client can execute RPC work after the owner installs its replac
 	} finally {
 		owner.getCurrent().ethereum.cleanup()
 		server.stop(true)
+	}
+})
+
+test('the owner answers whether a pair it handed out is still installed', () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
+	const original = owner.getCurrent()
+	// A temporary client that no owner installed has nothing replacing it.
+	const temporary = createEthereumClientService(rpc, async () => undefined, async (_ethereum, error) => { throw error })
+	try {
+		assert.equal(simulationServicesAreCurrent(original.ethereum), true)
+		// Even a reset to the same endpoint installs a new pair, so work holding the old one steps aside.
+		const replacement = owner.reset(rpc)
+		assert.equal(simulationServicesAreCurrent(original.ethereum), false)
+		assert.equal(simulationServicesAreCurrent(replacement.ethereum), true)
+		assert.equal(simulationServicesAreCurrent(temporary), true)
+	} finally {
+		owner.getCurrent().ethereum.cleanup()
+		temporary.cleanup()
 	}
 })

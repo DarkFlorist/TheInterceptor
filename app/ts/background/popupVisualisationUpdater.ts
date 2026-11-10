@@ -15,19 +15,14 @@ import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycl
 import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 import { getSettings } from './settings.js'
-import type { RpcNetwork } from '../types/rpc.js'
-import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
+import { simulationServicesAreCurrent } from '../simulation/serviceLifecycle.js'
 
 let abortController = new AbortController()
 
-// Signer-only networks render passthrough without using the services.
-const servicesServeNetwork = (ethereum: EthereumClientService, network: RpcNetwork) => isSignerOnlyNetwork(network) || !getRpcNetworkChange(ethereum.getRpcEntry(), network).endpointChanged
-
-// The one rule for acting on a refresh, always read from the current settings because a queued snapshot only says what was selected at enqueue time: its services must serve the current selection, and any snapshot it would execute must not have changed from it. A selection change queues its own refresh by selectionNeedsRefresh, built on the same selectionChanged, so a refresh failing this rule returns without cancelling or publishing.
-const refreshMatchesCurrentSelection = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined) => {
-	const selection = await getSettings()
-	return servicesServeNetwork(ethereum, selection.activeRpcNetwork) && (snapshot === undefined || !selectionChanged(snapshot, selection))
-}
+// The one rule for acting on a refresh, asked of the authority for each half: the owner that installed the services it was handed must still have them installed, and any snapshot it would execute must not have changed from the current settings, because a queued snapshot only says what was selected at enqueue time. Whatever replaces services or changes the selection queues the refresh it needs (activeSettings.ts by selectionNeedsRefresh, built on the same selectionChanged), so a refresh failing this rule returns without cancelling or publishing.
+const refreshStillApplies = async (ethereum: EthereumClientService, snapshot: SimulationSnapshot | undefined) => (
+	simulationServicesAreCurrent(ethereum) && (snapshot === undefined || !selectionChanged(snapshot, await getSettings()))
+)
 
 function buildPassthroughVisualizedState(
 	simulationId: number,
@@ -100,7 +95,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			if (currentFingerprint === cachedFingerprint && (checkedSnapshot.richAddresses.length === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
 		// Nothing awaits between this check and the abort, so a refresh left behind by a selection change never cancels or invalidates the current selection's refresh. Only a supplied snapshot is checked: without one, execution reads the selection itself.
-		if (!await refreshMatchesCurrentSelection(ethereum, snapshot)) return await getPopupVisualisationState()
+		if (!await refreshStillApplies(ethereum, snapshot)) return await getPopupVisualisationState()
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
@@ -159,7 +154,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 			const builtInput = await buildSimulationInput(capturedSnapshot)
 			// The selection can change after this refresh committed, including between the reads above and this check.
-			if (!await refreshMatchesCurrentSelection(ethereum, capturedSnapshot)) return
+			if (!await refreshStillApplies(ethereum, capturedSnapshot)) return
 			const simulationState = await getUpdatedSimulationState(ethereum, builtInput)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
 			const numberOfAddressesMadeRich = capturedSnapshot.richAddresses.length
