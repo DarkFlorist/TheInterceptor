@@ -36,11 +36,11 @@ export async function appendPendingTerminalReplyWithPendingRequestDecision(reply
 	})
 }
 
-// Removes a delivered reply from the outbox and the pending request it answered in one storage write, so a failure leaves both and a retry finds the reply delivered instead of posting it again. Once the request is gone, only the reply is removed.
+// Removes a delivered reply from the outbox and the request still awaiting it, while that request is still ClosedWithoutResponse, in one storage write, so a failure leaves both and a retry finds the reply delivered instead of posting it again. Once the request is gone, only the reply is removed.
 export async function removePendingTerminalReplyWithAnsweredRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, answeredRequest: PendingRequestInstance) {
 	await pendingTerminalRepliesSemaphore.execute(async () => {
 		const pendingTerminalReplies = (await getPendingTerminalReplies()).filter((reply) => !doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		const outcome = await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, pendingTerminalReplies }, answeredRequest, () => ({ type: 'remove' }))
+		const outcome = await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, pendingTerminalReplies }, answeredRequest, (current) => current.approvalStatus.status === 'ClosedWithoutResponse' ? { type: 'remove' } : undefined)
 		if (outcome === 'unchanged') await browserStorageLocalSet({ pendingTerminalReplies })
 	})
 }

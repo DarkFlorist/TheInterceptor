@@ -1,13 +1,14 @@
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
-import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply, removePendingTerminalReplyWithAnsweredRequest } from './pendingTerminalReplies.js'
 import type { DecidePendingRequestInstance, PendingRequestInstance } from './pendingRequestDecisions.js'
+import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
@@ -16,22 +17,27 @@ const terminalReplySemaphore = new Semaphore(1)
 const terminalReplyFlushRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const TERMINAL_REPLY_FLUSH_RETRY_DELAY_MS = 50
 
-// Drops a delivered reply from the outbox, and with it, in the same storage write, the pending request it answered when that request is still pending.
-const removeDeliveredTerminalReply = async (message: InterceptedRequestForward, answeredRequest: PendingRequestInstance | undefined) => answeredRequest === undefined
-	? await removePendingTerminalReply(message.uniqueRequestIdentifier)
-	: await removePendingTerminalReplyWithAnsweredRequest(message.uniqueRequestIdentifier, answeredRequest)
+// Only a popup-close rejection keeps its request pending until it is delivered, marked ClosedWithoutResponse; every other terminal reply removes its request in the storage write that queues the reply. Read from storage, so a delivery after a restart finds it too.
+const findRequestAwaitingDelivery = async (message: InterceptedRequestForward) => (await getPendingTransactionsAndMessages()).find((pending) => pending.approvalStatus.status === 'ClosedWithoutResponse' && doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, message.uniqueRequestIdentifier))
 
-async function finishPreviouslyDeliveredTerminalReply(identifier: string, message: InterceptedRequestForward, answeredRequest?: PendingRequestInstance) {
+// Drops a delivered reply from the outbox and, in the same storage write, the request still awaiting it, so every delivery path, including a flush after a restart, leaves neither behind.
+async function removeDeliveredTerminalReply(message: InterceptedRequestForward) {
+	const answeredRequest = await findRequestAwaitingDelivery(message)
+	if (answeredRequest === undefined) return await removePendingTerminalReply(message.uniqueRequestIdentifier)
+	await removePendingTerminalReplyWithAnsweredRequest(message.uniqueRequestIdentifier, answeredRequest)
+}
+
+async function finishPreviouslyDeliveredTerminalReply(identifier: string, message: InterceptedRequestForward) {
 	if (!completedTerminalReplies.has(identifier)) return false
-	await removeDeliveredTerminalReply(message, answeredRequest)
+	await removeDeliveredTerminalReply(message)
 	completedTerminalReplies.delete(identifier)
 	return true
 }
 
 // The completion marker is set before the outbox cleanup and cleared only after it succeeds, so a delivery whose cleanup failed is finished later without posting the reply again.
-async function recordSuccessfulTerminalReplyDelivery(identifier: string, message: InterceptedRequestForward, keepCompletionMarker: boolean, answeredRequest?: PendingRequestInstance) {
+async function recordSuccessfulTerminalReplyDelivery(identifier: string, message: InterceptedRequestForward, keepCompletionMarker: boolean) {
 	completedTerminalReplies.add(identifier)
-	await removeDeliveredTerminalReply(message, answeredRequest)
+	await removeDeliveredTerminalReply(message)
 	if (!keepCompletionMarker) completedTerminalReplies.delete(identifier)
 }
 
@@ -54,16 +60,15 @@ export async function queueTerminalReplyWithPendingRequestDecision(message: Inte
 	}
 }
 
-// answeredRequest, when given, is a pending request kept until its reply is delivered; it is removed in the same storage write that drops the delivered reply from the outbox.
-export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward, answeredRequest?: PendingRequestInstance) {
+export async function attemptQueuedTerminalReplyDelivery(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	const identifier = getUniqueRequestIdentifierString(message.uniqueRequestIdentifier)
 	const existingProduction = terminalReplyProductions.get(identifier)
 	if (existingProduction !== undefined) return await existingProduction
 	const production = (async () => {
 		const deliver = async () => await terminalReplySemaphore.execute(async () => {
-			if (await finishPreviouslyDeliveredTerminalReply(identifier, message, answeredRequest)) return true
+			if (await finishPreviouslyDeliveredTerminalReply(identifier, message)) return true
 			const delivery = replyToInterceptedRequest(websiteTabConnections, message)
-			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false, answeredRequest)
+			if (delivery === true) await recordSuccessfulTerminalReplyDelivery(identifier, message, false)
 			return delivery
 		})
 		return await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, deliver)
@@ -86,7 +91,7 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 			if (replySocket.tabId !== socket.tabId || replySocket.connectionName !== socket.connectionName) continue
 			const identifier = getUniqueRequestIdentifierString(reply.uniqueRequestIdentifier)
 			if (completedTerminalReplies.has(identifier)) {
-				await removePendingTerminalReply(reply.uniqueRequestIdentifier)
+				await removeDeliveredTerminalReply(reply)
 				continue
 			}
 			if (replyToInterceptedRequest(websiteTabConnections, reply) !== true) continue

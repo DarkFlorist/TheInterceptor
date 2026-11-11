@@ -702,3 +702,23 @@ test('a delivered popup-close rejection is not posted again when a storage write
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })
+
+test('after a restart, a reconnecting page gets a queued popup-close rejection once and its request leaves the queue', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	// What the popup-close claim write leaves when the background stops before delivering: the request marked ClosedWithoutResponse and its rejection queued, with none of the in-memory delivery state a restart loses.
+	await modules.updateStoredPendingRequest(pageRequestIdentifier, (current) => ({ ...current, approvalStatus: { status: 'ClosedWithoutResponse' } }))
+	await modules.browserStorageLocalSet({ pendingTerminalReplies: [rejectionOf(pending)] })
+
+	// The page reconnects and its queued replies are flushed.
+	assert.equal(await modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket), 1)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+
+	// Startup recovery resolves requests whose confirmation window is gone, which must not answer this request again.
+	browserMock.setLiveWindowIds([])
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, page.connections)
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+})
