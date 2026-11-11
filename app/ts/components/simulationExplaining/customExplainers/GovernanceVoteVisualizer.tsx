@@ -80,7 +80,7 @@ const formatExecutionTime = (blockTimeManipulation: BlockTimeManipulation | unde
 const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, governanceSimulationState, requestErrorText, simulateGovernanceVote }: ShowSuccessOrFailureParams) => {
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
-	// The background simulates the proposal's execution as the last block of the reply. A Compound Timelock executes each action in its own call, so that block can hold several transactions.
+	// The background simulates the proposal's execution as the last block of the reply, one transaction that executes all of its actions. Every transaction of that block is shown.
 	const executionBlock = useComputed(() => {
 		if (simulateExecutionReply.value?.data.success !== true) return undefined
 		const visualizedBlocks = simulateExecutionReply.value.data.result.visualizedSimulationState.visualizedBlocks

@@ -1,9 +1,11 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { gasLimitsByNeed, getProposalCreatedSearchRange, getTransactionGasLimit, MAXIMUM_BLOCKS_PER_LOG_QUERY, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, simulateGovernanceProposalExecution, splitIntoLogQueries } from '../../app/ts/simulation/governanceProposalExecution.js'
+import { GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, simulateGovernanceProposalExecution, splitIntoLogQueries } from '../../app/ts/simulation/governanceProposalExecution.js'
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { addressString } from '../../app/ts/utils/bigint.js'
+import { addressString, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
+import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCodes.js'
+import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
@@ -23,25 +25,37 @@ const simulateRequests = (requests: readonly EthereumJsonRpcRequest[]) => reques
 const hasOverrides = (stateOverrides: object | undefined) => Object.keys(stateOverrides ?? {}).length > 0
 
 /**
- * The preview's override rule: the governor and the proposal never choose a state override. The only overrides any request may carry are those the user's simulation stack gets from its own preparation, at the stack's own block positions, and every block after the stack carries none.
+ * The preview's override rule. At the stack's own block positions a request may carry only the overrides the stack's own preparation produced. After the stack, a block may carry only GovernorProposalForwarder at the governor's address with the governor's own code, as the node returned it, moved to GOVERNOR_CODE_ADDRESS, and nothing else at any address. Returns whether the forwarder was used.
  */
-const assertOnlyStackOverrides = async (ethereum: EthereumClientService, requests: readonly EthereumJsonRpcRequest[], stack: SimulationStateInput) => {
+const assertOverrideRule = async (ethereum: EthereumClientService, requests: readonly EthereumJsonRpcRequest[], resultOf: (request: EthereumJsonRpcRequest) => unknown, stack: SimulationStateInput, governor: bigint) => {
 	const getStackOverrides = async () => {
 		if (stack.length === 0) return []
 		const latestBlock = await ethereum.getBlock(undefined)
 		if (latestBlock === null) throw new Error('Expected the latest block')
-		return (await ethereum.ethSimulateV1Input(stack, latestBlock.number, undefined)).params[0].blockStateCalls.map((block) => block.stateOverrides ?? {})
+		return (await ethereum.pinnedToBlock(latestBlock).ethSimulateV1Input(stack, latestBlock.number, undefined)).params[0].blockStateCalls.map((block) => block.stateOverrides ?? {})
 	}
 	const stackOverrides = await getStackOverrides()
+	const governorCodeRequest = requests.find((request) => request.method === 'eth_getCode' && request.params[0] === governor)
+	const forwarderOverrides = governorCodeRequest === undefined ? undefined : {
+		[addressString(governor)]: { code: getGovernorProposalForwarder() },
+		[addressString(GOVERNOR_CODE_ADDRESS)]: { code: EthereumData.parse(resultOf(governorCodeRequest)) },
+	}
+	let forwarderUsed = false
 	for (const simulation of simulateRequests(requests)) {
 		for (const [blockIndex, block] of simulation.blockStateCalls.entries()) {
 			if (!hasOverrides(block.stateOverrides)) continue
-			assert.ok(blockIndex < stackOverrides.length, `block ${ blockIndex }, after the stack, carries state overrides`)
-			assert.deepStrictEqual(block.stateOverrides, stackOverrides[blockIndex])
+			if (blockIndex < stackOverrides.length) {
+				assert.deepStrictEqual(block.stateOverrides, stackOverrides[blockIndex])
+				continue
+			}
+			assert.ok(forwarderOverrides !== undefined, `block ${ blockIndex }, after the stack, carries state overrides`)
+			assert.deepStrictEqual(block.stateOverrides, forwarderOverrides)
+			forwarderUsed = true
 		}
 	}
 	// The stack's own overrides are kept: the execution runs on top of them.
 	if (stackOverrides.some(hasOverrides)) assert.ok(simulateRequests(requests).some((simulation) => simulation.blockStateCalls.some((block, blockIndex) => hasOverrides(block.stateOverrides) && blockIndex < stackOverrides.length)))
+	return forwarderUsed
 }
 
 // A governor names the blocks of its ProposalCreated search, so every search has to stay within two requests of at most MAXIMUM_BLOCKS_PER_LOG_QUERY blocks.
@@ -54,12 +68,6 @@ const assertBoundedLogSearch = (requests: readonly EthereumJsonRpcRequest[]) => 
 	}
 }
 
-// The final simulation runs the execution calls together in the last block, sharing its number and timestamp.
-const assertExecutedInOneBlock = (requests: readonly EthereumJsonRpcRequest[], callCount: number) => {
-	const outcomeSimulation = simulateRequests(requests).find((simulation) => simulation.blockStateCalls.length === 2 && simulation.blockStateCalls[1]?.calls.length === callCount)
-	assert.ok(outcomeSimulation !== undefined, `Expected one simulation with all ${ callCount } execution calls in its last block`)
-}
-
 const recordedGasLimit = (fixture: GovernanceFixture) => {
 	const latestBlock = fixture.exchanges.find((exchange) => JSON.stringify(exchange.request).includes('"latest"'))?.result
 	if (typeof latestBlock !== 'object' || latestBlock === null || !('gasLimit' in latestBlock) || typeof latestBlock.gasLimit !== 'string') throw new Error('Expected the recorded block gas limit')
@@ -67,15 +75,23 @@ const recordedGasLimit = (fixture: GovernanceFixture) => {
 }
 
 // Replays a fixture through the preview, after the example stack it was recorded with, and checks the override rule and the log search bound on every request it sent.
-const previewFixture = async (name: string) => {
+const previewFixture = async (name: string, options: Parameters<typeof createReplayingEthereumClientService>[1] = {}) => {
 	const fixture = await loadFixture(name)
 	if (fixture.stack !== undefined && !isExampleStackName(fixture.stack)) throw new Error(`Unknown stack ${ fixture.stack }`)
-	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture)
+	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture, options)
 	const stack = await prepareExampleStack(ethereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack]())
-	const preview = await simulateGovernanceProposalExecution(ethereum, stack, BigInt(fixture.governor), BigInt(fixture.proposalId), WEBSITE)
-	await assertOnlyStackOverrides(ethereum, requests, stack)
+	const governor = BigInt(fixture.governor)
+	const preview = await simulateGovernanceProposalExecution(ethereum, stack, governor, BigInt(fixture.proposalId), WEBSITE)
+	const forwarderUsed = await assertOverrideRule(ethereum, requests, resultOf, stack, governor)
 	assertBoundedLogSearch(requests)
-	return { preview, requests, resultOf, stack, governor: BigInt(fixture.governor) }
+	return { preview, requests, resultOf, stack, governor, forwarderUsed, fixture }
+}
+
+// The simulation that produced the outcome: the stack's blocks, then the planned ones, with the execution last.
+const outcomeSimulation = (requests: readonly EthereumJsonRpcRequest[], blockCount: number) => {
+	const simulation = simulateRequests(requests).find((candidate) => candidate.blockStateCalls.length === blockCount)
+	if (simulation === undefined) throw new Error(`Expected a simulation of ${ blockCount } blocks`)
+	return simulation
 }
 
 const getExecution = (preview: Awaited<ReturnType<typeof simulateGovernanceProposalExecution>>) => {
@@ -92,19 +108,19 @@ const assertRefused = (preview: Awaited<ReturnType<typeof simulateGovernanceProp
 }
 
 describe('governance proposal execution preview of real governors', () => {
-	test('simulates a Uniswap GovernorBravo proposal that is being voted on as its timelock queues and executes it', async () => {
-		const { preview, requests, governor } = await previewFixture('uniswap-bravo-active')
+	test('simulates a Uniswap GovernorBravo proposal that is being voted on as its governor queues and executes it, in one transaction each', async () => {
+		const { preview, requests, governor, forwarderUsed } = await previewFixture('uniswap-bravo-active')
 		const execution = getExecution(preview)
 		assert.equal(execution.timelock, UNISWAP_TIMELOCK)
-		// getActions of this proposal needs about 150000 gas, more than the 90000 the reads used to be limited to.
-		assert.equal(execution.transactions.length, 3)
-		for (const transaction of execution.transactions) {
-			assert.equal(transaction.preSimulationTransaction.signedTransaction.from, governor)
-			assert.equal(transaction.preSimulationTransaction.signedTransaction.to, UNISWAP_TIMELOCK)
-			assert.equal(transaction.ethSimulateV1CallResult.status, 'success')
-		}
-		// Compound's Timelock executes each action in its own call; the outcome runs all three in one block after the queue block.
-		const [queueBlock, executionBlock] = simulateRequests(requests).find((simulation) => simulation.blockStateCalls.length === 2 && simulation.blockStateCalls[1]?.calls.length === 3)?.blockStateCalls ?? []
+		assert.equal(forwarderUsed, true)
+		const [transaction, ...otherTransactions] = execution.transactions
+		assert.equal(otherTransactions.length, 0)
+		assert.equal(transaction?.preSimulationTransaction.signedTransaction.from, MOCK_ADDRESS)
+		assert.equal(transaction?.preSimulationTransaction.signedTransaction.to, governor)
+		if (transaction?.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
+		// The real timelock executed the proposal's three actions; getActions of this proposal needs about 150000 gas, more than the 90000 the reads used to be limited to.
+		assert.equal(transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === UNISWAP_TIMELOCK).length, 3)
+		const [queueBlock, executionBlock] = outcomeSimulation(requests, 2).blockStateCalls
 		const queueTime = queueBlock?.blockOverrides?.time
 		const executionTime = executionBlock?.blockOverrides?.time
 		if (queueTime === undefined || executionTime === undefined) throw new Error('Expected a queue block and an execution block')
@@ -112,10 +128,11 @@ describe('governance proposal execution preview of real governors', () => {
 	})
 
 	test('executes a queued Uniswap GovernorBravo proposal through the governor exactly as it was executed on chain', async () => {
-		const { preview, requests, governor } = await previewFixture('uniswap-bravo-queued')
+		const { preview, governor, forwarderUsed } = await previewFixture('uniswap-bravo-queued')
 		const [transaction, ...otherTransactions] = getExecution(preview).transactions
 		if (transaction === undefined) throw new Error('Expected the execute transaction')
 		assert.equal(otherTransactions.length, 0)
+		assert.equal(forwarderUsed, false)
 		assert.equal(transaction.preSimulationTransaction.signedTransaction.from, MOCK_ADDRESS)
 		assert.equal(transaction.preSimulationTransaction.signedTransaction.to, governor)
 		if (transaction.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
@@ -125,18 +142,19 @@ describe('governance proposal execution preview of real governors', () => {
 	})
 
 	test('runs an action that calls the Compound Timelock itself on the real timelock', async () => {
-		const { preview, requests } = await previewFixture('compound-bravo-active')
+		const { preview } = await previewFixture('compound-bravo-active')
 		const execution = getExecution(preview)
 		assert.equal(execution.timelock, COMPOUND_TIMELOCK)
 		// Proposal 393 calls setPendingAdmin on the timelock itself, which the timelock code that used to replace it did not have.
-		assert.deepEqual(execution.transactions.map((transaction) => transaction.ethSimulateV1CallResult.status), ['success', 'success', 'success'])
+		assert.deepEqual(execution.transactions.map((transaction) => transaction.ethSimulateV1CallResult.status), ['success'])
 	})
 
 	test('finds the actions of an OpenZeppelin governor in its ProposalCreated event and executes them through its TimelockController', async () => {
-		const { preview, requests, governor } = await previewFixture('ens-governor-active')
+		const { preview, requests, governor, forwarderUsed } = await previewFixture('ens-governor-active')
 		const [transaction, ...otherTransactions] = getExecution(preview).transactions
 		if (transaction === undefined) throw new Error('Expected the executeBatch transaction')
 		assert.equal(otherTransactions.length, 0)
+		assert.equal(forwarderUsed, false)
 		assert.equal(transaction.preSimulationTransaction.signedTransaction.from, governor)
 		assert.equal(transaction.preSimulationTransaction.signedTransaction.to, ENS_TIMELOCK)
 		assert.equal(transaction.ethSimulateV1CallResult.status, 'success')
@@ -145,14 +163,11 @@ describe('governance proposal execution preview of real governors', () => {
 	})
 
 	test('executes the actions of an OpenZeppelin governor with GovernorStorage through its Compound Timelock', async () => {
-		const { preview, requests, governor } = await previewFixture('compound-governor-active')
+		const { preview, requests, forwarderUsed } = await previewFixture('compound-governor-active')
 		const execution = getExecution(preview)
 		assert.equal(execution.timelock, COMPOUND_TIMELOCK)
-		assert.equal(execution.transactions.length, 2)
-		for (const transaction of execution.transactions) {
-			assert.equal(transaction.preSimulationTransaction.signedTransaction.from, governor)
-			assert.equal(transaction.ethSimulateV1CallResult.status, 'success')
-		}
+		assert.equal(forwarderUsed, true)
+		assert.deepEqual(execution.transactions.map((transaction) => transaction.ethSimulateV1CallResult.status), ['success'])
 		assert.equal(requests.filter((request) => request.method === 'eth_getLogs').length, 0)
 	})
 
@@ -162,9 +177,7 @@ describe('governance proposal execution preview of real governors', () => {
 		assert.equal(execution.timelock, ENS_TIMELOCK)
 		// The outcome holds only the execution block, not the stack or the queue block before it.
 		assert.equal(execution.simulationState.simulationStateInput.length, 1)
-		const executionSimulation = simulateRequests(requests).find((simulation) => simulation.blockStateCalls.length === 3)
-		if (executionSimulation === undefined) throw new Error('Expected the stack, queue and execution blocks in one simulation')
-		const [stackBlock, queueBlock, executionBlock] = executionSimulation.blockStateCalls
+		const [stackBlock, queueBlock, executionBlock] = outcomeSimulation(requests, 3).blockStateCalls
 		assert.equal(stackBlock?.calls[0]?.from, EXAMPLE_STACK_SENDER)
 		const stackTime = stackBlock?.blockOverrides?.time?.getTime()
 		const queueTime = queueBlock?.blockOverrides?.time?.getTime()
@@ -173,6 +186,18 @@ describe('governance proposal execution preview of real governors', () => {
 		// Voting on this proposal has ended, so it is queued as soon as the preview allows and executed after the timelock's minimum delay of two days.
 		assert.equal((queueTime - stackTime) / 1000, 60)
 		assert.equal((executionTime - queueTime) / 1000, TWO_DAYS_IN_SECONDS)
+	})
+
+	test('works on the block it started with when the chain moves on to a block with a lower gas limit', async () => {
+		const laterLatestBlock = (recorded: unknown) => {
+			if (typeof recorded !== 'object' || recorded === null || !('number' in recorded) || typeof recorded.number !== 'string') throw new Error('Expected a recorded block')
+			return { ...recorded, number: `0x${ (BigInt(recorded.number) + 1n).toString(16) }`, gasLimit: '0x1312d00' }
+		}
+		const pinned = await previewFixture('uniswap-bravo-active', { laterLatestBlock })
+		const unchanged = await previewFixture('uniswap-bravo-active')
+		// The preview read the latest block once; every later read, simulation and balance lookup named that block.
+		assert.equal(pinned.requests.filter((request) => request.method === 'eth_getBlockByNumber' && request.params[0] === 'latest').length, 1)
+		assert.deepEqual(getExecution(pinned.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult), getExecution(unchanged.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult))
 	})
 
 	test('shows no outcome for a proposal that was already executed', async () => {
@@ -189,30 +214,32 @@ describe('governance proposal execution preview of contracts built to look like 
 		['abuse-ens-timelock-named', /0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7, which .* is a TimelockController that does not give this governor the proposer role/],
 	] as const
 	for (const [name, reason] of refusedBeforeExecution) {
-		test(`${ name }: refuses before running anything as the named timelock`, async () => {
-			const { preview, requests, governor } = await previewFixture(name)
+		test(`${ name }: refuses before running anything, and overrides nothing`, async () => {
+			const { preview, requests, governor, forwarderUsed } = await previewFixture(name)
 			assertRefused(preview, reason)
+			assert.equal(forwarderUsed, false)
 			// Only the two batches of reads ran, and no call came from the governor.
 			const simulations = simulateRequests(requests)
 			assert.equal(simulations.length, 2)
 			for (const simulation of simulations) {
 				for (const block of simulation.blockStateCalls) assert.ok(block.calls.every((call) => call.from === MOCK_ADDRESS && call.from !== governor))
 			}
-			})
+		})
 	}
 
 	test('refuses a queued proposal whose governor pays out from execute instead of executing through its timelock', async () => {
-		const { preview, requests } = await previewFixture('abuse-queued-execute-pays-out')
+		const { preview } = await previewFixture('abuse-queued-execute-pays-out')
 		assertRefused(preview, /executing proposal 1 did not make 0x5c4075FCC531b2227dd1E6Aef747BeEe3a0A7067 execute its actions/)
 	})
 
 	test('refuses a timelock that answers like a Compound Timelock but executes nothing', async () => {
-		const { preview, requests } = await previewFixture('abuse-timelock-executes-nothing')
-		assertRefused(preview, /executing proposal 1 did not make 0x7f08904bdF69bE49734b0D2039A5f830CeFc2EC9 execute its actions/)
+		const { preview } = await previewFixture('abuse-timelock-executes-nothing')
+		// Its execute answer does not decode as the bytes a Compound Timelock returns, so the governor's execute reverts, as GovernorBravo's would.
+		assertRefused(preview, /executing proposal 1 (fails|did not make 0x7f08904bdF69bE49734b0D2039A5f830CeFc2EC9 execute its actions)/)
 	})
 
 	test('a governor with a timelock of its own can only move what that timelock holds', async () => {
-		const { preview, requests } = await previewFixture('abuse-own-funded-timelock')
+		const { preview } = await previewFixture('abuse-own-funded-timelock')
 		const execution = getExecution(preview)
 		const ownTimelock = 0xef0f70eb6aaa500dcbdac11a2fb2591892051b39n
 		assert.equal(execution.timelock, ownTimelock)
@@ -223,39 +250,67 @@ describe('governance proposal execution preview of contracts built to look like 
 		assert.equal(etherTransfers.length, 1)
 		assert.equal(etherTransfers[0]?.topics[1], ownTimelock)
 	})
+})
 
-	test('refuses a proposal whose second action reverts at a real Compound Timelock, instead of showing the first action\'s transfer', async () => {
+describe('governance proposal execution through a real Compound Timelock in one transaction', () => {
+	const executionOf = async (name: string) => {
+		const fixture = await previewFixture(name)
+		const [transaction, ...otherTransactions] = getExecution(fixture.preview).transactions
+		assert.equal(otherTransactions.length, 0)
+		assert.equal(fixture.forwarderUsed, true)
+		if (transaction?.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
+		return { ...fixture, result: transaction.ethSimulateV1CallResult, transaction }
+	}
+
+	test('refuses a proposal whose second action reverts, instead of showing the first action\'s transfer', async () => {
 		const { preview } = await previewFixture('compound-timelock-second-action-reverts')
-		// The first action sends 1 ether to the user and succeeds on its own, but the governor executes both actions in one transaction.
-		assertRefused(preview, /executing action 2 of 2 of proposal 1 fails \(execution reverted: Timelock::executeTransaction: Transaction execution reverted\.\), and the governor's transaction reverts as a whole/)
+		// The first action sends 1 ether to the user and the second reverts; the governor's one transaction reverts as a whole.
+		assertRefused(preview, /executing proposal 1 fails \(execution reverted: Timelock::executeTransaction: Transaction execution reverted\.\)\.$/)
 	})
 
-	test('gives an action that needs most of the gas what it needs, in the same block as the others', async () => {
-		const { preview, requests } = await previewFixture('compound-timelock-one-heavy-action')
-		const gasUsed = getExecution(preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult.gasUsed)
-		const gasLimit = recordedGasLimit(await loadFixture('compound-timelock-one-heavy-action'))
-		assert.equal(gasUsed.length, 6)
-		// The second action writes 480 storage slots, more gas than a sixth of the block, which an equal split of the block's gas would not have given it.
-		const heavyActionGas = gasUsed[1] ?? 0n
-		assert.ok(heavyActionGas > gasLimit / 6n, `${ heavyActionGas } is not more than a sixth of ${ gasLimit }`)
-		assertExecutedInOneBlock(requests, 6)
+	test('keeps a transient flag one action sets for the next, as the governor\'s single transaction does', async () => {
+		const { result } = await executionOf('compound-timelock-transient-flag')
+		// The second action pays 0x…BADD if the first action's transient flag is still set, and 0x…a11C if it was cleared between transactions.
+		const etherTransfers = result.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
+		assert.deepEqual(etherTransfers.map((log) => log.topics[2]), [0xbaddn])
 	})
 
-	test('runs all actions in one block, so an action that needs the block of an earlier one succeeds as in the governor\'s single transaction', async () => {
-		const { preview, requests } = await previewFixture('compound-timelock-actions-in-the-same-block')
-		const statuses = getExecution(preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult.status)
-		assert.deepEqual(statuses, ['success', 'success'])
-		assertExecutedInOneBlock(requests, 2)
+	test('runs an action that needs the block of an earlier one as the governor\'s single transaction does', async () => {
+		await executionOf('compound-timelock-actions-in-the-same-block')
 	})
 
-	test('refuses a refund-heavy proposal that fits in one transaction only if each action is refunded on its own', async () => {
-		const { preview } = await previewFixture('compound-timelock-refunds-near-transaction-limit')
-		assertRefused(preview, /may need up to \d+ gas in the governor's single transaction before refunds \(its actions used \d+ apart\), more than the EIP-7825 limit of one transaction, 16777216/)
-		if (preview.success) throw new Error('Expected no outcome')
-		const [, bound, used] = /may need up to (\d+) gas .* used (\d+) apart/.exec(preview.errorMessage)?.map((value, index) => index === 0 ? undefined : BigInt(value)) ?? []
-		// Its actions used less than the limit apart, which a plain sum would have accepted.
-		assert.ok(used !== undefined && used < 16_777_216n)
-		assert.ok(bound !== undefined && bound > 16_777_216n)
+	test('runs an action that calls back into the governor on the governor\'s own code', async () => {
+		const { result, governor } = await executionOf('compound-timelock-calls-back-into-governor')
+		// The governor's callBack emits CalledBack(msg.sender) from the governor's own code, with the timelock as the caller.
+		const calledBack = result.logs.filter((log) => log.address === governor)
+		assert.equal(calledBack.length, 1)
+		assert.equal(BigInt(dataStringWith0xStart(calledBack[0]?.data ?? new Uint8Array())), 0x7878787878787878787878787878787878787878n)
+	})
+
+	test('refunds a proposal as one transaction, so one that clears what it wrote fits the per-transaction limit', async () => {
+		const { result, transaction } = await executionOf('compound-timelock-refunds-near-transaction-limit')
+		// It writes 560 slots and clears them; before its refund it needs more than its own gas limit would leave if each action were refunded alone.
+		assert.equal(transaction.preSimulationTransaction.signedTransaction.gas, 16_777_216n - 160_000n)
+		assert.ok(result.gasUsed < transaction.preSimulationTransaction.signedTransaction.gas)
+		if (result.maxUsedGas !== undefined) assert.ok(result.maxUsedGas > result.gasUsed)
+	})
+
+	test('refuses a proposal that needs more gas than one transaction may use', async () => {
+		const { preview } = await previewFixture('compound-timelock-over-transaction-gas-limit')
+		assertRefused(preview, /executing proposal 1 fails \(.*\), after using \d+ of the 16647216 gas it may have: the EIP-7825 limit of one transaction, 16777216, less 130000 for the governor's own work\./)
+	})
+
+	test('limits a transaction by the planned block\'s time, so an execution after Osaka gets the EIP-7825 limit though the parent block was before it', async () => {
+		const { requests, fixture } = await executionOf('compound-timelock-executes-after-osaka')
+		const [queueBlock, executionBlock] = outcomeSimulation(requests, 2).blockStateCalls
+		const parentGasLimit = recordedGasLimit(fixture)
+		const queueTime = queueBlock?.blockOverrides?.time
+		const executionTime = executionBlock?.blockOverrides?.time
+		if (queueTime === undefined || executionTime === undefined) throw new Error('Expected block times')
+		const osaka = OSAKA_ACTIVATION_TIME_BY_CHAIN_ID.get(1n) ?? 0n
+		assert.ok(BigInt(queueTime.getTime() / 1000) < osaka && BigInt(executionTime.getTime() / 1000) >= osaka)
+		assert.equal(queueBlock?.calls[0]?.gas, parentGasLimit - 130_000n)
+		assert.equal(executionBlock?.calls[0]?.gas, 16_777_216n - 130_000n)
 	})
 })
 
@@ -344,22 +399,13 @@ describe('governance ProposalCreated search', () => {
 })
 
 describe('governance execution gas', () => {
-	test('one transaction is limited to 2^24 gas where EIP-7825 is active, and to the block otherwise', () => {
-		const block = { gasLimit: 60_000_000n, timestamp: new Date(1_794_290_000_000) }
-		assert.deepEqual(getTransactionGasLimit(1n, block), { gas: 16_777_216n, source: 'the EIP-7825 limit of one transaction' })
-		assert.deepEqual(getTransactionGasLimit(1n, { ...block, timestamp: new Date(1_764_798_550_000) }), { gas: 60_000_000n, source: 'the block gas limit' })
-		assert.deepEqual(getTransactionGasLimit(8453n, block), { gas: 60_000_000n, source: 'the block gas limit' })
-		assert.deepEqual(getTransactionGasLimit(1n, { ...block, gasLimit: 10_000_000n }), { gas: 10_000_000n, source: 'the block gas limit' })
-	})
-
-	test('splits a block\'s gas between calls by need, and gives calls that failed alone what the others leave', () => {
-		const measuredLimits = gasLimitsByNeed(60_000_000n, [100_000n, 10_000_000n, 100_000n])
-		if (measuredLimits === undefined) throw new Error('Expected gas limits')
-		assert.ok(measuredLimits.reduce((total, gas) => total + gas, 0n) <= 60_000_000n)
-		assert.ok((measuredLimits[1] ?? 0n) > 20_000_000n)
-		const withUnmeasured = gasLimitsByNeed(60_000_000n, [100_000n, undefined])
-		if (withUnmeasured === undefined) throw new Error('Expected gas limits')
-		assert.ok((withUnmeasured[1] ?? 0n) > 59_000_000n && (withUnmeasured[0] ?? 0n) + (withUnmeasured[1] ?? 0n) <= 60_000_000n)
-		assert.equal(gasLimitsByNeed(60_000_000n, [40_000_000n, 10_000_000n]), undefined)
+	test('one transaction is limited to 2^24 gas from Osaka on mainnet, Sepolia and Hoodi, and to the block otherwise', () => {
+		for (const [chainId, activationTime] of OSAKA_ACTIVATION_TIME_BY_CHAIN_ID) {
+			assert.deepEqual(getTransactionGasLimit(chainId, activationTime - 1n, 60_000_000n), { gas: 60_000_000n, source: 'the block gas limit' })
+			assert.deepEqual(getTransactionGasLimit(chainId, activationTime, 60_000_000n), { gas: 16_777_216n, source: 'the EIP-7825 limit of one transaction' })
+			assert.deepEqual(getTransactionGasLimit(chainId, activationTime, 10_000_000n), { gas: 10_000_000n, source: 'the block gas limit' })
+		}
+		assert.deepEqual([...OSAKA_ACTIVATION_TIME_BY_CHAIN_ID.keys()], [1n, 11_155_111n, 560_048n])
+		assert.deepEqual(getTransactionGasLimit(8453n, 1_900_000_000n, 60_000_000n), { gas: 60_000_000n, source: 'the block gas limit' })
 	})
 })

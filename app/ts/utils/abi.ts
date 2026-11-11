@@ -470,20 +470,6 @@ export const CompoundTimelockAbi = [
 	{ type: 'function', name: 'delay', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 	{ type: 'function', name: 'GRACE_PERIOD', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 	{
-		type: 'function',
-		name: 'queueTransaction',
-		stateMutability: 'nonpayable',
-		inputs: [{ name: 'target', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'signature', type: 'string' }, { name: 'data', type: 'bytes' }, { name: 'eta', type: 'uint256' }],
-		outputs: [{ name: '', type: 'bytes32' }],
-	},
-	{
-		type: 'function',
-		name: 'executeTransaction',
-		stateMutability: 'payable',
-		inputs: [{ name: 'target', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'signature', type: 'string' }, { name: 'data', type: 'bytes' }, { name: 'eta', type: 'uint256' }],
-		outputs: [{ name: '', type: 'bytes' }],
-	},
-	{
 		type: 'event',
 		name: 'ExecuteTransaction',
 		anonymous: false,
@@ -495,6 +481,24 @@ export const CompoundTimelockAbi = [
 			{ name: 'data', type: 'bytes', indexed: false },
 			{ name: 'eta', type: 'uint256', indexed: false },
 		],
+	},
+] as const satisfies Abi
+
+// contracts/GovernorProposalForwarder.sol, which the governance preview stands in at a governor's address to queue and execute through its Compound Timelock in one transaction each.
+export const GovernorProposalForwarderAbi = [
+	{
+		type: 'function',
+		name: 'queueProposalActions',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'signatures', type: 'string[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'eta', type: 'uint256' }],
+		outputs: [],
+	},
+	{
+		type: 'function',
+		name: 'executeProposalActions',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'signatures', type: 'string[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'eta', type: 'uint256' }],
+		outputs: [],
 	},
 ] as const satisfies Abi
 

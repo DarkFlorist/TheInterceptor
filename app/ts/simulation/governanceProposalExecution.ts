@@ -1,14 +1,15 @@
 import type { EthereumBlockHeader as MaybeEthereumBlockHeader } from '../types/wire-types.js'
-import type { PreSimulationTransaction, SimulationState, SimulationStateInput, SimulationStateInputBlock } from '../types/visualizer-types.js'
+import type { SimulationState, SimulationStateInput, SimulationStateInputBlock } from '../types/visualizer-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { EthSimulateV1CallResult } from '../types/ethSimulate-types.js'
-import { CompoundTimelockAbi, GovernorAbi, TimelockControllerAbi } from '../utils/abi.js'
+import { CompoundTimelockAbi, GovernorAbi, GovernorProposalForwarderAbi, TimelockControllerAbi } from '../utils/abi.js'
 import { decodeEventStrict, decodeFunctionOutput, encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bigintSecondsToDate, bytes32String, checksummedAddress, dataStringWith0xStart, dateToBigintSeconds, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { type Hex, concat, isAbiDataDecodeError, keccak256, toEventSelector, toFunctionSelector } from '../utils/ethereumPrimitives.js'
 import { type EthereumClientService, getNextBlockTimeStampOverride } from './services/EthereumClientService.js'
-import { createExecutionSimulationState, createSimulationState } from './services/SimulationModeEthereumClientService.js'
+import { createSimulationState } from './services/SimulationModeEthereumClientService.js'
+import { getGovernorProposalForwarder } from '../utils/ethereumByteCodes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
 
 type EthereumBlockHeader = NonNullable<MaybeEthereumBlockHeader>
@@ -33,20 +34,23 @@ export const PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS = 7200n
 // The largest block range one eth_getLogs request asks for, a limit common to public RPCs. The whole search is at most two such requests.
 export const MAXIMUM_BLOCKS_PER_LOG_QUERY = 10_000n
 
-// EIP-7825 (Osaka) caps a transaction's gas at 2^24, so the governor's single execute transaction has to fit under it. Nodes do not apply the cap to eth_simulateV1, so the preview applies it itself on the chains where Osaka is known to be active (go-ethereum's chainspecs), and otherwise uses the block's gas limit.
+// EIP-7825 (Osaka) caps a transaction's gas at 2^24. Nodes do not apply the cap to eth_simulateV1, so the preview applies it itself on the chains where Osaka's activation time is known (go-ethereum's chainspecs), and otherwise uses the block's gas limit.
 const EIP_7825_MAXIMUM_TRANSACTION_GAS = 16_777_216n
-const OSAKA_ACTIVATION_TIME_BY_CHAIN_ID = new Map([[1n, 1_764_798_551n], [11_155_111n, 1_760_427_360n], [560_048n, 1_761_677_592n]])
-// A margin for the governor's own work in execute around the timelock calls: its state checks, marking the proposal executed, its event, and one call to the timelock per action. The preview calls the timelock directly, so this work is not in its gas.
-const GOVERNOR_EXECUTE_OVERHEAD_GAS = 100_000n
-const GOVERNOR_EXECUTE_OVERHEAD_GAS_PER_ACTION = 30_000n
+export const OSAKA_ACTIVATION_TIME_BY_CHAIN_ID = new Map([[1n, 1_764_798_551n], [11_155_111n, 1_760_427_360n], [560_048n, 1_761_677_592n]])
+// A margin for the governor's own work around the timelock calls that the preview does not run: its state checks, marking the proposal queued or executed, and its events.
+const GOVERNOR_OVERHEAD_GAS = 100_000n
+const GOVERNOR_OVERHEAD_GAS_PER_ACTION = 30_000n
+// Where the preview moves a governor's own code while GovernorProposalForwarder stands in at the governor's address (contracts/GovernorProposalForwarder.sol): the last 20 bytes of keccak256 of "The Interceptor governance preview: the governor's own code".
+export const GOVERNOR_CODE_ADDRESS = 0x70490ca6dc09ae17c68377a226527984e1b77b55n
 
-export const getTransactionGasLimit = (chainId: bigint, parentBlock: Pick<EthereumBlockHeader, 'timestamp' | 'gasLimit'>) => {
+// The gas one transaction may use in a block at blockTime, a planned block's own time: a proposal executed after the voting period and the timelock's delay can fall after an activation the parent block had not reached.
+export const getTransactionGasLimit = (chainId: bigint, blockTime: bigint, blockGasLimit: bigint) => {
 	const osakaActivationTime = OSAKA_ACTIVATION_TIME_BY_CHAIN_ID.get(chainId)
-	const capped = osakaActivationTime !== undefined && dateToBigintSeconds(parentBlock.timestamp) >= osakaActivationTime
-	return capped && EIP_7825_MAXIMUM_TRANSACTION_GAS < parentBlock.gasLimit ? { gas: EIP_7825_MAXIMUM_TRANSACTION_GAS, source: 'the EIP-7825 limit of one transaction' } : { gas: parentBlock.gasLimit, source: 'the block gas limit' }
+	const capped = osakaActivationTime !== undefined && blockTime >= osakaActivationTime
+	return capped && EIP_7825_MAXIMUM_TRANSACTION_GAS < blockGasLimit ? { gas: EIP_7825_MAXIMUM_TRANSACTION_GAS, source: 'the EIP-7825 limit of one transaction' } : { gas: blockGasLimit, source: 'the block gas limit' }
 }
 
-const governorExecuteOverheadGas = (actionCount: number) => GOVERNOR_EXECUTE_OVERHEAD_GAS + GOVERNOR_EXECUTE_OVERHEAD_GAS_PER_ACTION * BigInt(actionCount)
+const governorOverheadGas = (actionCount: number) => GOVERNOR_OVERHEAD_GAS + GOVERNOR_OVERHEAD_GAS_PER_ACTION * BigInt(actionCount)
 
 // One action of a proposal. Compound-style governors keep the function signature apart from its arguments; for OpenZeppelin governors signature is empty and data is the whole call data.
 type ProposalAction = {
@@ -85,18 +89,16 @@ type PlannedCall = {
 	readonly description: string
 }
 
+// Each planned block holds one transaction, which the node runs as one RPC block at the planned time.
 type ExecutionPlan = {
-	readonly blocks: readonly {
-		readonly time: bigint
-		readonly calls: readonly PlannedCall[]
-		// shared: the calls split the block's gas equally. transaction: the block's one call gets what one transaction may use, less governorOverheadGas. measured: the calls share the block's gas by what each needs, measured first (gasLimitsByNeed).
-		readonly gas: 'shared' | 'transaction' | 'measured'
-	}[]
+	readonly blocks: readonly { readonly time: bigint, readonly call: PlannedCall }[]
 	readonly executionTime: bigint
-	// The governor's own execute work missing from the simulated calls: zero when the call is the governor's own execute.
+	// The governor's own work missing from the planned transactions: zero when a transaction is the governor's own execute.
 	readonly governorOverheadGas: bigint
-	// Whether the execution block's results contain the timelock executing each of the proposal's actions, in order.
-	readonly isProposalExecutedBy: (callResults: readonly EthSimulateV1CallResult[]) => boolean
+	// Whether the plan stands GovernorProposalForwarder in at the governor's address (Compound Timelock, not queued yet).
+	readonly forwardsThroughGovernor: boolean
+	// Whether the execution transaction's result contains the timelock executing each of the proposal's actions, in order.
+	readonly isProposalExecutedBy: (callResult: EthSimulateV1CallResult) => boolean
 }
 
 // What the preview answers when the governor, its timelock or the proposal cannot be executed as a governor would: no outcome, and why.
@@ -273,10 +275,10 @@ const identifyTimelock = async (ethereum: EthereumClientService, parentBlock: Et
 }
 
 // The timelock's logs of one event, in the order it emitted them. Filtering on the event's topic first keeps the timelock's other events, such as Compound's QueueTransaction, out of the decoding.
-const timelockEventLogs = (timelock: bigint, topic: bigint, callResults: readonly EthSimulateV1CallResult[]) => callResults.flatMap((callResult) => callResult.status === 'success' ? callResult.logs.filter((log) => log.address === timelock && log.topics[0] === topic) : [])
+const timelockEventLogs = (timelock: bigint, topic: bigint, callResult: EthSimulateV1CallResult) => callResult.status === 'success' ? callResult.logs.filter((log) => log.address === timelock && log.topics[0] === topic) : []
 
-const isExecutedByCompoundTimelock = (timelock: bigint, actions: readonly ProposalAction[], eta: bigint) => (callResults: readonly EthSimulateV1CallResult[]) => {
-	const executedHashes = timelockEventLogs(timelock, EXECUTE_TRANSACTION_TOPIC, callResults).flatMap((log) => {
+const isExecutedByCompoundTimelock = (timelock: bigint, actions: readonly ProposalAction[], eta: bigint) => (callResult: EthSimulateV1CallResult) => {
+	const executedHashes = timelockEventLogs(timelock, EXECUTE_TRANSACTION_TOPIC, callResult).flatMap((log) => {
 		const decoded = decodeOrUndefined(dataStringWith0xStart(log.data), (data) => decodeEventStrict(CompoundTimelockAbi, { data, topics: log.topics.map(bytes32String) }))
 		return decoded?.eventName === 'ExecuteTransaction' ? [decoded.args.txHash.toLowerCase()] : []
 	})
@@ -286,8 +288,8 @@ const isExecutedByCompoundTimelock = (timelock: bigint, actions: readonly Propos
 	return executedHashes.length === actions.length && actions.every((action, index) => isActionExecuted(action, executedHashes[index]))
 }
 
-const isExecutedByTimelockController = (timelock: bigint, actions: readonly ProposalAction[]) => (callResults: readonly EthSimulateV1CallResult[]) => {
-	const executedCalls = timelockEventLogs(timelock, CALL_EXECUTED_TOPIC, callResults).flatMap((log) => {
+const isExecutedByTimelockController = (timelock: bigint, actions: readonly ProposalAction[]) => (callResult: EthSimulateV1CallResult) => {
+	const executedCalls = timelockEventLogs(timelock, CALL_EXECUTED_TOPIC, callResult).flatMap((log) => {
 		const decoded = decodeOrUndefined(dataStringWith0xStart(log.data), (data) => decodeEventStrict(TimelockControllerAbi, { data, topics: log.topics.map(bytes32String) }))
 		return decoded?.eventName === 'CallExecuted' ? [decoded.args] : []
 	})
@@ -299,39 +301,38 @@ const isExecutedByTimelockController = (timelock: bigint, actions: readonly Prop
 
 const isExecutedByTimelock = (timelock: Timelock, actions: readonly ProposalAction[], eta: bigint) => timelock.type === 'CompoundTimelock' ? isExecutedByCompoundTimelock(timelock.address, actions, eta) : isExecutedByTimelockController(timelock.address, actions)
 
-// A proposal that is not queued yet is simulated as passing: the governor queues its actions at its timelock when voting ends, and executes them once the timelock's delay has passed. Both are calls from the governor to the timelock, which checks them as it checks the governor's own queue and execute. Any ETH an action sends comes from the timelock's balance.
+// A proposal that is not queued yet is simulated as passing: the governor queues its actions at its timelock when voting ends, and executes them once the timelock's delay has passed, each in one transaction in which the timelock sees the governor as the caller and checks it as it checks the governor's own queue and execute. Any ETH an action sends comes from the timelock's balance.
 const planQueueAndExecution = (stackEndTime: bigint, governor: bigint, proposalId: bigint, votingEndsAt: bigint | undefined, actions: readonly ProposalAction[], timelock: Timelock): ExecutionPlan => {
 	const earliestQueueTime = stackEndTime + MINIMUM_SECONDS_UNTIL_QUEUE
 	const queueTime = votingEndsAt !== undefined && votingEndsAt + 1n > earliestQueueTime ? votingEndsAt + 1n : earliestQueueTime
 	const executionTime = queueTime + timelock.delay
 	const isProposalExecutedBy = isExecutedByTimelock(timelock, actions, executionTime)
-	const fromGovernor = (input: Hex, description: string): PlannedCall => ({ from: governor, to: timelock.address, input, description })
-	const ofProposal = (index: number) => `action ${ index + 1 } of ${ actions.length } of proposal ${ proposalId }`
 	if (timelock.type === 'CompoundTimelock') {
-		// Compound's Timelock takes one action per call, so the governor's single queue and execute transactions are simulated as one call per action, all in one block, so they share its number and timestamp. What still differs from one transaction: the calls are not atomic, so any failing call refuses the whole outcome; tx.origin is the governor; each call has its own intrinsic gas and its own refund, capped at a fifth of its own gas; and an account or slot one call touched is cold again in the next (EIP-2929). The gas check after the execution allows for the refunds and the governor's own work.
-		const transactionArguments = (action: ProposalAction) => [addressString(action.target), action.value, action.signature, action.data, executionTime] as const
+		// Compound's Timelock takes one action per call, so GovernorProposalForwarder, standing in at the governor's address, makes the calls in one transaction as GovernorBravo's queue and execute do. All actions then share one transaction's transient storage, refund and gas, one block and one tx.origin, and the real timelock's code and storage still check and pay for every action.
+		const forwarderArguments = [addressString(timelock.address), actions.map((action) => addressString(action.target)), actions.map((action) => action.value), actions.map((action) => action.signature), actions.map((action) => action.data), executionTime] as const
+		const throughGovernor = (input: Hex, description: string): PlannedCall => ({ from: MOCK_ADDRESS, to: governor, input, description })
 		return {
 			blocks: [
-				// The governor queues every action in one transaction at one time, and queueing costs the same small amount for any action, so the queue calls share one block.
-				{ time: queueTime, gas: 'shared', calls: actions.map((action, index) => fromGovernor(encodeFunctionCall(CompoundTimelockAbi, 'queueTransaction', transactionArguments(action)), `queueing ${ ofProposal(index) }`)) },
-				// An action may need most of the gas, so the calls share the block's gas by what each needs instead of equally.
-				{ time: executionTime, gas: 'measured', calls: actions.map((action, index) => fromGovernor(encodeFunctionCall(CompoundTimelockAbi, 'executeTransaction', transactionArguments(action)), `executing ${ ofProposal(index) }`)) },
+				{ time: queueTime, call: throughGovernor(encodeFunctionCall(GovernorProposalForwarderAbi, 'queueProposalActions', forwarderArguments), `queueing proposal ${ proposalId }`) },
+				{ time: executionTime, call: throughGovernor(encodeFunctionCall(GovernorProposalForwarderAbi, 'executeProposalActions', forwarderArguments), `executing proposal ${ proposalId }`) },
 			],
 			executionTime,
-			governorOverheadGas: governorExecuteOverheadGas(actions.length),
+			governorOverheadGas: governorOverheadGas(actions.length),
+			forwardsThroughGovernor: true,
 			isProposalExecutedBy,
 		}
 	}
-	// The proposal id as salt keeps the simulated operation apart from any operation already scheduled at the timelock.
+	// A TimelockController takes all actions in one scheduleBatch and one executeBatch, which the governor calls itself. The proposal id as salt keeps the simulated operation apart from any operation already scheduled at the timelock.
+	const fromGovernor = (input: Hex, description: string): PlannedCall => ({ from: governor, to: timelock.address, input, description })
 	const batch = [actions.map((action) => addressString(action.target)), actions.map((action) => action.value), actions.map(callDataOf), ZERO_BYTES32, bytes32String(proposalId)] as const
 	return {
 		blocks: [
-			{ time: queueTime, gas: 'transaction', calls: [fromGovernor(encodeFunctionCall(TimelockControllerAbi, 'scheduleBatch', [...batch, timelock.delay]), `scheduling proposal ${ proposalId }`)] },
-			// executeBatch runs every action in one transaction, as the governor's execute does, with the gas the governor's execute would leave it.
-			{ time: executionTime, gas: 'transaction', calls: [fromGovernor(encodeFunctionCall(TimelockControllerAbi, 'executeBatch', batch), `executing proposal ${ proposalId }`)] },
+			{ time: queueTime, call: fromGovernor(encodeFunctionCall(TimelockControllerAbi, 'scheduleBatch', [...batch, timelock.delay]), `scheduling proposal ${ proposalId }`) },
+			{ time: executionTime, call: fromGovernor(encodeFunctionCall(TimelockControllerAbi, 'executeBatch', batch), `executing proposal ${ proposalId }`) },
 		],
 		executionTime,
-		governorOverheadGas: governorExecuteOverheadGas(actions.length),
+		governorOverheadGas: governorOverheadGas(actions.length),
+		forwardsThroughGovernor: false,
 		isProposalExecutedBy,
 	}
 }
@@ -357,75 +358,40 @@ const planExecution = (stackEndTime: bigint, governor: bigint, proposalId: bigin
 	const earliestTime = stackEndTime + SECONDS_PER_BLOCK
 	const executionTime = reads.eta > earliestTime ? reads.eta : earliestTime
 	return {
-		blocks: [{ time: executionTime, gas: 'transaction', calls: [{ from: MOCK_ADDRESS, to: governor, input: proposal.executeCall, description: `executing proposal ${ proposalId } through ${ checksummedAddress(governor) }` }] }],
+		blocks: [{ time: executionTime, call: { from: MOCK_ADDRESS, to: governor, input: proposal.executeCall, description: `executing proposal ${ proposalId } through ${ checksummedAddress(governor) }` } }],
 		executionTime,
 		governorOverheadGas: 0n,
+		forwardsThroughGovernor: false,
 		isProposalExecutedBy: isExecutedByTimelock(timelock, proposal.actions, reads.eta),
 	}
 }
 
-// The governance preview's own blocks never carry state overrides or signed messages: whatever overrides the simulation holds come from the user's prepared simulation stack before them, never from an address the governor or the proposal chose.
-const toSimulationInputBlocks = (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, plan: ExecutionPlan, website: Website, measuredGasLimits: readonly bigint[] | undefined): SimulationStateInput => plan.blocks.map((block): SimulationStateInputBlock => {
-	const gasOfCall = (callIndex: number) => {
-		switch (block.gas) {
-			case 'shared': return parentBlock.gasLimit / BigInt(block.calls.length)
-			case 'transaction': return getTransactionGasLimit(ethereum.getChainId(), parentBlock).gas - plan.governorOverheadGas
-			// Before the calls' needs are measured, each gets a whole block's gas, so the node runs them in consecutive blocks.
-			case 'measured': return measuredGasLimits?.[callIndex] ?? parentBlock.gasLimit
-		}
-	}
+/**
+ * The preview's own blocks. The only state override they may carry is GovernorProposalForwarder at the verified governor's address, with the governor's own code moved to GOVERNOR_CODE_ADDRESS, from the first planned block on and only when the plan forwardsThroughGovernor. Nothing is ever overridden at the timelock, at an action's target or at any other address the governor or the proposal names; the user's simulation stack before these blocks keeps its own overrides unchanged.
+ * Each transaction gets what one transaction may use at its block's time, less the governor's own work it does not run, so the node enforces the per-transaction limit, including refunds, as for the real transaction.
+ */
+const toSimulationInputBlocks = (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, governor: bigint, governorCode: Uint8Array | undefined, plan: ExecutionPlan, website: Website): SimulationStateInput => plan.blocks.map((block, blockIndex): SimulationStateInputBlock => {
+	const forwarderOverrides = plan.forwardsThroughGovernor && blockIndex === 0 && governorCode !== undefined ? { [addressString(governor)]: { code: getGovernorProposalForwarder() }, [addressString(GOVERNOR_CODE_ADDRESS)]: { code: governorCode } } : {}
+	const gas = getTransactionGasLimit(ethereum.getChainId(), block.time, parentBlock.gasLimit).gas - plan.governorOverheadGas
+	const transaction = { type: '1559' as const, from: block.call.from, to: block.call.to, value: 0n, input: stringToUint8Array(block.call.input), gas, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: ethereum.getChainId(), nonce: 0n }
 	return {
-		stateOverrides: {},
-		transactions: block.calls.map((call, callIndex): PreSimulationTransaction => {
-			const transaction = { type: '1559' as const, from: call.from, to: call.to, value: 0n, input: stringToUint8Array(call.input), gas: gasOfCall(callIndex), maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: ethereum.getChainId(), nonce: 0n }
-			return { signedTransaction: mockSignTransaction(transaction), website, created: new Date(), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: generate256BitRandomBigInt() }
-		}),
+		stateOverrides: forwarderOverrides,
+		transactions: [{ signedTransaction: mockSignTransaction(transaction), website, created: new Date(), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: generate256BitRandomBigInt() }],
 		signedMessages: [],
 		blockTimeManipulation: { type: 'SetTimetamp', timeToSet: block.time },
 		simulateWithZeroBaseFee: true,
 	}
 })
 
-// A refund is capped at a fifth of the gas a transaction used before it (EIP-3529), so a call used at most 5/4 of its gas before its refund.
-const gasBeforeRefund = (gasUsed: bigint) => gasUsed * 5n / 4n
-
 /**
- * Splits the block's gas between the execution calls by what each needs, measured in a first simulation where each call had a block of its own: its gas before refunds, with 64/63 for the gas a call keeps back from the calls it makes. A call that failed there, for example because it depends on running in the same block as the others, gets an equal part of what the others leave. Whatever remains is shared in proportion to need, so a call that needs more in the shared block still has room. Returns undefined when the measured needs alone exceed a block.
+ * Simulates what executing a governance proposal does, as the governor's own timelock executes it, after the user's simulation stack. The whole preview works on one parent block, the latest when it starts: the reads, the simulation and its balance lookups all use it, whatever blocks arrive meanwhile.
+ * The governor has to be a Compound-style or OpenZeppelin governor whose timelock() is a Compound Timelock or an OpenZeppelin TimelockController that accepts it. Anything else, any proposal that will not be executed, and any execution that fails, gets a reason instead of an outcome. The state overrides it may add are described at toSimulationInputBlocks.
+ * stackSimulationInput has to be prepared for the node already (prepareSafeExecutionsForRpc), on the same parent block.
  */
-export const gasLimitsByNeed = (blockGasLimit: bigint, measuredGasUsed: readonly (bigint | undefined)[]) => {
-	const needs = measuredGasUsed.map((gasUsed) => gasUsed === undefined ? undefined : gasBeforeRefund(gasUsed) * 64n / 63n)
-	const totalNeed = needs.reduce((total: bigint, need) => total + (need ?? 0n), 0n)
-	if (totalNeed > blockGasLimit) return undefined
-	const spare = blockGasLimit - totalNeed
-	const unmeasured = BigInt(needs.filter((need) => need === undefined).length)
-	return needs.map((need) => {
-		if (need === undefined) return spare / unmeasured
-		if (unmeasured > 0n) return need
-		return totalNeed === 0n ? need : need + spare * need / totalNeed
-	})
-}
-
-// For a plan with a measured block, simulates it once with each of that block's calls in a block of its own, and splits the gas by what each call used (gasLimitsByNeed).
-const measureGasLimits = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, stackSimulationInput: SimulationStateInput, plan: ExecutionPlan, website: Website): Promise<Checked<readonly bigint[] | undefined>> => {
-	if (!plan.blocks.some((block) => block.gas === 'measured')) return accept(undefined)
-	const measurement = await createExecutionSimulationState(ethereum, undefined, [...stackSimulationInput, ...toSimulationInputBlocks(ethereum, parentBlock, plan, website, undefined)])
-	if (measurement.success === false) throw new Error(measurement.jsonRpcError.error.message)
-	const measuredBlock = measurement.simulatedBlocks[measurement.simulatedBlocks.length - 1]
-	if (measuredBlock === undefined) throw new Error('The execution of the proposal was not simulated.')
-	const gasLimits = gasLimitsByNeed(parentBlock.gasLimit, measuredBlock.simulatedTransactions.map(({ ethSimulateV1CallResult }) => ethSimulateV1CallResult.status === 'success' ? ethSimulateV1CallResult.gasUsed : undefined))
-	if (gasLimits === undefined) return refuse(`the actions of the proposal together need more gas than a block holds, ${ parentBlock.gasLimit }.`)
-	return accept(gasLimits)
-}
-
-/**
- * Simulates what executing a governance proposal does, as the governor's own timelock executes it, after the user's simulation stack. The governor, its timelock and the proposal are read from the chain's latest block, and the execution runs through the real governor and timelock code.
- * The governor and the proposal never choose a state override: the preview adds none of its own, so the only overrides in the simulation are those the stack's own preparation produced (make-rich balances, Gnosis Safe execution approvals, the replaced ecrecover of signed messages).
- * The governor has to be a Compound-style or OpenZeppelin governor whose timelock() is a Compound Timelock or an OpenZeppelin TimelockController that accepts it. Anything else, any proposal that will not be executed, and any execution that fails, gets a reason instead of an outcome.
- * stackSimulationInput has to be prepared for the node already (prepareSafeExecutionsForRpc).
- */
-export const simulateGovernanceProposalExecution = async (ethereum: EthereumClientService, stackSimulationInput: SimulationStateInput, governor: bigint, proposalId: bigint, website: Website): Promise<GovernanceExecutionPreview> => {
-	const parentBlock = await ethereum.getBlock(undefined)
+export const simulateGovernanceProposalExecution = async (latestEthereum: EthereumClientService, stackSimulationInput: SimulationStateInput, governor: bigint, proposalId: bigint, website: Website): Promise<GovernanceExecutionPreview> => {
+	const parentBlock = await latestEthereum.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
+	const ethereum = latestEthereum.pinnedToBlock(parentBlock)
 	const reads = await readGovernor(ethereum, parentBlock, governor, proposalId)
 	if (!reads.success) return reads
 	const timelock = await identifyTimelock(ethereum, parentBlock, governor, reads.value.timelock)
@@ -438,26 +404,29 @@ export const simulateGovernanceProposalExecution = async (ethereum: EthereumClie
 	if (proposal.value.actions.length === 0) return refuse(`proposal ${ proposalId } has no actions.`)
 	const stackEndTime = dateToBigintSeconds(stackSimulationInput.reduce((previousTime, block) => getNextBlockTimeStampOverride(previousTime, block.blockTimeManipulation), parentBlock.timestamp))
 	const plan = planExecution(stackEndTime, governor, proposalId, reads.value, proposal.value, timelock.value)
-	const measuredGasLimits = await measureGasLimits(ethereum, parentBlock, stackSimulationInput, plan, website)
-	if (!measuredGasLimits.success) return measuredGasLimits
-	const simulationState = await createSimulationState(ethereum, undefined, [...stackSimulationInput, ...toSimulationInputBlocks(ethereum, parentBlock, plan, website, measuredGasLimits.value)])
+	const governorCode = plan.forwardsThroughGovernor ? await ethereum.getCode(governor, parentBlock.number, undefined) : undefined
+	const planBlocks = toSimulationInputBlocks(ethereum, parentBlock, governor, governorCode, plan, website)
+	// The node splits a block whose transactions need more gas than the parent's limit into several, which would separate what one transaction runs.
+	if (planBlocks.some((block) => block.transactions.reduce((total, transaction) => total + transaction.signedTransaction.gas, 0n) > parentBlock.gasLimit)) return refuse(`a planned transaction needs more gas than the block gas limit, ${ parentBlock.gasLimit }.`)
+	const simulationState = await createSimulationState(ethereum, undefined, [...stackSimulationInput, ...planBlocks])
 	if (simulationState.success === false) throw new Error(simulationState.jsonRpcError.error.message)
-	const planBlocks = simulationState.simulatedBlocks.slice(-plan.blocks.length)
-	const executionBlock = planBlocks[planBlocks.length - 1]
-	if (executionBlock === undefined || planBlocks.length !== plan.blocks.length) throw new Error('The execution of the proposal was not simulated.')
-	// The governor queues and executes a proposal in single transactions that revert as a whole, so if any planned call fails there is no outcome to show, only the reason.
-	const failure = planBlocks.flatMap((block, blockIndex) => block.simulatedTransactions.map((transaction, callIndex) => ({ result: transaction.ethSimulateV1CallResult, call: plan.blocks[blockIndex]?.calls[callIndex] }))).find(({ result }) => result.status === 'failure')
-	if (failure !== undefined && failure.result.status === 'failure') return refuse(`${ failure.call?.description ?? 'a call of the execution' } fails (${ failure.result.error.message }), and the governor's transaction reverts as a whole.`)
-	const executionResults = executionBlock.simulatedTransactions.map((transaction) => transaction.ethSimulateV1CallResult)
-	// Calls simulated apart (one per action at a Compound Timelock) are refunded apart, so their gas only bounds the governor's single transaction: before its refund it may need up to 5/4 of their gas, plus its own work.
-	if (plan.blocks.some((block) => block.gas === 'measured')) {
-		const gasUsed = executionResults.reduce((total, result) => total + result.gasUsed, 0n)
-		const gasNeededBound = gasBeforeRefund(gasUsed) + plan.governorOverheadGas
-		const transactionGasLimit = getTransactionGasLimit(ethereum.getChainId(), parentBlock)
-		if (gasNeededBound > transactionGasLimit.gas) return refuse(`executing proposal ${ proposalId } may need up to ${ gasNeededBound } gas in the governor's single transaction before refunds (its actions used ${ gasUsed } apart), more than ${ transactionGasLimit.source }, ${ transactionGasLimit.gas }.`)
+	const simulatedPlanBlocks = simulationState.simulatedBlocks.slice(-plan.blocks.length)
+	const executionBlock = simulatedPlanBlocks[simulatedPlanBlocks.length - 1]
+	const executionResult = executionBlock?.simulatedTransactions[0]?.ethSimulateV1CallResult
+	if (executionBlock === undefined || executionResult === undefined || simulatedPlanBlocks.length !== plan.blocks.length) throw new Error('The execution of the proposal was not simulated.')
+	// The governor queues and executes a proposal in single transactions that revert as a whole, so if a planned transaction fails there is no outcome to show, only the reason.
+	const failure = simulatedPlanBlocks.flatMap((block, blockIndex) => block.simulatedTransactions.map((transaction) => ({ result: transaction.ethSimulateV1CallResult, call: plan.blocks[blockIndex]?.call })))
+		.find(({ result }) => result.status === 'failure')
+	if (failure !== undefined && failure.result.status === 'failure') {
+		const failedBlock = plan.blocks.find((block) => block.call === failure.call)
+		const limit = getTransactionGasLimit(ethereum.getChainId(), failedBlock?.time ?? plan.executionTime, parentBlock.gasLimit)
+		const gasAvailable = limit.gas - plan.governorOverheadGas
+		// A call that runs out of gas leaves its caller a 64th of what it had, so a failure that used nearly all of the transaction's gas is reported as running out of it.
+		const outOfGas = failure.result.gasUsed * 64n >= gasAvailable * 62n ? `, after using ${ failure.result.gasUsed } of the ${ gasAvailable } gas it may have: ${ limit.source }, ${ limit.gas }, less ${ plan.governorOverheadGas } for the governor's own work` : ''
+		return refuse(`${ failure.call?.description ?? 'a transaction of the execution' } fails (${ failure.result.error.message })${ outOfGas }.`)
 	}
 	// A successful execution has to show the timelock executing each action, or it did something other than execute the proposal.
-	if (!plan.isProposalExecutedBy(executionResults)) return refuse(`executing proposal ${ proposalId } did not make ${ checksummedAddress(timelock.value.address) } execute its actions.`)
+	if (!plan.isProposalExecutedBy(executionResult)) return refuse(`executing proposal ${ proposalId } did not make ${ checksummedAddress(timelock.value.address) } execute its actions.`)
 	return {
 		success: true,
 		simulationState: { ...simulationState, simulationStateInput: simulationState.simulationStateInput.slice(-1), simulatedBlocks: [executionBlock] },

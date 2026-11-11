@@ -134,6 +134,7 @@ export type PreparedEthSimulateV1Input = {
 }
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
+	private pinnedBlock: NonNullable<EthereumBlockHeader> | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
@@ -152,10 +153,18 @@ export class EthereumClientService {
 
 	public readonly getRpcEntry = () => this.rpcEntry
 
+	// A client on the same RPC whose latest block stays the given block, for work that has to read, simulate and enrich on one chain state while new blocks arrive (the governance preview). It does not poll for blocks.
+	public readonly pinnedToBlock = (block: NonNullable<EthereumBlockHeader>) => {
+		const pinnedClient = new EthereumClientService(this.requestHandler, async () => undefined, async () => undefined, this.rpcEntry)
+		pinnedClient.pinnedBlock = block
+		return pinnedClient
+	}
+
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback
 
 	public getCachedBlock = () => {
+		if (this.pinnedBlock !== undefined) return this.pinnedBlock
 		if (this.cachedBlock === undefined || this.cachedBlock === null) return undefined
 		// if the block is older than MAX_BLOCK_CACHE block intervals, invalidate cache
 		if ((Date.now() - this.cachedBlock.timestamp.getTime()) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE * 1000) return undefined

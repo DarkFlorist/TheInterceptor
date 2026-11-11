@@ -22,7 +22,7 @@ const requestKey = (request: EthereumJsonRpcRequest) => JSON.stringify(serialize
 const createEthereumClientService = (requestHandler: IEthereumJSONRpcRequestHandler) => new EthereumClientService(requestHandler, async () => undefined, async () => undefined, { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
 
 // Answers each request with the result a real node gave to the same request when the fixture was recorded, and keeps every request so a test can inspect what was sent. resultOf gives the recorded result of a request.
-export const createReplayingEthereumClientService = (fixture: GovernanceFixture) => {
+export const createReplayingEthereumClientService = (fixture: GovernanceFixture, options: { readonly laterLatestBlock?: (recordedLatestBlock: unknown) => unknown } = {}) => {
 	const results = new Map(fixture.exchanges.map((exchange) => [JSON.stringify(exchange.request), exchange.result]))
 	const recordedExecutor = fixture.safeExecutionExecutor?.slice(2).toLowerCase()
 	const sessionExecutor = addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR).slice(2)
@@ -38,6 +38,9 @@ export const createReplayingEthereumClientService = (fixture: GovernanceFixture)
 		clearCache: () => undefined,
 		jsonRpcRequest: async (request: EthereumJsonRpcRequest) => {
 			requests.push(request)
+			// A test can make the chain move on after the first time the latest block is read.
+			const isLatestBlockRead = request.method === 'eth_getBlockByNumber' && request.params[0] === 'latest'
+			if (isLatestBlockRead && options.laterLatestBlock !== undefined && requests.filter((earlier) => earlier.method === 'eth_getBlockByNumber' && earlier.params[0] === 'latest').length > 1) return options.laterLatestBlock(resultOf(request))
 			return resultOf(request)
 		},
 	}
