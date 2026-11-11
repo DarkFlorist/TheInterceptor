@@ -123,13 +123,13 @@ const decodeOrUndefined = <Decoded>(reply: Hex | undefined, decode: (reply: Hex)
 	}
 }
 
-const GOVERNOR_LACKS_FORWARDED_ETHER_SELECTOR = toFunctionSelector('GovernorLacksForwardedEther(uint256,uint256)')
+const GOVERNOR_LACKS_FORWARDED_ETHER_SELECTOR = toFunctionSelector('GovernorLacksForwardedEther(uint256,uint256,uint256)')
 // Nodes return revert data in the call's returnData or in its error's data.
 const decodeGovernorLacksForwardedEther = (returnData: Uint8Array, errorData: string | undefined) => {
 	const revertData = returnData.length > 0 ? dataStringWith0xStart(returnData) : errorData?.toLowerCase() ?? '0x'
 	if (!revertData.startsWith(GOVERNOR_LACKS_FORWARDED_ETHER_SELECTOR)) return undefined
-	const [governorBalance, forwardedValue] = decodeOrUndefined(`0x${ revertData.slice(10) }`, (data) => decodeAbiValues(['uint256', 'uint256'], data)) ?? []
-	return typeof governorBalance === 'bigint' && typeof forwardedValue === 'bigint' ? { governorBalance, forwardedValue } : undefined
+	const [actionIndex, governorBalance, forwardedValue] = decodeOrUndefined(`0x${ revertData.slice(10) }`, (data) => decodeAbiValues(['uint256', 'uint256', 'uint256'], data)) ?? []
+	return typeof actionIndex === 'bigint' && typeof governorBalance === 'bigint' && typeof forwardedValue === 'bigint' ? { actionIndex, governorBalance, forwardedValue } : undefined
 }
 
 const estimateTimeOfBlock = (parentBlock: EthereumBlockHeader, blockNumber: bigint) => dateToBigintSeconds(parentBlock.timestamp) + (blockNumber > parentBlock.number ? blockNumber - parentBlock.number : 0n) * SECONDS_PER_BLOCK
@@ -447,9 +447,9 @@ export const simulateGovernanceProposalExecution = async (latestEthereum: Ethere
 	const failure = simulatedPlanBlocks.flatMap((block, blockIndex) => block.simulatedTransactions.map((transaction) => ({ result: transaction.ethSimulateV1CallResult, call: plan.blocks[blockIndex]?.call })))
 		.find(({ result }) => result.status === 'failure')
 	if (failure !== undefined && failure.result.status === 'failure') {
-		// GovernorAlpha's and GovernorBravo's execute forwards each action's value from the governor, out of the ether its executor sends with it. The preview sends none, since that would let any governor show ether arriving that nobody pays, so the forwarder refuses when the governor, after the user's stack and the queueing, holds too little.
+		// GovernorAlpha's and GovernorBravo's execute forwards each action's value from the governor, out of the ether its executor sends with it. The preview sends none, since that would let any governor show ether arriving that nobody pays, so the forwarder refuses when the governor, after the user's stack, the queueing and the actions before, holds too little for an action.
 		const lackingEther = decodeGovernorLacksForwardedEther(failure.result.returnData, failure.result.error.data)
-		if (lackingEther !== undefined) return refuse(`the actions of proposal ${ proposalId } send ${ lackingEther.forwardedValue } attoeth, which ${ checksummedAddress(governor) } forwards from the ether sent with its execute. When it executes, the governor holds ${ lackingEther.governorBalance } attoeth, and the preview does not supply the rest for the executor.`)
+		if (lackingEther !== undefined) return refuse(`action ${ lackingEther.actionIndex + 1n } of ${ proposal.value.actions.length } of proposal ${ proposalId } sends ${ lackingEther.forwardedValue } attoeth, which ${ checksummedAddress(governor) } forwards from the ether sent with its execute. When it comes to that action, the governor holds ${ lackingEther.governorBalance } attoeth, and the preview does not supply the rest for the executor.`)
 		const failedBlock = plan.blocks.find((block) => block.call === failure.call)
 		const limit = getTransactionGasLimit(ethereum.getChainId(), failedBlock?.time ?? plan.executionTime, parentBlock.gasLimit)
 		const gasAvailable = limit.gas - plan.governorOverheadGas

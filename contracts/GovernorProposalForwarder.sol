@@ -13,8 +13,8 @@ interface TimelockController {
 }
 
 contract GovernorProposalForwarder {
-	// The governor's balance when it executes does not cover the ether its actions forward. The preview does not supply that ether, which on chain the executor sends with execute.
-	error GovernorLacksForwardedEther(uint256 governorBalance, uint256 forwardedValue);
+	// The governor's balance when it comes to an action does not cover the ether that action forwards. The preview does not supply that ether, which on chain the executor sends with execute.
+	error GovernorLacksForwardedEther(uint256 actionIndex, uint256 governorBalance, uint256 forwardedValue);
 
 	function queueProposalActions(address timelock, address[] calldata targets, uint256[] calldata values, string[] calldata signatures, bytes[] calldata calldatas, uint256 eta) external {
 		require(msg.sender == 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF, 'GovernorProposalForwarder: only the preview queues');
@@ -25,12 +25,9 @@ contract GovernorProposalForwarder {
 
 	function executeProposalActions(address timelock, address[] calldata targets, uint256[] calldata values, string[] calldata signatures, bytes[] calldata calldatas, uint256 eta, bool forwardValues) external {
 		require(msg.sender == 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF, 'GovernorProposalForwarder: only the preview executes');
-		if (forwardValues) {
-			uint256 forwardedValue = 0;
-			for (uint256 index = 0; index < values.length; index++) forwardedValue += values[index];
-			if (address(this).balance < forwardedValue) revert GovernorLacksForwardedEther(address(this).balance, forwardedValue);
-		}
 		for (uint256 index = 0; index < targets.length; index++) {
+			// GovernorBravo's execute forwards each action's value as it comes to it, so an earlier action may still provide it.
+			if (forwardValues && address(this).balance < values[index]) revert GovernorLacksForwardedEther(index, address(this).balance, values[index]);
 			CompoundTimelock(timelock).executeTransaction{ value: forwardValues ? values[index] : 0 }(targets[index], values[index], signatures[index], calldatas[index], eta);
 		}
 	}

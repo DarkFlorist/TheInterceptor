@@ -400,7 +400,15 @@ describe('governance proposal execution through a real Compound Timelock in one 
 
 	test('refuses an action\'s ether that only its executor would send, since the preview supplies none', async () => {
 		const { preview } = await previewFixture('compound-timelock-value-governor-without-ether')
-		assertRefused(preview, /the actions of proposal 1 send 1000000000000000000 attoeth, which 0x[0-9a-fA-F]{40} forwards from the ether sent with its execute\. When it executes, the governor holds 0 attoeth, and the preview does not supply the rest for the executor\./)
+		assertRefused(preview, /action 1 of 1 of proposal 1 sends 1000000000000000000 attoeth, which 0x[0-9a-fA-F]{40} forwards from the ether sent with its execute\. When it comes to that action, the governor holds 0 attoeth, and the preview does not supply the rest for the executor\./)
+	})
+
+	test('forwards ether that an earlier action of the same proposal gives the governor, as GovernorBravo\'s execute checks each action as it comes to it', async () => {
+		const { result, governor } = await executionOf('compound-timelock-value-released-by-earlier-action')
+		const timelock = 0x7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7dn
+		// The first action has a contract pay the governor 1 ether; the second forwards it through the timelock to the user.
+		const etherTransfers = result.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS).map((log) => [log.topics[2], BigInt(dataStringWith0xStart(log.data))])
+		assert.deepEqual(etherTransfers, [[governor, 10n ** 18n], [timelock, 10n ** 18n], [EXAMPLE_STACK_SENDER, 10n ** 18n]])
 	})
 
 	const fundedByTheStack = [
