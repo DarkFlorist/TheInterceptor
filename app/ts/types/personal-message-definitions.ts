@@ -480,6 +480,7 @@ const PersonalSignRequestBase = funtypes.Intersect(
 		account: AddressBookEntry,
 		website: Website,
 		created: EthereumTimestamp,
+		// The signed payload as the website sent it, compact and indented: for typed data the request's JSON, not a parsed form, and for personal_sign the message string itself.
 		rawMessage: funtypes.String,
 		stringifiedMessage: funtypes.String,
 		messageIdentifier: EthereumQuantity,

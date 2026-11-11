@@ -13,7 +13,7 @@ import { MockRequestHandler } from '../MockRequestHandler.js'
 import { Permit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
 import { getMessageAndDomainHash } from '../../app/ts/utils/eip712.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
-import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
+import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, safeTx, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
 
 // Address metadata, tab state and RPC lookups read extension storage, which is empty for these requests.
 Object.defineProperty(globalThis, 'browser', {
@@ -620,5 +620,29 @@ describe('EIP-2612 permit signature requests', () => {
 		const mail = await visualizeTypedData(eip712Example)
 		if (mail.type !== 'EIP712') throw new Error(`Expected a generic EIP712 message, got ${ mail.type }`)
 		assert.equal(identifySignature(mail).title, 'Ether Mail - Mail signing request')
+	})
+})
+
+describe('Raw message of identified typed data', () => {
+	test('shows every identified message type as the request the website sent, not re-encoded', async () => {
+		// OrderComponents is left out because no valid request reaches it: its runtime type requires totalOriginalConsiderationItems, which an order that declares all of its fields in the EIP-712 types does not have.
+		const requests = [
+			['Permit', eip2612UsdcPermitMessage],
+			['Permit2', permit2Message],
+			['Permit2Batch', permit2PermitBatchMessage],
+			['Permit2SignatureTransfer', permit2TransferFromMessage],
+			['Permit2SignatureTransfer', permit2BatchTransferFromMessage],
+			['Permit2SignatureTransfer', permit2UniswapXWitnessTransferFromMessage],
+			['Permit2SignatureTransfer', permit2BatchWitnessTransferFromMessage],
+			['SafeTx', safeTx],
+			['EIP712', eip712Example],
+		] as const
+		for (const [expectedType, typedData] of requests) {
+			const sentParams = EIP712Message.parse(typedData)
+			const visualized = await visualizeTypedData(typedData)
+			assert.equal(visualized.type, expectedType)
+			assert.equal(visualized.rawMessage, JSON.stringify(sentParams), `${ expectedType } rawMessage`)
+			assert.equal(visualized.stringifiedMessage, JSON.stringify(sentParams, undefined, 4), `${ expectedType } stringifiedMessage`)
+		}
 	})
 })
