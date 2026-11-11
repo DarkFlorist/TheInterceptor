@@ -3,14 +3,16 @@ import * as assert from 'assert'
 import { GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, simulateGovernanceProposalExecution, splitIntoLogQueries } from '../../app/ts/simulation/governanceProposalExecution.js'
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { addressString, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
+import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
+import { describeGovernanceExecutionBlockNumber } from '../../app/ts/utils/governanceExecutionBlock.js'
 import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCodes.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { pinRequestToBlockHash } from '../../app/ts/simulation/services/blockPinning.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../../app/ts/utils/constants.js'
-import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, type GovernanceFixture, isExampleStackName, prepareExampleStack } from '../governanceFixtures.js'
+import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, type GovernanceFixture, isExampleStackName, pinToLatestBlock, prepareExampleStack } from '../governanceFixtures.js'
 
 // Each fixture is the RPC conversation of one preview, recorded from a real node by scripts/record-governance-fixtures.mts; its description names the chain state it was recorded on.
 const loadFixture = async (name: string): Promise<GovernanceFixture> => await Bun.file(new URL(`../fixtures/governance/${ name }.json`, import.meta.url)).json()
@@ -74,17 +76,34 @@ const recordedGasLimit = (fixture: GovernanceFixture) => {
 	return BigInt(latestBlock.gasLimit)
 }
 
-// Replays a fixture through the preview, after the example stack it was recorded with, and checks the override rule and the log search bound on every request it sent.
+// Every state read of a preview names its parent block by hash, so a reorganisation cannot mix two blocks' state into one outcome.
+const assertStateReadsNameTheBlockHash = (requests: readonly EthereumJsonRpcRequest[], parentBlockHash: bigint) => {
+	for (const request of requests) {
+		switch (request.method) {
+			case 'eth_call': assert.equal(request.params[1], parentBlockHash); break
+			case 'eth_getCode':
+			case 'eth_getBalance': assert.equal(request.params[1], parentBlockHash); break
+			case 'eth_simulateV1': assert.equal(request.params[1], bytes32String(parentBlockHash)); break
+			default: break
+		}
+	}
+}
+
+// Replays a fixture as the governance handler runs a preview: pinned to the latest block, the example stack it was recorded with prepared on that block, then the preview. Checks the override rule, the block hash of every state read and the log search bound on every request it sent.
 const previewFixture = async (name: string, options: Parameters<typeof createReplayingEthereumClientService>[1] = {}) => {
 	const fixture = await loadFixture(name)
 	if (fixture.stack !== undefined && !isExampleStackName(fixture.stack)) throw new Error(`Unknown stack ${ fixture.stack }`)
 	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture, options)
-	const stack = await prepareExampleStack(ethereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack]())
+	const pinnedEthereum = await pinToLatestBlock(ethereum)
+	const parentBlock = await pinnedEthereum.getBlock(undefined)
+	if (parentBlock === null) throw new Error('Expected the latest block')
+	const stack = await prepareExampleStack(pinnedEthereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack]())
 	const governor = BigInt(fixture.governor)
-	const preview = await simulateGovernanceProposalExecution(ethereum, stack, governor, BigInt(fixture.proposalId), WEBSITE)
-	const forwarderUsed = await assertOverrideRule(ethereum, requests, resultOf, stack, governor)
+	const preview = await simulateGovernanceProposalExecution(pinnedEthereum, stack, governor, BigInt(fixture.proposalId), WEBSITE)
+	const forwarderUsed = await assertOverrideRule(pinnedEthereum, requests, resultOf, stack, governor)
+	assertStateReadsNameTheBlockHash(requests, parentBlock.hash)
 	assertBoundedLogSearch(requests)
-	return { preview, requests, resultOf, stack, governor, forwarderUsed, fixture }
+	return { preview, requests, resultOf, stack, governor, forwarderUsed, fixture, parentBlock }
 }
 
 // The simulation that produced the outcome: the stack's blocks, then the planned ones, with the execution last.
@@ -189,15 +208,45 @@ describe('governance proposal execution preview of real governors', () => {
 	})
 
 	test('works on the block it started with when the chain moves on to a block with a lower gas limit', async () => {
-		const laterLatestBlock = (recorded: unknown) => {
+		const fixture = await loadFixture('uniswap-bravo-active')
+		const answerWithLaterLatestBlock = (request: EthereumJsonRpcRequest, recordedResult: () => unknown, earlierRequests: readonly EthereumJsonRpcRequest[]) => {
+			const isLatestBlockRead = (candidate: EthereumJsonRpcRequest) => candidate.method === 'eth_getBlockByNumber' && candidate.params[0] === 'latest'
+			const recorded = recordedResult()
+			if (!isLatestBlockRead(request) || !earlierRequests.some(isLatestBlockRead)) return recorded
 			if (typeof recorded !== 'object' || recorded === null || !('number' in recorded) || typeof recorded.number !== 'string') throw new Error('Expected a recorded block')
 			return { ...recorded, number: `0x${ (BigInt(recorded.number) + 1n).toString(16) }`, gasLimit: '0x1312d00' }
 		}
-		const pinned = await previewFixture('uniswap-bravo-active', { laterLatestBlock })
+		// The preview is given a client that is not pinned, so it has to pin itself.
+		const { ethereum, requests } = createReplayingEthereumClientService(fixture, { answer: answerWithLaterLatestBlock })
+		const moved = await simulateGovernanceProposalExecution(ethereum, [], BigInt(fixture.governor), BigInt(fixture.proposalId), WEBSITE)
 		const unchanged = await previewFixture('uniswap-bravo-active')
-		// The preview read the latest block once; every later read, simulation and balance lookup named that block.
-		assert.equal(pinned.requests.filter((request) => request.method === 'eth_getBlockByNumber' && request.params[0] === 'latest').length, 1)
-		assert.deepEqual(getExecution(pinned.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult), getExecution(unchanged.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult))
+		assert.equal(requests.filter((request) => request.method === 'eth_getBlockByNumber' && request.params[0] === 'latest').length, 1)
+		assert.deepEqual(getExecution(moved).transactions.map((transaction) => transaction.ethSimulateV1CallResult), getExecution(unchanged.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult))
+	})
+
+	test('refuses when a reorganisation replaces the parent block while the preview runs', async () => {
+		// The chain answers that another block now holds the parent's height. The state reads, named by hash, still see the parent block; the check at the end sees the new one.
+		const answerWithReorganisation = (request: EthereumJsonRpcRequest, recordedResult: () => unknown) => {
+			const recorded = recordedResult()
+			if (request.method !== 'eth_getBlockByNumber' || request.params[0] === 'latest' || typeof recorded !== 'object' || recorded === null) return recorded
+			return { ...recorded, hash: bytes32String(0xb10cn) }
+		}
+		const { preview, requests } = await previewFixture('uniswap-bravo-active', { answer: answerWithReorganisation })
+		assertRefused(preview, /the chain reorganised while the preview ran, and block 26100000 is no longer 0x[0-9a-f]{64}\. Simulate again\./)
+		assert.ok(requests.some((request) => request.method === 'eth_getBlockByNumber' && request.params[0] === 26_100_000n))
+	})
+
+	test('says that the execution block keeps a number just after the parent\'s, since nodes simulate at most 256 blocks ahead', async () => {
+		const { preview, parentBlock } = await previewFixture('uniswap-bravo-active')
+		const execution = getExecution(preview)
+		const executionBlock = execution.simulationState.simulatedBlocks[0]
+		const executionBlockNumber = executionBlock?.blockHeader?.number
+		// The queue block and the execution block follow the parent; the proposal's voting ends at block 26109012.
+		assert.equal(executionBlockNumber, parentBlock.number + 2n)
+		const note = describeGovernanceExecutionBlockNumber(parentBlock, executionBlockNumber, BigInt(execution.executionTime.getTime() / 1000))
+		assert.match(note ?? '', /^The simulation runs it at block 26100002, not at about block 261\d{5} as on chain, because nodes simulate at most 256 blocks ahead\. An action that depends on the block number can differ\.$/)
+		const estimated = BigInt(/about block (\d+)/.exec(note ?? '')?.[1] ?? '0')
+		assert.ok(estimated > 26_109_012n)
 	})
 
 	test('shows no outcome for a proposal that was already executed', async () => {
@@ -238,17 +287,16 @@ describe('governance proposal execution preview of contracts built to look like 
 		assertRefused(preview, /executing proposal 1 (fails|did not make 0x7f08904bdF69bE49734b0D2039A5f830CeFc2EC9 execute its actions)/)
 	})
 
-	test('a governor with a timelock of its own can only move what that timelock holds', async () => {
-		const { preview } = await previewFixture('abuse-own-funded-timelock')
+	test('a governor with a timelock of its own can only move what it and its timelock hold', async () => {
+		const { preview, governor } = await previewFixture('abuse-own-funded-timelock')
 		const execution = getExecution(preview)
 		const ownTimelock = 0xef0f70eb6aaa500dcbdac11a2fb2591892051b39n
 		assert.equal(execution.timelock, ownTimelock)
 		const [transaction] = execution.transactions
 		if (transaction?.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
-		// The node reports the 1000 ether it sends as a transfer log; its sender is the attacker's own timelock.
-		const etherTransfers = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
-		assert.equal(etherTransfers.length, 1)
-		assert.equal(etherTransfers[0]?.topics[1], ownTimelock)
+		// The node reports each ether transfer as a log: GovernorBravo-style, the attacker's governor forwards the 1000 ether to its own timelock, which sends it on.
+		const etherTransfers = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS).map((log) => [log.topics[1], log.topics[2]])
+		assert.deepEqual(etherTransfers, [[governor, ownTimelock], [ownTimelock, EXAMPLE_STACK_SENDER]])
 	})
 })
 
@@ -285,6 +333,20 @@ describe('governance proposal execution through a real Compound Timelock in one 
 		const calledBack = result.logs.filter((log) => log.address === governor)
 		assert.equal(calledBack.length, 1)
 		assert.equal(BigInt(dataStringWith0xStart(calledBack[0]?.data ?? new Uint8Array())), 0x7878787878787878787878787878787878787878n)
+	})
+
+	test('forwards an action\'s ether from the governor, as GovernorBravo\'s execute does, when its timelock holds none', async () => {
+		const { result, governor } = await executionOf('compound-timelock-value-forwarded-by-governor')
+		const timelock = 0x7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7cn
+		const etherTransfers = result.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS).map((log) => [log.topics[1], log.topics[2], BigInt(dataStringWith0xStart(log.data))])
+		assert.deepEqual(etherTransfers, [[governor, timelock, 10n ** 18n], [timelock, EXAMPLE_STACK_SENDER, 10n ** 18n]])
+	})
+
+	test('refuses an action\'s ether that only its executor would send, since the preview supplies none', async () => {
+		const { preview, requests } = await previewFixture('compound-timelock-value-governor-without-ether')
+		assertRefused(preview, /the actions of proposal 1 send 1000000000000000000 attoeth, which 0x[0-9a-fA-F]{40} forwards from the ether sent with its execute\. The governor holds 0 attoeth, and the preview does not supply the rest for the executor\./)
+		// Nothing was simulated as the governor.
+		assert.ok(simulateRequests(requests).every((simulation) => simulation.blockStateCalls.every((block) => !hasOverrides(block.stateOverrides))))
 	})
 
 	test('refunds a proposal as one transaction, so one that clears what it wrote fits the per-transaction limit', async () => {
@@ -407,5 +469,18 @@ describe('governance execution gas', () => {
 		}
 		assert.deepEqual([...OSAKA_ACTIVATION_TIME_BY_CHAIN_ID.keys()], [1n, 11_155_111n, 560_048n])
 		assert.deepEqual(getTransactionGasLimit(8453n, 1_900_000_000n, 60_000_000n), { gas: 60_000_000n, source: 'the block gas limit' })
+	})
+})
+
+describe('pinning state reads to a block hash', () => {
+	const block = { number: 100n, hash: 0xabcd000000000000000000000000000000000000000000000000000000000001n }
+	test('points reads of the latest block, the pinned number or no block at the hash, and leaves other blocks and height-only requests alone', () => {
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getCode', params: [1n, 'latest'] }, block), { method: 'eth_getCode', params: [1n, block.hash] })
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getBalance', params: [1n, 100n] }, block), { method: 'eth_getBalance', params: [1n, block.hash] })
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getStorageAt', params: [1n, 2n, 'latest'] }, block), { method: 'eth_getStorageAt', params: [1n, 2n, block.hash] })
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_call', params: [{ to: 1n }] }, block), { method: 'eth_call', params: [{ to: 1n }, block.hash] })
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_simulateV1', params: [{ blockStateCalls: [] }, 100n] }, block), { method: 'eth_simulateV1', params: [{ blockStateCalls: [] }, bytes32String(block.hash)] })
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getCode', params: [1n, 99n] }, block), { method: 'eth_getCode', params: [1n, 99n] })
+		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getBlockByNumber', params: [100n, false] }, block), { method: 'eth_getBlockByNumber', params: [100n, false] })
 	})
 })

@@ -71,6 +71,8 @@ type GovernorReads = {
 	readonly snapshot: bigint | undefined
 	readonly votingDelay: bigint | undefined
 	readonly clockIsTimestamp: boolean
+	// OpenZeppelin governors answer COUNTING_MODE(); GovernorAlpha and GovernorBravo do not.
+	readonly isOpenZeppelin: boolean
 }
 
 type ProposalActions = {
@@ -106,6 +108,7 @@ type Refusal = { readonly success: false, readonly errorMessage: string }
 type Checked<Value> = { readonly success: true, readonly value: Value } | Refusal
 const refuse = (reason: string): Refusal => ({ success: false, errorMessage: `No outcome is simulated: ${ reason }` })
 const accept = <Value>(value: Value): Checked<Value> => ({ success: true, value })
+const reorganisedAway = (parentBlock: Pick<EthereumBlockHeader, 'number' | 'hash'>) => `the chain reorganised while the preview ran, and block ${ parentBlock.number } is no longer ${ bytes32String(parentBlock.hash) }. Simulate again.`
 
 export type GovernanceExecutionPreview = { readonly success: true, readonly simulationState: SimulationState, readonly timelock: bigint, readonly executionTime: Date } | Refusal
 
@@ -134,7 +137,7 @@ const readContracts = async (ethereum: EthereumClientService, parentBlock: Ether
 
 const readGovernor = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, governor: bigint, proposalId: bigint): Promise<Checked<GovernorReads>> => {
 	const readFromGovernor = (input: Hex) => ({ to: governor, input })
-	const [timelockReply, stateReply, actionsReply, proposalsReply, detailsReply, etaReply, deadlineReply, snapshotReply, votingDelayReply, clockModeReply] = await readContracts(ethereum, parentBlock, [
+	const [timelockReply, stateReply, actionsReply, proposalsReply, detailsReply, etaReply, deadlineReply, snapshotReply, votingDelayReply, clockModeReply, countingModeReply] = await readContracts(ethereum, parentBlock, [
 		readFromGovernor(encodeFunctionCall(GovernorAbi, 'timelock', [])),
 		readFromGovernor(encodeFunctionCall(GovernorAbi, 'state', [proposalId])),
 		readFromGovernor(encodeFunctionCall(GovernorAbi, 'getActions', [proposalId])),
@@ -145,6 +148,7 @@ const readGovernor = async (ethereum: EthereumClientService, parentBlock: Ethere
 		readFromGovernor(encodeFunctionCall(GovernorAbi, 'proposalSnapshot', [proposalId])),
 		readFromGovernor(encodeFunctionCall(GovernorAbi, 'votingDelay', [])),
 		readFromGovernor(encodeFunctionCall(GovernorAbi, 'CLOCK_MODE', [])),
+		readFromGovernor(encodeFunctionCall(GovernorAbi, 'COUNTING_MODE', [])),
 	])
 	const timelock = decodeOrUndefined(timelockReply, (reply) => decodeFunctionOutput(GovernorAbi, 'timelock', reply))
 	const stateIndex = decodeOrUndefined(stateReply, (reply) => decodeFunctionOutput(GovernorAbi, 'state', reply))
@@ -168,6 +172,7 @@ const readGovernor = async (ethereum: EthereumClientService, parentBlock: Ethere
 		snapshot: decodeOrUndefined(snapshotReply, (reply) => decodeFunctionOutput(GovernorAbi, 'proposalSnapshot', reply)),
 		votingDelay: decodeOrUndefined(votingDelayReply, (reply) => decodeFunctionOutput(GovernorAbi, 'votingDelay', reply)),
 		clockIsTimestamp,
+		isOpenZeppelin: decodeOrUndefined(countingModeReply, (reply) => decodeFunctionOutput(GovernorAbi, 'COUNTING_MODE', reply)) !== undefined,
 	})
 }
 
@@ -207,6 +212,8 @@ const findProposalCreatedEvent = async (ethereum: EthereumClientService, parentB
 		return decoded?.eventName === 'ProposalCreated' && decoded.args.proposalId === proposalId ? [decoded.args] : []
 	})
 	const [event, ...otherEvents] = events
+	// eth_getLogs names heights, so a search that found nothing may have read another chain.
+	if (!(await ethereum.isPinnedBlockCanonical(undefined))) return refuse(reorganisedAway(parentBlock))
 	if (event === undefined || otherEvents.length > 0) return refuse(`${ checksummedAddress(governor) } does not list the actions of proposal ${ proposalId }, and its ProposalCreated events between blocks ${ range.value.fromBlock } and ${ range.value.toBlock } do not name the proposal exactly once.`)
 	return accept(event)
 }
@@ -301,8 +308,8 @@ const isExecutedByTimelockController = (timelock: bigint, actions: readonly Prop
 
 const isExecutedByTimelock = (timelock: Timelock, actions: readonly ProposalAction[], eta: bigint) => timelock.type === 'CompoundTimelock' ? isExecutedByCompoundTimelock(timelock.address, actions, eta) : isExecutedByTimelockController(timelock.address, actions)
 
-// A proposal that is not queued yet is simulated as passing: the governor queues its actions at its timelock when voting ends, and executes them once the timelock's delay has passed, each in one transaction in which the timelock sees the governor as the caller and checks it as it checks the governor's own queue and execute. Any ETH an action sends comes from the timelock's balance.
-const planQueueAndExecution = (stackEndTime: bigint, governor: bigint, proposalId: bigint, votingEndsAt: bigint | undefined, actions: readonly ProposalAction[], timelock: Timelock): ExecutionPlan => {
+// A proposal that is not queued yet is simulated as passing: the governor queues its actions at its timelock when voting ends, and executes them once the timelock's delay has passed, each in one transaction in which the timelock sees the governor as the caller and checks it as it checks the governor's own queue and execute. The preview sends no ether with them, so ether an action sends comes from where the governor's execute takes it: the governor's balance for GovernorAlpha and GovernorBravo, the timelock's for OpenZeppelin governors.
+const planQueueAndExecution = (stackEndTime: bigint, governor: bigint, proposalId: bigint, votingEndsAt: bigint | undefined, actions: readonly ProposalAction[], timelock: Timelock, forwardValues: boolean): ExecutionPlan => {
 	const earliestQueueTime = stackEndTime + MINIMUM_SECONDS_UNTIL_QUEUE
 	const queueTime = votingEndsAt !== undefined && votingEndsAt + 1n > earliestQueueTime ? votingEndsAt + 1n : earliestQueueTime
 	const executionTime = queueTime + timelock.delay
@@ -314,7 +321,7 @@ const planQueueAndExecution = (stackEndTime: bigint, governor: bigint, proposalI
 		return {
 			blocks: [
 				{ time: queueTime, call: throughGovernor(encodeFunctionCall(GovernorProposalForwarderAbi, 'queueProposalActions', forwarderArguments), `queueing proposal ${ proposalId }`) },
-				{ time: executionTime, call: throughGovernor(encodeFunctionCall(GovernorProposalForwarderAbi, 'executeProposalActions', forwarderArguments), `executing proposal ${ proposalId }`) },
+				{ time: executionTime, call: throughGovernor(encodeFunctionCall(GovernorProposalForwarderAbi, 'executeProposalActions', [...forwarderArguments, forwardValues]), `executing proposal ${ proposalId }`) },
 			],
 			executionTime,
 			governorOverheadGas: governorOverheadGas(actions.length),
@@ -353,7 +360,8 @@ const checkExecutableState = (governor: bigint, proposalId: bigint, reads: Gover
 
 // Plans the proposal's execution after the simulation stack, whose last block is at stackEndTime.
 const planExecution = (stackEndTime: bigint, governor: bigint, proposalId: bigint, reads: GovernorReads, proposal: ProposalActions, timelock: Timelock): ExecutionPlan => {
-	if (reads.state !== 'Queued' || reads.eta === undefined) return planQueueAndExecution(stackEndTime, governor, proposalId, reads.votingEndsAt, proposal.actions, timelock)
+	// GovernorAlpha and GovernorBravo forward each action's value from the governor; OpenZeppelin's GovernorTimelockCompound has the timelock pay it.
+	if (reads.state !== 'Queued' || reads.eta === undefined) return planQueueAndExecution(stackEndTime, governor, proposalId, reads.votingEndsAt, proposal.actions, timelock, !reads.isOpenZeppelin)
 	// A queued proposal is executed as anyone can execute it: through the governor's own execute, in one transaction, once its eta has passed.
 	const earliestTime = stackEndTime + SECONDS_PER_BLOCK
 	const executionTime = reads.eta > earliestTime ? reads.eta : earliestTime
@@ -374,6 +382,7 @@ const toSimulationInputBlocks = (ethereum: EthereumClientService, parentBlock: E
 	const forwarderOverrides = plan.forwardsThroughGovernor && blockIndex === 0 && governorCode !== undefined ? { [addressString(governor)]: { code: getGovernorProposalForwarder() }, [addressString(GOVERNOR_CODE_ADDRESS)]: { code: governorCode } } : {}
 	const gas = getTransactionGasLimit(ethereum.getChainId(), block.time, parentBlock.gasLimit).gas - plan.governorOverheadGas
 	const transaction = { type: '1559' as const, from: block.call.from, to: block.call.to, value: 0n, input: stringToUint8Array(block.call.input), gas, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: ethereum.getChainId(), nonce: 0n }
+	// Only the time is set: go-ethereum's eth_simulateV1 runs at most 256 blocks past its base, gaps included ("too many blocks" on ethereum.dark.florist at 257), while a proposal executes tens of thousands of blocks later, so the planned blocks keep consecutive numbers and the panel says so.
 	return {
 		stateOverrides: forwarderOverrides,
 		transactions: [{ signedTransaction: mockSignTransaction(transaction), website, created: new Date(), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: generate256BitRandomBigInt() }],
@@ -404,6 +413,12 @@ export const simulateGovernanceProposalExecution = async (latestEthereum: Ethere
 	if (proposal.value.actions.length === 0) return refuse(`proposal ${ proposalId } has no actions.`)
 	const stackEndTime = dateToBigintSeconds(stackSimulationInput.reduce((previousTime, block) => getNextBlockTimeStampOverride(previousTime, block.blockTimeManipulation), parentBlock.timestamp))
 	const plan = planExecution(stackEndTime, governor, proposalId, reads.value, proposal.value, timelock.value)
+	// GovernorAlpha's and GovernorBravo's execute forwards each action's value from the governor, out of the ether its executor sends with it. The preview supplies no ether, since supplying it would let any governor show ether arriving that nobody has to pay, so the governor's own balance has to cover it.
+	const forwardedValue = plan.forwardsThroughGovernor && !reads.value.isOpenZeppelin ? proposal.value.actions.reduce((total, action) => total + action.value, 0n) : 0n
+	if (forwardedValue > 0n) {
+		const governorBalance = await ethereum.getBalance(governor, parentBlock.number, undefined)
+		if (governorBalance < forwardedValue) return refuse(`the actions of proposal ${ proposalId } send ${ forwardedValue } attoeth, which ${ checksummedAddress(governor) } forwards from the ether sent with its execute. The governor holds ${ governorBalance } attoeth, and the preview does not supply the rest for the executor.`)
+	}
 	const governorCode = plan.forwardsThroughGovernor ? await ethereum.getCode(governor, parentBlock.number, undefined) : undefined
 	const planBlocks = toSimulationInputBlocks(ethereum, parentBlock, governor, governorCode, plan, website)
 	// The node splits a block whose transactions need more gas than the parent's limit into several, which would separate what one transaction runs.
@@ -425,6 +440,8 @@ export const simulateGovernanceProposalExecution = async (latestEthereum: Ethere
 		const outOfGas = failure.result.gasUsed * 64n >= gasAvailable * 62n ? `, after using ${ failure.result.gasUsed } of the ${ gasAvailable } gas it may have: ${ limit.source }, ${ limit.gas }, less ${ plan.governorOverheadGas } for the governor's own work` : ''
 		return refuse(`${ failure.call?.description ?? 'a transaction of the execution' } fails (${ failure.result.error.message })${ outOfGas }.`)
 	}
+	// Reads named the parent block by hash; anything that named its height, such as the ProposalCreated search, stands only if the chain still holds it there.
+	if (!(await ethereum.isPinnedBlockCanonical(undefined))) return refuse(reorganisedAway(parentBlock))
 	// A successful execution has to show the timelock executing each action, or it did something other than execute the proposal.
 	if (!plan.isProposalExecutedBy(executionResult)) return refuse(`executing proposal ${ proposalId } did not make ${ checksummedAddress(timelock.value.address) } execute its actions.`)
 	return {

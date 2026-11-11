@@ -16,6 +16,7 @@ import { authorizesExecutedCall, type BlockTimeManipulation, type SimulationStat
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
+import { createBlockPinnedRequestHandler } from './blockPinning.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
@@ -153,11 +154,18 @@ export class EthereumClientService {
 
 	public readonly getRpcEntry = () => this.rpcEntry
 
-	// A client on the same RPC whose latest block stays the given block, for work that has to read, simulate and enrich on one chain state while new blocks arrive (the governance preview). It does not poll for blocks.
+	// A client on the same RPC whose latest block stays the given block, for work that has to read, simulate and enrich on one chain state while new blocks arrive (the governance preview). Its state reads name the block by hash (blockPinning.ts), and it does not poll for blocks.
 	public readonly pinnedToBlock = (block: NonNullable<EthereumBlockHeader>) => {
-		const pinnedClient = new EthereumClientService(this.requestHandler, async () => undefined, async () => undefined, this.rpcEntry)
+		const pinnedClient = new EthereumClientService(createBlockPinnedRequestHandler(this.requestHandler, block), async () => undefined, async () => undefined, this.rpcEntry)
 		pinnedClient.pinnedBlock = block
 		return pinnedClient
+	}
+
+	// Whether the chain still holds the pinned block at its height. Requests that name a height, such as eth_getLogs, read whatever block holds it, so their results stand only while this holds.
+	public readonly isPinnedBlockCanonical = async (requestAbortController: AbortController | undefined) => {
+		if (this.pinnedBlock === undefined) return true
+		const blockAtHeight = EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [this.pinnedBlock.number, false] }, requestAbortController))
+		return blockAtHeight !== null && blockAtHeight.hash === this.pinnedBlock.hash
 	}
 
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback

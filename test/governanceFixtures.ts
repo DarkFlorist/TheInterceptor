@@ -21,8 +21,8 @@ const requestKey = (request: EthereumJsonRpcRequest) => JSON.stringify(serialize
 
 const createEthereumClientService = (requestHandler: IEthereumJSONRpcRequestHandler) => new EthereumClientService(requestHandler, async () => undefined, async () => undefined, { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
 
-// Answers each request with the result a real node gave to the same request when the fixture was recorded, and keeps every request so a test can inspect what was sent. resultOf gives the recorded result of a request.
-export const createReplayingEthereumClientService = (fixture: GovernanceFixture, options: { readonly laterLatestBlock?: (recordedLatestBlock: unknown) => unknown } = {}) => {
+// Answers each request with the result a real node gave to the same request when the fixture was recorded, and keeps every request so a test can inspect what was sent. resultOf gives the recorded result of a request, and answer lets a test change what the chain answers, for example a later latest block or another block at a height.
+export const createReplayingEthereumClientService = (fixture: GovernanceFixture, options: { readonly answer?: (request: EthereumJsonRpcRequest, recordedResult: () => unknown, earlierRequests: readonly EthereumJsonRpcRequest[]) => unknown } = {}) => {
 	const results = new Map(fixture.exchanges.map((exchange) => [JSON.stringify(exchange.request), exchange.result]))
 	const recordedExecutor = fixture.safeExecutionExecutor?.slice(2).toLowerCase()
 	const sessionExecutor = addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR).slice(2)
@@ -37,11 +37,9 @@ export const createReplayingEthereumClientService = (fixture: GovernanceFixture,
 		rpcUrl: FIXTURE_RPC_URL,
 		clearCache: () => undefined,
 		jsonRpcRequest: async (request: EthereumJsonRpcRequest) => {
+			const earlierRequests = [...requests]
 			requests.push(request)
-			// A test can make the chain move on after the first time the latest block is read.
-			const isLatestBlockRead = request.method === 'eth_getBlockByNumber' && request.params[0] === 'latest'
-			if (isLatestBlockRead && options.laterLatestBlock !== undefined && requests.filter((earlier) => earlier.method === 'eth_getBlockByNumber' && earlier.params[0] === 'latest').length > 1) return options.laterLatestBlock(resultOf(request))
-			return resultOf(request)
+			return options.answer === undefined ? resultOf(request) : options.answer(request, () => resultOf(request), earlierRequests)
 		},
 	}
 	return { ethereum: createEthereumClientService(requestHandler), requests, resultOf }
@@ -108,4 +106,11 @@ export const prepareExampleStack = async (ethereum: EthereumClientService, stack
 	const parentBlock = await ethereum.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	return await prepareSafeExecutionSimulationInput(stack, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+}
+
+// Pins a client to the latest block, as the governance handler does before it prepares the user's stack and runs the preview.
+export const pinToLatestBlock = async (ethereum: EthereumClientService) => {
+	const latestBlock = await ethereum.getBlock(undefined)
+	if (latestBlock === null) throw new Error('The latest block is null')
+	return ethereum.pinnedToBlock(latestBlock)
 }

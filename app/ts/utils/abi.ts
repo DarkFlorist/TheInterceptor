@@ -438,6 +438,7 @@ export const GovernorAbi = [
 	{ type: 'function', name: 'proposalSnapshot', stateMutability: 'view', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [{ name: '', type: 'uint256' }] },
 	{ type: 'function', name: 'votingDelay', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 	{ type: 'function', name: 'CLOCK_MODE', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'string' }] },
+	{ type: 'function', name: 'COUNTING_MODE', stateMutability: 'pure', inputs: [], outputs: [{ name: '', type: 'string' }] },
 	{ type: 'function', name: 'execute', stateMutability: 'payable', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [] },
 	{
 		type: 'function',
@@ -497,7 +498,7 @@ export const GovernorProposalForwarderAbi = [
 		type: 'function',
 		name: 'executeProposalActions',
 		stateMutability: 'nonpayable',
-		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'signatures', type: 'string[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'eta', type: 'uint256' }],
+		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'signatures', type: 'string[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'eta', type: 'uint256' }, { name: 'forwardValues', type: 'bool' }],
 		outputs: [],
 	},
 ] as const satisfies Abi

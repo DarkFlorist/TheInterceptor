@@ -4,7 +4,7 @@ import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
 import { simulateGovernanceProposalExecution } from '../app/ts/simulation/governanceProposalExecution.js'
 import { EthereumJSONRpcRequestHandler } from '../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EXAMPLE_STACKS, createRecordingEthereumClientService, isExampleStackName, prepareExampleStack, type GovernanceFixture } from '../test/governanceFixtures.js'
+import { EXAMPLE_STACKS, createRecordingEthereumClientService, isExampleStackName, pinToLatestBlock, prepareExampleStack, type GovernanceFixture } from '../test/governanceFixtures.js'
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
 import { addressString } from '../app/ts/utils/bigint.js'
 
@@ -14,7 +14,8 @@ if (name === undefined || rpcUrl === undefined || governor === undefined || prop
 const stackName = stackOption?.replace('--stack=', '')
 if (stackName !== undefined && !isExampleStackName(stackName)) throw new Error(`Unknown stack ${ stackName }`)
 const { ethereum, exchanges } = createRecordingEthereumClientService(new EthereumJSONRpcRequestHandler(rpcUrl))
-const preview = await simulateGovernanceProposalExecution(ethereum, await prepareExampleStack(ethereum, stackName === undefined ? [] : EXAMPLE_STACKS[stackName]()), BigInt(governor), BigInt(proposalId), { websiteOrigin: 'https://governance.fixture', icon: undefined, title: undefined })
+const pinnedEthereum = await pinToLatestBlock(ethereum)
+const preview = await simulateGovernanceProposalExecution(pinnedEthereum, await prepareExampleStack(pinnedEthereum, stackName === undefined ? [] : EXAMPLE_STACKS[stackName]()), BigInt(governor), BigInt(proposalId), { websiteOrigin: 'https://governance.fixture', icon: undefined, title: undefined })
 console.log(preview.success ? `${ name }: simulated ${ preview.simulationState.simulatedBlocks[0]?.simulatedTransactions.length ?? 0 } execution transactions` : `${ name }: ${ preview.errorMessage }`)
 
 const fixture: GovernanceFixture = { description, governor, proposalId, ...stackName === undefined ? {} : { stack: stackName }, ...stackName === 'safeExecution' ? { safeExecutionExecutor: addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR) } : {}, exchanges: exchanges() }

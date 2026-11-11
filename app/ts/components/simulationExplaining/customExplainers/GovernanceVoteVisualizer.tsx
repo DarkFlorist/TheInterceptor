@@ -4,6 +4,7 @@ import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionRe
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { BlockTimeManipulation, SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { bigintSecondsToDate, checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
+import { describeGovernanceExecutionBlockNumber } from '../../../utils/governanceExecutionBlock.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
@@ -136,10 +137,16 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 	const simulationAndVisualisationResults = results.value
 	if (executionBlock.value === undefined || simulationAndVisualisationResults === undefined) return <></>
 	const executionTime = formatExecutionTime(executionBlock.value.blockTimeManipulation)
+	const replySimulationState = simulateExecutionReply.value.data.result.simulationState
+	const simulatedExecutionBlock = replySimulationState.success ? replySimulationState.simulatedBlocks[replySimulationState.simulatedBlocks.length - 1] : undefined
+	const blockNumberNote = executionBlock.value.blockTimeManipulation.type === 'SetTimetamp'
+		? describeGovernanceExecutionBlockNumber({ number: simulateExecutionReply.value.data.result.simulationState.blockNumber, timestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp }, simulatedExecutionBlock?.blockHeader?.number, executionBlock.value.blockTimeManipulation.timeToSet)
+		: undefined
 
 	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 		{ executionTime === undefined ? <></> : <p class = 'paragraph'>{ `Executed by the governor's timelock on ${ executionTime }` }</p> }
+		{ blockNumberNote === undefined ? <></> : <p class = 'paragraph'>{ blockNumberNote }</p> }
 		{ executionBlock.value.simulatedAndVisualizedTransactions.map((executionTransaction) => <Transaction
 			key = { executionTransaction.transactionIdentifier.toString() }
 			simTx = { executionTransaction }
