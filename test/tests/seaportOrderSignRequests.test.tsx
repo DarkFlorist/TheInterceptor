@@ -75,6 +75,16 @@ async function visualizeSeaportOrder(typedDataJson: string) {
 	return VisualizedPersonalSignRequest.parse(serialize(VisualizedPersonalSignRequest, visualized))
 }
 
+// Swaps one exact fragment of a typed data JSON fixture, failing loudly if the fixture no longer contains it exactly once.
+function replaceFixtureFragment(typedDataJson: string, fragment: string, replacement: string) {
+	const parts = typedDataJson.split(fragment)
+	if (parts.length !== 2) throw new Error(`Expected the fixture to contain ${ fragment } exactly once, found it ${ parts.length - 1 } times`)
+	return parts.join(replacement)
+}
+
+const seaport15VerifyingContract = '"verifyingContract": "0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC"'
+const seaport16VerifyingContract = '"verifyingContract":"0x0000000000000068f116a894984e2db1123eb395"'
+
 const renderedText = (node: RenderedTreeNode) => (node.textContent ?? '').replace(/\s+/gu, ' ')
 
 async function renderSignatureCardWithExtraDetails(visualizedPersonalSignRequest: VisualizedPersonalSignRequest) {
@@ -132,4 +142,17 @@ describe('Seaport OrderComponents signature requests', () => {
 		assert.ok(text.includes('For #323 MSMS'), text)
 		assert.ok(text.includes('0.0025WETHWETH'), text)
 	})
+
+	// The order view neither shows nor checks the verifying contract, so only the canonical Seaport deployment for the declared version gets it.
+	const nonCanonicalSeaportOrders = [
+		{ name: 'a Seaport 1.6 listing for an unknown verifying contract', typedDataJson: replaceFixtureFragment(seaportJsSeaport16Listing, seaport16VerifyingContract, '"verifyingContract":"0x1111111111111111111111111111111111111111"') },
+		{ name: 'a Seaport 1.6 listing for the Seaport 1.5 contract', typedDataJson: replaceFixtureFragment(seaportJsSeaport16Listing, seaport16VerifyingContract, '"verifyingContract":"0x00000000000000adc04c56bf30ac9d3c0aaf14dc"') },
+		{ name: 'a Seaport 1.5 offer for the Seaport 1.6 contract', typedDataJson: replaceFixtureFragment(openSeaWithTotalOriginalConsiderationItems, seaport15VerifyingContract, '"verifyingContract": "0x0000000000000068F116a894984e2DB1123eB395"') },
+	]
+	for (const { name, typedDataJson } of nonCanonicalSeaportOrders) {
+		test(`shows ${ name } as a generic EIP-712 message`, async () => {
+			const visualized = await visualizeSeaportOrder(typedDataJson)
+			assert.equal(visualized.type, 'EIP712')
+		})
+	}
 })

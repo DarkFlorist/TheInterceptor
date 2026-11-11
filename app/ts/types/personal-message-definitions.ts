@@ -7,6 +7,7 @@ import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { Eip712Number, EnrichedEIP712 } from './eip721.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { SEAPORT_V1_5_ADDRESS, SEAPORT_V1_6_ADDRESS } from '../utils/constants.js'
 
 type EIP2612Message = funtypes.Static<typeof EIP2612Message>
 const EIP2612Message = funtypes.ReadonlyObject({
@@ -189,6 +190,16 @@ export const OpenSeaOrderMessage = funtypes.ReadonlyObject({
 	counter: NonHexBigInt,
 })
 
+function seaportDomain<Version extends string>(version: Version, verifyingContract: EthereumAddress) {
+	return funtypes.ReadonlyObject({
+		name: funtypes.Literal('Seaport'),
+		version: funtypes.Literal(version),
+		// ethers v6, which seaport-js signs with, sends the chain ID as a hex quantity.
+		chainId: Eip712Number,
+		verifyingContract: EthereumAddress.withConstraint((address) => address === verifyingContract),
+	})
+}
+
 type OpenSeaOrder = funtypes.Static<typeof OpenSeaOrder>
 const OpenSeaOrder = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
@@ -306,14 +317,8 @@ const OpenSeaOrder = funtypes.ReadonlyObject({
 		)
 	}),
 	primaryType: funtypes.Literal('OrderComponents'),
-	domain: funtypes.ReadonlyObject({
-		name: funtypes.Literal('Seaport'),
-		// Seaport 1.6 signs the same OrderComponents struct as 1.5.
-		version: funtypes.Union(funtypes.Literal('1.5'), funtypes.Literal('1.6')),
-		// ethers v6, which seaport-js signs with, sends the chain ID as a hex quantity.
-		chainId: Eip712Number,
-		verifyingContract: EthereumAddress,
-	}),
+	// Seaport 1.6 signs the same OrderComponents struct as 1.5. Orders for any other verifying contract, or a contract that does not match the declared version, fall back to the generic EIP-712 view, since the order view neither shows nor checks the contract.
+	domain: funtypes.Union(seaportDomain('1.5', SEAPORT_V1_5_ADDRESS), seaportDomain('1.6', SEAPORT_V1_6_ADDRESS)),
 	message: OpenSeaOrderMessage
 })
 
