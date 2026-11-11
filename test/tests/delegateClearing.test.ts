@@ -1,10 +1,8 @@
 import * as assert from 'node:assert'
-import { describe, setSystemTime, test } from 'bun:test'
+import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPreview, prepareSimulationInputForRpc, visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from '../../app/ts/background/delegateClearingPolicy.js'
-import { createDelegateClearingHintCache } from '../../app/ts/simulation/services/delegateClearingHintCache.js'
-import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { createEthereumClientService, createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -25,7 +23,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
-import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { EthSimulateV1Params, type StateOverrides } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
@@ -431,256 +429,186 @@ describe('delegate clearing in simulation', () => {
 		assert.deepEqual((await requestDelegateClearing(signerOnlySettings, fallbackEthereum, activeAddress, rpcEntry.chainId)).data.status, { type: 'unknown' })
 	})
 
-	test('coalesces concurrent code lookups and caches both delegated and undelegated results', async () => {
+	// A JSON-RPC node whose account code the test controls, so hint and simulation reads go through the service's real RPC response cache.
+	const startCodeServer = (initialCode: ReadonlyMap<bigint, string>) => {
+		const codeByAddress = new Map(Array.from(initialCode, ([address, code]) => [addressString(address), code] as const))
+		const latestBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in latestBlockResponse) throw new Error(latestBlockResponse.error.message)
 		let codeRequests = 0
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				codeRequests += 1
-				return request.params[0] === activeAddress ? `0xef0100${ addressString(delegate).slice(2) }` : '0x'
-			},
-		}, async () => undefined, async () => undefined, rpcEntry)
-
-		assert.deepEqual(await Promise.all([
-			ethereum.getDelegateClearingHint(activeAddress),
-			ethereum.getDelegateClearingHint(activeAddress),
-		]), [delegate, delegate])
-		assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
-		assert.equal(await ethereum.getDelegateClearingHint(activeAddress + 1n), undefined)
-		assert.equal(await ethereum.getDelegateClearingHint(activeAddress + 1n), undefined)
-		assert.equal(codeRequests, 2)
-		const replacementEthereum = new EthereumClientService({
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				return '0x'
-			},
-		}, async () => undefined, async () => undefined, rpcEntry)
-		assert.equal(await replacementEthereum.getDelegateClearingHint(activeAddress), undefined)
-	})
-
-	test('rechecks an aged delegated hint after a new block but keeps negative hints cached', async () => {
-		let clock = 1_000_000
-		const lookedUp: bigint[] = []
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const undelegated = activeAddress + 1n
-		const delegateOnChain = new Map<bigint, bigint | undefined>([[activeAddress, delegate], [undelegated, undefined]])
-		const hints = createDelegateClearingHintCache(async (address) => {
-			lookedUp.push(address)
-			return delegateOnChain.get(address)
-		}, () => clock)
-		assert.equal(await hints.get(activeAddress), delegate)
-		assert.equal(await hints.get(undelegated), undefined)
-		delegateOnChain.set(activeAddress, undefined)
-		delegateOnChain.set(undelegated, delegate)
-		clock += 59_000
-		hints.invalidateDelegatedForNewBlock()
-		assert.equal(await hints.get(activeAddress), delegate)
-		clock += 2_000
-		hints.invalidateDelegatedForNewBlock()
-		assert.equal(await hints.get(activeAddress), undefined)
-		assert.equal(await hints.get(undelegated), undefined)
-		assert.deepEqual(lookedUp, [activeAddress, undelegated, activeAddress])
-	})
-
-	test('expires positive and negative hints after five minutes without a new block', async () => {
-		const fiveMinutes = 5 * 60 * 1000
-		let clock = 1_000_000
-		const lookedUp: bigint[] = []
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const undelegated = activeAddress + 1n
-		const delegateOnChain = new Map<bigint, bigint | undefined>([[activeAddress, delegate], [undelegated, undefined]])
-		const hints = createDelegateClearingHintCache(async (address) => {
-			lookedUp.push(address)
-			return delegateOnChain.get(address)
-		}, () => clock)
-		assert.equal(await hints.get(activeAddress), delegate)
-		assert.equal(await hints.get(undelegated), undefined)
-		delegateOnChain.set(activeAddress, undefined)
-		delegateOnChain.set(undelegated, delegate)
-		clock += fiveMinutes - 1
-		assert.equal(await hints.get(activeAddress), delegate)
-		assert.equal(await hints.get(undelegated), undefined)
-		assert.deepEqual(lookedUp, [activeAddress, undelegated])
-		clock += 1
-		assert.equal(await hints.get(activeAddress), undefined)
-		assert.equal(await hints.get(undelegated), delegate)
-		assert.equal(await hints.get(activeAddress), undefined)
-		assert.equal(await hints.get(undelegated), delegate)
-		assert.deepEqual(lookedUp, [activeAddress, undelegated, activeAddress, undelegated])
-	})
-
-	test('expires a negative hint at five minutes even with new blocks in between', async () => {
-		const fiveMinutes = 5 * 60 * 1000
-		let clock = 1_000_000
-		let lookups = 0
-		const hints = createDelegateClearingHintCache(async () => {
-			lookups += 1
-			return undefined
-		}, () => clock)
-		assert.equal(await hints.get(activeAddress), undefined)
-		for (let elapsed = 60_000; elapsed < fiveMinutes; elapsed += 60_000) {
-			clock = 1_000_000 + elapsed
-			hints.invalidateDelegatedForNewBlock()
-			assert.equal(await hints.get(activeAddress), undefined)
-		}
-		clock = 1_000_000 + fiveMinutes - 1
-		assert.equal(await hints.get(activeAddress), undefined)
-		assert.equal(lookups, 1)
-		clock = 1_000_000 + fiveMinutes
-		hints.invalidateDelegatedForNewBlock()
-		assert.equal(await hints.get(activeAddress), undefined)
-		assert.equal(lookups, 2)
-	})
-
-	test('refreshes an expired hint from the RPC even while the RPC response cache still holds the old code', async () => {
-		const fiveMinutes = 5 * 60 * 1000
-		const startedAt = new Date('2026-01-01T00:00:00Z').getTime()
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const delegatedCode = `0xef0100${ addressString(delegate).slice(2) }`
-		const undelegated = activeAddress + 1n
-		const codeByAddress = new Map<string, string>([[addressString(activeAddress), delegatedCode], [addressString(undelegated), '0x']])
-		let codeRequests = 0
+		let heldAnswer: { readonly code: string, readonly released: Promise<void>, readonly markStarted: () => void } | undefined
 		const server = Bun.serve({
 			hostname: '127.0.0.1', port: 0,
 			async fetch(request) {
 				const message: unknown = await request.json()
 				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message) || !('params' in message) || !Array.isArray(message.params)) throw new Error('Missing fixture request fields')
-				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
-				codeRequests += 1
-				return Response.json({ jsonrpc: '2.0', id: message.id, result: codeByAddress.get(String(message.params[0])) ?? '0x' })
-			},
-		})
-		// Without block polling the RPC response cache is never cleared, as while the extension sleeps.
-		const ethereum = createEthereumClientService({ ...rpcEntry, httpsRpc: `${ server.url }rpc` }, async () => undefined, async () => undefined)
-		try {
-			setSystemTime(startedAt)
-			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
-			assert.equal(await ethereum.getDelegateClearingHint(undelegated), undefined)
-			assert.equal(codeRequests, 2)
-			codeByAddress.set(addressString(activeAddress), '0x')
-			codeByAddress.set(addressString(undelegated), delegatedCode)
-			setSystemTime(startedAt + fiveMinutes - 1)
-			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
-			assert.equal(await ethereum.getDelegateClearingHint(undelegated), undefined)
-			assert.equal(codeRequests, 2)
-			setSystemTime(startedAt + fiveMinutes)
-			assert.deepEqual(await Promise.all([ethereum.getDelegateClearingHint(activeAddress), ethereum.getDelegateClearingHint(activeAddress)]), [undefined, undefined])
-			assert.deepEqual(await Promise.all([ethereum.getDelegateClearingHint(undelegated), ethereum.getDelegateClearingHint(undelegated)]), [delegate, delegate])
-			assert.equal(codeRequests, 4)
-			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
-			assert.equal(await ethereum.getDelegateClearingHint(undelegated), delegate)
-			assert.equal(codeRequests, 4)
-		} finally {
-			setSystemTime()
-			server.stop(true)
-		}
-	})
-
-	test('a first hint lookup shares a same-block eth_getCode response with other callers', async () => {
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		let codeRequests = 0
-		const server = Bun.serve({
-			hostname: '127.0.0.1', port: 0,
-			async fetch(request) {
-				const message: unknown = await request.json()
-				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message)) throw new Error('Missing fixture request fields')
-				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
-				codeRequests += 1
-				return Response.json({ jsonrpc: '2.0', id: message.id, result: `0xef0100${ addressString(delegate).slice(2) }` })
-			},
-		})
-		const ethereum = createEthereumClientService({ ...rpcEntry, httpsRpc: `${ server.url }rpc` }, async () => undefined, async () => undefined)
-		try {
-			assert.equal((await ethereum.getCode(activeAddress, 'latest', undefined)).length, 23)
-			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
-			assert.equal(codeRequests, 1)
-		} finally { server.stop(true) }
-	})
-
-	test('retries a lookup started before a new block without caching its stale result', async () => {
-		let codeRequests = 0
-		let markFirstStarted = () => undefined
-		const firstStarted = new Promise<void>((resolve) => { markFirstStarted = () => resolve() })
-		let releaseStaleCode = (_code: string) => undefined
-		const staleCode = new Promise<string>((resolve) => { releaseStaleCode = resolve })
-		const staleDelegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const latestBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
-		if ('error' in latestBlockResponse) throw new Error(latestBlockResponse.error.message)
-		let markNewBlockSeen = () => undefined
-		const newBlockSeen = new Promise<void>((resolve) => { markNewBlockSeen = () => resolve() })
-		// A real RPC handler and server keep the handler's pending-request sharing in the path the retry takes.
-		const server = Bun.serve({
-			hostname: '127.0.0.1', port: 0,
-			async fetch(request) {
-				const message: unknown = await request.json()
-				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message)) throw new Error('Missing fixture request fields')
 				if (message.method === 'eth_getBlockByNumber') return Response.json({ jsonrpc: '2.0', id: message.id, result: latestBlockResponse.result })
 				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
 				codeRequests += 1
-				if (codeRequests === 1) {
-					markFirstStarted()
-					return Response.json({ jsonrpc: '2.0', id: message.id, result: await staleCode })
-				}
-				return Response.json({ jsonrpc: '2.0', id: message.id, result: '0x' })
+				const held = heldAnswer
+				heldAnswer = undefined
+				if (held === undefined) return Response.json({ jsonrpc: '2.0', id: message.id, result: codeByAddress.get(String(message.params[0])) ?? '0x' })
+				held.markStarted()
+				await held.released
+				return Response.json({ jsonrpc: '2.0', id: message.id, result: held.code })
 			},
 		})
-		const ethereum = createEthereumClientService({ ...rpcEntry, httpsRpc: `${ server.url }rpc` }, async (_blockHeader, _ethereum, isNewBlock) => { if (isNewBlock) markNewBlockSeen() }, async () => undefined)
-		try {
-			const pendingHint = ethereum.getDelegateClearingHint(activeAddress)
-			await firstStarted
-			// Block polling is the production path that tells the service's hint cache about a new block.
+		return {
+			network: { ...rpcEntry, httpsRpc: `${ server.url }rpc` },
+			setCode: (address: bigint, code: string) => { codeByAddress.set(addressString(address), code) },
+			getCodeRequests: () => codeRequests,
+			// The next eth_getCode request answers with this code, as the node read it then, once the test releases it.
+			holdNextCodeRequest: (code: string) => {
+				let release = () => undefined
+				let markStarted = () => undefined
+				const released = new Promise<void>((resolve) => { release = () => resolve() })
+				const started = new Promise<void>((resolve) => { markStarted = () => resolve() })
+				heldAnswer = { code, released, markStarted }
+				return { started, release }
+			},
+			stop: () => { server.stop(true) },
+		}
+	}
+	const delegatedCode = (delegate: bigint) => `0xef0100${ addressString(delegate).slice(2) }`
+	const createPollingEthereum = (network: RpcEntry) => {
+		let markNewBlockSeen = () => undefined
+		const newBlockSeen = new Promise<void>((resolve) => { markNewBlockSeen = () => resolve() })
+		const ethereum = createEthereumClientService(network, async (_blockHeader, _ethereum, isNewBlock) => { if (isNewBlock) markNewBlockSeen() }, async () => undefined)
+		// Block polling is the production path that clears the RPC response cache, and the first block it sees counts as new.
+		const observeNewBlock = async () => {
 			ethereum.setBlockPolling(true)
 			await newBlockSeen
-			assert.equal(await pendingHint, undefined)
-			assert.equal(codeRequests, 2)
-			releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
-			await new Promise((resolve) => setTimeout(resolve, 20))
-			assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
-			assert.deepEqual(await ethereum.getCode(activeAddress, 'latest', undefined), new Uint8Array())
-			assert.equal(codeRequests, 2)
+		}
+		return { ethereum, observeNewBlock }
+	}
+	// The popup asks for the active simulation account's hint, so each read makes the queried account the active one.
+	const requestHint = async (ethereum: EthereumClientService, address: bigint) => (await requestDelegateClearing({ ...await getSettings(), activeSimulationAddress: address }, ethereum, address, rpcEntry.chainId)).data.status
+
+	test('the hint and the simulation read one cached eth_getCode response per block, and a new block refreshes both', async () => {
+		installBrowserMock()
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const undelegated = activeAddress + 1n
+		const node = startCodeServer(new Map([[activeAddress, delegatedCode(delegate)], [undelegated, '0x']]))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: node.network })
+		const { ethereum, observeNewBlock } = createPollingEthereum(node.network)
+		// A simulated transaction's sender delegate is read this way in simulationUpdating.ts.
+		const simulationRead = async (address: bigint) => await ethereum.getDelegation(address, 'latest', new AbortController())
+		try {
+			assert.deepEqual(await Promise.all([requestHint(ethereum, activeAddress), simulationRead(activeAddress), requestHint(ethereum, activeAddress)]), [{ type: 'delegated', delegate }, delegate, { type: 'delegated', delegate }])
+			assert.deepEqual(await requestHint(ethereum, undelegated), { type: 'none' })
+			assert.equal(await simulationRead(undelegated), undefined)
+			assert.equal(node.getCodeRequests(), 2)
+
+			// Within a block both keep reading the same cached code, so they cannot disagree.
+			node.setCode(activeAddress, '0x')
+			node.setCode(undelegated, delegatedCode(delegate))
+			assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'delegated', delegate })
+			assert.equal(await simulationRead(activeAddress), delegate)
+			assert.deepEqual(await requestHint(ethereum, undelegated), { type: 'none' })
+			assert.equal(await simulationRead(undelegated), undefined)
+			assert.equal(node.getCodeRequests(), 2)
+
+			// A new block clears the response cache, which refreshes delegated and undelegated hints alike.
+			await observeNewBlock()
+			assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'none' })
+			assert.equal(await simulationRead(activeAddress), undefined)
+			assert.deepEqual(await requestHint(ethereum, undelegated), { type: 'delegated', delegate })
+			assert.equal(await simulationRead(undelegated), delegate)
+			assert.equal(node.getCodeRequests(), 4)
 		} finally {
 			ethereum.cleanup()
-			releaseStaleCode('0x')
-			server.stop(true)
+			node.stop()
 		}
 	})
 
-	test('reuses the background delegation hint across popup opens and toggles', async () => {
+	test('code cached before block polling sleeps is not served after it', async () => {
 		installBrowserMock()
-		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
-		const settings = await getSettings()
 		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		let code = `0xef0100${ addressString(delegate).slice(2) }`
-		let codeRequests = 0
-		const requestHandler: IEthereumJSONRpcRequestHandler = {
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				codeRequests += 1
-				return code
-			},
+		const node = startCodeServer(new Map([[activeAddress, delegatedCode(delegate)]]))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: node.network })
+		const { ethereum, observeNewBlock } = createPollingEthereum(node.network)
+		try {
+			await observeNewBlock()
+			assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'delegated', delegate })
+			node.setCode(activeAddress, '0x')
+			assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'delegated', delegate })
+			// Blocks mined while polling sleeps are never observed, so sleeping drops the cached responses.
+			ethereum.setBlockPolling(false)
+			assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'none' })
+			assert.equal(node.getCodeRequests(), 2)
+		} finally {
+			ethereum.cleanup()
+			node.stop()
 		}
-		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
-		const requestReply = await requestDelegateClearing(settings, ethereum, activeAddress, rpcEntry.chainId)
-		assert.deepEqual(requestReply.data.status, { type: 'delegated', delegate })
-		assert.equal(codeRequests, 1)
-		code = '0x'
-		const cachedReply = await requestDelegateClearing(settings, ethereum, activeAddress, rpcEntry.chainId)
-		assert.deepEqual(cachedReply.data.status, { type: 'delegated', delegate })
-		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
-		const toggleReply = await setDelegateClearing(settings, services, activeAddress, rpcEntry.chainId, true)
-		assert.deepEqual(toggleReply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
-		assert.equal(codeRequests, 1)
-		const replacementEthereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
-		const missingReply = await requestDelegateClearing(settings, replacementEthereum, activeAddress, rpcEntry.chainId)
-		assert.deepEqual(missingReply.data.status, { type: 'none' })
-		assert.equal(codeRequests, 2)
+	})
+
+	test('a hint read that a new block overtakes does not fill the new block\'s cache', async () => {
+		installBrowserMock()
+		const staleDelegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const node = startCodeServer(new Map([[activeAddress, '0x']]))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: node.network })
+		const { ethereum, observeNewBlock } = createPollingEthereum(node.network)
+		try {
+			const heldRead = node.holdNextCodeRequest(delegatedCode(staleDelegate))
+			const pendingHint = requestHint(ethereum, activeAddress)
+			await heldRead.started
+			await observeNewBlock()
+			heldRead.release()
+			// The overtaken read answers for the block it was made in; the popup reads again on the new block.
+			assert.deepEqual(await pendingHint, { type: 'delegated', delegate: staleDelegate })
+			assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'none' })
+			assert.deepEqual(await ethereum.getCode(activeAddress, 'latest', undefined), new Uint8Array())
+			assert.equal(node.getCodeRequests(), 2)
+		} finally {
+			ethereum.cleanup()
+			node.stop()
+		}
+	})
+
+	test('a hint read sharing a simulation read survives the simulation cancelling it', async () => {
+		installBrowserMock()
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const node = startCodeServer(new Map([[activeAddress, delegatedCode(delegate)]]))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: node.network })
+		const ethereum = createEthereumClientService(node.network, async () => undefined, async () => undefined)
+		const heldRead = node.holdNextCodeRequest(delegatedCode(delegate))
+		try {
+			const simulationAbortController = new AbortController()
+			const simulationRead = ethereum.getDelegation(activeAddress, 'latest', simulationAbortController)
+			await heldRead.started
+			const pendingHint = requestHint(ethereum, activeAddress)
+			simulationAbortController.abort(new Error('Simulation replaced'))
+			await assert.rejects(simulationRead, /Simulation replaced/u)
+			assert.deepEqual(await pendingHint, { type: 'delegated', delegate })
+			assert.equal(node.getCodeRequests(), 2)
+		} finally {
+			heldRead.release()
+			ethereum.cleanup()
+			node.stop()
+		}
+	})
+
+	test('reuses the hint across popup opens and toggles within a block, and a replacement service reads it again', async () => {
+		installBrowserMock()
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const node = startCodeServer(new Map([[activeAddress, delegatedCode(delegate)]]))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: node.network })
+		const owner = createSimulationServicesOwner(node.network, async () => undefined, async (_ethereum, error) => { throw error })
+		try {
+			const services = owner.getCurrent()
+			assert.deepEqual(await requestHint(services.ethereum, activeAddress), { type: 'delegated', delegate })
+			node.setCode(activeAddress, '0x')
+			assert.deepEqual(await requestHint(services.ethereum, activeAddress), { type: 'delegated', delegate })
+			const toggleReply = await setDelegateClearing(await getSettings(), services, activeAddress, rpcEntry.chainId, true)
+			assert.deepEqual(toggleReply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
+			assert.equal(node.getCodeRequests(), 1)
+			// A replacement service owns a new RPC response cache, so the hint is read from the node again.
+			const replacement = owner.reset(node.network).ethereum
+			assert.deepEqual(await requestHint(replacement, activeAddress), { type: 'none' })
+			assert.equal(node.getCodeRequests(), 2)
+		} finally {
+			owner.getCurrent().ethereum.cleanup()
+			node.stop()
+		}
 	})
 
 	test('disables a saved choice after simulation mode or the active account changes', async () => {
@@ -706,147 +634,46 @@ describe('delegate clearing in simulation', () => {
 	})
 
 	test('does not cache a failed delegation lookup as no delegate', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		let codeRequests = 0
-		const address = activeAddress + 2n
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
 				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
 				codeRequests += 1
-				if (codeRequests === 1) throw new Error('RPC unavailable')
+				if (codeRequests === 1) throw new TypeError('Failed to fetch')
 				return '0x'
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 
-		await assert.rejects(ethereum.getDelegateClearingHint(address), /RPC unavailable/)
-		assert.equal(await ethereum.getDelegateClearingHint(address), undefined)
+		assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'unknown' })
+		assert.deepEqual(await requestHint(ethereum, activeAddress), { type: 'none' })
 		assert.equal(codeRequests, 2)
-	})
-
-	test('keeps an abandoned lookup available to later waiters until the service is replaced', async () => {
-		let codeRequests = 0
-		let releaseFirst: (code: string) => void = () => undefined
-		const firstResponse = new Promise<string>((resolve) => { releaseFirst = resolve })
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const requestHandler: IEthereumJSONRpcRequestHandler = {
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				codeRequests += 1
-				return codeRequests === 1 ? await firstResponse : `0xef0100${ addressString(delegate).slice(2) }`
-			},
-		}
-		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
-		const abortController = new AbortController()
-		const abortedLookup = ethereum.getDelegateClearingHint(activeAddress, abortController)
-		abortController.abort(new Error('Refresh replaced'))
-		await assert.rejects(abortedLookup, /Refresh replaced/u)
-		releaseFirst('0x')
-		assert.equal(await ethereum.getDelegateClearingHint(activeAddress), undefined)
-		assert.equal(codeRequests, 1)
-		const replacementEthereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
-		assert.equal(await replacementEthereum.getDelegateClearingHint(activeAddress), delegate)
-		assert.equal(codeRequests, 2)
-	})
-
-	test('keeps a shared lookup alive when one waiting refresh is aborted', async () => {
-		let releaseLookup: (code: string) => void = () => undefined
-		const response = new Promise<string>((resolve) => { releaseLookup = resolve })
-		let codeRequests = 0
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcEntry.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request, abortController) {
-				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
-				if (abortController === undefined) throw new Error('Expected the shared lookup to be abortable')
-				codeRequests += 1
-				return await response
-			},
-		}, async () => undefined, async () => undefined, rpcEntry)
-		const abortController = new AbortController()
-		const aborted = ethereum.getDelegateClearingHint(activeAddress, abortController)
-		const surviving = ethereum.getDelegateClearingHint(activeAddress)
-		abortController.abort(new Error('Refresh replaced'))
-		await assert.rejects(aborted, /Refresh replaced/u)
-		releaseLookup(`0xef0100${ addressString(delegate).slice(2) }`)
-		assert.equal(await surviving, delegate)
-		assert.equal(await ethereum.getDelegateClearingHint(activeAddress), delegate)
-		assert.equal(codeRequests, 1)
-	})
-
-	test('retries an in-flight delegation lookup after a new block invalidates it', async () => {
-		let releaseOldBlock: (delegate: bigint | undefined) => void = () => undefined
-		const oldBlockResponse = new Promise<bigint | undefined>((resolve) => { releaseOldBlock = resolve })
-		let lookups = 0
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		const hints = createDelegateClearingHintCache(async () => {
-			lookups += 1
-			return lookups === 1 ? await oldBlockResponse : undefined
-		})
-		const staleLookup = hints.get(activeAddress)
-		hints.invalidateDelegatedForNewBlock()
-		assert.equal(await staleLookup, undefined)
-		releaseOldBlock(delegate)
-		assert.equal(await hints.get(activeAddress), undefined)
-		assert.equal(lookups, 2)
-	})
-
-	test('replacing the simulation services drops cached delegate clearing hints', async () => {
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
-		let code = `0xef0100${ addressString(delegate).slice(2) }`
-		let codeRequests = 0
-		const server = Bun.serve({
-			hostname: '127.0.0.1', port: 0,
-			async fetch(request) {
-				const message: unknown = await request.json()
-				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message)) throw new Error('Missing fixture request fields')
-				if (message.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ String(message.method) }`)
-				codeRequests += 1
-				return Response.json({ jsonrpc: '2.0', id: message.id, result: code })
-			},
-		})
-		const network = { ...rpcEntry, httpsRpc: `${ server.url }rpc` }
-		const owner = createSimulationServicesOwner(network, async () => undefined, async (_ethereum, error) => { throw error })
-		try {
-			const original = owner.getCurrent().ethereum
-			assert.equal(await original.getDelegateClearingHint(activeAddress), delegate)
-			code = '0x'
-			assert.equal(await original.getDelegateClearingHint(activeAddress), delegate)
-			assert.equal(codeRequests, 1)
-			const replacement = owner.reset(network).ethereum
-			assert.equal(await replacement.getDelegateClearingHint(activeAddress), undefined)
-			assert.equal(codeRequests, 2)
-		} finally {
-			owner.getCurrent().ethereum.cleanup()
-			server.stop(true)
-		}
 	})
 
 	test('saving delegate clearing does not wait for a pending hint lookup', async () => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
-		let releaseOldBlock: (code: string) => void = () => undefined
-		const oldBlockResponse = new Promise<string>((resolve) => { releaseOldBlock = resolve })
+		let releaseCode: (code: string) => void = () => undefined
+		const pendingCode = new Promise<string>((resolve) => { releaseCode = resolve })
 		let codeRequests = 0
-		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
 				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
 				codeRequests += 1
-				return codeRequests === 1 ? await oldBlockResponse : `0xef0100${ addressString(delegate).slice(2) }`
+				return await pendingCode
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
-		const pendingHint = ethereum.getDelegateClearingHint(activeAddress)
+		const pendingHint = requestHint(ethereum, activeAddress)
 		const enabling = setDelegateClearing(await getSettings(), services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual((await enabling).data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
-		releaseOldBlock('0x')
-		assert.equal(await pendingHint, undefined)
+		releaseCode('0x')
+		assert.deepEqual(await pendingHint, { type: 'none' })
 		assert.equal(codeRequests, 1)
 	})
 

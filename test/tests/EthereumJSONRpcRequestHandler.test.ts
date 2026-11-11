@@ -121,6 +121,37 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 		}
 	})
 
+	test('a caller sharing a request that the caller who started it cancels asks again instead of failing', async () => {
+		const previousFetch = globalThis.fetch
+		const pendingResponses: ((result: string) => void)[] = []
+		globalThis.fetch = async (_resource, init) => {
+			const body: unknown = JSON.parse(typeof init?.body === 'string' ? init.body : '')
+			if (typeof body !== 'object' || body === null || !('id' in body)) throw new Error('Missing request ID')
+			const signal = init?.signal
+			return await new Promise<Response>((resolve, reject) => {
+				signal?.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+				pendingResponses.push((result) => { resolve(Response.json({ jsonrpc: '2.0', id: body.id, result })) })
+			})
+		}
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+		const getCode = async (abortController: AbortController | undefined) => await requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [testAddress, 'latest'] }, abortController)
+		try {
+			const startingCaller = new AbortController()
+			const cancelledRequest = getCode(startingCaller)
+			await waitFor(() => pendingResponses.length === 1)
+			const sharingRequest = getCode(undefined)
+			startingCaller.abort('Replaced')
+			await assert.rejects(cancelledRequest, /Replaced/u)
+			await waitFor(() => pendingResponses.length === 2)
+			pendingResponses[1]?.('0x01')
+			assert.equal(await sharingRequest, '0x01')
+			assert.equal(await getCode(undefined), '0x01')
+			assert.equal(pendingResponses.length, 2)
+		} finally {
+			globalThis.fetch = previousFetch
+		}
+	})
+
 	test('caches deterministic non-ok JSON-RPC failures', async () => {
 		const fetchMock = installFetchMock([
 			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: HTTP_STATUS_BAD_REQUEST, headers: responseHeaders }),

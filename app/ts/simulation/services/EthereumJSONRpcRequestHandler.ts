@@ -8,6 +8,7 @@ import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
 import { HTTP_STATUS_REQUEST_TIMEOUT, HTTP_STATUS_SERVER_ERROR_RANGE_START, HTTP_STATUS_TOO_EARLY, HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 
 type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
+type PendingResponse = { readonly response: Future<ResolvedResponse>, readonly startedBy: AbortSignal | undefined }
 export type SlowRpcRequest = {
 	requestId: number
 	rpcUrl: string
@@ -68,7 +69,7 @@ export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler,
 export class EthereumJSONRpcRequestHandler {
 	private nextRequestId = 1
 	private caching: boolean
-	private pendingCache: Map<string, Future<ResolvedResponse>>
+	private pendingCache: Map<string, PendingResponse>
 	private cache: Map<string, ResolvedResponse>
 	private rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks
 	public rpcUrl: string
@@ -144,7 +145,7 @@ export class EthereumJSONRpcRequestHandler {
 		}
 	}
 
-	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) => {
+	private queryCached = async (request: EthereumJsonRpcRequest, requestId: number, bypassCache: boolean, timeoutMs: number, requestAbortController: AbortController | undefined = undefined): Promise<ResolvedResponse> => {
 		const serialized = serialize(EthereumJsonRpcRequest, request)
 		const payload = {
 			method: 'POST',
@@ -171,10 +172,19 @@ export class EthereumJSONRpcRequestHandler {
 			if (cacheValue !== undefined) return cacheValue
 			const pendingCacheValue = pendingCache.get(hash)
 			// we have already requested this, wait for it to resolve and then resolve this as well
-			if (pendingCacheValue !== undefined) return await pendingCacheValue
+			if (pendingCacheValue !== undefined) {
+				try {
+					return await pendingCacheValue.response
+				} catch (error: unknown) {
+					// The caller that started the shared request cancelled it, which says nothing about this caller's request, so this caller asks again.
+					if (pendingCacheValue.startedBy?.aborted !== true || requestAbortController?.signal.aborted === true) throw error
+					return await this.queryCached(request, requestId, bypassCache, timeoutMs, requestAbortController)
+				}
+			}
 		}
 		const future = new Future<ResolvedResponse>()
-		pendingCache.set(hash, future)
+		const pendingResponse: PendingResponse = { response: future, startedBy: requestAbortController?.signal }
+		pendingCache.set(hash, pendingResponse)
 		const startedAt = performance.now()
 		try {
 			const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
@@ -193,7 +203,7 @@ export class EthereumJSONRpcRequestHandler {
 			}
 		} finally {
 			recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
-			if (pendingCache.get(hash) === future) pendingCache.delete(hash)
+			if (pendingCache.get(hash) === pendingResponse) pendingCache.delete(hash)
 		}
 		return await future
 	}

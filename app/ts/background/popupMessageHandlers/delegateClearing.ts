@@ -16,7 +16,8 @@ export async function requestDelegateClearing(settings: Settings, ethereum: Ethe
 		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {
-		const delegate = await ethereum.getDelegateClearingHint(address)
+		// The hint is the eth_getCode read the simulation makes, through the service's RPC response cache, so both see one block's code and a new block refreshes both.
+		const delegate = await ethereum.getDelegation(address, 'latest', undefined)
 		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })

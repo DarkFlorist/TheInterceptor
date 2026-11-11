@@ -54,7 +54,7 @@ export function resetSimulationServices(
 ): SimulationServices {
 	// Retire background polling; cleanup does not invalidate RPC methods used by an in-flight snapshot.
 	currentServices.ethereum.cleanup()
-	// The replacement service owns fresh per-endpoint caches (latest block, RPC responses and delegate clearing hints), so this is where they reset.
+	// The replacement service owns fresh per-endpoint caches (latest block and RPC responses, which the delegate clearing hint is read through), so this is where they reset.
 	return createSimulationServices(
 		rpcNetwork,
 		newBlockAttemptCallback,

@@ -18,7 +18,6 @@ import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { mapBlocksWithEffectiveStateOverrides } from '../../utils/simulationStateOverrides.js'
-import { createDelegateClearingHintCache } from './delegateClearingHintCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -148,8 +147,6 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
-	// Hints describe this endpoint's latest code, so a replacement service starts empty; an expired hint may have outlived blocks the RPC response cache never saw (polling sleeps), so its refresh bypasses that cache.
-	private readonly delegateClearingHints = createDelegateClearingHintCache(async (address, controller, refreshesExpiredHint) => await this.getDelegation(address, 'latest', controller, refreshesExpiredHint))
 
 	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
@@ -192,7 +189,9 @@ export class EthereumClientService {
 			clearTimeout(this.cacheRefreshTimer)
 			clearInterval(this.cacheRefreshTimer)
 			this.cacheRefreshTimer = undefined
+			// Cached responses are only valid for the block they were read in, and no new blocks are observed while polling sleeps, so they are dropped together with that block.
 			this.cachedBlock = undefined
+			this.requestHandler.clearCache()
 			return
 		}
 	}
@@ -207,10 +206,7 @@ export class EthereumClientService {
 			if (newBlock === null) return
 			console.info(`${ getCurrentTimestampString() } Current block number: ${ newBlock.number } on ${ this.getRpcEntry().name }`)
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
-			if (gotNewBlock) {
-				this.requestHandler.clearCache()
-				this.delegateClearingHints.invalidateDelegatedForNewBlock()
-			}
+			if (gotNewBlock) this.requestHandler.clearCache()
 			this.cachedBlock = newBlock
 			await this.newBlockAttemptCallback(newBlock, this, gotNewBlock)
 		} catch(error: unknown) {
@@ -245,15 +241,13 @@ export class EthereumClientService {
 		return EthereumQuantity.parse(response)
 	}
 
-	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined, bypassCache = false) => {
-		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController, bypassCache)
+	public readonly getCode = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getCode', params: [address, blockTag] }, requestAbortController)
 		return EthereumData.parse(response)
 	}
 
-	public readonly getDelegateClearingHint = async (address: bigint, abortController?: AbortController) => await this.delegateClearingHints.get(address, abortController)
-
-	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined, bypassCache = false) => {
-		return getDelegateFromCode(await this.getCode(address, blockTag, requestAbortController, bypassCache))
+	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
+		return getDelegateFromCode(await this.getCode(address, blockTag, requestAbortController))
 	}
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
@@ -407,7 +401,7 @@ export class EthereumClientService {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
-							rpcBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+						rpcBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
 					}
 				}
 				preparedBlocks.push({ inputBlock, rpcBlockCount: splitted.length })
