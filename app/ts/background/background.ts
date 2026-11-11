@@ -195,7 +195,7 @@ async function handleRPCRequest(
 			if (settings.activeRpcNetwork.httpsRpc === undefined) return getWalletSendCallsWithoutInterceptorRpcReply(rpcRequest)
 			return await sendCalls(ethereum, tokenPriceService, websiteTabConnections, activeAddress, rpcRequest, request, website)
 		}),
-		wallet_getCallsStatus: rpcRequestHandler('wallet_getCallsStatus', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getSimulatedCallsStatus(ethereum, simulationState, rpcRequest, website.websiteOrigin, activeAddress))),
+		wallet_getCallsStatus: rpcRequestHandler('wallet_getCallsStatus', async (_context, rpcRequest) => await getSimulatedCallsStatus(ethereum, getExecutionSimulationState, rpcRequest, website.websiteOrigin, activeAddress)),
 		wallet_showCallsStatus: rpcRequestHandler('wallet_showCallsStatus', async (_context, rpcRequest) => getSimulatedShowCallsStatusReply(rpcRequest)),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),

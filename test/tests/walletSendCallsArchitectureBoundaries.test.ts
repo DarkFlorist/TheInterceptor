@@ -142,7 +142,7 @@ test('batch ids are looked up only in the batch id records, not on simulation st
 const importedModules = (source: string) => [...source.matchAll(/^import [^\n]* from '([^']+)'/gmu)].map((match) => match[1]).filter((path): path is string => path !== undefined).sort()
 
 test('the batch id registry owns its records and their consistency with the queue and the stack, and depends only on storage', () => {
-	for (const name of ['getWalletSendCallsBatchId', 'getWalletSendCallTransactionIdentifier', 'isWalletSendCallsBundleOnStack', 'getTransactionBatchStackState', 'isWalletSendCallsIdInUse', 'addPendingTransactionBatch', 'releasePendingTransactionBatch', 'removeApprovedTransactionBatch', 'getWalletSendCallsBatchTransactionIdentifiers']) {
+	for (const name of ['getWalletSendCallsBatchId', 'getWalletSendCallTransactionIdentifier', 'isWalletSendCallsBundleOnStack', 'getTransactionBatchStackState', 'isWalletSendCallsIdInUse', 'addPendingTransactionBatch', 'releasePendingTransactionBatch', 'removeApprovedTransactionBatch', 'getWalletSendCallsBundleForRequester']) {
 		assert.match(walletSendCallsBatchIdsSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
 		for (const otherSource of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsConfirmationSource, walletSendCallsRpcSource, walletSendCallsStatusSource]) assert.doesNotMatch(otherSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
 	}
@@ -157,7 +157,9 @@ test('a wallet_sendCalls bundle exists by one definition, which the id registry,
 	// The registry keeps an id in use and the status query reports a bundle by the same predicate, and the resolution decides from the stack state that the predicate classifies.
 	assert.match(walletSendCallsBatchIdsSource, /\|\| isWalletSendCallsBundleOnStack\(record\.transactionIdentifiers, /u)
 	assert.match(walletSendCallsBatchIdsSource, /if \(isWalletSendCallsBundleOnStack\(batchTransactionIdentifiers, stackTransactionIdentifiers\)\) return 'bundleOnStack'/u)
-	assert.match(walletSendCallsStatusSource, /if \(!isWalletSendCallsBundleOnStack\(batchTransactionIdentifiers, /u)
+	assert.match(walletSendCallsBatchIdsSource, /if \(!isWalletSendCallsBundleOnStack\(record\.transactionIdentifiers, getStackTransactionIdentifiers\(await getInterceptorTransactionStack\(\)\)\)\) return undefined/u)
+	assert.match(walletSendCallsStatusSource, /await getWalletSendCallsBundleForRequester\(/u)
+	assert.doesNotMatch(walletSendCallsStatusSource, /isWalletSendCallsBundleOnStack/u)
 	assert.match(walletSendCallsConfirmationSource, /case 'bundleOnStack': return \{ kind: 'finishedFromStack', delivered: await finishApprovedTransactionBatch\(/u)
 	assert.doesNotMatch(walletSendCallsBatchIdsSource, /hasTransactionOnStack|isTransactionBatchOnStack/u)
 	for (const source of [walletSendCallsStatusSource, walletSendCallsConfirmationSource]) assert.doesNotMatch(source, /isTransactionBatchOnStack|transactionIdentifiers\.every|\.operations\.some\(/u)

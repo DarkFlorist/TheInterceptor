@@ -74,9 +74,10 @@ export async function removeApprovedTransactionBatch(pendingBatch: PendingTransa
 	}))
 }
 
-// The calls recorded for a website's batch id, while its record is kept and only when the batch was submitted from the requester's current account on its current network. A bundle submitted in another context is undefined, so after a network or account switch wallet_getCallsStatus answers it as unknown (5730) instead of reporting receipts simulated in the new context under the original chainId. Ids stay unique per website regardless of context (see isWalletSendCallsIdInUse). wallet_getCallsStatus reports the calls only while isWalletSendCallsBundleOnStack holds.
-export async function getWalletSendCallsBatchTransactionIdentifiers(requester: WalletSendCallsBinding, batchId: string) {
+// The calls of the bundle a website submitted under a batch id, when the batch was submitted from the requester's current account on its current network and the bundle still exists on the simulation stack (isWalletSendCallsBundleOnStack). Otherwise undefined, which wallet_getCallsStatus answers as unknown (5730): after a network or account switch it must not report receipts simulated in the new context under the original chainId. It reads only storage, so wallet_getCallsStatus decides whether a bundle is known before it prepares or runs any simulation. Ids stay unique per website regardless of context (see isWalletSendCallsIdInUse).
+export async function getWalletSendCallsBundleForRequester(requester: WalletSendCallsBinding, batchId: string) {
 	const record = (await getWalletSendCallsBatchIds()).find(isRecordOfBatchId(requester.websiteOrigin, batchId))
 	if (record === undefined || record.binding.account !== requester.account || record.binding.chainId !== requester.chainId) return undefined
+	if (!isWalletSendCallsBundleOnStack(record.transactionIdentifiers, getStackTransactionIdentifiers(await getInterceptorTransactionStack()))) return undefined
 	return record.transactionIdentifiers
 }
