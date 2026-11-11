@@ -3,8 +3,8 @@ import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-
 import type { SignedMessageTransaction, SimulationStateInputBlock } from '../../types/visualizer-types.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import { bytes32String } from '../../utils/bigint.js'
-import { hashMessage, hashTypedData, privateKeyToAccount, type Hex } from '../../utils/ethereumPrimitives.js'
-import { getMetaMaskPersonalSignMessageBytes } from '../../utils/personalSignMessage.js'
+import { hashTypedData, privateKeyToAccount, type Hex } from '../../utils/ethereumPrimitives.js'
+import { getMetaMaskPersonalSignMessageBytes, getPersonalSignMessageHash } from '../../utils/personalSignMessage.js'
 import { assertNever } from '../../utils/typescript.js'
 
 const MOCK_PUBLIC_PRIVATE_KEY = 0x1n
@@ -14,7 +14,12 @@ const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 // The bytes simulated personal_sign signs. The Interceptor signs these requests itself, so it reads every message one way, as MetaMask does, and the simulation-mode popup shows that same reading. Both the simulated signature and its message hash come from these bytes, so the hash always describes exactly what was signed. Stored messages carry no decoding version, so a signature handed out before this reading was adopted is rebuilt differently, and then recovers to the mock key's address, for the few messages the old reading signed differently: any two-character message such as '0x', '12' or 'hi', and digit strings or other forms that BigInt parsed. That is the limit: well-formed 0x hex reads the same, every other message failed to sign before, and simulated signatures are throwaway, so no version is kept.
 const getSimulatedPersonalSignBytes = (message: string) => getMetaMaskPersonalSignMessageBytes(message)
 
-const hashSimulatedPersonalSignMessage = (message: string) => hashMessage({ raw: getSimulatedPersonalSignBytes(message) })
+// The same function gives the message hash the simulation-mode popup shows, so the shown hash is the signed one. Simulation mode reads every message one way, so the hash is never undefined there.
+const hashSimulatedPersonalSignMessage = (message: string) => {
+	const messageHash = getPersonalSignMessageHash(message, true)
+	if (messageHash === undefined) throw new Error('Simulated personal_sign must know the bytes it signs')
+	return messageHash
+}
 
 export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashSimulatedPersonalSignMessage(params.params[0])
 

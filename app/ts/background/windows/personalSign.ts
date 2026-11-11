@@ -10,8 +10,8 @@ import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/parsing.js'
-import { hashMessage } from '../../utils/ethereumPrimitives.js'
-import { getPersonalSignMessageBytes } from '../../utils/personalSignMessage.js'
+import type { Hex } from '../../utils/ethereumBytes.js'
+import { getPersonalSignMessageHash } from '../../utils/personalSignMessage.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 
@@ -34,9 +34,9 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 
 const WALLET_DEPENDENT_PERSONAL_SIGN_REASON = 'Wallets may read this message differently, as hex-encoded bytes or text. The message is shown exactly as written, but your wallet may sign different bytes.'
 
-// Adds a reason when the bytes a personal_sign signature covers depend on which wallet signs the message.
-function getPersonalSignQuarantineCodes(signingQuarantineCodes: { quarantine: boolean, quarantineReasons: readonly string[] }, signedBytes: Uint8Array | undefined) {
-	if (signedBytes !== undefined) return signingQuarantineCodes
+// Adds a reason when the bytes a personal_sign signature covers, and so its message hash, depend on which wallet signs the message.
+function getPersonalSignQuarantineCodes(signingQuarantineCodes: { quarantine: boolean, quarantineReasons: readonly string[] }, messageHash: Hex | undefined) {
+	if (messageHash !== undefined) return signingQuarantineCodes
 	return { quarantine: true, quarantineReasons: [...signingQuarantineCodes.quarantineReasons, WALLET_DEPENDENT_PERSONAL_SIGN_REASON] }
 }
 
@@ -77,8 +77,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	if (originalParams.originalRequestParameters.method === 'personal_sign') {
 		const account = await identifyAddress(ethereumClientService, requestAbortController, originalParams.originalRequestParameters.params[1])
 		const message = originalParams.originalRequestParameters.params[0]
-		// The popup decodes these same bytes for display, and no hash is shown when they depend on which wallet signs.
-		const signedBytes = getPersonalSignMessageBytes(message, signedMessageTransaction.simulationMode)
+		// The hash of the bytes the popup decodes for display, which simulated signing signs too; it is undefined when those bytes depend on which wallet signs.
+		const messageHash = getPersonalSignMessageHash(message, signedMessageTransaction.simulationMode)
 		return {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
@@ -86,11 +86,11 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			type: 'NotParsed' as const,
 			message,
 			account,
-			...getPersonalSignQuarantineCodes(getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined), signedBytes),
+			...getPersonalSignQuarantineCodes(getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined), messageHash),
 			stringifiedMessage: stringifyJSONWithBigInts(message, 4),
 			rawMessage: message,
 			isValidMessage: isValid.valid,
-			messageHash: signedBytes === undefined ? undefined : hashMessage({ raw: signedBytes }),
+			messageHash,
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }

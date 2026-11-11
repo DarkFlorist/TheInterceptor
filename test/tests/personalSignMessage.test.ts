@@ -12,7 +12,7 @@ import { encodeAbiValues } from '../../app/ts/utils/abiRuntime.js'
 import { bytesFromHex } from '../../app/ts/utils/ethereumBytes.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { hashMessage, keccak256, privateKeyToAccount, recoverAddress, type Hex } from '../../app/ts/utils/ethereumPrimitives.js'
-import { classifyPersonalSignMessage, decodePersonalSignMessage, getPersonalSignMessageBytes, type PersonalSignMessageForm } from '../../app/ts/utils/personalSignMessage.js'
+import { classifyPersonalSignMessage, decodePersonalSignMessage, getPersonalSignMessageBytes, getPersonalSignMessageHash, type PersonalSignMessageForm } from '../../app/ts/utils/personalSignMessage.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 import { createEthereumWithGetBlockCounter, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 
@@ -55,6 +55,10 @@ const personalSignCases: readonly PersonalSignCase[] = [
 	{ message: hexEncodedPlainTextMessage, form: 'canonicalHexData', metaMaskBytes: hexEncodedPlainTextMessage },
 	{ message: '0x6869', form: 'canonicalHexData', metaMaskBytes: '0x6869' },
 	{ message: '0xff68', form: 'canonicalHexData', metaMaskBytes: '0xff68' },
+	// Uppercase or mixed-case digits after a lowercase 0x are the same bytes in MetaMask, Rabby and Ambire, which all test /^0x[0-9A-Fa-f]*$/ and parse the digits case-insensitively.
+	{ message: '0x4A6F', form: 'canonicalHexData', metaMaskBytes: '0x4a6f' },
+	{ message: '0x4a6F', form: 'canonicalHexData', metaMaskBytes: '0x4a6f' },
+	{ message: '0xFF00', form: 'canonicalHexData', metaMaskBytes: '0xff00' },
 	// Text that neither starts with a 0x prefix nor consists only of hex digits.
 	{ message: plainTextMessage, form: 'plainText', metaMaskBytes: hexEncodedPlainTextMessage },
 	{ message: 'cafe babe', form: 'plainText', metaMaskBytes: '0x636166652062616265' },
@@ -72,7 +76,10 @@ const personalSignCases: readonly PersonalSignCase[] = [
 	{ message: '0x', form: 'walletDependent', metaMaskBytes: '0x3078' },
 	{ message: '0X', form: 'walletDependent', metaMaskBytes: '0x3058' },
 	{ message: '0x123', form: 'walletDependent', metaMaskBytes: '0x0123' },
-	{ message: '0xFF00', form: 'walletDependent', metaMaskBytes: '0xff00' },
+	// MetaMask signs 0X-prefixed hex as bytes, while Rabby and Ambire sign it as text.
+	{ message: '0X4a6f', form: 'walletDependent', metaMaskBytes: '0x4a6f' },
+	// MetaMask and Rabby left-pad odd-length hex, while ethers getBytes, which Ambire signs with, rejects it.
+	{ message: '0x4A6', form: 'walletDependent', metaMaskBytes: '0x04a6' },
 	{ message: ' 0x6869', form: 'walletDependent', metaMaskBytes: '0x20307836383639' },
 	{ message: '0x6869\n', form: 'walletDependent', metaMaskBytes: '0x3078363836390a' },
 	{ message: ' ', form: 'walletDependent', metaMaskBytes: '0x20' },
@@ -236,6 +243,21 @@ describe('personal_sign visualization', () => {
 				assert.equal(visualized.messageHash, hashMessage({ raw: metaMaskBytes }), label)
 				assert.equal(visualized.shownText, decodeBytes(metaMaskBytes), label)
 			}
+		}
+	})
+
+	// What you see is what you sign: the hash the popup shows and the hash the simulation signs come from getPersonalSignMessageHash, so they cannot drift apart.
+	test('shows the message hash that simulated signing signs for plain text, canonical hex and mixed-case hex', async () => {
+		const { visualize } = await loadPersonalSignVisualization()
+		for (const message of [plainTextMessage, hexEncodedPlainTextMessage, '0x4A6F', '0x4a6F']) {
+			const label = JSON.stringify(message)
+			const simulated = await simulatePersonalSign(personalSign(message), signerAddress)
+			assert.equal((await visualize(message, true)).messageHash, simulated.messageHash, label)
+			assert.equal(getMessageHashForPersonalSign(personalSign(message)), simulated.messageHash, label)
+			assert.equal(getPersonalSignMessageHash(message, true), simulated.messageHash, label)
+			// These forms are wallet independent, so signing mode shows the same hash the simulation signs.
+			assert.equal((await visualize(message, false)).messageHash, simulated.messageHash, label)
+			assert.equal(BigInt(await recoverAddress({ hash: simulated.messageHash, signature: simulated.signature })), mockSimulationKeyAddress, label)
 		}
 	})
 

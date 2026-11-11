@@ -21,6 +21,8 @@ const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/b
 const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
 const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
+const personalSignPopupSource = await Bun.file(new URL('../../app/ts/background/windows/personalSign.ts', import.meta.url)).text()
+const simulationPersonalSigningSource = await Bun.file(new URL('../../app/ts/simulation/services/simulationPersonalSigning.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
@@ -73,6 +75,14 @@ test('simulation service keeps compatibility exports backed by focused signing m
 	assert.equal(simulationFacade.getSignedTransactionForSimulation, simulationTransactionSigning.getSignedTransactionForSimulation)
 	assert.equal(simulationFacade.getMessageHashForPersonalSign, simulationPersonalSigning.getMessageHashForPersonalSign)
 	assert.equal(simulationFacade.simulatePersonalSign, simulationPersonalSigning.simulatePersonalSign)
+})
+
+// The personal_sign hash the popup shows and the one the simulation signs must come from one function, so neither may hash a personal_sign message itself.
+test('personal_sign popup and simulated signing share getPersonalSignMessageHash', () => {
+	for (const source of [personalSignPopupSource, simulationPersonalSigningSource]) {
+		assert.match(source, /\bgetPersonalSignMessageHash\(/u)
+		assert.doesNotMatch(source, /\bhashMessage\b/u)
+	}
 })
 
 test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
