@@ -5,7 +5,7 @@ import { RpcNetwork } from './rpc.js'
 import { AddressBookEntry } from './addressBookTypes.js'
 import { Website } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { EnrichedEIP712 } from './eip721.js'
+import { Eip712Number, EnrichedEIP712 } from './eip721.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 
 type EIP2612Message = funtypes.Static<typeof EIP2612Message>
@@ -186,7 +186,6 @@ export const OpenSeaOrderMessage = funtypes.ReadonlyObject({
 	zoneHash: EthereumBytes32,
 	salt: NonHexBigInt,
 	conduitKey: EthereumBytes32,
-	totalOriginalConsiderationItems: NonHexBigInt,
 	counter: NonHexBigInt,
 })
 
@@ -309,8 +308,10 @@ const OpenSeaOrder = funtypes.ReadonlyObject({
 	primaryType: funtypes.Literal('OrderComponents'),
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.Literal('Seaport'),
-		version: funtypes.Literal('1.5'),
-		chainId: NonHexBigInt,
+		// Seaport 1.6 signs the same OrderComponents struct as 1.5.
+		version: funtypes.Union(funtypes.Literal('1.5'), funtypes.Literal('1.6')),
+		// ethers v6, which seaport-js signs with, sends the chain ID as a hex quantity.
+		chainId: Eip712Number,
 		verifyingContract: EthereumAddress,
 	}),
 	message: OpenSeaOrderMessage
@@ -347,7 +348,6 @@ export const OpenSeaOrderMessageWithAddressBookEntries = funtypes.ReadonlyObject
 	zoneHash: EthereumBytes32,
 	salt: NonHexBigInt,
 	conduitKey: EthereumBytes32,
-	totalOriginalConsiderationItems: NonHexBigInt,
 	counter: NonHexBigInt,
 })
 
