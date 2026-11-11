@@ -8,7 +8,7 @@ import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
 import { updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const stack: InterceptorTransactionStack = {
 	operations: [{
@@ -497,7 +497,7 @@ describe('large state store helpers', () => {
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache: () => undefined,
 			jsonRpcRequest: async () => assert.fail('must not simulate an unreadable stack'),
-		}, async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 
 		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), undefined, true), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)

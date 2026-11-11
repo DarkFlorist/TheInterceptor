@@ -9,7 +9,7 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
@@ -658,7 +658,7 @@ describe('ConfirmTransaction', () => {
 				}
 			},
 		}
-		const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysCurrent)
+		const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const simulator = {
 			ethereum,
 			tokenPriceService: {

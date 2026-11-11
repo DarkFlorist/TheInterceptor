@@ -175,7 +175,7 @@ test('Safe message approval encoding and review matching have domain owners', as
 test('whether services are still installed is a capability of each client, not a module-level owner registry', () => {
 	// A registry fails open for any client that was never registered; a required constructor argument cannot be left out.
 	assert.doesNotMatch(serviceLifecycleSource, /new WeakMap|new WeakSet|new Map\(|installingOwners|recordInstalledServices|simulationServicesAreCurrent/u)
-	assert.match(ethereumClientServiceSource, /rpcEntry: RpcEntry, currency: ClientCurrency\)/u)
+	assert.match(ethereumClientServiceSource, /rpcEntry: RpcEntry, liveness: ClientLiveness\)/u)
 	assert.match(popupVisualisationUpdaterSource, /&& ethereum\.isCurrent\(\)/u)
 	assert.doesNotMatch(popupVisualisationUpdaterSource, /from '\.\.\/simulation\/serviceLifecycle\.js'/u)
 })

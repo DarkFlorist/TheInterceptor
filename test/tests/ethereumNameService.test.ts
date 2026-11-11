@@ -5,7 +5,7 @@ import { getEthereumNameServiceNameFromTokenId } from '../../app/ts/utils/ethere
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { normalizeEnsNameOrUndefined } from '../../app/ts/utils/ens.js'
 import { namehash } from '../../app/ts/utils/ethereumPrimitives.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const rpcEntry = {
 	name: 'Ethereum',
@@ -37,7 +37,7 @@ const createWrappedNamesService = (dnsEncodedName: `0x${ string }`) => new Ether
 	},
 	async () => undefined,
 	async () => undefined,
-	rpcEntry, alwaysCurrent,
+	rpcEntry, alwaysLive,
 )
 
 describe('wrapped ENS name verification', () => {

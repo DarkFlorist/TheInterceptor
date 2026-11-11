@@ -7,7 +7,7 @@ import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/Json
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type Listener = () => void
 type PortMessage = { method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -123,7 +123,7 @@ function createEthereum(rpcEntry: RpcEntry, ethSimulateV1Result?: unknown) {
 			requestHandler,
 			async () => undefined,
 			async () => undefined,
-			rpcEntry, alwaysCurrent,
+			rpcEntry, alwaysLive,
 		),
 		{
 			get(target, property, receiver) {

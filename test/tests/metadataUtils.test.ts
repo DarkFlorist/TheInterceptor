@@ -3,7 +3,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { MockRequestHandler } from '../MockRequestHandler.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const requestHandler = new MockRequestHandler()
 const USDC_MAINNET_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
@@ -20,7 +20,7 @@ const mainnetEthereum = new EthereumClientService(requestHandler, async () => un
 	chainId: 1n,
 	currencyName: 'Ether',
 	currencyTicker: 'ETH',
-}, alwaysCurrent)
+}, alwaysLive)
 
 const goerliEthereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
 	...baseRpcEntry,
@@ -28,7 +28,7 @@ const goerliEthereum = new EthereumClientService(requestHandler, async () => und
 	chainId: 5n,
 	currencyName: 'Goerli Testnet ETH',
 	currencyTicker: 'GÖETH',
-}, alwaysCurrent)
+}, alwaysLive)
 
 describe('getAddressMetaData', () => {
 	test('identifies USDC from bundled metadata on Ethereum mainnet', async () => {

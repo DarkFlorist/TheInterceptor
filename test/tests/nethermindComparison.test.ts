@@ -9,7 +9,7 @@ import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { type SimulationState, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 function parseRequest(data: string) {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -74,7 +74,7 @@ const rpcNetwork = {
 	weth: 0xb4fbf271143f4fbf7b91a5ded31805e42b2208d6n,
 }
 
-const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysCurrent)
+const ethereum = new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 
 const simulationState: SimulationState = {
 	blockNumber: blockNumber,

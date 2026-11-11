@@ -6,7 +6,7 @@ import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
@@ -106,7 +106,7 @@ const exportPayload = {
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
 // A client still installed, so the refresh after import reaches the provider and stops at its expected failure.
 const expectedInfrastructureEthereum = {
-	isCurrent: alwaysCurrent,
+	isCurrent: alwaysLive,
 	getBlock: async () => { throw NEW_BLOCK_ABORT },
 }
 

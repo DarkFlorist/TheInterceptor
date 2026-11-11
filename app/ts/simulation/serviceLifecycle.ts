@@ -3,7 +3,7 @@ import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
-import type { ClientCurrency } from './services/clientCurrency.js'
+import type { ClientLiveness } from './services/clientLiveness.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
@@ -17,7 +17,7 @@ export function createEthereumClientService(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
-	currency: ClientCurrency,
+	liveness: ClientLiveness,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
 	return new EthereumClientService(
@@ -25,7 +25,7 @@ export function createEthereumClientService(
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
 		rpcNetwork,
-		currency,
+		liveness,
 	)
 }
 
@@ -33,7 +33,7 @@ export function createSimulationServices(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
-	currency: ClientCurrency,
+	liveness: ClientLiveness,
 	tokenPriceCacheAge = 60000,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
@@ -41,7 +41,7 @@ export function createSimulationServices(
 		rpcNetwork,
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
-		currency,
+		liveness,
 		rpcRequestLifecycleCallbacks,
 	)
 	return {
@@ -55,7 +55,7 @@ export function resetSimulationServices(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
-	currency: ClientCurrency,
+	liveness: ClientLiveness,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
 	// Retire background polling; cleanup does not invalidate RPC methods used by an in-flight snapshot.
@@ -64,7 +64,7 @@ export function resetSimulationServices(
 		rpcNetwork,
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
-		currency,
+		liveness,
 		currentServices.tokenPriceService.cacheAge,
 		rpcRequestLifecycleCallbacks,
 	)
@@ -84,14 +84,14 @@ export function createSimulationServicesOwner(
 ) {
 	// Advanced by every install. Each client compares the generation it was installed at, so installing a replacement makes every earlier client report itself replaced.
 	let installedGeneration = 0
-	const currencyAt = (generation: number): ClientCurrency => () => generation === installedGeneration
-	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, currencyAt(installedGeneration), 60000, rpcRequestLifecycleCallbacks)
+	const livenessAt = (generation: number): ClientLiveness => () => generation === installedGeneration
+	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, livenessAt(installedGeneration), 60000, rpcRequestLifecycleCallbacks)
 	return {
 		getCurrent: () => current,
 		reset: (nextRpc: RpcEntry): SimulationServices => {
 			// The generation advances only once the replacement exists, so a reset that fails to build it leaves the installed services current.
 			const nextGeneration = installedGeneration + 1
-			const next = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, currencyAt(nextGeneration), rpcRequestLifecycleCallbacks)
+			const next = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, livenessAt(nextGeneration), rpcRequestLifecycleCallbacks)
 			installedGeneration = nextGeneration
 			current = next
 			return current

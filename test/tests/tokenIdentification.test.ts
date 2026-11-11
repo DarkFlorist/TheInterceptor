@@ -7,7 +7,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
-import { alwaysCurrent } from '../../app/ts/simulation/services/clientCurrency.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const tokenAddress = 0x1234567890123456789012345678901234567890n
 const invalidBooleanReturnData = `0x${ '0'.repeat(63) }2` as const
@@ -54,7 +54,7 @@ const createEthereum = (ethSimulateV1Result: unknown, onEthSimulateV1Request?: (
 	new TokenIdentificationRequestHandler(ethSimulateV1Result, onEthSimulateV1Request),
 	async () => undefined,
 	async () => undefined,
-	rpcEntry, alwaysCurrent,
+	rpcEntry, alwaysLive,
 )
 
 const createEthSimulateV1Result = (returnData: readonly `0x${ string }`[]) => [{

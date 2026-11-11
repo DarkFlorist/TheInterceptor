@@ -1,7 +1,7 @@
 import { getSafeContractSnapshot } from '../safe/safeCore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumClientService } from '../simulation/serviceLifecycle.js'
-import { alwaysCurrent } from '../simulation/services/clientCurrency.js'
+import { alwaysLive } from '../simulation/services/clientLiveness.js'
 import type { RequestSafeContractState } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, reportUnexpectedError, shouldSuppressUnexpectedErrorReport } from '../utils/errors.js'
 import { getPrimaryRpcForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -39,7 +39,7 @@ function createTemporarySafeEthereum(rpcEntry: RpcEntry) {
 		rpcEntry,
 		async () => undefined,
 		async () => undefined,
-		alwaysCurrent,
+		alwaysLive,
 	)
 }
 
