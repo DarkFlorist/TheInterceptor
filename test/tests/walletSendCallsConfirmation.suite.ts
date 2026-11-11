@@ -917,7 +917,7 @@ test('a batch approved while its admission focuses the confirmation window is an
 })
 
 const getCallsStatus = async (batchId: string) => {
-	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCalls.js')
+	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCallsStatus.js')
 	const { getCurrentSimulationInput, buildExecutionSimulationStateFromPreparedInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 	const executionState = await buildExecutionSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum), simulator.ethereum)
 	return await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: [batchId] }, website.websiteOrigin)
@@ -961,7 +961,9 @@ test('approving a batch looks up its account without holding the simulation stac
 	assert.equal((await getStackBatchTransactions()).length, 2)
 })
 
-test('wallet_getCallsStatus answers a bundle with a call removed from the simulation stack as unknown instead of reporting the remaining calls', async () => {
+const removeStackTransaction = async (transactionIdentifier: bigint) => await modules.updateInterceptorTransactionStack((stack) => ({ operations: stack.operations.filter((operation) => operation.type !== 'Transaction' || operation.preSimulationTransaction.transactionIdentifier !== transactionIdentifier) }))
+
+test('a bundle with a call removed from the simulation stack is unknown to wallet_getCallsStatus and its id can be submitted again', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
 	await requestBatch(websiteTabConnections, withBatchId('0x01'))
 	assert.equal(await approveBatch(websiteTabConnections), true)
@@ -969,12 +971,19 @@ test('wallet_getCallsStatus answers a bundle with a call removed from the simula
 	const [firstCall, secondCall] = await getStackBatchTransactions()
 	if (firstCall === undefined || secondCall === undefined) throw new Error('Missing batch calls on the simulation stack')
 
-	await modules.updateInterceptorTransactionStack((stack) => ({ operations: stack.operations.filter((operation) => operation.type !== 'Transaction' || operation.preSimulationTransaction.transactionIdentifier !== secondCall.transactionIdentifier) }))
+	await removeStackTransaction(secondCall.transactionIdentifier)
 
 	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => transaction.transactionIdentifier), [firstCall.transactionIdentifier])
+	// The registry and wallet_getCallsStatus share one definition of whether a bundle exists, so the partly removed bundle is unknown to the status query and its id is free at the same time.
 	assert.equal(await getCallsStatusCode('0x01'), 5730)
-	// The remaining call keeps the id in use, so it cannot be taken by a new bundle while the old one is partly on the stack.
-	assert.equal(await isBatchIdInUse('0x01'), true)
+	assert.equal(await isBatchIdInUse('0x01'), false)
+	const resubmissionIdentifier = { requestId: 78, requestSocket: socket }
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), resubmissionIdentifier), { type: 'doNotReply' })
+	assert.equal(await approveBatch(websiteTabConnections, resubmissionIdentifier), true)
+	// Only the resubmitted bundle's record is kept, and the status query reports it.
+	assert.equal((await getBatchIdRecords()).length, 1)
+	assert.equal(await getCallsStatusCode('0x01'), 200)
+	assert.equal((await getStackBatchTransactions()).length, 3)
 })
 
 // Approves a batch, then restores storage as it was right after the approval added the calls to the simulation stack, as a restart at that point leaves it: the calls are on the stack and the batch is still in the confirmation queue, unanswered.
@@ -1073,6 +1082,51 @@ test('rejecting a batch whose interrupted approval had its calls removed from th
 
 test('no response to a batch whose interrupted approval had its calls removed from the simulation stack answers 4001 and releases its id', async () => {
 	await resolveInterruptedApprovalAfterItsCallsWereRemoved('noResponse')
+})
+
+// The user can also remove only some of the calls after an interrupted approval. What is left is not the bundle that was approved, so the website is never told it was sent, and adding the calls again would duplicate the ones left, so every resolution rejects the batch with 4001 and releases its id, leaving the remaining call on the stack.
+async function resolveInterruptedApprovalAfterOneCallWasRemoved(resolve: (websiteTabConnections: BatchTestConnections) => Promise<unknown>) {
+	const { postedMessages, websiteTabConnections } = await restoreApprovalInterruptedAfterItsCommit()
+	const [firstCall, secondCall] = await getStackBatchTransactions()
+	if (firstCall === undefined || secondCall === undefined) throw new Error('Missing batch calls on the simulation stack')
+	await removeStackTransaction(secondCall.transactionIdentifier)
+
+	await resolve(websiteTabConnections)
+
+	const reply = getWalletSendCallsReply(postedMessages)
+	assert.ok(isRecord(reply) && isRecord(reply.error))
+	assert.equal(reply.result, undefined)
+	assert.equal(reply.error.code, 4001)
+	assert.equal(getWalletSendCallsReplies(postedMessages).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => transaction.transactionIdentifier), [firstCall.transactionIdentifier])
+	assert.deepEqual(await getBatchIdRecords(), [])
+	assert.equal(await isBatchIdInUse('0x01'), false)
+	assert.equal(await getCallsStatusCode('0x01'), 5730)
+}
+
+test('approving a batch whose interrupted approval had one call removed from the simulation stack answers 4001 instead of the batch id, and releases its id', async () => {
+	await resolveInterruptedApprovalAfterOneCallWasRemoved(async (websiteTabConnections) => await approveBatch(websiteTabConnections))
+})
+
+test('rejecting a batch whose interrupted approval had one call removed from the simulation stack answers 4001 and releases its id', async () => {
+	await resolveInterruptedApprovalAfterOneCallWasRemoved(async (websiteTabConnections) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'reject', uniqueRequestIdentifier: batchRequestIdentifier, errorString: undefined },
+	}))
+})
+
+test('a batch whose interrupted approval had one call removed from the simulation stack answers 4001 when its missing window is answered at startup', async () => {
+	await resolveInterruptedApprovalAfterOneCallWasRemoved(async (websiteTabConnections) => await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+})
+
+test('refreshing the preview of a batch whose interrupted approval had one call removed from the simulation stack leaves it for its resolution to reject', async () => {
+	await resolveInterruptedApprovalAfterOneCallWasRemoved(async (websiteTabConnections) => {
+		const storedBatch = await getPendingBatch()
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		assert.deepEqual(await getPendingBatch(), storedBatch)
+		return await approveBatch(websiteTabConnections)
+	})
 })
 
 test('resetting a corrupt confirmation queue keeps the id of a batch whose interrupted approval was committed', async () => {
@@ -1578,7 +1632,7 @@ test('approving a batch adds every call to the simulation stack and answers wall
 		[pending.transactionsToSimulate[1]?.transactionIdentifier, tokenAddress],
 	])
 
-	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCalls.js')
+	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCallsStatus.js')
 	const { getCurrentSimulationInput, buildExecutionSimulationStateFromPreparedInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 	const executionState = await buildExecutionSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum), simulator.ethereum)
 	const status = await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: ['0x01'] }, website.websiteOrigin)

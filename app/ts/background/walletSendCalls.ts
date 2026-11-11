@@ -1,20 +1,9 @@
-import * as funtypes from 'funtypes'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { getSimulatedTransactionReceipt } from '../simulation/services/SimulationModeEthereumClientService.js'
-import type { RPCReply } from '../types/interceptor-messages.js'
-import { type SendTransactionParams, WALLET_SEND_CALLS_VERSION, type WalletCallsReceipt, type WalletGetCallsStatus, type WalletSendCalls, type WalletSendCallsCapabilities, type WalletShowCallsStatus } from '../types/JsonRpc-types.js'
-import type { ResolvedExecutionSimulationState, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
-import { EIP5792_ERROR_ATOMICITY_NOT_SUPPORTED, EIP5792_ERROR_BUNDLE_TOO_LARGE, EIP5792_ERROR_DUPLICATE_ID, EIP5792_ERROR_UNKNOWN_BUNDLE_ID, EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, EIP5792_ERROR_UNSUPPORTED_NON_OPTIONAL_CAPABILITY, JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
-import { JsonRpcResponseError } from '../utils/errors.js'
-import type { InterceptedRequest } from '../utils/requests.js'
+import { type SendTransactionParams, WALLET_SEND_CALLS_VERSION, type WalletCallsReceipt, type WalletSendCalls, type WalletSendCallsCapabilities } from '../types/JsonRpc-types.js'
+import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
+import { EIP5792_ERROR_ATOMICITY_NOT_SUPPORTED, EIP5792_ERROR_BUNDLE_TOO_LARGE, EIP5792_ERROR_DUPLICATE_ID, EIP5792_ERROR_UNKNOWN_BUNDLE_ID, EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, EIP5792_ERROR_UNSUPPORTED_NON_OPTIONAL_CAPABILITY, JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { getWalletSendCallsBatchTransactionIdentifiers } from './walletSendCallsBatchIds.js'
 
-// EIP-5792 call batches are only supported in simulation mode, where an approved batch becomes separate transactions on the simulation stack, exactly as it was simulated:
-// - wallet_sendCalls is validated, canonicalized, simulated and confirmed before its calls are added to the simulation stack. Simulation mode needs an Interceptor RPC to simulate the calls.
-// - wallet_getCallsStatus is answered from the simulation stack. wallet_showCallsStatus would open bundle status UI, which the Interceptor does not have.
-// - Signing mode refuses all three without forwarding them to the signer (see getSigningModeWalletCallsReply), so websites send each call with eth_sendTransaction, which the Interceptor reviews on its own.
-// - wallet_getCapabilities is answered locally in every mode (see walletCapabilities.ts), so websites are never offered the signer's batch capabilities.
+// The EIP-5792 wire contract of wallet_sendCalls: canonicalizing a batch, the transactions its calls become, matching them to what was simulated, its errors and its status codes. It depends only on types and utilities; walletSendCallsRpc.ts holds the per-mode refusals and walletSendCallsStatus.ts the simulation-backed wallet_getCallsStatus.
 
 // Every call is prepared and simulated sequentially before the batch can be approved, so the batch size is kept to what wallets typically accept.
 export const WALLET_SEND_CALLS_MAX_CALLS = 10
@@ -22,40 +11,7 @@ export const WALLET_SEND_CALLS_MAX_CALLS = 10
 export type WalletSendCallsError = { readonly code: number, readonly message: string }
 type CanonicalWalletSendCalls = { readonly success: true, readonly value: WalletSendCalls } | { readonly success: false, readonly error: WalletSendCallsError }
 
-const errorReply = (method: string, error: WalletSendCallsError): RPCReply => ({ type: 'result', method, error })
-
-const unknownBundleIdError: WalletSendCallsError = { code: EIP5792_ERROR_UNKNOWN_BUNDLE_ID, message: 'This wallet_sendCalls bundle id is unknown to the Interceptor.' }
-
-// The Interceptor simulates each call as a separate transaction, but a wallet may execute an atomicRequired: false batch atomically in one transaction, where state such as transient storage carries over between the calls. Such a preview cannot be bound to what the wallet executes, so signing mode refuses the batch and knows no bundles.
-export function getSigningModeWalletCallsReply(request: InterceptedRequest): RPCReply | undefined {
-	switch (request.method) {
-		// viem falls back to eth_sendTransaction when the error message contains MetaMask's "does not exist / is not available" wording for unsupported methods; the 4200 code alone does not trigger its fallback.
-		case 'wallet_sendCalls': return errorReply(request.method, {
-			code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER,
-			message: 'wallet_sendCalls does not exist / is not available in Interceptor signing mode. The Interceptor reviews each call as a separate transaction, but a wallet may execute a batch atomically, where state such as transient storage carries over between the calls. Send each call with eth_sendTransaction instead.',
-		})
-		case 'wallet_getCallsStatus':
-		case 'wallet_showCallsStatus': return errorReply(request.method, unknownBundleIdError)
-		default: return undefined
-	}
-}
-
-const RequestedWalletSendCallsVersion = funtypes.ReadonlyObject({ params: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ version: funtypes.String })) })
-
-export function getWalletSendCallsParseFailureReply(request: InterceptedRequest): RPCReply | undefined {
-	switch (request.method) {
-		case 'wallet_sendCalls': {
-			const requestedVersion = RequestedWalletSendCallsVersion.safeParse(request)
-			const message = requestedVersion.success && requestedVersion.value.params[0].version !== WALLET_SEND_CALLS_VERSION
-				? `Unsupported wallet_sendCalls version ${ requestedVersion.value.params[0].version }. The Interceptor supports EIP-5792 version ${ WALLET_SEND_CALLS_VERSION }.`
-				: `Invalid wallet_sendCalls version ${ WALLET_SEND_CALLS_VERSION } parameters: chainId and calls are required, atomicRequired must be a boolean when present, calls may only contain to, data, value and capabilities, hex values must be 0x-prefixed, and unknown fields are rejected.`
-			return errorReply(request.method, { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message })
-		}
-		case 'wallet_getCallsStatus':
-		case 'wallet_showCallsStatus': return errorReply(request.method, { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: `Invalid ${ request.method } parameters.` })
-		default: return undefined
-	}
-}
+export const walletSendCallsUnknownBundleIdError: WalletSendCallsError = { code: EIP5792_ERROR_UNKNOWN_BUNDLE_ID, message: 'This wallet_sendCalls bundle id is unknown to the Interceptor.' }
 
 const getRequiredCapabilityName = (capabilities: WalletSendCallsCapabilities | undefined) => Object.entries(capabilities ?? {}).find(([_name, capability]) => capability?.optional !== true)?.[0]
 
@@ -128,52 +84,3 @@ export const getCallsStatusCode = (receipts: readonly Pick<WalletCallsReceipt, '
 	if (receipts.every((receipt) => receipt.status === 'failure')) return 500
 	return 600
 }
-
-// Answers wallet_getCallsStatus for batches that an approved simulation-mode wallet_sendCalls added to the simulation stack.
-export async function getSimulatedCallsStatus(ethereum: EthereumClientService, simulationState: ResolvedExecutionSimulationState, request: WalletGetCallsStatus, websiteOrigin: string): Promise<RPCReply> {
-	const [id] = request.params
-	if (simulationState.kind === 'passthrough') return errorReply(request.method, unknownBundleIdError)
-	const currentState = simulationState.value
-	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
-	const batchTransactionIdentifiers = await getWalletSendCallsBatchTransactionIdentifiers(websiteOrigin, id)
-	if (batchTransactionIdentifiers === undefined) return errorReply(request.method, unknownBundleIdError)
-	const batchTransactions = currentState.simulatedBlocks
-		.flatMap((block) => block.simulatedTransactions)
-		.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction)
-		.filter((transaction) => batchTransactionIdentifiers.includes(transaction.transactionIdentifier))
-	// A bundle is only reported while every one of its calls is on the simulation stack. EIP-5792's status codes describe how submitted calls executed, and a non-atomic status must list receipts for all of them, so a bundle the user removed calls from is no longer the bundle that was submitted and is answered like an unknown one (5730).
-	if (!batchTransactionIdentifiers.every((transactionIdentifier) => batchTransactions.some((transaction) => transaction.transactionIdentifier === transactionIdentifier))) return errorReply(request.method, unknownBundleIdError)
-	const [firstTransaction] = batchTransactions
-	if (firstTransaction === undefined) return errorReply(request.method, unknownBundleIdError)
-	const receipts: WalletCallsReceipt[] = []
-	for (const transaction of batchTransactions) {
-		const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, transaction.signedTransaction.hash)
-		if (receipt === null) return errorReply(request.method, unknownBundleIdError)
-		receipts.push({
-			logs: receipt.logs.map((log) => ({ address: log.address, data: log.data, topics: log.topics })),
-			status: receipt.status,
-			blockHash: receipt.blockHash,
-			blockNumber: receipt.blockNumber,
-			gasUsed: receipt.gasUsed,
-			transactionHash: receipt.transactionHash,
-		})
-	}
-	return {
-		type: 'result',
-		method: request.method,
-		result: {
-			version: WALLET_SEND_CALLS_VERSION,
-			id,
-			chainId: firstTransaction.signedTransaction.chainId ?? ethereum.getChainId(),
-			status: getCallsStatusCode(receipts),
-			// Simulation-mode batches are separate stack transactions, so they are never atomic.
-			atomic: false,
-			receipts,
-		},
-	}
-}
-
-export const getSimulatedShowCallsStatusReply = (request: WalletShowCallsStatus) => errorReply(request.method, {
-	code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER,
-	message: 'wallet_showCallsStatus is not supported in simulation mode. Simulated batches are shown in the Interceptor simulation stack.',
-})

@@ -18,7 +18,7 @@ import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFee
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
-import { addPendingTransactionBatch, getWalletSendCallTransactionIdentifier, isTransactionBatchOnStack, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
+import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSendCallTransactionIdentifier, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
 import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount } from './walletSendCallsBinding.js'
 import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
@@ -119,8 +119,8 @@ export function findGovernanceVoteInTransactionBatch(ethereum: EthereumClientSer
 }
 
 export async function refreshPendingTransactionBatchSimulation(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
-	// A batch whose calls are on the simulation stack was approved, and simulating it on top of its own calls would preview something else. Its next resolution finishes the approval and answers the website: the user's next action in the confirmation window, or the unanswered answer once the window closes.
-	if (isTransactionBatchOnStack(pendingBatch, await getInterceptorTransactionStack())) return
+	// A batch with calls on the simulation stack was approved, and simulating it on top of its own calls would preview something else. Its next resolution answers the website: the user's next action in the confirmation window, or the unanswered answer once the window closes.
+	if (getTransactionBatchStackState(pendingBatch, await getInterceptorTransactionStack()) !== 'notOnStack') return
 	await refreshUnapprovedTransactionBatchPreview(ethereumClientService, tokenPriceService, pendingBatch)
 }
 
@@ -163,17 +163,22 @@ const getPendingTransactionBatch = async (uniqueRequestIdentifier: UniqueRequest
 
 type TransactionBatchResolution<T> =
 	| { readonly kind: 'notPending' }
-	| { readonly kind: 'finishedAsApproved', readonly delivered: boolean | undefined }
+	| { readonly kind: 'finishedFromStack', readonly delivered: boolean | undefined }
 	| { readonly kind: 'resolved', readonly result: T }
 
-// Resolutions of one batch can overlap, for example when duplicate confirmation windows both approve it, so they run one at a time on freshly read state. A batch whose calls are already on the simulation stack was approved, even if a restart interrupted that approval before it answered the website, so every resolution finishes it as approved instead: it is never rejected, its id is never released and its calls are never added again.
+// Resolutions of one batch can overlap, for example when duplicate confirmation windows both approve it, so they run one at a time on freshly read state. A batch with calls already on the simulation stack was approved, even if a restart interrupted that approval before it answered the website, so every resolution finishes it from the stack instead of from the user's action: its calls are never added again.
 async function resolveTransactionBatchSerially<T>(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, resolveUnapproved: (pendingBatch: PendingTransactionBatch) => Promise<T>) {
 	return await serializeTransactionBatchResolution(transactionBatchResolutionScope, getUniqueRequestIdentifierString(uniqueRequestIdentifier), async (): Promise<TransactionBatchResolution<T>> => {
 		const pendingBatch = await getPendingTransactionBatch(uniqueRequestIdentifier)
 		if (pendingBatch === undefined) return { kind: 'notPending' }
-		// Approval is recognised only while its calls are on the stack: in simulation mode nothing was executed, so a batch whose calls the user removed after an interrupted approval has nothing left to report and is resolved as not approved, a rejection answering 4001 and releasing its id.
-		if (isTransactionBatchOnStack(pendingBatch, await getInterceptorTransactionStack())) return { kind: 'finishedAsApproved', delivered: await finishApprovedTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, pendingBatch) }
-		return { kind: 'resolved', result: await resolveUnapproved(pendingBatch) }
+		// In simulation mode nothing was executed, so an approval stands only while its whole bundle is on the stack (see isWalletSendCallsBundleOnStack). A batch whose calls the user removed after an interrupted approval is not the bundle that was approved: with some calls left it is rejected with 4001 and its id released, because adding its calls again would duplicate the ones left, and with none left it is resolved as not approved.
+		const stackState = getTransactionBatchStackState(pendingBatch, await getInterceptorTransactionStack())
+		switch (stackState) {
+			case 'bundleOnStack': return { kind: 'finishedFromStack', delivered: await finishApprovedTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, pendingBatch) }
+			case 'callsPartlyRemoved': return { kind: 'finishedFromStack', delivered: await rejectTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, pendingBatch, formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'Calls of the approved batch were removed from the simulation stack')) }
+			case 'notOnStack': return { kind: 'resolved', result: await resolveUnapproved(pendingBatch) }
+			default: return assertNever(stackState)
+		}
 	})
 }
 
@@ -242,7 +247,7 @@ export async function resolvePendingTransactionBatch(ethereum: EthereumClientSer
 	const resolution = await resolveTransactionBatchSerially(ethereum, tokenPriceService, websiteTabConnections, confirmation.data.uniqueRequestIdentifier, async (pendingBatch) => await resolveUnapprovedTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, confirmation, pendingBatch))
 	switch (resolution.kind) {
 		case 'notPending': return undefined
-		case 'finishedAsApproved': return resolution.delivered
+		case 'finishedFromStack': return resolution.delivered
 		case 'resolved': return resolution.result
 		default: return assertNever(resolution)
 	}

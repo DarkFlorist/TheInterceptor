@@ -9,6 +9,8 @@ const walletSendCallsConfirmationSource = await readSource('background/walletSen
 const walletSendCallsSource = await readSource('background/walletSendCalls.ts')
 const walletSendCallsBatchIdsSource = await readSource('background/walletSendCallsBatchIds.ts')
 const walletSendCallsBindingSource = await readSource('background/walletSendCallsBinding.ts')
+const walletSendCallsRpcSource = await readSource('background/walletSendCallsRpc.ts')
+const walletSendCallsStatusSource = await readSource('background/walletSendCallsStatus.ts')
 // The confirmation support that both confirmation flows share, one concern per module, and what each module owns.
 const confirmationSupportModules = {
 	'confirmationAdmissionLock.ts': ['runWithPendingConfirmationLock'],
@@ -139,24 +141,79 @@ test('batch ids are looked up only in the batch id records, not on simulation st
 const importedModules = (source: string) => [...source.matchAll(/^import [^\n]* from '([^']+)'/gmu)].map((match) => match[1]).filter((path): path is string => path !== undefined).sort()
 
 test('the batch id registry owns its records and their consistency with the queue and the stack, and depends only on storage', () => {
-	for (const name of ['getWalletSendCallsBatchId', 'getWalletSendCallTransactionIdentifier', 'isTransactionBatchOnStack', 'isWalletSendCallsIdInUse', 'addPendingTransactionBatch', 'releasePendingTransactionBatch', 'removeApprovedTransactionBatch', 'getWalletSendCallsBatchTransactionIdentifiers']) {
+	for (const name of ['getWalletSendCallsBatchId', 'getWalletSendCallTransactionIdentifier', 'isWalletSendCallsBundleOnStack', 'getTransactionBatchStackState', 'isWalletSendCallsIdInUse', 'addPendingTransactionBatch', 'releasePendingTransactionBatch', 'removeApprovedTransactionBatch', 'getWalletSendCallsBatchTransactionIdentifiers']) {
 		assert.match(walletSendCallsBatchIdsSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
-		for (const otherSource of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsConfirmationSource]) assert.doesNotMatch(otherSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
+		for (const otherSource of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsConfirmationSource, walletSendCallsRpcSource, walletSendCallsStatusSource]) assert.doesNotMatch(otherSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
 	}
 	assert.deepEqual(importedModules(walletSendCallsBatchIdsSource).filter((path) => path.startsWith('./')), ['./storageVariables.js'])
 	for (const recordStore of ['updatePendingTransactionsAndWalletSendCallsBatchIds', 'getPendingTransactionsAndWalletSendCallsBatchIds', 'getWalletSendCallsBatchIds']) {
-		assert.doesNotMatch(walletSendCallsSource, new RegExp(recordStore, 'u'), recordStore)
-		assert.doesNotMatch(walletSendCallsBindingSource, new RegExp(recordStore, 'u'), recordStore)
+		for (const otherSource of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsRpcSource, walletSendCallsStatusSource]) assert.doesNotMatch(otherSource, new RegExp(recordStore, 'u'), recordStore)
 	}
 })
 
-test('walletSendCalls.ts keeps only the EIP-5792 wire contract, and the admission binding has its own module', () => {
-	// The wire contract reads the simulated receipts for wallet_getCallsStatus and the registry for the calls of a batch id, and nothing about accounts, website access or settings.
-	assert.deepEqual(importedModules(walletSendCallsSource).filter((path) => !path.startsWith('../types/') && !path.startsWith('../utils/') && path !== 'funtypes'), ['../simulation/services/EthereumClientService.js', '../simulation/services/SimulationModeEthereumClientService.js', './walletSendCallsBatchIds.js'])
-	for (const name of ['lookUpWalletSendCallsAccount', 'getWalletSendCallsBindingError', 'getWalletSendCallsApprovalError', 'isEthereumClientOnBatchChain']) {
-		assert.match(walletSendCallsBindingSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
-		assert.doesNotMatch(walletSendCallsSource, new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu'), name)
+test('a wallet_sendCalls bundle exists by one definition, which the id registry, wallet_getCallsStatus and the resolution of an interrupted approval share', () => {
+	assert.match(walletSendCallsBatchIdsSource, /^export const isWalletSendCallsBundleOnStack = \(bundleTransactionIdentifiers: readonly bigint\[\], stackTransactionIdentifiers: readonly bigint\[\]\) => bundleTransactionIdentifiers\.every\(/mu)
+	// The registry keeps an id in use and the status query reports a bundle by the same predicate, and the resolution decides from the stack state that the predicate classifies.
+	assert.match(walletSendCallsBatchIdsSource, /\|\| isWalletSendCallsBundleOnStack\(record\.transactionIdentifiers, /u)
+	assert.match(walletSendCallsBatchIdsSource, /if \(isWalletSendCallsBundleOnStack\(batchTransactionIdentifiers, stackTransactionIdentifiers\)\) return 'bundleOnStack'/u)
+	assert.match(walletSendCallsStatusSource, /if \(!isWalletSendCallsBundleOnStack\(batchTransactionIdentifiers, /u)
+	assert.match(walletSendCallsConfirmationSource, /case 'bundleOnStack': return \{ kind: 'finishedFromStack', delivered: await finishApprovedTransactionBatch\(/u)
+	assert.doesNotMatch(walletSendCallsBatchIdsSource, /hasTransactionOnStack|isTransactionBatchOnStack/u)
+	for (const source of [walletSendCallsStatusSource, walletSendCallsConfirmationSource]) assert.doesNotMatch(source, /isTransactionBatchOnStack|transactionIdentifiers\.every|\.operations\.some\(/u)
+})
+
+const appSourceUrl = new URL('../../app/ts/', import.meta.url)
+const runtimeImportPattern = /^(?:import|export)\s+(?!type\s)(?:[^'\n]*?\s+from\s+)?'(\.{1,2}\/[^']+)'/gmu
+// The app modules that loading a file runs, following its relative imports and re-exports transitively. Type-only imports are erased when the file is loaded, so they are not followed.
+async function getRuntimeModuleClosure(entryUrl: URL) {
+	const visited = new Set<string>()
+	const pending = [entryUrl]
+	for (let moduleUrl = pending.pop(); moduleUrl !== undefined; moduleUrl = pending.pop()) {
+		if (visited.has(moduleUrl.href)) continue
+		visited.add(moduleUrl.href)
+		const source = await Bun.file(moduleUrl).text()
+		for (const [, importPath] of source.matchAll(runtimeImportPattern)) {
+			if (importPath === undefined) continue
+			const typeScriptUrl = new URL(importPath.replace(/\.js$/u, '.ts'), moduleUrl)
+			pending.push(await Bun.file(typeScriptUrl).exists() ? typeScriptUrl : new URL(importPath.replace(/\.js$/u, '.tsx'), moduleUrl))
+		}
 	}
+	return [...visited].map((href) => href.startsWith(appSourceUrl.href) ? href.slice(appSourceUrl.href.length) : href).sort()
+}
+// Modules that the pure wire contract must not load: the simulation engine, extension storage, and the stack-backed batch id registry and status query.
+const isSimulationOrStorageModule = (modulePath: string) => modulePath.startsWith('simulation/') || /storage/iu.test(modulePath) || ['background/storedSettings.ts', 'background/walletSendCallsBatchIds.ts', 'background/walletSendCallsStatus.ts'].includes(modulePath)
+
+test('walletSendCalls.ts keeps only the EIP-5792 wire contract, and the refusals, the status query and the admission binding have their own modules', async () => {
+	// The wire contract imports only types and utilities: no simulation, storage or other background module.
+	assert.deepEqual(importedModules(walletSendCallsSource).filter((path) => !path.startsWith('../types/') && !path.startsWith('../utils/')), [])
+	const contractClosure = await getRuntimeModuleClosure(new URL('background/walletSendCalls.ts', appSourceUrl))
+	assert.deepEqual(contractClosure.filter(isSimulationOrStorageModule), [])
+	assert.deepEqual(contractClosure.filter((path) => path.startsWith('background/')), ['background/walletSendCalls.ts'])
+	// Its unit tests, which also cover the per-mode refusals, load neither the simulation engine nor storage, transitively.
+	const requestTestClosure = await getRuntimeModuleClosure(new URL('../../test/tests/walletSendCallsRequest.test.ts', import.meta.url))
+	assert.ok(requestTestClosure.includes('background/walletSendCallsRpc.ts'))
+	assert.deepEqual(requestTestClosure.filter(isSimulationOrStorageModule), [])
+	const ownerOf = (name: string) => [['walletSendCalls.ts', walletSendCallsSource], ['walletSendCallsRpc.ts', walletSendCallsRpcSource], ['walletSendCallsStatus.ts', walletSendCallsStatusSource], ['walletSendCallsBinding.ts', walletSendCallsBindingSource]]
+		.filter(([, source]) => new RegExp(`^export (?:const|async function|function) ${ name }\\b`, 'mu').test(source ?? ''))
+		.map(([module]) => module)
+	for (const name of ['getSigningModeWalletCallsReply', 'getWalletSendCallsParseFailureReply', 'getWalletSendCallsWithoutInterceptorRpcReply', 'getSimulatedShowCallsStatusReply']) assert.deepEqual(ownerOf(name), ['walletSendCallsRpc.ts'], name)
+	assert.deepEqual(ownerOf('getSimulatedCallsStatus'), ['walletSendCallsStatus.ts'])
+	for (const name of ['canonicalizeWalletSendCalls', 'doWalletSendCallsMatchSimulatedTransactions', 'getCallsStatusCode', 'getWalletSendCallsTransactionParams']) assert.deepEqual(ownerOf(name), ['walletSendCalls.ts'], name)
+	// The refusals are decided without the simulation engine or storage, so the RPC funnel can run them before parsing.
+	assert.deepEqual((await getRuntimeModuleClosure(new URL('background/walletSendCallsRpc.ts', appSourceUrl))).filter(isSimulationOrStorageModule), [])
+	// The status query is where the simulation engine and the registry are loaded, which also shows the closure follows imports.
+	const statusClosure = await getRuntimeModuleClosure(new URL('background/walletSendCallsStatus.ts', appSourceUrl))
+	for (const modulePath of ['simulation/services/SimulationModeEthereumClientService.ts', 'background/storageVariables.ts', 'background/walletSendCallsBatchIds.ts']) assert.ok(statusClosure.includes(modulePath), modulePath)
+	for (const name of ['lookUpWalletSendCallsAccount', 'getWalletSendCallsBindingError', 'getWalletSendCallsApprovalError', 'isEthereumClientOnBatchChain']) assert.deepEqual(ownerOf(name), ['walletSendCallsBinding.ts'], name)
+})
+
+test('the RPC funnel runs the method-specific pre-parse gates before the parse-failure handlers, and names no method itself', () => {
+	assert.match(backgroundSource, /^const RPC_PRE_PARSE_GATES: [^\n]* = \[getSigningModeWalletCallsReply\]$/mu)
+	const gatesRun = backgroundSource.indexOf('for (const getPreParseReply of RPC_PRE_PARSE_GATES)')
+	const parseFailureHandlersRun = backgroundSource.indexOf('for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS)')
+	assert.ok(gatesRun >= 0 && parseFailureHandlersRun > gatesRun)
+	assert.equal(backgroundSource.match(/getSigningModeWalletCallsReply/gu)?.length, 2)
+	assert.doesNotMatch(backgroundSource, /wallet_sendCalls batches are simulated before approval/u)
 })
 
 test('the batch-free confirmation type is derived from the full union, and the queue is sorted into it exhaustively', () => {
@@ -167,7 +224,7 @@ test('the batch-free confirmation type is derived from the full union, and the q
 test('wallet_sendCalls resolves and compares the active account with the shared rule', () => {
 	assert.equal(importsFrom(walletSendCallsBindingSource, 'websiteActiveAddress.js'), true)
 	assert.match(walletSendCallsBindingSource, /import \{ haveSameActiveAddressSettings \} from '\.\/backgroundUtils\.js'/u)
-	for (const source of [walletSendCallsSource, walletSendCallsBindingSource]) assert.doesNotMatch(source, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
+	for (const source of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsRpcSource, walletSendCallsStatusSource]) assert.doesNotMatch(source, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
 	assert.doesNotMatch(backgroundSource, /function getActiveAddressForRequest/u)
 })
 

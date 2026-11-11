@@ -338,6 +338,19 @@ describe('background eth_accounts', () => {
 		assert.equal(replyTo(7)?.error?.code, 4200)
 	})
 
+	test('a malformed wallet_sendCalls in signing mode gets the signing-mode refusal, not the parse error', async () => {
+		const { request, replyTo } = await expectSigningModeToRefuseCallBatches(undefined)
+		const { EthereumJsonRpcRequest } = await import('../../app/ts/types/JsonRpc-types.js')
+		const malformedBatch = [{ version: '2.0.0', chainId: 1, calls: 'not a list of calls', unknownField: true }]
+		assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'wallet_sendCalls', params: malformedBatch }).success, false)
+
+		await request(7, 'wallet_sendCalls', malformedBatch)
+
+		// The pre-parse gate answers before the parse-failure handler, whose reply would be -32602.
+		assert.equal(replyTo(7)?.error?.code, 4200)
+		assert.match(replyTo(7)?.error?.message ?? '', /does not exist \/ is not available in Interceptor signing mode/u)
+	})
+
 	test('refuses EIP-5792 call batches in signing mode on networks without an Interceptor RPC too', async () => {
 		await expectSigningModeToRefuseCallBatches({ name: 'Signer only', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true })
 	})

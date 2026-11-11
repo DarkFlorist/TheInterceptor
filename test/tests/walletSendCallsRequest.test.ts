@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { canonicalizeWalletSendCalls, doWalletSendCallsMatchSimulatedTransactions, getCallsStatusCode, getSigningModeWalletCallsReply, getWalletSendCallsParseFailureReply, getWalletSendCallsTransactionParams, WALLET_SEND_CALLS_MAX_CALLS } from '../../app/ts/background/walletSendCalls.js'
+import { canonicalizeWalletSendCalls, doWalletSendCallsMatchSimulatedTransactions, getCallsStatusCode, getWalletSendCallsTransactionParams, WALLET_SEND_CALLS_MAX_CALLS } from '../../app/ts/background/walletSendCalls.js'
+import { getSigningModeWalletCallsReply, getWalletSendCallsParseFailureReply } from '../../app/ts/background/walletSendCallsRpc.js'
 import { EthereumJsonRpcRequest, WalletSendCalls } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
@@ -174,18 +175,21 @@ describe('wallet_sendCalls request validation', () => {
 	})
 
 	test('signing mode refuses batches with the wording viem falls back on and knows no bundles, including for a Gnosis Safe signing account', () => {
-		const sendCallsReply = getSigningModeWalletCallsReply(createInterceptedRequest(createRequest({ atomicRequired: true })))
+		const signingMode = { simulationMode: false }
+		const sendCallsReply = getSigningModeWalletCallsReply(createInterceptedRequest(createRequest({ atomicRequired: true })), signingMode)
 		assert.ok(sendCallsReply?.type === 'result' && 'error' in sendCallsReply)
 		assert.equal(sendCallsReply.error.code, 4200)
 		// viem matches this MetaMask wording to fall back to eth_sendTransaction; it does not fall back on the code alone.
 		assert.match(sendCallsReply.error.message, /does not exist \/ is not available/u)
 		assert.match(sendCallsReply.error.message, /transient storage/u)
 		for (const method of ['wallet_getCallsStatus', 'wallet_showCallsStatus']) {
-			const reply = getSigningModeWalletCallsReply(createInterceptedRequest({ method, params: ['0x01'] }))
+			const reply = getSigningModeWalletCallsReply(createInterceptedRequest({ method, params: ['0x01'] }), signingMode)
 			assert.equal(reply?.type === 'result' && 'error' in reply ? reply.error.code : undefined, 5730)
 		}
-		assert.equal(getSigningModeWalletCallsReply(createInterceptedRequest({ method: 'wallet_getCapabilities', params: [addressString(account)] })), undefined)
-		assert.equal(getSigningModeWalletCallsReply(createInterceptedRequest({ method: 'eth_sendTransaction', params: [{}] })), undefined)
+		assert.equal(getSigningModeWalletCallsReply(createInterceptedRequest({ method: 'wallet_getCapabilities', params: [addressString(account)] }), signingMode), undefined)
+		assert.equal(getSigningModeWalletCallsReply(createInterceptedRequest({ method: 'eth_sendTransaction', params: [{}] }), signingMode), undefined)
+		// Simulation mode supports batches, so the gate lets them through to parsing and admission.
+		assert.equal(getSigningModeWalletCallsReply(createInterceptedRequest(createRequest()), { simulationMode: true }), undefined)
 	})
 
 })
