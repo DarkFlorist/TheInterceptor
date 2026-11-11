@@ -394,6 +394,17 @@ const planExecution = (stackEndTime: bigint, governor: bigint, proposalId: bigin
 }
 
 /**
+ * The forwarder moves the governor's code, as the chain holds it at the parent block, to GOVERNOR_CODE_ADDRESS, while the governor's state and the timelock's answers are read after the user's stack. The two agree unless the stack changes the governor's code, and since Cancun an account's code can only change where it is empty, an EIP-7702 delegation, or a state override. So a governor with no code at the parent (deployed in the stack), one that is a delegated account, or one the stack overrides gets a reason instead of an outcome, rather than a copy that would let a call back into the governor run nothing.
+ */
+export const findGovernorCodeProblem = (governor: bigint, governorCode: Uint8Array, stackSimulationInput: SimulationStateInput) => {
+	const name = checksummedAddress(governor)
+	if (governorCode.length === 0) return `${ name } has no code on chain; it exists only after your simulation stack, and the preview runs a governor's own code as the chain holds it.`
+	if (governorCode.length === 23 && governorCode[0] === 0xef && governorCode[1] === 0x01 && governorCode[2] === 0x00) return `${ name } is an account delegated through EIP-7702, not a governor contract.`
+	if (stackSimulationInput.some((block) => block.stateOverrides[addressString(governor)]?.code !== undefined)) return `your simulation stack replaces the code of ${ name }, and the preview runs a governor's own code as the chain holds it.`
+	return undefined
+}
+
+/**
  * The preview's own blocks. The only state override they may carry is GovernorProposalForwarder at the verified governor's address, with the governor's own code moved to GOVERNOR_CODE_ADDRESS, from the first planned block on and only when the plan forwardsThroughGovernor. Nothing is ever overridden at the timelock, at an action's target or at any other address the governor or the proposal names; the user's simulation stack before these blocks keeps its own overrides unchanged.
  * Each transaction gets what one transaction may use at its block's time, less the governor's own work it does not run, so the node enforces the per-transaction limit, including refunds, as for the real transaction.
  */
@@ -434,6 +445,10 @@ export const simulateGovernanceProposalExecution = async (latestEthereum: Ethere
 	const stackEndTime = await getStackEndTime(ethereum, parentBlock, stackSimulationInput)
 	const plan = planExecution(stackEndTime, governor, proposalId, reads.value, proposal.value, timelock.value)
 	const governorCode = plan.forwardsThroughGovernor ? await ethereum.getCode(governor, parentBlock.number, undefined) : undefined
+	if (governorCode !== undefined) {
+		const codeProblem = findGovernorCodeProblem(governor, governorCode, stackSimulationInput)
+		if (codeProblem !== undefined) return refuse(codeProblem)
+	}
 	const planBlocks = toSimulationInputBlocks(ethereum, parentBlock, governor, governorCode, plan, website)
 	// The node splits a block whose transactions need more gas than the parent's limit into several, which would separate what one transaction runs.
 	if (planBlocks.some((block) => block.transactions.reduce((total, transaction) => total + transaction.signedTransaction.gas, 0n) > parentBlock.gasLimit)) return refuse(`a planned transaction needs more gas than the block gas limit, ${ parentBlock.gasLimit }.`)

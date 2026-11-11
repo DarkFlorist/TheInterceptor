@@ -1,9 +1,9 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, simulateGovernanceProposalExecution, splitIntoLogQueries } from '../../app/ts/simulation/governanceProposalExecution.js'
+import { findGovernorCodeProblem, GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, simulateGovernanceProposalExecution, splitIntoLogQueries } from '../../app/ts/simulation/governanceProposalExecution.js'
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
+import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { describeGovernanceExecutionBlockNumber } from '../../app/ts/utils/governanceExecutionBlock.js'
 import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCodes.js'
 import { toEventSelector, toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -287,6 +287,14 @@ describe('governance proposal execution preview of real governors', () => {
 		const executionTime = executionBlock?.blockOverrides?.time?.getTime()
 		if (stackTime === undefined || executionTime === undefined) throw new Error('Expected block times')
 		assert.equal((executionTime - stackTime) / 1000, TWO_DAYS_IN_SECONDS)
+	})
+
+	test('refuses a governor that an earlier stack transaction deploys, rather than run a call back into it on no code', async () => {
+		const { preview, requests, forwarderUsed } = await previewFixture('compound-timelock-governor-deployed-in-stack')
+		// The governor and its timelock were read after the stack, where the governor exists and is the timelock's admin; on chain it has no code to move.
+		assertRefused(preview, /0xD2c000448c61dD41b4E67780a3D5247BbB1AA711 has no code on chain; it exists only after your simulation stack, and the preview runs a governor's own code as the chain holds it\./)
+		assert.equal(forwarderUsed, false)
+		assert.equal(simulateRequests(requests).length, 2)
 	})
 
 	test('refuses a proposal that an earlier transaction in the user\'s stack cancels', async () => {
@@ -589,5 +597,16 @@ describe('checking that the pinned block is still canonical', () => {
 		} finally {
 			await server.stop(true)
 		}
+	})
+})
+
+describe('the governor code the forwarder moves', () => {
+	const governor = 0x1234n
+	test('refuses a delegated account and a stack that overrides the governor\'s code', () => {
+		const delegationDesignator = stringToUint8Array(`0xef0100${ '11'.repeat(20) }`)
+		assert.match(findGovernorCodeProblem(governor, delegationDesignator, []) ?? '', /is an account delegated through EIP-7702, not a governor contract\./)
+		const overridingStack = EXAMPLE_STACKS.makesTheGovernorRich(governor).map((block) => ({ ...block, stateOverrides: { [addressString(governor)]: { code: stringToUint8Array('0x60006000') } } }))
+		assert.match(findGovernorCodeProblem(governor, stringToUint8Array('0x6000'), overridingStack) ?? '', /your simulation stack replaces the code of/)
+		assert.equal(findGovernorCodeProblem(governor, stringToUint8Array('0x6000'), EXAMPLE_STACKS.makesTheGovernorRich(governor)), undefined)
 	})
 })

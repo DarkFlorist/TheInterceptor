@@ -78,6 +78,9 @@ const ENS_PROPOSAL_ACTIONS = {
 	descriptionHash: '0x5fb1133d5fec93ad225abfd95cb643337393e3bdecb0dfbd28765a4fb7577e27',
 } as const
 const OPEN_ZEPPELIN_QUEUE_ABI = [{ type: 'function', name: 'queue', stateMutability: 'nonpayable', inputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'descriptionHash', type: 'bytes32' }], outputs: [{ name: '', type: 'uint256' }] }] as const
+// A factory that the fixture recording deploys on the fork at block 26382492, whose deploy() creates a governor (GovernorFactory in the recording's contracts).
+const GOVERNOR_FACTORY = 0x36b78982c14b662b2f02e3d7bc3034f8a35a4393n
+const GOVERNOR_FACTORY_ABI = [{ type: 'function', name: 'deploy', stateMutability: 'nonpayable', inputs: [], outputs: [{ name: '', type: 'address' }] }] as const
 const GOVERNOR_CANCEL_ABI = [{ type: 'function', name: 'cancel', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [] }] as const
 // A Gnosis Safe 1.3.0 that scripts/record-governance-fixtures.mts deploys through the canonical proxy factory with salt nonce 20261111, one owner (0x1111…1111) and threshold 1.
 export const EXAMPLE_SAFE = 0x452d3cca824174106e1975cdb8d9276402cf8e02n
@@ -122,6 +125,11 @@ export const EXAMPLE_STACKS = {
 	queuesEnsProposal: (governor: bigint): SimulationStateInput => {
 		const queueCall = encodeFunctionCall(OPEN_ZEPPELIN_QUEUE_ABI, 'queue', [ENS_PROPOSAL_ACTIONS.targets, ENS_PROPOSAL_ACTIONS.values, ENS_PROPOSAL_ACTIONS.calldatas, ENS_PROPOSAL_ACTIONS.descriptionHash])
 		const transaction = { type: '1559' as const, from: EXAMPLE_STACK_SENDER, to: governor, value: 0n, input: stringToUint8Array(queueCall), gas: 1_000_000n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
+		return [stackBlock({ transactions: [{ signedTransaction: mockSignTransaction(transaction), website: STACK_WEBSITE, created: new Date(0), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: 1n }] })]
+	},
+	// vitalik.eth has GOVERNOR_FACTORY deploy the governor earlier in the stack; the governor has no code on chain.
+	deploysTheGovernor: (_governor: bigint): SimulationStateInput => {
+		const transaction = { type: '1559' as const, from: EXAMPLE_STACK_SENDER, to: GOVERNOR_FACTORY, value: 0n, input: stringToUint8Array(encodeFunctionCall(GOVERNOR_FACTORY_ABI, 'deploy', [])), gas: 3_000_000n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
 		return [stackBlock({ transactions: [{ signedTransaction: mockSignTransaction(transaction), website: STACK_WEBSITE, created: new Date(0), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: 1n }] })]
 	},
 } as const
