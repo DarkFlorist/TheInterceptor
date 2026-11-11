@@ -11,14 +11,15 @@ import { activeAddress, browserMock, bytes32String, createDisconnectedPort, crea
 const REPLY_REQUEST_INSTANCE_ID = 'instance answered by the terminal reply'
 const storePendingRequestsFor = async (...replies: readonly InterceptedRequestForward[]) => await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: replies.map((reply) => ({ ...pendingTransaction, instanceId: REPLY_REQUEST_INSTANCE_ID, uniqueRequestIdentifier: reply.uniqueRequestIdentifier })) })
 
+const requestAnsweredBy = (reply: InterceptedRequestForward) => ({ uniqueRequestIdentifier: reply.uniqueRequestIdentifier, instanceId: REPLY_REQUEST_INSTANCE_ID })
+
 async function queueReplyToStoredRequest(reply: InterceptedRequestForward) {
-	const instance = { uniqueRequestIdentifier: reply.uniqueRequestIdentifier, instanceId: REPLY_REQUEST_INSTANCE_ID }
-	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, instance, (pending) => ({ type: 'store', pending })), 'stored')
+	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(reply, requestAnsweredBy(reply), (pending) => ({ type: 'store', pending })), 'stored')
 }
 
 async function queueReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabConnections, reply: InterceptedRequestForward) {
 	await queueReplyToStoredRequest(reply)
-	return await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply)
+	return await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply, requestAnsweredBy(reply))
 }
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
@@ -572,7 +573,7 @@ test('socket flush during terminal reply queueing keeps the completion marker fo
 	await storePendingRequestsFor(terminalReply)
 	await queueReplyToStoredRequest(terminalReply)
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
-	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply), true)
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply, requestAnsweredBy(terminalReply)), true)
 	assert.equal(postedMessages.length, 1)
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 })

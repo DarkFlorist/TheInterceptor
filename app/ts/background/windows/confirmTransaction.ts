@@ -412,7 +412,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 			return false
 		}
 		try {
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply, resolvedInstance)
 		} finally {
 			// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
 			await updateViewAfterPendingRequestRemoved(simulationStack)
@@ -476,7 +476,7 @@ async function resolveStoredPendingTransactionOrMessage(ethereum: EthereumClient
 		const claim = await queueTerminalReplyWithPendingRequestDecision(rejection, resolvedInstance, (current) => ({ type: 'store', pending: modifyObject(current, { approvalStatus: { status: 'ClosedWithoutResponse' } }) }))
 		if (claim === 'unchanged') return false
 		// A delivered rejection leaves the outbox in the same storage write that removes the request, so a failure leaves both and the no-response retry finds it delivered rather than posting it again. An undelivered rejection stays queued for the website's next connection, and the request leaves the queue now.
-		const noResponseDelivery = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, rejection)
+		const noResponseDelivery = await attemptQueuedTerminalReplyDelivery(websiteTabConnections, rejection, resolvedInstance)
 		if (noResponseDelivery !== true) await removePendingTransactionOrMessageInstance(resolvedInstance, canCompleteStoredRequest)
 		await updateViewAfterPendingRequestRemoved('unchanged')
 		return noResponseDelivery

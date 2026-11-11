@@ -616,9 +616,57 @@ test('a decision that queues nothing still finishes an earlier reply delivered w
 
 	const nextReply = { ...earlierReply, error: { code: 4100, message: 'the next reply' } }
 	assert.equal(await modules.queueTerminalReplyWithPendingRequestDecision(nextReply, pending, () => ({ type: 'remove' })), 'removed')
-	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(page.connections, nextReply), true)
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(page.connections, nextReply, pending), true)
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 2)
 })
+
+const rejectOnlyPendingRequest = async ({ connections }: PageConnection) => {
+	const { instanceId } = await getOnlyPendingRequest()
+	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: pageRequestIdentifier, instanceId } })
+}
+
+// Rejects the page's request and fails the first reply outbox write after the rejection was posted, so the rejection reached the page while its outbox cleanup did not finish, which leaves its completion marker behind.
+async function rejectWithFailedCleanupAfterDelivery(page: PageConnection, messagesPostedToPage: readonly unknown[]) {
+	let cleanupFailed = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (!cleanupFailed && getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length > 0 && 'pendingTerminalReplies' in items) {
+			cleanupFailed = true
+			throw new Error('storage write failed')
+		}
+		writeStoredItems()
+	})
+	try {
+		await assert.rejects(rejectOnlyPendingRequest(page), /storage write failed/u)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(cleanupFailed, true)
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+}
+
+const newRequestResolutions = [
+	{ decision: 'removed', resolve: async (page: PageConnection) => { assert.equal(await rejectOnlyPendingRequest(page), true) } },
+	{ decision: 'stored', resolve: closeConfirmationPopup },
+] as const
+
+for (const { decision, resolve } of newRequestResolutions) {
+	test(`a reply ${ decision } for a new request under a reused id reaches the page once, though the earlier reply under that id kept its completion marker`, async () => {
+		const messagesPostedToPage: unknown[] = []
+		const page = await startPageConnection(messagesPostedToPage)
+		delete browserMock.storageState.pendingTerminalReplies
+		await sendPersonalSignFromPage(page, 'first message')
+		await rejectWithFailedCleanupAfterDelivery(page, messagesPostedToPage)
+
+		// The page sends its next request under the id of the one it already got its answer for.
+		await sendPersonalSignFromPage(page, 'second message')
+		await resolve(page)
+
+		assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 2)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	})
+}
 
 test('an instance update reports whether it stored, and a removal whether it removed', async () => {
 	const page = await startPageConnection([])
