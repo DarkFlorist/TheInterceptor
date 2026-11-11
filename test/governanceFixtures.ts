@@ -72,8 +72,8 @@ export const EXAMPLE_STACK_SENDER = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 export const EXAMPLE_SAFE = 0x452d3cca824174106e1975cdb8d9276402cf8e02n
 const STACK_WEBSITE = { websiteOrigin: 'https://stack.fixture', icon: undefined, title: undefined }
 
-const exampleTransfer = (from: bigint) => {
-	const transaction = { type: '1559' as const, from, to: 0xdeadn, value: 10n ** 18n, input: new Uint8Array(), gas: 21_000n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
+const exampleTransfer = (from: bigint, to = 0xdeadn, value = 10n ** 18n, gas = 21_000n) => {
+	const transaction = { type: '1559' as const, from, to, value, input: new Uint8Array(), gas, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
 	return { signedTransaction: mockSignTransaction(transaction), website: STACK_WEBSITE, created: new Date(0), originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [transaction] as const }, transactionIdentifier: 1n }
 }
 
@@ -81,11 +81,11 @@ const stackBlock = (block: Partial<SimulationStateInputBlock>): SimulationStateI
 
 export const EXAMPLE_STACKS = {
 	// vitalik.eth sends 1 ether to 0x…dEaD.
-	transfer: (): SimulationStateInput => [stackBlock({ transactions: [exampleTransfer(EXAMPLE_STACK_SENDER)] })],
+	transfer: (_governor: bigint): SimulationStateInput => [stackBlock({ transactions: [exampleTransfer(EXAMPLE_STACK_SENDER)] })],
 	// The same, with vitalik.eth made rich, as getCurrentSimulationInput does in simulation mode.
-	makeRich: (): SimulationStateInput => [stackBlock({ stateOverrides: { [addressString(EXAMPLE_STACK_SENDER)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } }, transactions: [exampleTransfer(EXAMPLE_STACK_SENDER)] })],
+	makeRich: (_governor: bigint): SimulationStateInput => [stackBlock({ stateOverrides: { [addressString(EXAMPLE_STACK_SENDER)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } }, transactions: [exampleTransfer(EXAMPLE_STACK_SENDER)] })],
 	// A message vitalik.eth signed in the simulation, which EthereumClientService runs with a replaced ecrecover.
-	signedMessage: (): SimulationStateInput => [stackBlock({ signedMessages: [{
+	signedMessage: (_governor: bigint): SimulationStateInput => [stackBlock({ signedMessages: [{
 		website: STACK_WEBSITE,
 		created: new Date(0),
 		fakeSignedFor: EXAMPLE_STACK_SENDER,
@@ -95,7 +95,11 @@ export const EXAMPLE_STACKS = {
 		messageIdentifier: 1n,
 	}] })],
 	// 1 ether sent by EXAMPLE_SAFE, a Gnosis Safe 1.3.0 deployed on the fork the fixture was recorded on, as the simulation stack holds a Safe's own call before prepareExampleStack prepares it.
-	safeExecution: (): SimulationStateInput => [stackBlock({ transactions: [{ ...exampleTransfer(EXAMPLE_SAFE), simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true } }] })],
+	safeExecution: (_governor: bigint): SimulationStateInput => [stackBlock({ transactions: [{ ...exampleTransfer(EXAMPLE_SAFE), simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true } }] })],
+	// vitalik.eth sends the governor 2 ether earlier in the stack.
+	fundsTheGovernor: (governor: bigint): SimulationStateInput => [stackBlock({ transactions: [exampleTransfer(EXAMPLE_STACK_SENDER, governor, 2n * 10n ** 18n, 100_000n)] })],
+	// The user's rich list includes the governor, as getCurrentSimulationInput would make it rich.
+	makesTheGovernorRich: (governor: bigint): SimulationStateInput => [stackBlock({ stateOverrides: { [addressString(governor)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } } })],
 } as const
 export type ExampleStackName = keyof typeof EXAMPLE_STACKS
 export const isExampleStackName = (name: string): name is ExampleStackName => name in EXAMPLE_STACKS

@@ -15,7 +15,7 @@ const stackName = stackOption?.replace('--stack=', '')
 if (stackName !== undefined && !isExampleStackName(stackName)) throw new Error(`Unknown stack ${ stackName }`)
 const { ethereum, exchanges } = createRecordingEthereumClientService(new EthereumJSONRpcRequestHandler(rpcUrl))
 const pinnedEthereum = await pinToLatestBlock(ethereum)
-const preview = await simulateGovernanceProposalExecution(pinnedEthereum, await prepareExampleStack(pinnedEthereum, stackName === undefined ? [] : EXAMPLE_STACKS[stackName]()), BigInt(governor), BigInt(proposalId), { websiteOrigin: 'https://governance.fixture', icon: undefined, title: undefined })
+const preview = await simulateGovernanceProposalExecution(pinnedEthereum, await prepareExampleStack(pinnedEthereum, stackName === undefined ? [] : EXAMPLE_STACKS[stackName](BigInt(governor))), BigInt(governor), BigInt(proposalId), { websiteOrigin: 'https://governance.fixture', icon: undefined, title: undefined })
 console.log(preview.success ? `${ name }: simulated ${ preview.simulationState.simulatedBlocks[0]?.simulatedTransactions.length ?? 0 } execution transactions` : `${ name }: ${ preview.errorMessage }`)
 
 const fixture: GovernanceFixture = { description, governor, proposalId, ...stackName === undefined ? {} : { stack: stackName }, ...stackName === 'safeExecution' ? { safeExecutionExecutor: addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR) } : {}, exchanges: exchanges() }

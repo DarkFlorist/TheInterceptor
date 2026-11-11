@@ -161,10 +161,10 @@ export class EthereumClientService {
 		return pinnedClient
 	}
 
-	// Whether the chain still holds the pinned block at its height. Requests that name a height, such as eth_getLogs, read whatever block holds it, so their results stand only while this holds.
+	// Whether the chain still holds the pinned block at its height. Requests that name a height, such as eth_getLogs, read whatever block holds it, so their results stand only while this holds. It asks the node each time, past the handler's cache, since an earlier answer is what it checks.
 	public readonly isPinnedBlockCanonical = async (requestAbortController: AbortController | undefined) => {
 		if (this.pinnedBlock === undefined) return true
-		const blockAtHeight = EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [this.pinnedBlock.number, false] }, requestAbortController))
+		const blockAtHeight = EthereumBlockHeaderWithTransactionHashes.parse(await this.requestHandler.jsonRpcRequest({ method: 'eth_getBlockByNumber', params: [this.pinnedBlock.number, false] }, requestAbortController, true))
 		return blockAtHeight !== null && blockAtHeight.hash === this.pinnedBlock.hash
 	}
 

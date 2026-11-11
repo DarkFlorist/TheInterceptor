@@ -31,5 +31,6 @@ export const createBlockPinnedRequestHandler = (requestHandler: IEthereumJSONRpc
 	rpcUrl: requestHandler.rpcUrl,
 	clearCache: requestHandler.clearCache,
 	getChainId: requestHandler.getChainId,
-	jsonRpcRequest: async (request, requestAbortController) => await requestHandler.jsonRpcRequest(pinRequestToBlockHash(request, block), requestAbortController),
+	// Every option, such as bypassing the handler's cache, passes through with the request.
+	jsonRpcRequest: async (request, ...options) => await requestHandler.jsonRpcRequest(pinRequestToBlockHash(request, block), ...options),
 })

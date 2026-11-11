@@ -9,6 +9,9 @@ import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCod
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { pinRequestToBlockHash } from '../../app/ts/simulation/services/blockPinning.js'
+import { EthereumClientService as RealEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { EthereumBlockHeaderWithTransactionHashes } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../../app/ts/utils/constants.js'
@@ -17,6 +20,11 @@ import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDE
 // Each fixture is the RPC conversation of one preview, recorded from a real node by scripts/record-governance-fixtures.mts; its description names the chain state it was recorded on.
 const loadFixture = async (name: string): Promise<GovernanceFixture> => await Bun.file(new URL(`../fixtures/governance/${ name }.json`, import.meta.url)).json()
 
+// A block header with placeholder fields, for tests that need a whole header.
+const EXAMPLE_HEADER = {
+	author: 0n, difficulty: 0n, extraData: new Uint8Array(), gasLimit: 60_000_000n, gasUsed: 0n, hash: 0n, logsBloom: 0n, miner: 0n, mixHash: 0n, nonce: 0n, number: 0n, parentHash: 0n,
+	receiptsRoot: 0n, sha3Uncles: 0n, stateRoot: 0n, timestamp: new Date(1_794_290_000_000), size: 0n, totalDifficulty: 0n, uncles: [], baseFeePerGas: 1n, transactionsRoot: 0n, transactions: [], withdrawals: [], withdrawalsRoot: 0n,
+}
 const WEBSITE = { websiteOrigin: 'https://governance.fixture', icon: undefined, title: undefined }
 const UNISWAP_TIMELOCK = 0x1a9c8182c09f50c8318d769245bea52c32be35bcn
 const COMPOUND_TIMELOCK = 0x6d903f6003cca6255d85cca4d3b5e5146dc33925n
@@ -97,7 +105,7 @@ const previewFixture = async (name: string, options: Parameters<typeof createRep
 	const pinnedEthereum = await pinToLatestBlock(ethereum)
 	const parentBlock = await pinnedEthereum.getBlock(undefined)
 	if (parentBlock === null) throw new Error('Expected the latest block')
-	const stack = await prepareExampleStack(pinnedEthereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack]())
+	const stack = await prepareExampleStack(pinnedEthereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack](BigInt(fixture.governor)))
 	const governor = BigInt(fixture.governor)
 	const preview = await simulateGovernanceProposalExecution(pinnedEthereum, stack, governor, BigInt(fixture.proposalId), WEBSITE)
 	const forwarderUsed = await assertOverrideRule(pinnedEthereum, requests, resultOf, stack, governor)
@@ -343,11 +351,22 @@ describe('governance proposal execution through a real Compound Timelock in one 
 	})
 
 	test('refuses an action\'s ether that only its executor would send, since the preview supplies none', async () => {
-		const { preview, requests } = await previewFixture('compound-timelock-value-governor-without-ether')
-		assertRefused(preview, /the actions of proposal 1 send 1000000000000000000 attoeth, which 0x[0-9a-fA-F]{40} forwards from the ether sent with its execute\. The governor holds 0 attoeth, and the preview does not supply the rest for the executor\./)
-		// Nothing was simulated as the governor.
-		assert.ok(simulateRequests(requests).every((simulation) => simulation.blockStateCalls.every((block) => !hasOverrides(block.stateOverrides))))
+		const { preview } = await previewFixture('compound-timelock-value-governor-without-ether')
+		assertRefused(preview, /the actions of proposal 1 send 1000000000000000000 attoeth, which 0x[0-9a-fA-F]{40} forwards from the ether sent with its execute\. When it executes, the governor holds 0 attoeth, and the preview does not supply the rest for the executor\./)
 	})
+
+	const fundedByTheStack = [
+		['compound-timelock-value-governor-funded-by-stack', 'an earlier stack transaction'],
+		['compound-timelock-value-governor-made-rich', 'the user\'s rich list'],
+	] as const
+	for (const [name, funding] of fundedByTheStack) {
+		test(`forwards an action's ether from a governor that ${ funding } funds, as it holds the ether when it executes`, async () => {
+			const { result, governor } = await executionOf(name)
+			const timelock = 0x7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7bn
+			const etherTransfers = result.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS).map((log) => [log.topics[1], log.topics[2], BigInt(dataStringWith0xStart(log.data))])
+			assert.deepEqual(etherTransfers, [[governor, timelock, 10n ** 18n], [timelock, EXAMPLE_STACK_SENDER, 10n ** 18n]])
+		})
+	}
 
 	test('refunds a proposal as one transaction, so one that clears what it wrote fits the per-transaction limit', async () => {
 		const { result, transaction } = await executionOf('compound-timelock-refunds-near-transaction-limit')
@@ -482,5 +501,37 @@ describe('pinning state reads to a block hash', () => {
 		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_simulateV1', params: [{ blockStateCalls: [] }, 100n] }, block), { method: 'eth_simulateV1', params: [{ blockStateCalls: [] }, bytes32String(block.hash)] })
 		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getCode', params: [1n, 99n] }, block), { method: 'eth_getCode', params: [1n, 99n] })
 		assert.deepEqual(pinRequestToBlockHash({ method: 'eth_getBlockByNumber', params: [100n, false] }, block), { method: 'eth_getBlockByNumber', params: [100n, false] })
+	})
+})
+
+describe('checking that the pinned block is still canonical', () => {
+	test('asks the node again past the production RPC cache, so a reorganisation between two checks is seen', async () => {
+		const pinnedBlockHash = 0xa000000000000000000000000000000000000000000000000000000000000001n
+		const reorganisedBlockHash = 0xb000000000000000000000000000000000000000000000000000000000000002n
+		let canonicalHash = pinnedBlockHash
+		let blockFetches = 0
+		const server = Bun.serve({
+			hostname: '127.0.0.1',
+			port: 0,
+			async fetch(request) {
+				const message: unknown = await request.json()
+				if (typeof message !== 'object' || message === null || !('id' in message) || !('method' in message) || message.method !== 'eth_getBlockByNumber') throw new Error('Unexpected request')
+				blockFetches += 1
+				const header = EthereumBlockHeaderWithTransactionHashes.serialize({ ...EXAMPLE_HEADER, number: 100n, hash: canonicalHash })
+				return Response.json({ jsonrpc: '2.0', id: message.id, result: header })
+			},
+		})
+		try {
+			// The caching handler the extension runs with (serviceLifecycle.ts).
+			const requestHandler = new EthereumJSONRpcRequestHandler(server.url.toString(), true)
+			const ethereum = new RealEthereumClientService(requestHandler, async () => undefined, async () => undefined, { name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
+			const pinnedEthereum = ethereum.pinnedToBlock({ ...EXAMPLE_HEADER, number: 100n, hash: pinnedBlockHash, transactions: [] })
+			assert.equal(await pinnedEthereum.isPinnedBlockCanonical(undefined), true)
+			canonicalHash = reorganisedBlockHash
+			assert.equal(await pinnedEthereum.isPinnedBlockCanonical(undefined), false)
+			assert.equal(blockFetches, 2)
+		} finally {
+			await server.stop(true)
+		}
 	})
 })
