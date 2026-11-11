@@ -884,7 +884,10 @@ export async function simulateGovernanceContractExecutionOnPass(ethereum: Ethere
 	const pendingTransactions = await getPendingTransactionsAndMessages()
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
 	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
-	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)
+	const latestBlock = await ethereum.getBlock(undefined)
+	if (latestBlock === null) throw new Error('The latest block is null')
+	// The stack's preparation, the preview and the visualisation all work on one parent block, whatever blocks arrive meanwhile.
+	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum.pinnedToBlock(latestBlock), tokenPriceService)
 	const reply = {
 		method: 'popup_simulateExecutionReply' as const,
 		data: { ...governanceContractExecutionVisualisation, transactionOrMessageIdentifier: request.data.transactionIdentifier }

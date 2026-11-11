@@ -257,7 +257,7 @@ function createGovernanceVoteInputParameters(proposalId: bigint): GovernanceVote
 	}
 }
 
-function createGovernanceTransactionFixture(transactionIdentifier: bigint): SimulatedAndVisualizedTransaction {
+function createGovernanceTransactionFixture(transactionIdentifier: bigint, governor: { readonly abi: string | undefined } = { abi: '[]' }): SimulatedAndVisualizedTransaction {
 	const governanceTransactionFixture = {
 		transactionIdentifier,
 		transaction: {
@@ -266,7 +266,7 @@ function createGovernanceTransactionFixture(transactionIdentifier: bigint): Simu
 				name: 'Governance',
 				address: 0x1n,
 				entrySource: 'User',
-				abi: '[]',
+				abi: governor.abi,
 				chainId: 1n,
 			},
 		},
@@ -1059,6 +1059,51 @@ describe('popup async action UI', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('Simulating governance execution failed because the background page did not return a reply.'), true)
 		assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
+		dom.restore()
+	})
+
+	test('offers the governance simulation for a governor whose ABI is not in the address book', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+
+		await act(() => {
+			render(h(modules.GovernanceVoteVisualizer, {
+				simTx: createGovernanceTransactionFixture(5n, { abi: undefined }),
+				activeAddress: signal(0x2n),
+				renameAddressCallBack: () => undefined,
+				editEnsNamedHashCallBack: () => undefined,
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+			}), dom.document.body)
+		})
+
+		assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulate execution on a passing vote')), true)
+		assert.equal(dom.document.body.textContent?.includes('Add Abi'), false)
+		dom.restore()
+	})
+
+	test('keeps the governance simulation result when the same vote renders again', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const renderVote = () => render(h(modules.GovernanceVoteVisualizer, {
+			simTx: createGovernanceTransactionFixture(5n),
+			activeAddress: signal(0x2n),
+			renameAddressCallBack: () => undefined,
+			editEnsNamedHashCallBack: () => undefined,
+			// identifyTransaction decodes the vote again on every render, so each render passes a new parameters object.
+			governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+		}), dom.document.body)
+
+		await act(() => { renderVote() })
+		await act(async () => {
+			await emitRuntimeMessage(createSimulationFailureBroadcast(5n, 'governance simulation result'))
+			await settleAsyncUpdates()
+		})
+		assert.equal(dom.document.body.textContent?.includes('governance simulation result'), true)
+
+		await act(() => { renderVote() })
+		await act(async () => { await settleAsyncUpdates() })
+
+		assert.equal(dom.document.body.textContent?.includes('governance simulation result'), true)
 		dom.restore()
 	})
 

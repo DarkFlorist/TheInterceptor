@@ -1,16 +1,13 @@
-import { get4Byte, get4ByteString } from '../../utils/calldata.js'
+import { get4Byte } from '../../utils/calldata.js'
 import { BURN_ADDRESSES, FourByteExplanations } from '../../utils/constants.js'
 import { assertNever, createGuard } from '../../utils/typescript.js'
 import { type MaybeSimulatedTransaction, type SimulatedAndVisualizedTransaction, SimulatedAndVisualizedTransactionBase, TransactionWithAddressBookEntries } from '../../types/visualizer-types.js'
 import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { CompoundGovernanceAbi } from '../../utils/abi.js'
-import { dataStringWith0xStart } from '../../utils/bigint.js'
-import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
+import { decodeGovernanceVote } from '../../utils/governanceVote.js'
 import type { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 import { analyzeProxyTokenTransfer } from '../../simulation/proxyTokenTransfer.js'
 
@@ -89,33 +86,15 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 }
 
 function identifyGovernanceVote(simTx: SimulatedAndVisualizedTransaction) {
-	const fourByte = get4Byte(simTx.transaction.input)
-	if (fourByte === undefined) return undefined
-	const explanation = FourByteExplanations[fourByte]
-	if (explanation !== 'Cast Vote'
-		&& explanation !== 'Submit Vote'
-		&& explanation !== 'Cast Vote by Signature'
-		&& explanation !== 'Cast Vote with Reason'
-		&& explanation !== 'Cast Vote with Reason and Additional Info'
-		&& explanation !== 'Cast Vote with Reason And Additional Info by Signature'
-	) return undefined
-	const fourByteString = get4ByteString(simTx.transaction.input)
-	if (fourByteString === undefined) return undefined
-	try {
-		const functionData = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(simTx.transaction.input))
-		if (functionData === undefined) return undefined
-		return {
-			type: 'GovernanceVote' as const,
-			title: 'Governance Vote',
-			signingAction: 'Cast Vote',
-			simulationAction: 'Simulate Vote Casting',
-			rejectAction: `Don't Vote`,
-			governanceVoteInputParameters: parseVoteInputParameters(functionData.namedArgs),
-		}
-	} catch(e) {
-		console.warn('malformed vote cast')
-		console.warn(e)
-		return undefined
+	const governanceVoteInputParameters = decodeGovernanceVote(simTx.transaction.input)
+	if (governanceVoteInputParameters === undefined) return undefined
+	return {
+		type: 'GovernanceVote' as const,
+		title: 'Governance Vote',
+		signingAction: 'Cast Vote',
+		simulationAction: 'Simulate Vote Casting',
+		rejectAction: `Don't Vote`,
+		governanceVoteInputParameters,
 	}
 }
 
