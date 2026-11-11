@@ -17,16 +17,30 @@ function isIgnorableExtensionMessagingError(error: Error) {
 		|| error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
 }
 
-// The settings that decide which account getActiveAddress resolves. The resolution reads settings only through this selection, so a setting that starts to decide the account is added here, and haveSameActiveAddressSettings compares it too.
-export const getActiveAddressSettings = (settings: Settings) => ({
+// Whether each Settings field decides which account getActiveAddress resolves. The table is typed by Settings, like SETTINGS_FIELDS in storedSettings.ts, so a new Settings field does not compile until it is classified here, and ActiveAddressSettings has exactly the fields classified as deciding.
+export const ACTIVE_ADDRESS_SETTING_ROLES = {
+	activeSimulationAddress: 'decidesActiveAddress',
+	activeSigningSafeAddress: 'decidesActiveAddress',
+	activeRpcNetwork: 'decidesActiveAddress',
+	openedPage: 'doesNotDecideActiveAddress',
+	useSignersAddressAsActiveAddress: 'decidesActiveAddress',
+	websiteAccess: 'doesNotDecideActiveAddress',
+	simulationMode: 'decidesActiveAddress',
+} satisfies { readonly [Field in keyof Settings]: 'decidesActiveAddress' | 'doesNotDecideActiveAddress' }
+
+type ActiveAddressSettingField = { [Field in keyof Settings]: typeof ACTIVE_ADDRESS_SETTING_ROLES[Field] extends 'decidesActiveAddress' ? Field : never }[keyof Settings]
+
+// The settings that decide which account getActiveAddress resolves, keyed by their Settings field. The active network decides it only by its chain id, so renaming the network leaves the account unchanged.
+type ActiveAddressSettings = { readonly [Field in ActiveAddressSettingField]: Field extends 'activeRpcNetwork' ? Pick<Settings['activeRpcNetwork'], 'chainId'> : Settings[Field] }
+
+// The resolution reads settings only through this selection, whose return type makes it select every field ACTIVE_ADDRESS_SETTING_ROLES classifies as deciding and no other, so haveSameActiveAddressSettings compares all of them.
+export const getActiveAddressSettings = (settings: Settings): ActiveAddressSettings => ({
 	simulationMode: settings.simulationMode,
-	chainId: settings.activeRpcNetwork.chainId,
+	activeRpcNetwork: { chainId: settings.activeRpcNetwork.chainId },
 	useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 	activeSimulationAddress: settings.activeSimulationAddress,
 	activeSigningSafeAddress: settings.activeSigningSafeAddress,
 })
-
-type ActiveAddressSettings = ReturnType<typeof getActiveAddressSettings>
 
 // Whether two settings snapshots resolve the active account from the same settings.
 export const haveSameActiveAddressSettings = (first: Settings, second: Settings) => stringifyJSONWithBigInts(getActiveAddressSettings(first)) === stringifyJSONWithBigInts(getActiveAddressSettings(second))
@@ -49,13 +63,13 @@ async function resolveConfiguredActiveAddress(settings: ActiveAddressSettings, s
 		}
 	const resolution = resolveActiveAddressForMode(
 		addressBookEntries,
-		settings.chainId,
+		settings.activeRpcNetwork.chainId,
 		modeInput,
 	)
 	if (resolution.activeAddress === undefined) return { useConfiguredAddress: true, activeAddress: undefined }
 	const activeAddress = resolution.activeAddressBookEntry ?? (settings.simulationMode
-		? await getActiveAddressEntryForChain(resolution.activeAddress, settings.chainId)
-		: await getWalletActiveAddressEntryForChain(resolution.activeAddress, settings.chainId))
+		? await getActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId)
+		: await getWalletActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId))
 	return {
 		useConfiguredAddress: true,
 		activeAddress,
@@ -77,7 +91,7 @@ export async function getActiveAddress(allSettings: Settings, tabId: number) {
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const signingAddr = settings.simulationMode ? tabState.activeSigningAddress : walletSelectedAccount
 	if (signingAddr === undefined) return undefined
-	return await getWalletActiveAddressEntryForChain(signingAddr, settings.chainId)
+	return await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveOrFirstSignerAddress(allSettings: Settings, tabId: number) {
@@ -89,7 +103,7 @@ export async function getActiveOrFirstSignerAddress(allSettings: Settings, tabId
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const address = walletSelectedAccount
 	if (address === undefined) return undefined
-	return await getWalletActiveAddressEntryForChain(address, settings.chainId)
+	return await getWalletActiveAddressEntryForChain(address, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveAddressesForAllTabs(allSettings: Settings) {
@@ -105,7 +119,7 @@ export async function getActiveAddressesForAllTabs(allSettings: Settings) {
 		const configuredAddress = await resolveConfiguredActiveAddress(settings, state.signerAccounts, walletSelectedAccount, addressBookEntries)
 		if (configuredAddress.useConfiguredAddress) return { tabId: state.tabId, activeAddress: configuredAddress.activeAddress }
 		const signingAddr = settings.simulationMode ? state.activeSigningAddress : walletSelectedAccount
-		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getWalletActiveAddressEntryForChain(signingAddr, settings.chainId) }
+		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId) }
 	}))
 }
 

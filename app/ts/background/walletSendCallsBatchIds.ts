@@ -1,4 +1,4 @@
-import type { PendingTransactionBatch, PendingTransactionOrSignableMessage, WalletSendCallsBatchIdRecord } from '../types/accessRequest.js'
+import type { PendingTransactionBatch, PendingTransactionOrSignableMessage, WalletSendCallsBatchIdRecord, WalletSendCallsBinding } from '../types/accessRequest.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type UniqueRequestIdentifier } from '../utils/requests.js'
@@ -13,7 +13,7 @@ export const getWalletSendCallsBatchId = (uniqueRequestIdentifier: UniqueRequest
 export const getWalletSendCallTransactionIdentifier = (uniqueRequestIdentifier: UniqueRequestIdentifier, callIndex: number) => BigInt(getWalletSendCallsIdentifierHash(uniqueRequestIdentifier, `call:${ callIndex }`))
 
 // Batch ids must be unique per website, because wallet_getCallsStatus looks them up by id and origin. One store of records answers both whether an id is in use and which calls wallet_getCallsStatus reports for it. A record is added in the storage write that adds its batch to the confirmation queue, and removed in the write that removes a batch that was not approved. Approval adds the batch's calls to the simulation stack, and that stack write alone commits it: a batch whose bundle is on the stack is approved even if a restart interrupted the approval before it answered the website, so nothing has to be written atomically with the stack. A record is therefore in use while its batch is in the queue or its bundle is on the stack (see isWalletSendCallsBundleOnStack), and each admission drops the records that are neither, so the store holds no more batches than the queue and the stack.
-const isRecordOfBatchId = (websiteOrigin: string, batchId: string) => (record: WalletSendCallsBatchIdRecord) => record.websiteOrigin === websiteOrigin && record.batchId === batchId
+const isRecordOfBatchId = (websiteOrigin: string, batchId: string) => (record: WalletSendCallsBatchIdRecord) => record.binding.websiteOrigin === websiteOrigin && record.batchId === batchId
 
 const getStackTransactionIdentifiers = (stack: InterceptorTransactionStack) => stack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : [])
 
@@ -45,7 +45,7 @@ export async function isWalletSendCallsIdInUse(websiteOrigin: string, batchId: s
 }
 
 export async function addPendingTransactionBatch(pendingBatch: PendingTransactionBatch) {
-	const record = { websiteOrigin: pendingBatch.binding.websiteOrigin, batchId: pendingBatch.batchId, transactionIdentifiers: getWalletSendCallTransactionIdentifiers(pendingBatch) }
+	const record = { binding: pendingBatch.binding, batchId: pendingBatch.batchId, transactionIdentifiers: getWalletSendCallTransactionIdentifiers(pendingBatch) }
 	await updatePendingTransactionsAndWalletSendCallsBatchIds(async ({ pendingTransactionsAndMessages, walletSendCallsBatchIds }) => {
 		const stack = await getInterceptorTransactionStack()
 		return {
@@ -74,7 +74,9 @@ export async function removeApprovedTransactionBatch(pendingBatch: PendingTransa
 	}))
 }
 
-// The calls recorded for a website's batch id, while its record is kept. wallet_getCallsStatus reports them only while isWalletSendCallsBundleOnStack holds.
-export async function getWalletSendCallsBatchTransactionIdentifiers(websiteOrigin: string, batchId: string) {
-	return (await getWalletSendCallsBatchIds()).find(isRecordOfBatchId(websiteOrigin, batchId))?.transactionIdentifiers
+// The calls recorded for a website's batch id, while its record is kept and only when the batch was submitted from the requester's current account on its current network. A bundle submitted in another context is undefined, so after a network or account switch wallet_getCallsStatus answers it as unknown (5730) instead of reporting receipts simulated in the new context under the original chainId. Ids stay unique per website regardless of context (see isWalletSendCallsIdInUse). wallet_getCallsStatus reports the calls only while isWalletSendCallsBundleOnStack holds.
+export async function getWalletSendCallsBatchTransactionIdentifiers(requester: WalletSendCallsBinding, batchId: string) {
+	const record = (await getWalletSendCallsBatchIds()).find(isRecordOfBatchId(requester.websiteOrigin, batchId))
+	if (record === undefined || record.binding.account !== requester.account || record.binding.chainId !== requester.chainId) return undefined
+	return record.transactionIdentifiers
 }

@@ -93,6 +93,7 @@ async function simulateAndVisualize(request: ConfirmationSimulationRunRequest, a
 		const simulationState = await createSimulationStateWithNonceAndBaseFeeFixing(await request.getSimulationInput(), request.ethereum)
 		const visualizedSimulatorState = await visualizeSimulatorState(simulationState, request.ethereum, request.tokenPriceService, abortController)
 		const { visualizedSimulationState } = visualizedSimulatorState
+		// The block number is read from the outer VisualizedSimulatorState (visualizedSimulatorState.simulationState), the state the failed simulation ran on; the inner visualizedSimulationState carries only the error and the visualized blocks.
 		if (visualizedSimulationState.success === false) return { kind: 'failed' as const, failure: { error: visualizedSimulationState.jsonRpcError.error, blockNumber: visualizedSimulatorState.simulationState.blockNumber } }
 		return { kind: 'visualized' as const, visualizedSimulatorState }
 	} catch (error: unknown) {

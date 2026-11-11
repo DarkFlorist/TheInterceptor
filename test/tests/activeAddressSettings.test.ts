@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { getActiveAddressSettings, haveSameActiveAddressSettings } from '../../app/ts/background/backgroundUtils.js'
-import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { ACTIVE_ADDRESS_SETTING_ROLES, getActiveAddressSettings, haveSameActiveAddressSettings } from '../../app/ts/background/backgroundUtils.js'
+import { Settings } from '../../app/ts/types/interceptor-messages.js'
 
 const settings: Settings = {
 	activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
@@ -25,7 +25,7 @@ const settings: Settings = {
 test('the active-address settings are the settings that decide which account getActiveAddress resolves', () => {
 	assert.deepEqual(getActiveAddressSettings(settings), {
 		simulationMode: true,
-		chainId: 1n,
+		activeRpcNetwork: { chainId: 1n },
 		useSignersAddressAsActiveAddress: false,
 		activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 		activeSigningSafeAddress: undefined,
@@ -52,4 +52,11 @@ test('settings that do not decide the active account leave the active-address se
 		{ ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, name: 'Renamed Mainnet' } },
 	]
 	for (const changedSettings of changes) assert.equal(haveSameActiveAddressSettings(settings, changedSettings), true)
+})
+
+// Typecheck enforces both properties; this repeats them at runtime, because the tests are not typechecked.
+test('every Settings field is classified as deciding the active account or not, and the active-address settings select exactly the deciding fields', () => {
+	assert.deepEqual(Object.keys(ACTIVE_ADDRESS_SETTING_ROLES).sort(), Object.keys(Settings.fields).sort())
+	const decidingFields = Object.entries(ACTIVE_ADDRESS_SETTING_ROLES).filter(([, role]) => role === 'decidesActiveAddress').map(([field]) => field)
+	assert.deepEqual(Object.keys(getActiveAddressSettings(settings)).sort(), decidingFields.sort())
 })

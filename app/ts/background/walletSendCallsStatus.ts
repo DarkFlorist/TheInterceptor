@@ -8,14 +8,16 @@ import { getCallsStatusCode, walletSendCallsUnknownBundleIdError } from './walle
 import { getWalletSendCallsBatchTransactionIdentifiers, isWalletSendCallsBundleOnStack } from './walletSendCallsBatchIds.js'
 import { getWalletCallsErrorReply } from './walletSendCallsRpc.js'
 
-// Answers wallet_getCallsStatus for batches that an approved simulation-mode wallet_sendCalls added to the simulation stack.
-export async function getSimulatedCallsStatus(ethereum: EthereumClientService, simulationState: ResolvedExecutionSimulationState, request: WalletGetCallsStatus, websiteOrigin: string): Promise<RPCReply> {
+// Answers wallet_getCallsStatus for batches that an approved simulation-mode wallet_sendCalls added to the simulation stack. A bundle is reported only to the website's active account on the network of this client, the context it was submitted in, so its receipts and chainId always describe the same network and account.
+export async function getSimulatedCallsStatus(ethereum: EthereumClientService, simulationState: ResolvedExecutionSimulationState, request: WalletGetCallsStatus, websiteOrigin: string, activeAddress: bigint | undefined): Promise<RPCReply> {
 	const [id] = request.params
 	const unknownBundleReply = getWalletCallsErrorReply(request.method, walletSendCallsUnknownBundleIdError)
-	if (simulationState.kind === 'passthrough') return unknownBundleReply
+	// Without an active account no bundle can match the account it was submitted from.
+	if (simulationState.kind === 'passthrough' || activeAddress === undefined) return unknownBundleReply
 	const currentState = simulationState.value
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
-	const batchTransactionIdentifiers = await getWalletSendCallsBatchTransactionIdentifiers(websiteOrigin, id)
+	const requester = { websiteOrigin, account: activeAddress, chainId: ethereum.getChainId() }
+	const batchTransactionIdentifiers = await getWalletSendCallsBatchTransactionIdentifiers(requester, id)
 	if (batchTransactionIdentifiers === undefined) return unknownBundleReply
 	const stackTransactions = currentState.simulatedBlocks
 		.flatMap((block) => block.simulatedTransactions)
@@ -23,8 +25,7 @@ export async function getSimulatedCallsStatus(ethereum: EthereumClientService, s
 	// A bundle is only reported while it exists by the registry's definition, that is, while every one of its calls is on the simulation stack. EIP-5792's status codes describe how submitted calls executed, and a non-atomic status must list receipts for all of them, so a bundle the user removed calls from is no longer the bundle that was submitted and is answered like an unknown one (5730), while its id can be submitted again.
 	if (!isWalletSendCallsBundleOnStack(batchTransactionIdentifiers, stackTransactions.map((transaction) => transaction.transactionIdentifier))) return unknownBundleReply
 	const batchTransactions = stackTransactions.filter((transaction) => batchTransactionIdentifiers.includes(transaction.transactionIdentifier))
-	const [firstTransaction] = batchTransactions
-	if (firstTransaction === undefined) return unknownBundleReply
+	if (batchTransactions.length === 0) return unknownBundleReply
 	const receipts: WalletCallsReceipt[] = []
 	for (const transaction of batchTransactions) {
 		const receipt = await getSimulatedTransactionReceipt(ethereum, undefined, simulationState, transaction.signedTransaction.hash)
@@ -44,7 +45,7 @@ export async function getSimulatedCallsStatus(ethereum: EthereumClientService, s
 		result: {
 			version: WALLET_SEND_CALLS_VERSION,
 			id,
-			chainId: firstTransaction.signedTransaction.chainId ?? ethereum.getChainId(),
+			chainId: requester.chainId,
 			status: getCallsStatusCode(receipts),
 			// Simulation-mode batches are separate stack transactions, so they are never atomic.
 			atomic: false,

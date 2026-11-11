@@ -226,10 +226,11 @@ export const PendingTransactionBatch = funtypes.Intersect(
 // The website a batch is shown with: the binding's origin, which every other batch module also reads, with the stored display metadata.
 export const getTransactionBatchWebsite = (pendingBatch: Pick<PendingTransactionBatch, 'binding' | 'websiteDisplay'>): Website => ({ websiteOrigin: pendingBatch.binding.websiteOrigin, ...pendingBatch.websiteDisplay })
 
-// One wallet_sendCalls batch id that a website uses, with the calls that approving its batch adds to the simulation stack (see walletSendCallsBatchIds.ts for when records are added and removed).
+// One wallet_sendCalls batch id that a website uses, with the binding its batch was admitted with and the calls that approving it adds to the simulation stack (see walletSendCallsBatchIds.ts for when records are added and removed).
 export type WalletSendCallsBatchIdRecord = funtypes.Static<typeof WalletSendCallsBatchIdRecord>
 export const WalletSendCallsBatchIdRecord = funtypes.ReadonlyObject({
-	websiteOrigin: funtypes.String,
+	// The batch's website origin, account and network: the origin keeps ids unique per website, and wallet_getCallsStatus reports the bundle only to that account on that network.
+	binding: WalletSendCallsBinding,
 	batchId: funtypes.String,
 	transactionIdentifiers: funtypes.ReadonlyArray(EthereumQuantity),
 })

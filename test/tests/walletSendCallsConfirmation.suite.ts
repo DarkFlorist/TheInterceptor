@@ -187,7 +187,7 @@ test('simulates a wallet_sendCalls batch and only adds it to the simulation stac
 	assert.equal(await approveBatch(websiteTabConnections), true)
 
 	assert.deepEqual((await getStackBatchTransactions()).map((transaction) => transaction.transactionIdentifier), pending.transactionsToSimulate.map((transaction) => transaction.transactionIdentifier))
-	assert.deepEqual(await getBatchIdRecords(), [{ websiteOrigin: website.websiteOrigin, batchId: pending.batchId, transactionIdentifiers: pending.transactionsToSimulate.map((transaction) => transaction.transactionIdentifier) }])
+	assert.deepEqual(await getBatchIdRecords(), [{ binding: { websiteOrigin: website.websiteOrigin, account: activeAddress, chainId: fakeRpcNetwork.chainId }, batchId: pending.batchId, transactionIdentifiers: pending.transactionsToSimulate.map((transaction) => transaction.transactionIdentifier) }])
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const reply = getWalletSendCallsReply(postedMessages)
 	assert.ok(isRecord(reply))
@@ -212,7 +212,7 @@ test('a batch stores its website origin and account only in its binding, and is 
 	assert.equal(getConfirmationKindView(pending).activeAddress, activeAddress)
 	assert.equal(pending.popupVisualisation.data.activeAddress, activeAddress)
 	assert.deepEqual(pending.transactionsToSimulate.map((transaction) => [transaction.website.websiteOrigin, transaction.success ? transaction.transaction.from : undefined]), [[website.websiteOrigin, activeAddress], [website.websiteOrigin, activeAddress]])
-	assert.deepEqual((await getBatchIdRecords()).map((record) => [record.websiteOrigin, record.batchId]), [[website.websiteOrigin, '0xbound']])
+	assert.deepEqual((await getBatchIdRecords()).map((record) => [record.binding, record.batchId]), [[pending.binding, '0xbound']])
 })
 
 // The ABI encoding of Error(string), the revert data of a failed require.
@@ -251,6 +251,31 @@ test('a transaction and a batch whose simulation fails with the same error store
 		assert.deepEqual(withoutRunIdentity(transactionRecord), withoutRunIdentity(batchRecord), failure.error.message)
 		assert.deepEqual(withoutRunIdentity(batchRecord), { statusCode: 'failed', simulationMode: true, activeAddress, signerName: 'MetaMask', error: failure.error, blockNumber: failure.blockNumber })
 	}
+})
+
+test('a confirmation simulation that returns success false records the decoded revert reason and the block the simulation ran on', async () => {
+	await setUpWalletSendCallsTest()
+	const revertReason = 'transfer amount exceeds balance'
+	// A block number that no other fixture uses, so the recorded number can only come from the simulation state the failed simulation ran on, and the thrown-error path would record 0 instead.
+	const simulatedBlockNumber = 4242n
+	const ethereum = new modules.EthereumClientService({
+		...fakeRequestHandler,
+		async jsonRpcRequest(rpcRequest: RpcRequest) {
+			if (rpcRequest.method === 'eth_getBlockByNumber') return modules.serialize(modules.EthereumBlockHeader, { ...fakeBlock, number: simulatedBlockNumber })
+			if (rpcRequest.method === 'eth_blockNumber') return modules.serialize(modules.EthereumQuantity, simulatedBlockNumber)
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	// Only the signed confirmation transaction reverts, so the simulation itself returns success false rather than throwing.
+	fakeSafeContract.getEthSimulateFailure = (rpcRequest) => getSimulatedBlocks(rpcRequest).some((block) => getBlockCalls(block).some((call) => isRecord(call) && 'r' in call)) ? new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: 3, message: 'execution reverted', data: encodeRevertReason(revertReason) } }) : undefined
+	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { runConfirmationSimulation } = await import('../../app/ts/background/confirmationSimulationRun.js')
+	const record = await withSilencedConsole(async () => await runConfirmationSimulation(pendingTransaction.uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(ethereum, new modules.TokenPriceService(ethereum, 60_000), activeAddress, true, confirmationRun, pendingTransaction.transactionToSimulate)))
+	if (record === undefined) throw new Error('Missing confirmation simulation record')
+	assert.equal(record.statusCode, 'failed')
+	if (record.statusCode !== 'failed') throw new Error('Expected a failure record')
+	assert.deepEqual(record.data.error, { code: 3, message: 'execution reverted', data: encodeRevertReason(revertReason), decodedErrorMessage: revertReason })
+	assert.equal(record.data.simulationState.blockNumber, simulatedBlockNumber)
 })
 
 test('the confirmation queue of the transaction, message and Gnosis Safe flows leaves out wallet_sendCalls batches', async () => {
@@ -978,15 +1003,16 @@ test('a batch approved while its admission focuses the confirmation window is an
 	await approveWhileAdmissionFocusesItsWindow('interrupted')
 })
 
-const getCallsStatus = async (batchId: string) => {
+// Asks wallet_getCallsStatus as the background does: with the client of the active network, the simulation stack simulated on it, and the website's active account.
+const getCallsStatus = async (batchId: string, { ethereum, account }: { readonly ethereum: typeof simulator.ethereum, readonly account: bigint | undefined } = { ethereum: simulator.ethereum, account: activeAddress }) => {
 	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCallsStatus.js')
 	const { getCurrentSimulationInput, buildExecutionSimulationStateFromPreparedInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
-	const executionState = await buildExecutionSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum), simulator.ethereum)
-	return await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: [batchId] }, website.websiteOrigin)
+	const executionState = await buildExecutionSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum), ethereum)
+	return await getSimulatedCallsStatus(ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: [batchId] }, website.websiteOrigin, account)
 }
 
-const getCallsStatusCode = async (batchId: string) => {
-	const status = await getCallsStatus(batchId)
+const getCallsStatusCode = async (batchId: string, context?: Parameters<typeof getCallsStatus>[1]) => {
+	const status = await getCallsStatus(batchId, context)
 	if (status.type !== 'result') return undefined
 	if ('error' in status) return status.error.code
 	return isRecord(status.result) ? status.result.status : undefined
@@ -1046,6 +1072,24 @@ test('a bundle with a call removed from the simulation stack is unknown to walle
 	assert.equal((await getBatchIdRecords()).length, 1)
 	assert.equal(await getCallsStatusCode('0x01'), 200)
 	assert.equal((await getStackBatchTransactions()).length, 3)
+})
+
+test('wallet_getCallsStatus reports a bundle only on the network and to the account it was submitted from, and answers it as unknown after a switch', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	assert.equal(await approveBatch(websiteTabConnections), true)
+	assert.equal(await getCallsStatusCode('0x01'), 200)
+	const status = await getCallsStatus('0x01')
+	assert.equal(status.type === 'result' && 'result' in status && isRecord(status.result) ? status.result.chainId : undefined, fakeRpcNetwork.chainId)
+
+	// The bundle's calls stay on the simulation stack across a switch, so a status computed there would carry receipts simulated in the new context under the original chainId.
+	assert.equal(await getCallsStatusCode('0x01', { ethereum: createOtherNetworkServices().ethereum, account: activeAddress }), 5730)
+	assert.equal(await getCallsStatusCode('0x01', { ethereum: simulator.ethereum, account: recipientAddress }), 5730)
+	assert.equal(await getCallsStatusCode('0x01', { ethereum: simulator.ethereum, account: undefined }), 5730)
+	assert.equal((await getStackBatchTransactions()).length, 2)
+
+	// Switching back to the context the bundle was submitted in reports it again.
+	assert.equal(await getCallsStatusCode('0x01'), 200)
 })
 
 // Approves a batch, then restores storage as it was right after the approval added the calls to the simulation stack, as a restart at that point leaves it: the calls are on the stack and the batch is still in the confirmation queue, unanswered.
@@ -1696,12 +1740,12 @@ test('approving a batch adds every call to the simulation stack and answers wall
 	const { getSimulatedCallsStatus } = await import('../../app/ts/background/walletSendCallsStatus.js')
 	const { getCurrentSimulationInput, buildExecutionSimulationStateFromPreparedInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 	const executionState = await buildExecutionSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum), simulator.ethereum)
-	const status = await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: ['0x01'] }, website.websiteOrigin)
+	const status = await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: ['0x01'] }, website.websiteOrigin, activeAddress)
 	assert.ok(status.type === 'result' && 'result' in status && isRecord(status.result))
 	assert.equal(status.result.status, 200)
 	assert.equal(status.result.atomic, false)
 	assert.equal(Array.isArray(status.result.receipts) ? status.result.receipts.length : 0, 2)
-	const otherWebsiteStatus = await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: ['0x01'] }, 'https://other.example')
+	const otherWebsiteStatus = await getSimulatedCallsStatus(simulator.ethereum, { kind: 'simulated', value: executionState }, { method: 'wallet_getCallsStatus', params: ['0x01'] }, 'https://other.example', activeAddress)
 	assert.equal(otherWebsiteStatus.type === 'result' && 'error' in otherWebsiteStatus ? otherWebsiteStatus.error.code : undefined, 5730)
 
 	const duplicate = await requestBatch(websiteTabConnections, { ...walletSendCallsRequest, params: [{ ...walletSendCallsRequest.params[0], id: '0x01' }] })
