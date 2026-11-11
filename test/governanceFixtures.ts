@@ -70,6 +70,14 @@ export const createRecordingEthereumClientService = (forwardTo: IEthereumJSONRpc
 // Example simulation stacks for recording and replaying a preview that runs after the user's own simulation. Each is a stack as prepareSafeExecutionsForRpc hands it to the preview, with the overrides the extension's own preparation gives such a stack.
 export const EXAMPLE_STACK_SENDER = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 const UNISWAP_PROPOSAL_102_PROPOSER = 0x927c7fd078fc406059957a691c21f6e0fc4a959cn
+// The actions and description hash of the ENS Governor's proposal 0x4209…0134, from its ProposalCreated event: a USDC transfer.
+const ENS_PROPOSAL_ACTIONS = {
+	targets: ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
+	values: [0n],
+	calldatas: ['0xa9059cbb00000000000000000000000091c32893216de3ea0a55abb9851f581d4503d39b0000000000000000000000000000000000000000000000000000002eedda43c0'],
+	descriptionHash: '0x5fb1133d5fec93ad225abfd95cb643337393e3bdecb0dfbd28765a4fb7577e27',
+} as const
+const OPEN_ZEPPELIN_QUEUE_ABI = [{ type: 'function', name: 'queue', stateMutability: 'nonpayable', inputs: [{ name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'descriptionHash', type: 'bytes32' }], outputs: [{ name: '', type: 'uint256' }] }] as const
 const GOVERNOR_CANCEL_ABI = [{ type: 'function', name: 'cancel', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [] }] as const
 // A Gnosis Safe 1.3.0 that scripts/record-governance-fixtures.mts deploys through the canonical proxy factory with salt nonce 20261111, one owner (0x1111…1111) and threshold 1.
 export const EXAMPLE_SAFE = 0x452d3cca824174106e1975cdb8d9276402cf8e02n
@@ -106,6 +114,14 @@ export const EXAMPLE_STACKS = {
 	// The proposer of Uniswap GovernorBravo proposal 102 cancels it earlier in the stack.
 	proposerCancelsUniswapProposal102: (governor: bigint): SimulationStateInput => {
 		const transaction = { type: '1559' as const, from: UNISWAP_PROPOSAL_102_PROPOSER, to: governor, value: 0n, input: stringToUint8Array(encodeFunctionCall(GOVERNOR_CANCEL_ABI, 'cancel', [102n])), gas: 500_000n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
+		return [stackBlock({ transactions: [{ signedTransaction: mockSignTransaction(transaction), website: STACK_WEBSITE, created: new Date(0), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: 1n }] })]
+	},
+	// One block of seven empty transfers by vitalik.eth, each allowed a whole block's gas, which the node runs as seven blocks.
+	splitsIntoSeveralBlocks: (_governor: bigint): SimulationStateInput => [stackBlock({ transactions: Array.from({ length: 7 }, (_, index) => ({ ...exampleTransfer(EXAMPLE_STACK_SENDER, 0xdeadn, 0n, 60_000_000n), transactionIdentifier: BigInt(index + 1) })) })],
+	// Anyone queues the ENS Governor's succeeded proposal 0x4209…0134 earlier in the stack, through its own queue.
+	queuesEnsProposal: (governor: bigint): SimulationStateInput => {
+		const queueCall = encodeFunctionCall(OPEN_ZEPPELIN_QUEUE_ABI, 'queue', [ENS_PROPOSAL_ACTIONS.targets, ENS_PROPOSAL_ACTIONS.values, ENS_PROPOSAL_ACTIONS.calldatas, ENS_PROPOSAL_ACTIONS.descriptionHash])
+		const transaction = { type: '1559' as const, from: EXAMPLE_STACK_SENDER, to: governor, value: 0n, input: stringToUint8Array(queueCall), gas: 1_000_000n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
 		return [stackBlock({ transactions: [{ signedTransaction: mockSignTransaction(transaction), website: STACK_WEBSITE, created: new Date(0), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: 1n }] })]
 	},
 } as const

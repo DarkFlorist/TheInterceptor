@@ -6,7 +6,7 @@ import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { describeGovernanceExecutionBlockNumber } from '../../app/ts/utils/governanceExecutionBlock.js'
 import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCodes.js'
-import { toEventSelector } from '../../app/ts/utils/ethereumPrimitives.js'
+import { toEventSelector, toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { pinRequestToBlockHash } from '../../app/ts/simulation/services/blockPinning.js'
@@ -258,6 +258,35 @@ describe('governance proposal execution preview of real governors', () => {
 		assert.match(note ?? '', /^The simulation runs it at block 26100002, not at about block 261\d{5} as on chain, because nodes simulate at most 256 blocks ahead\. An action that depends on the block number can differ\.$/)
 		const estimated = BigInt(/about block (\d+)/.exec(note ?? '')?.[1] ?? '0')
 		assert.ok(estimated > 26_109_012n)
+	})
+
+	test('starts the plan after the last block the node runs the stack as, when a stack block is split into several', async () => {
+		const { preview, requests } = await previewFixture('ens-governor-succeeded-after-split-stack')
+		assert.equal(getExecution(preview).timelock, ENS_TIMELOCK)
+		// Seven stack transactions that each may use a whole block run as seven blocks, then the queue block and the execution block.
+		const blocks = outcomeSimulation(requests, 9).blockStateCalls
+		const lastStackTime = blocks[6]?.blockOverrides?.time?.getTime()
+		const queueTime = blocks[7]?.blockOverrides?.time?.getTime()
+		const executionTime = blocks[8]?.blockOverrides?.time?.getTime()
+		if (lastStackTime === undefined || queueTime === undefined || executionTime === undefined) throw new Error('Expected block times')
+		assert.equal((queueTime - lastStackTime) / 1000, 60)
+		assert.equal((executionTime - queueTime) / 1000, TWO_DAYS_IN_SECONDS)
+	})
+
+	test('executes through the governor\'s own execute at the stack\'s eta when an earlier stack transaction queues the proposal', async () => {
+		const { preview, requests, governor, forwarderUsed } = await previewFixture('ens-governor-queued-in-stack')
+		const [transaction] = getExecution(preview).transactions
+		assert.equal(forwarderUsed, false)
+		assert.equal(transaction?.preSimulationTransaction.signedTransaction.from, MOCK_ADDRESS)
+		assert.equal(transaction?.preSimulationTransaction.signedTransaction.to, governor)
+		assert.equal(dataStringWith0xStart(transaction?.preSimulationTransaction.signedTransaction.input ?? new Uint8Array()).slice(0, 10), toFunctionSelector('execute(address[],uint256[],bytes[],bytes32)'))
+		assert.equal(transaction?.ethSimulateV1CallResult.status, 'success')
+		// The stack's queue made the eta its block's time plus the TimelockController's two-day delay, and the execution runs then. The post-stack reads also run as two blocks, but only the planned execution block sets its time.
+		const [stackBlock, executionBlock] = simulateRequests(requests).find((simulation) => simulation.blockStateCalls.length === 2 && simulation.blockStateCalls[1]?.blockOverrides?.time !== undefined)?.blockStateCalls ?? []
+		const stackTime = stackBlock?.blockOverrides?.time?.getTime()
+		const executionTime = executionBlock?.blockOverrides?.time?.getTime()
+		if (stackTime === undefined || executionTime === undefined) throw new Error('Expected block times')
+		assert.equal((executionTime - stackTime) / 1000, TWO_DAYS_IN_SECONDS)
 	})
 
 	test('refuses a proposal that an earlier transaction in the user\'s stack cancels', async () => {

@@ -7,7 +7,7 @@ import { decodeAbiValues, decodeEventStrict, decodeFunctionOutput, encodeAbiValu
 import { addressString, bigintSecondsToDate, bytes32String, checksummedAddress, dataStringWith0xStart, dateToBigintSeconds, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { type Hex, concat, isAbiDataDecodeError, keccak256, toEventSelector, toFunctionSelector } from '../utils/ethereumPrimitives.js'
-import { type EthereumClientService, getNextBlockTimeStampOverride } from './services/EthereumClientService.js'
+import type { EthereumClientService } from './services/EthereumClientService.js'
 import { createSimulationState } from './services/SimulationModeEthereumClientService.js'
 import { getGovernorProposalForwarder } from '../utils/ethereumByteCodes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
@@ -133,6 +133,13 @@ const decodeGovernorLacksForwardedEther = (returnData: Uint8Array, errorData: st
 }
 
 const estimateTimeOfBlock = (parentBlock: EthereumBlockHeader, blockNumber: bigint) => dateToBigintSeconds(parentBlock.timestamp) + (blockNumber > parentBlock.number ? blockNumber - parentBlock.number : 0n) * SECONDS_PER_BLOCK
+
+// The time of the last block the node runs the prepared stack as, or the parent block's time for an empty stack.
+export const getStackEndTime = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, stackSimulationInput: SimulationStateInput) => {
+	const preparedStack = await ethereum.prepareEthSimulateV1Input(stackSimulationInput, parentBlock.number, undefined)
+	const lastStackBlockTime = preparedStack.blockOverrides[preparedStack.blockOverrides.length - 1]?.time ?? parentBlock.timestamp
+	return dateToBigintSeconds(lastStackBlockTime)
+}
 
 // Reads view functions in one eth_simulateV1 request, in a block after the user's simulation stack on top of parentBlock, so the state the stack leaves decides: a proposal an earlier stack transaction cancels, queues or executes reads as such. The reads add no state override. A revert reads as undefined, so a function a contract does not implement is absent; an RPC failure still throws.
 const readContracts = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, stackSimulationInput: SimulationStateInput, reads: readonly { readonly to: bigint, readonly input: Hex }[]) => {
@@ -423,7 +430,8 @@ export const simulateGovernanceProposalExecution = async (latestEthereum: Ethere
 	const proposal = await readProposalActions(ethereum, parentBlock, governor, proposalId, reads.value)
 	if (!proposal.success) return proposal
 	if (proposal.value.actions.length === 0) return refuse(`proposal ${ proposalId } has no actions.`)
-	const stackEndTime = dateToBigintSeconds(stackSimulationInput.reduce((previousTime, block) => getNextBlockTimeStampOverride(previousTime, block.blockTimeManipulation), parentBlock.timestamp))
+	// The node may run one block of the stack as several, when its transactions need more gas than a block holds, each 12 seconds after the last, so the plan starts after the last block the prepared stack actually runs as.
+	const stackEndTime = await getStackEndTime(ethereum, parentBlock, stackSimulationInput)
 	const plan = planExecution(stackEndTime, governor, proposalId, reads.value, proposal.value, timelock.value)
 	const governorCode = plan.forwardsThroughGovernor ? await ethereum.getCode(governor, parentBlock.number, undefined) : undefined
 	const planBlocks = toSimulationInputBlocks(ethereum, parentBlock, governor, governorCode, plan, website)
