@@ -38,7 +38,7 @@ import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silen
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, type PendingGovernanceVote, updateSimulationMetadata } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, getPreparedGovernanceVote, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, type PendingGovernanceVote, updateSimulationMetadata } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -836,20 +836,25 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
-// The confirmation window shows the governance vote preview for a pending transaction and for each prepared call of a pending wallet_sendCalls batch, so both are searched. Either can hold a vote prepared for another network than the active client's, which is then not simulated with that client.
+// The confirmation window shows the governance vote preview for a pending transaction and for each prepared call of a pending wallet_sendCalls batch. Every kind is handled here, so a new kind fails typecheck until it is given its lookup, and both kinds that hold a vote decide its network by getPreparedGovernanceVote.
+const findGovernanceVoteInPendingRequest = (ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, transactionIdentifier: bigint): PendingGovernanceVote | undefined => {
+	switch (pending.type) {
+		case 'TransactionBatch': return findGovernanceVoteInTransactionBatch(ethereum, pending, transactionIdentifier)
+		case 'Transaction': {
+			if (pending.transactionIdentifier !== transactionIdentifier) return undefined
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'StillSimulating' }
+			// The transaction is prepared again for the active network when its preview refreshes, so a network switch leaves it on the old network until then.
+			return getPreparedGovernanceVote(ethereum, pending.transactionToSimulate)
+		}
+		case 'SignableMessage': return undefined
+		default: return assertNever(pending)
+	}
+}
+
 const findPendingGovernanceVote = (ethereum: EthereumClientService, pendingTransactions: readonly PendingTransactionOrSignableMessage[], transactionIdentifier: bigint): PendingGovernanceVote | undefined => {
 	for (const pending of pendingTransactions) {
-		if (pending.type === 'TransactionBatch') {
-			const batchVote = findGovernanceVoteInTransactionBatch(ethereum, pending, transactionIdentifier)
-			if (batchVote !== undefined) return batchVote
-			continue
-		}
-		if (pending.type !== 'Transaction' || pending.transactionIdentifier !== transactionIdentifier) continue
-		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'StillSimulating' }
-		// The transaction is prepared again for the active network when its preview refreshes, so a network switch leaves it on the old network until then. A legacy transaction without a chain id is valid on every network.
-		const voteChainId = pending.transactionToSimulate.transaction.chainId
-		if (voteChainId !== undefined && voteChainId !== ethereum.getChainId()) return { status: 'PreparedForOtherNetwork' }
-		return { status: 'Prepared', voteTransaction: pending.transactionToSimulate }
+		const pendingVote = findGovernanceVoteInPendingRequest(ethereum, pending, transactionIdentifier)
+		if (pendingVote !== undefined) return pendingVote
 	}
 	return undefined
 }

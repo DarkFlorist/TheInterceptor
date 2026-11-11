@@ -1,6 +1,8 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { closePopupOrTabById, openPopupOrTab, getPopupOrTabById, tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
@@ -9,8 +11,9 @@ import { getHtmlFile } from './backgroundUtils.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getPendingTransactionsAndMessages } from './storageVariables.js'
+import { attemptQueuedTerminalReplyDelivery, queueTerminalReply } from './terminalReplyDelivery.js'
 
-// The lifecycle of the confirmation window: opening the window that shows the queue, and focusing the website or closing the window once a request left the queue.
+// The lifecycle of the confirmation window: opening the window that shows the queue, answering a request as it leaves the queue, and focusing the website or closing the window once it left.
 
 // Answers the requests of a confirmation window that was closed. windows/confirmTransaction.ts provides it, because answering a request dispatches on its kind, wallet_sendCalls batches included.
 export type AnswerRequestsOfClosedWindow = (pendingRequests: readonly PendingTransactionOrSignableMessage[]) => Promise<void>
@@ -76,4 +79,23 @@ export async function updateViewAfterPendingRequestRemoved(ethereum: EthereumCli
 		const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
 		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
 	})
+}
+
+// How a request leaves the confirmation queue with its terminal reply: the request, the reply, the storage write that removes the request, and how that resolution changed the simulation stack.
+export type PendingRequestRemoval = {
+	readonly removedRequest: PendingTransactionOrSignableMessage
+	readonly terminalReply: InterceptedRequestForward
+	readonly removeFromQueue: () => Promise<void>
+	readonly simulationStack: SimulationStackChange
+}
+
+// Every resolution that answers the website with a terminal reply takes this order. The reply is queued before the request leaves the confirmation queue, so after a restart at most its delivery is left. The request is removed, together with anything its removal releases, such as a wallet_sendCalls batch id, before the reply is delivered, so a website acting on the reply finds the request gone. The reply is delivered before the window work, which cannot hold it back, and the window is updated even when delivery throws, after which the delivery error reaches the caller.
+export async function removePendingRequestAndDeliverTerminalReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, removal: PendingRequestRemoval) {
+	await queueTerminalReply(removal.terminalReply)
+	await removal.removeFromQueue()
+	try {
+		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, removal.terminalReply)
+	} finally {
+		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, removal.removedRequest, removal.simulationStack)
+	}
 }

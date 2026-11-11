@@ -648,6 +648,69 @@ test('only one of two concurrent batches can claim the same id', async () => {
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 })
 
+// Replaces the stored state with a copy taken earlier, so a request runs on the state that existed at that moment.
+function restoreStorage(storedItems: Record<string, unknown>) {
+	for (const key of Object.keys(browserMock.storageState)) delete browserMock.storageState[key]
+	Object.assign(browserMock.storageState, storedItems)
+}
+
+test('a website that sends the same batch id again as soon as its unanswered batch is rejected is admitted', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	const connection = websiteTabConnections.get(socket.tabId)?.connections[modules.websiteSocketToString(socket)]
+	if (connection === undefined) throw new Error('Missing website connection')
+	// The state is copied when the rejection reaches the website, which is the earliest moment the website can send the batch again.
+	let storageWhenRejectionArrived: Record<string, unknown> | undefined
+	connection.port = createWebsitePort(socket, 0, postedMessages, (message) => {
+		if (isRecord(message) && message.method === 'wallet_sendCalls' && isRecord(message.error)) storageWhenRejectionArrived = structuredClone(browserMock.storageState)
+	})
+
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'noResponse', uniqueRequestIdentifier: batchRequestIdentifier },
+	})
+	if (storageWhenRejectionArrived === undefined) throw new Error('The website did not receive the rejection')
+	restoreStorage(storageWhenRejectionArrived)
+
+	assert.deepEqual(await requestBatch(websiteTabConnections, withBatchId('0x01'), { requestId: 78, requestSocket: socket }), { type: 'doNotReply' })
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [78])
+})
+
+test('another confirmation is admitted while a batch is still simulating', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	// The confirmation window stays open, so the message is queued behind the batch.
+	browserMock.setLiveWindowIds([99])
+	const batchSimulationHeld = createDeferredValue<void>()
+	const batchSimulationReleased = createDeferredValue<void>()
+	let batchSimulationWasHeld = false
+	const batchServices = createServicesWithRequestHook(async (rpcRequest) => {
+		if (batchSimulationWasHeld || !isWholeBatchSimulation(rpcRequest)) return
+		batchSimulationWasHeld = true
+		batchSimulationHeld.resolve()
+		await batchSimulationReleased.promise
+	})
+	const batchAdmission = requestBatch(websiteTabConnections, walletSendCallsRequest, batchRequestIdentifier, batchServices)
+	await batchSimulationHeld.promise
+
+	const messageRequestIdentifier = { requestId: 78, requestSocket: socket }
+	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
+	const request = { method: 'personal_sign', params: ['0x68656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: messageRequestIdentifier }
+	const messageAdmission = modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections)
+	// Waiting for the confirmation lock would hold the message back until the batch simulation is released, so the message is given a bounded time to be admitted on its own.
+	let admissionTimer: ReturnType<typeof setTimeout> | undefined
+	const admissionTimedOut = new Promise<'timedOut'>((resolve) => { admissionTimer = setTimeout(() => resolve('timedOut'), 1_000) })
+	const messageAdmissionOutcome = await Promise.race([messageAdmission, admissionTimedOut])
+	clearTimeout(admissionTimer)
+	const queueWhileBatchSimulates = (await modules.getPendingTransactionsAndMessages()).map((pending) => [pending.type, pending.transactionOrMessageCreationStatus])
+	batchSimulationReleased.resolve()
+
+	assert.deepEqual(messageAdmissionOutcome, { type: 'doNotReply' })
+	assert.deepEqual(queueWhileBatchSimulates, [['TransactionBatch', 'Crafting'], ['SignableMessage', 'Simulated']])
+	assert.deepEqual(await batchAdmission, { type: 'doNotReply' })
+	assert.equal((await getPendingBatch()).transactionOrMessageCreationStatus, 'Simulated')
+	assert.deepEqual(await messageAdmission, { type: 'doNotReply' })
+})
+
 // The duplicate check reads the confirmation queue and the batch id records together, and then the simulation stack. The approval of the first batch adds its calls to the stack and then removes the batch from the queue; landing right before or right after the first read puts that move on either side of it.
 async function expectBatchIdClaimedWhenApprovedAroundRecordRead(approval: 'beforeRecordRead' | 'afterRecordRead') {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
@@ -698,8 +761,7 @@ test('a batch id is in use after every storage write of its approval, whatever o
 
 	const inUseAfterEachWrite: boolean[] = []
 	for (const storedItems of storageAfterEachWrite) {
-		for (const key of Object.keys(browserMock.storageState)) delete browserMock.storageState[key]
-		Object.assign(browserMock.storageState, storedItems)
+		restoreStorage(storedItems)
 		inUseAfterEachWrite.push(await isBatchIdInUse('0x01'))
 	}
 	assert.ok(storageAfterEachWrite.some((storedItems) => 'interceptorTransactionStack' in storedItems))
@@ -998,8 +1060,7 @@ async function restoreApprovalInterruptedAfterItsCommit() {
 	assert.equal(await approveBatch(websiteTabConnections), true)
 	browserMock.setStorageSetHandler(undefined)
 	if (storageAfterCommit === undefined) throw new Error('The approval did not write the simulation stack')
-	for (const key of Object.keys(browserMock.storageState)) delete browserMock.storageState[key]
-	Object.assign(browserMock.storageState, storageAfterCommit)
+	restoreStorage(storageAfterCommit)
 	postedMessages.length = 0
 	assert.equal((await getStackBatchTransactions()).length, 2)
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)

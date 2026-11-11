@@ -14,7 +14,7 @@ const walletSendCallsStatusSource = await readSource('background/walletSendCalls
 // The confirmation support that both confirmation flows share, one concern per module, and what each module owns.
 const confirmationSupportModules = {
 	'confirmationAdmissionLock.ts': ['runWithPendingConfirmationLock'],
-	'confirmationWindow.ts': ['AnswerRequestsOfClosedWindow', 'getPendingTransactionWindow', 'updateViewAfterPendingRequestRemoved'],
+	'confirmationWindow.ts': ['AnswerRequestsOfClosedWindow', 'getPendingTransactionWindow', 'updateViewAfterPendingRequestRemoved', 'PendingRequestRemoval', 'removePendingRequestAndDeliverTerminalReply'],
 	'confirmationDialogUpdates.ts': ['toPopupPendingTransactionOrSignableMessage', 'sendConfirmTransactionDialogUpdates', 'updateConfirmTransactionView'],
 	'confirmationPreviews.ts': ['shouldReplacePopupVisualisation', 'refreshConfirmationMetadata'],
 	'confirmationReplies.ts': ['formRejectMessage'],
@@ -28,6 +28,7 @@ const storedSettingsSource = await readSource('background/storedSettings.ts')
 const backgroundSource = await readSource('background/background.ts')
 const confirmationSimulationRunSource = await readSource('background/confirmationSimulationRun.ts')
 const popupMessageHandlersSource = await readSource('background/popupMessageHandlers.ts')
+const simulationUpdatingSource = await readSource('background/simulationUpdating.ts')
 const visualizerTypesSource = await readSource('types/visualizer-types.ts')
 const safeConfirmationSources = await Promise.all([
 	'background/safeConfirmationResolver.ts',
@@ -351,4 +352,51 @@ test('the confirmation window picks what it shows and gates per kind of confirma
 		assert.match(lines[0] ?? '', new RegExp(`^function ${ viewName }\\(pending: PendingConfirmationOfKind<'${ kind }'>\\): ConfirmationKindView \\{$`, 'u'), kind)
 		assert.match(lines[1] ?? '', new RegExp(`^\\t\\tcase '${ kind }': return ${ viewName }\\(pending\\)$`, 'u'), kind)
 	}
+})
+
+// The source of a top-level function or arrow function, from its definition to its closing brace.
+function definitionSource(source: string, definitionStart: string) {
+	const start = source.indexOf(definitionStart)
+	assert.ok(start >= 0, definitionStart)
+	return source.slice(start, source.indexOf('\n}\n', start))
+}
+
+test('every resolution that answers the website with a terminal reply leaves the queue through one ordering helper', () => {
+	// The helper queues the reply, removes the request, delivers the reply, and updates the window in a finally, in that order.
+	const helper = definitionSource(getConfirmationSupportSource('confirmationWindow.ts'), 'export async function removePendingRequestAndDeliverTerminalReply(')
+	const steps = ['await queueTerminalReply(removal.terminalReply)', 'await removal.removeFromQueue()', 'return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, removal.terminalReply)', '} finally {', 'await updateViewAfterPendingRequestRemoved(']
+	const stepPositions = steps.map((step) => helper.indexOf(step))
+	assert.ok(stepPositions.every((position) => position >= 0), steps.join(', '))
+	assert.deepEqual(stepPositions, [...stepPositions].sort((first, second) => first - second))
+	// No flow writes the ordering itself.
+	for (const flowSource of [confirmTransactionSource, walletSendCallsConfirmationSource]) assert.doesNotMatch(flowSource, /\bqueueTerminalReply\(|attemptQueuedTerminalReplyDelivery\(/u)
+	assert.doesNotMatch(walletSendCallsConfirmationSource, /queueTerminalReplyAndAttemptDelivery|updateViewAfterPendingRequestRemoved|releaseTransactionBatchAndUpdateView/u)
+	// An approved batch keeps its id, and every rejection of a batch, an unanswered one included, releases it before the website has the rejection.
+	assert.match(definitionSource(walletSendCallsConfirmationSource, 'async function finishApprovedTransactionBatch('), /return await removePendingRequestAndDeliverTerminalReply\([^]*removeFromQueue: async \(\) => await removeApprovedTransactionBatch\(pendingBatch\),\n\t\tsimulationStack: 'changed',/u)
+	assert.match(definitionSource(walletSendCallsConfirmationSource, 'async function rejectTransactionBatch('), /return await removePendingRequestAndDeliverTerminalReply\([^]*removeFromQueue: async \(\) => await releasePendingTransactionBatch\(pendingBatch\),\n\t\tsimulationStack: 'unchanged',/u)
+	assert.match(walletSendCallsConfirmationSource, /\t\tcase 'noResponse':\n\t\tcase 'reject': return await rejectTransactionBatch\(/u)
+	assert.match(confirmTransactionSource, /await removePendingRequestAndDeliverTerminalReply\(ethereum, tokenPriceService, websiteTabConnections, \{\n\t\tremovedRequest: pendingTransactionOrMessage,/u)
+})
+
+test('a batch holds the confirmation lock only while it is added to the queue, and is simulated after the lock is released', () => {
+	const admission = definitionSource(walletSendCallsConfirmationSource, 'export async function admitTransactionBatch(')
+	const lockedStart = admission.indexOf('await runWithPendingConfirmationLock(async () => {')
+	assert.ok(lockedStart >= 0)
+	const locked = admission.slice(lockedStart, admission.indexOf('\n\t})\n', lockedStart))
+	for (const lockedStep of ['isWalletSendCallsIdInUse(', 'getPendingTransactionWindow(', 'await addPendingTransactionBatch(pendingBatch)']) assert.ok(locked.includes(lockedStep), lockedStep)
+	assert.doesNotMatch(locked, /simulatePendingTransactionBatch|storeTransactionBatchSimulation|updateConfirmTransactionView|tryFocusingTabOrWindow|showAdmittedTransactionBatch/u)
+	assert.ok(admission.indexOf('await showAdmittedTransactionBatch(') > lockedStart + locked.length)
+	assert.match(definitionSource(walletSendCallsConfirmationSource, 'async function showAdmittedTransactionBatch('), /await storeTransactionBatchSimulation\(pendingBatch\.uniqueRequestIdentifier, await simulatePendingTransactionBatch\(/u)
+})
+
+test('the governance vote preview finds a vote per kind of confirmation at one exhaustive switch, and decides its network by one rule', () => {
+	const kindSwitch = definitionSource(popupMessageHandlersSource, 'const findGovernanceVoteInPendingRequest = ')
+	assert.match(kindSwitch, /switch \(pending\.type\) \{[^]*default: return assertNever\(pending\)/u)
+	assert.match(simulationUpdatingSource, /^export const getPreparedGovernanceVote = \(ethereum: EthereumClientService, voteTransaction: WebsiteCreatedEthereumTransaction\): PendingGovernanceVote => \{$/mu)
+	const batchLookup = definitionSource(walletSendCallsConfirmationSource, 'export function findGovernanceVoteInTransactionBatch(')
+	for (const lookup of [kindSwitch, batchLookup]) {
+		assert.match(lookup, /getPreparedGovernanceVote\(ethereum, /u)
+		assert.doesNotMatch(lookup, /getChainId\(\)|PreparedForOtherNetwork|isEthereumClientOnBatchChain/u)
+	}
+	assert.doesNotMatch(definitionSource(popupMessageHandlersSource, 'const findPendingGovernanceVote = '), /pending\.type|getChainId\(\)/u)
 })

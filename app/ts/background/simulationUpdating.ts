@@ -298,6 +298,12 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 // A vote awaiting confirmation, sent on its own or as one call of a wallet_sendCalls batch. Its calldata is only known once the vote has been prepared for simulation, and its proposal can only be looked up on the network the vote was prepared for.
 export type PendingGovernanceVote = { readonly status: 'Prepared', readonly voteTransaction: WebsiteCreatedEthereumTransaction } | { readonly status: 'StillSimulating' } | { readonly status: 'PreparedForOtherNetwork' }
 
+// The vote of a prepared transaction, for every kind of confirmation that holds one. The same governance address can hold another contract, or another proposal with the same id, on another network, so a vote prepared for another network than the client's is not simulated with that client. A legacy transaction prepared without a chain id is valid on every network.
+export const getPreparedGovernanceVote = (ethereum: EthereumClientService, voteTransaction: WebsiteCreatedEthereumTransaction): PendingGovernanceVote => {
+	const voteChainId = voteTransaction.transaction.chainId
+	return voteChainId === undefined || voteChainId === ethereum.getChainId() ? { status: 'Prepared', voteTransaction } : { status: 'PreparedForOtherNetwork' }
+}
+
 // The proposal execution is simulated on top of the current simulation stack, without the vote itself, so a vote inside a batch gets the same preview as the same vote sent on its own.
 export const simulateGovernanceContractExecution = async (pendingVote: PendingGovernanceVote, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })

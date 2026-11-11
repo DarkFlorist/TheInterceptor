@@ -14,7 +14,7 @@ import { runConfirmationSimulation } from '../confirmationSimulationRun.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPendingTransactionsAndMessagesExceptBatches, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
+import { queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -43,7 +43,7 @@ import { runWithPendingConfirmationLock } from '../confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from '../confirmationDialogUpdates.js'
 import { shouldReplacePopupVisualisation } from '../confirmationPreviews.js'
 import { formRejectMessage } from '../confirmationReplies.js'
-import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, updateViewAfterPendingRequestRemoved } from '../confirmationWindow.js'
+import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, removePendingRequestAndDeliverTerminalReply, updateViewAfterPendingRequestRemoved } from '../confirmationWindow.js'
 import { formEthSendTransaction, formSendRawTransaction } from '../transactionPreparation.js'
 
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -225,29 +225,24 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// The reply is queued and the request is removed from the confirmation queue, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
-	const removePendingRequestAndDeliverTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => {
-		await queueTerminalReply(terminalReply)
-		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		try {
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		} finally {
-			// The request already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
-			await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingTransactionOrMessage, simulationStack)
-		}
-	}
+	const removePendingRequestWithTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => await removePendingRequestAndDeliverTerminalReply(ethereum, tokenPriceService, websiteTabConnections, {
+		removedRequest: pendingTransactionOrMessage,
+		terminalReply,
+		removeFromQueue: async () => await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier),
+		simulationStack,
+	})
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
 		if (message.type === 'result' && !('error' in message)) {
 			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
 				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-				return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
+				return await removePendingRequestWithTerminalReply(terminalReply, simulationStack)
 			}
 			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
+			return await removePendingRequestWithTerminalReply(terminalReply, simulationStack)
 		}
 		if (message.type === 'result') {
 			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
+			return await removePendingRequestWithTerminalReply(terminalReply, simulationStack)
 		}
 		await removePendingRequestAndUpdateView(ethereum, tokenPriceService, pendingTransactionOrMessage)
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -285,6 +280,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		return false
 	}
 	if (confirmation.data.action === 'noResponse') {
+		// The rejection is delivered before the request is removed, so the website is answered even when the removal fails and is retried. Unlike a wallet_sendCalls batch, the request holds no website-chosen id that a retry could find still in use.
 		const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
 			...pendingTransactionOrMessage.originalRequestParameters,
 			...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),

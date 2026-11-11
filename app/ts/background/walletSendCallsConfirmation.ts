@@ -6,7 +6,7 @@ import type { TransactionConfirmation } from '../types/interceptor-messages.js'
 import type { WalletSendCalls } from '../types/JsonRpc-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationState } from '../types/visualizer-types.js'
-import type { Website } from '../types/websiteAccessTypes.js'
+import type { PopupOrTabId, Website } from '../types/websiteAccessTypes.js'
 import { METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { isExpectedInfrastructureError, reportLocalRecovery } from '../utils/errors.js'
 import { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
@@ -14,9 +14,8 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
-import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
+import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getPreparedGovernanceVote, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
-import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from './terminalReplyDelivery.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
 import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSendCallTransactionIdentifier, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
 import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount } from './walletSendCallsBinding.js'
@@ -24,7 +23,7 @@ import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
 import { refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
 import { formRejectMessage } from './confirmationReplies.js'
-import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, updateViewAfterPendingRequestRemoved } from './confirmationWindow.js'
+import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, removePendingRequestAndDeliverTerminalReply } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
 import { isSimulationModeSafeAccount } from '../safe/safeExecutionRouting.js'
 import { getTransactionBatchCallGasPayment } from '../safe/safePendingFlow.js'
@@ -107,15 +106,11 @@ export async function refreshPendingTransactionBatchMetadata(ethereum: EthereumC
 		: undefined, updateConfirmationWindow)
 }
 
-// The batch's part of the governance vote preview lookup: a prepared call with the identifier, unless the batch's preview belongs to another network than the client's.
+// The batch's part of the governance vote preview lookup: the vote of the prepared call with the identifier. Calls are only prepared with the client of the batch's network, so a call prepared for another network than the client's is a batch preview kept from before a network switch.
 export function findGovernanceVoteInTransactionBatch(ethereum: EthereumClientService, pendingBatch: PendingTransactionBatch, transactionIdentifier: bigint): PendingGovernanceVote | undefined {
 	if (pendingBatch.transactionOrMessageCreationStatus === 'Crafting') return undefined
-	for (const call of pendingBatch.transactionsToSimulate) {
-		if (!call.success || call.transactionIdentifier !== transactionIdentifier) continue
-		if (!isEthereumClientOnBatchChain(ethereum, pendingBatch)) return { status: 'PreparedForOtherNetwork' }
-		return { status: 'Prepared', voteTransaction: call }
-	}
-	return undefined
+	const voteCall = pendingBatch.transactionsToSimulate.find((call): call is WebsiteCreatedEthereumTransaction => call.success && call.transactionIdentifier === transactionIdentifier)
+	return voteCall === undefined ? undefined : getPreparedGovernanceVote(ethereum, voteCall)
 }
 
 export async function refreshPendingTransactionBatchSimulation(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
@@ -124,35 +119,24 @@ export async function refreshPendingTransactionBatchSimulation(ethereumClientSer
 	await refreshUnapprovedTransactionBatchPreview(ethereumClientService, tokenPriceService, pendingBatch)
 }
 
-async function releaseTransactionBatchAndUpdateView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
-	await releasePendingTransactionBatch(pendingBatch)
-	await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch, 'unchanged')
-}
-
-// Finishes an approval whose calls are on the simulation stack. The reply with the batch id is queued and the batch is removed from the confirmation queue, keeping its id, so after a restart at most the reply's delivery is left. The reply is delivered before the view work, which cannot hold it back.
+// Finishes an approval whose calls are on the simulation stack: the website gets the batch id, and the batch leaves the confirmation queue keeping its id.
 async function finishApprovedTransactionBatch(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, pendingBatch: PendingTransactionBatch) {
-	const terminalReply = { ...pendingBatch.originalRequestParameters, type: 'result' as const, result: { id: pendingBatch.batchId }, uniqueRequestIdentifier: pendingBatch.uniqueRequestIdentifier }
-	await queueTerminalReply(terminalReply)
-	await removeApprovedTransactionBatch(pendingBatch)
-	try {
-		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-	} finally {
-		// The batch already left the confirmation queue, so its window is updated even when delivery throws. The delivery error still reaches the caller once the window is updated.
-		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch, 'changed')
-	}
+	return await removePendingRequestAndDeliverTerminalReply(ethereum, tokenPriceService, websiteTabConnections, {
+		removedRequest: pendingBatch,
+		terminalReply: { ...pendingBatch.originalRequestParameters, type: 'result', result: { id: pendingBatch.batchId }, uniqueRequestIdentifier: pendingBatch.uniqueRequestIdentifier },
+		removeFromQueue: async () => await removeApprovedTransactionBatch(pendingBatch),
+		simulationStack: 'changed',
+	})
 }
 
-// The rejection is queued, the batch is removed and its id released, and the rejection is delivered before the view work, which cannot hold it back.
+// Every rejection of a batch, including no response from the user: the batch leaves the confirmation queue and its id is released before the website gets the rejection, so the website can send the same id again as soon as it has it.
 async function rejectTransactionBatch(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, pendingBatch: PendingTransactionBatch, rejection: { readonly type: 'result', readonly error: ErrorWithCodeAndOptionalData }) {
-	const terminalReply = { ...pendingBatch.originalRequestParameters, ...rejection, uniqueRequestIdentifier: pendingBatch.uniqueRequestIdentifier }
-	await queueTerminalReply(terminalReply)
-	await releasePendingTransactionBatch(pendingBatch)
-	try {
-		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-	} finally {
-		// As for an approval, the window is updated even when delivery throws.
-		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, pendingBatch, 'unchanged')
-	}
+	return await removePendingRequestAndDeliverTerminalReply(ethereum, tokenPriceService, websiteTabConnections, {
+		removedRequest: pendingBatch,
+		terminalReply: { ...pendingBatch.originalRequestParameters, ...rejection, uniqueRequestIdentifier: pendingBatch.uniqueRequestIdentifier },
+		removeFromQueue: async () => await releasePendingTransactionBatch(pendingBatch),
+		simulationStack: 'unchanged',
+	})
 }
 
 const transactionBatchResolutionScope = {}
@@ -205,11 +189,12 @@ export async function admitTransactionBatch(
 	const binding = { websiteOrigin: website.websiteOrigin, account: batchRequest.account, chainId: batchRequest.chainId }
 	// Decided before the confirmation lock, as a single transaction's Gnosis Safe preparation is.
 	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()), binding.account)
-	const outcome = await runWithPendingConfirmationLock(async () => {
+	// The confirmation lock is held only while the batch is added to the confirmation queue, so the batch's simulation does not hold back the admission of other confirmations.
+	const admission = await runWithPendingConfirmationLock(async () => {
 		// Checked and recorded while holding the confirmation lock, so two concurrent requests cannot both claim the same batch id.
-		if (await isWalletSendCallsIdInUse(binding.websiteOrigin, batchId)) return formRejectMessage(walletSendCallsIdInUseError.code, walletSendCallsIdInUseError.message)
+		if (await isWalletSendCallsIdInUse(binding.websiteOrigin, batchId)) return { admitted: false as const, refusal: formRejectMessage(walletSendCallsIdInUseError.code, walletSendCallsIdInUseError.message) }
 		const openedDialog = await getPendingTransactionWindow(answerRequestsOfClosedWindow)
-		if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
+		if (openedDialog === undefined) return { admitted: false as const, refusal: formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window') }
 		const pendingBatch = {
 			type: 'TransactionBatch' as const,
 			popupOrTabId: openedDialog,
@@ -225,21 +210,25 @@ export async function admitTransactionBatch(
 			transactionOrMessageCreationStatus: 'Crafting' as const,
 		}
 		await addPendingTransactionBatch(pendingBatch)
-		try {
-			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-			await storeTransactionBatchSimulation(pendingBatch.uniqueRequestIdentifier, await simulatePendingTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch))
-			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-			await tryFocusingTabOrWindow(openedDialog)
-			return { success: true }
-		} catch(error: unknown) {
-			await reportLocalRecovery(error, { code: 'send_calls_preparation_failed', message: 'Removing the batch confirmation and returning a wallet-compatible rejection to the requesting page.', details: error instanceof Error ? error.stack : undefined })
-			// The preparation rejection takes the same durable path as a user's rejection: it is queued, the batch is removed and its id released, and it is delivered before the confirmation window work. Only a batch that this cleanup removes unapproved gets it. Otherwise the batch was already approved or rejected once its preview was shown, and that resolution answered the website. Either way the website has its answer, so the admission itself does not reply.
-			await resolveTransactionBatchSerially(ethereumClientService, tokenPriceService, websiteTabConnections, pendingBatch.uniqueRequestIdentifier, async (storedBatch) => await rejectTransactionBatch(ethereumClientService, tokenPriceService, websiteTabConnections, storedBatch, formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to simulate the batch of calls')))
-			return { success: true }
-		}
+		return { admitted: true as const, pendingBatch, openedDialog }
 	})
-	if (!('success' in outcome)) return formRejectMessage(outcome.error.code, outcome.error.message)
+	if (!admission.admitted) return admission.refusal
+	await showAdmittedTransactionBatch(ethereumClientService, tokenPriceService, websiteTabConnections, admission.pendingBatch, admission.openedDialog)
 	return { type: 'doNotReply' as const }
+}
+
+// Shows a batch that was added to the confirmation queue in Crafting state, and simulates its preview. It runs without the confirmation lock, so the batch can be resolved while it simulates, as a transaction that is still simulating can: the user can reject it, its window can be closed and answered as unanswered, and approval is refused until its preview is stored. The preview is stored only while the batch is still queued (see storeTransactionBatchSimulation), focusing a closed window does nothing, and the failure rejection below only answers a batch that is still queued unapproved.
+async function showAdmittedTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, pendingBatch: PendingTransactionBatch, openedDialog: PopupOrTabId) {
+	try {
+		await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+		await storeTransactionBatchSimulation(pendingBatch.uniqueRequestIdentifier, await simulatePendingTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch))
+		await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
+		await tryFocusingTabOrWindow(openedDialog)
+	} catch(error: unknown) {
+		await reportLocalRecovery(error, { code: 'send_calls_preparation_failed', message: 'Removing the batch confirmation and returning a wallet-compatible rejection to the requesting page.', details: error instanceof Error ? error.stack : undefined })
+		// The preparation rejection takes the same durable path as a user's rejection. Only a batch that this cleanup removes unapproved gets it. Otherwise the batch was already approved or rejected once its preview was shown, or resolved while it simulated, and that resolution answered the website. Either way the website has its answer, so the admission itself does not reply.
+		await resolveTransactionBatchSerially(ethereumClientService, tokenPriceService, websiteTabConnections, pendingBatch.uniqueRequestIdentifier, async (storedBatch) => await rejectTransactionBatch(ethereumClientService, tokenPriceService, websiteTabConnections, storedBatch, formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to simulate the batch of calls')))
+	}
 }
 
 // A batch is approved or rejected as a whole.
@@ -266,15 +255,7 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 		? formRejectMessage(pendingBatch.approvalStatus.code, pendingBatch.approvalStatus.message)
 		: formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User rejected the batch of calls')
 	switch (confirmation.data.action) {
-		case 'noResponse': {
-			const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
-				...pendingBatch.originalRequestParameters,
-				...rejection,
-				uniqueRequestIdentifier,
-			})
-			await releaseTransactionBatchAndUpdateView(ethereum, tokenPriceService, pendingBatch)
-			return noResponseDelivery
-		}
+		case 'noResponse':
 		case 'reject': return await rejectTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, pendingBatch, rejection)
 		case 'addToSafeStack': return false
 		// Batches are never forwarded to a signer, so a signer reply cannot complete one.
