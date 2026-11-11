@@ -6,7 +6,12 @@ interface CompoundTimelock {
 	function executeTransaction(address target, uint256 value, string calldata signature, bytes calldata data, uint256 eta) external payable returns (bytes memory);
 }
 
-// The governance preview places this at a verified governor's address to queue or execute a proposal that is not queued yet at the governor's Compound Timelock in one transaction each, as GovernorBravo's queue and execute do: the timelock sees the governor as the caller of every action. With forwardValues, each action's value goes from the governor to the timelock, as GovernorAlpha's and GovernorBravo's execute forward it; without, the timelock pays from its own balance, as OpenZeppelin's GovernorTimelockCompound has it. Only the preview's own caller can use these two functions; every other call, such as an action calling back into the governor, runs the governor's own code, which the preview moves to 0x70490ca6DC09Ae17C68377a226527984E1B77b55.
+// The governance preview places this at a verified governor's address to queue or execute a proposal that is not queued yet, in one transaction each from the preview's caller: at a Compound Timelock as GovernorBravo's queue and execute do, at a TimelockController as OpenZeppelin's GovernorTimelockControl does. At a Compound Timelock the timelock sees the governor as the caller of every action. With forwardValues, each action's value goes from the governor to the timelock, as GovernorAlpha's and GovernorBravo's execute forward it; without, the timelock pays from its own balance, as OpenZeppelin's GovernorTimelockCompound has it. Only the preview's own caller can use these two functions; every other call, such as an action calling back into the governor, runs the governor's own code, which the preview moves to 0x70490ca6DC09Ae17C68377a226527984E1B77b55.
+interface TimelockController {
+	function scheduleBatch(address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 predecessor, bytes32 salt, uint256 delay) external;
+	function executeBatch(address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 predecessor, bytes32 salt) external payable;
+}
+
 contract GovernorProposalForwarder {
 	// The governor's balance when it executes does not cover the ether its actions forward. The preview does not supply that ether, which on chain the executor sends with execute.
 	error GovernorLacksForwardedEther(uint256 governorBalance, uint256 forwardedValue);
@@ -28,6 +33,17 @@ contract GovernorProposalForwarder {
 		for (uint256 index = 0; index < targets.length; index++) {
 			CompoundTimelock(timelock).executeTransaction{ value: forwardValues ? values[index] : 0 }(targets[index], values[index], signatures[index], calldatas[index], eta);
 		}
+	}
+
+	// An OpenZeppelin governor schedules and executes through its TimelockController itself, so the timelock sees the governor as the caller and the transaction comes from its executor.
+	function scheduleProposalBatch(address timelock, address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 salt, uint256 delay) external {
+		require(msg.sender == 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF, 'GovernorProposalForwarder: only the preview schedules');
+		TimelockController(timelock).scheduleBatch(targets, values, payloads, bytes32(0), salt, delay);
+	}
+
+	function executeProposalBatch(address timelock, address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 salt) external {
+		require(msg.sender == 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF, 'GovernorProposalForwarder: only the preview executes');
+		TimelockController(timelock).executeBatch(targets, values, payloads, bytes32(0), salt);
 	}
 
 	fallback() external payable {

@@ -6,6 +6,7 @@ import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { describeGovernanceExecutionBlockNumber } from '../../app/ts/utils/governanceExecutionBlock.js'
 import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCodes.js'
+import { toEventSelector } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { pinRequestToBlockHash } from '../../app/ts/simulation/services/blockPinning.js'
@@ -181,10 +182,12 @@ describe('governance proposal execution preview of real governors', () => {
 		const [transaction, ...otherTransactions] = getExecution(preview).transactions
 		if (transaction === undefined) throw new Error('Expected the executeBatch transaction')
 		assert.equal(otherTransactions.length, 0)
-		assert.equal(forwarderUsed, false)
-		assert.equal(transaction.preSimulationTransaction.signedTransaction.from, governor)
-		assert.equal(transaction.preSimulationTransaction.signedTransaction.to, ENS_TIMELOCK)
-		assert.equal(transaction.ethSimulateV1CallResult.status, 'success')
+		// The preview's caller executes through the governor, which calls the timelock's executeBatch, as GovernorTimelockControl does.
+		assert.equal(forwarderUsed, true)
+		assert.equal(transaction.preSimulationTransaction.signedTransaction.from, MOCK_ADDRESS)
+		assert.equal(transaction.preSimulationTransaction.signedTransaction.to, governor)
+		if (transaction.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
+		assert.ok(transaction.ethSimulateV1CallResult.logs.some((log) => log.address === ENS_TIMELOCK))
 		// The search covers a day of blocks either side of the proposal's creation, in two requests.
 		assert.equal(requests.filter((request) => request.method === 'eth_getLogs').length, 2)
 	})
@@ -255,6 +258,22 @@ describe('governance proposal execution preview of real governors', () => {
 		assert.match(note ?? '', /^The simulation runs it at block 26100002, not at about block 261\d{5} as on chain, because nodes simulate at most 256 blocks ahead\. An action that depends on the block number can differ\.$/)
 		const estimated = BigInt(/about block (\d+)/.exec(note ?? '')?.[1] ?? '0')
 		assert.ok(estimated > 26_109_012n)
+	})
+
+	test('refuses a proposal that an earlier transaction in the user\'s stack cancels', async () => {
+		const { preview, requests } = await previewFixture('uniswap-bravo-active-cancelled-in-stack')
+		assertRefused(preview, /proposal 102 is canceled once your simulation stack has run, so it will not be executed\./)
+		// The governor was read after the stack's block, which holds the proposer's cancel.
+		assert.ok(simulateRequests(requests).every((simulation) => simulation.blockStateCalls.length === 2))
+	})
+
+	test('executes a TimelockController proposal from the preview\'s caller, so an action sees that caller as tx.origin, never the governor', async () => {
+		const { preview, governor } = await previewFixture('timelock-controller-origin-dependent-action')
+		const [transaction] = getExecution(preview).transactions
+		if (transaction?.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
+		const origins = transaction.ethSimulateV1CallResult.logs.filter((log) => log.topics[0] === BigInt(toEventSelector('Origin(address)'))).map((log) => BigInt(dataStringWith0xStart(log.data)))
+		assert.deepEqual(origins, [MOCK_ADDRESS])
+		assert.ok(!origins.includes(governor))
 	})
 
 	test('shows no outcome for a proposal that was already executed', async () => {
@@ -419,7 +438,7 @@ describe('governance proposal execution preview after the user\'s simulation sta
 		assert.ok(preparedOverrides[addressString(EXAMPLE_SAFE)]?.stateDiff !== undefined)
 		assert.ok(preparedOverrides[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]?.balance !== undefined)
 		assert.ok(stack[0]?.transactions[0]?.executedTransaction !== undefined)
-		const outcomeRequest = requests.find((request) => request.method === 'eth_simulateV1' && request.params[0].blockStateCalls.length === 2)
+		const outcomeRequest = requests.filter((request) => request.method === 'eth_simulateV1' && request.params[0].blockStateCalls.length === 2).pop()
 		if (outcomeRequest === undefined) throw new Error('Expected the stack and the execution in one simulation')
 		const stackCall = EthSimulateV1Result.parse(resultOf(outcomeRequest))[0]?.calls[0]
 		if (stackCall?.status !== 'success') throw new Error('Expected the Safe execution to succeed')

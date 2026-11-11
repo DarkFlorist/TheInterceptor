@@ -501,6 +501,20 @@ export const GovernorProposalForwarderAbi = [
 		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'signatures', type: 'string[]' }, { name: 'calldatas', type: 'bytes[]' }, { name: 'eta', type: 'uint256' }, { name: 'forwardValues', type: 'bool' }],
 		outputs: [],
 	},
+	{
+		type: 'function',
+		name: 'scheduleProposalBatch',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'payloads', type: 'bytes[]' }, { name: 'salt', type: 'bytes32' }, { name: 'delay', type: 'uint256' }],
+		outputs: [],
+	},
+	{
+		type: 'function',
+		name: 'executeProposalBatch',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'timelock', type: 'address' }, { name: 'targets', type: 'address[]' }, { name: 'values', type: 'uint256[]' }, { name: 'payloads', type: 'bytes[]' }, { name: 'salt', type: 'bytes32' }],
+		outputs: [],
+	},
 ] as const satisfies Abi
 
 // OpenZeppelin's TimelockController, which OpenZeppelin's GovernorTimelockControl executes through.

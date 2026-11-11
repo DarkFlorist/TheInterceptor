@@ -3,7 +3,8 @@ import type { IEthereumJSONRpcRequestHandler } from '../app/ts/simulation/servic
 import { EthereumClientService } from '../app/ts/simulation/services/EthereumClientService.js'
 import { serialize } from '../app/ts/types/wire-types.js'
 import type { SimulationStateInput, SimulationStateInputBlock } from '../app/ts/types/visualizer-types.js'
-import { addressString } from '../app/ts/utils/bigint.js'
+import { addressString, stringToUint8Array } from '../app/ts/utils/bigint.js'
+import { encodeFunctionCall } from '../app/ts/utils/abiRuntime.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../app/ts/simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../app/ts/config/defaults.js'
@@ -68,6 +69,8 @@ export const createRecordingEthereumClientService = (forwardTo: IEthereumJSONRpc
 
 // Example simulation stacks for recording and replaying a preview that runs after the user's own simulation. Each is a stack as prepareSafeExecutionsForRpc hands it to the preview, with the overrides the extension's own preparation gives such a stack.
 export const EXAMPLE_STACK_SENDER = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
+const UNISWAP_PROPOSAL_102_PROPOSER = 0x927c7fd078fc406059957a691c21f6e0fc4a959cn
+const GOVERNOR_CANCEL_ABI = [{ type: 'function', name: 'cancel', stateMutability: 'nonpayable', inputs: [{ name: 'proposalId', type: 'uint256' }], outputs: [] }] as const
 // A Gnosis Safe 1.3.0 that scripts/record-governance-fixtures.mts deploys through the canonical proxy factory with salt nonce 20261111, one owner (0x1111…1111) and threshold 1.
 export const EXAMPLE_SAFE = 0x452d3cca824174106e1975cdb8d9276402cf8e02n
 const STACK_WEBSITE = { websiteOrigin: 'https://stack.fixture', icon: undefined, title: undefined }
@@ -100,6 +103,11 @@ export const EXAMPLE_STACKS = {
 	fundsTheGovernor: (governor: bigint): SimulationStateInput => [stackBlock({ transactions: [exampleTransfer(EXAMPLE_STACK_SENDER, governor, 2n * 10n ** 18n, 100_000n)] })],
 	// The user's rich list includes the governor, as getCurrentSimulationInput would make it rich.
 	makesTheGovernorRich: (governor: bigint): SimulationStateInput => [stackBlock({ stateOverrides: { [addressString(governor)]: { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value } } })],
+	// The proposer of Uniswap GovernorBravo proposal 102 cancels it earlier in the stack.
+	proposerCancelsUniswapProposal102: (governor: bigint): SimulationStateInput => {
+		const transaction = { type: '1559' as const, from: UNISWAP_PROPOSAL_102_PROPOSER, to: governor, value: 0n, input: stringToUint8Array(encodeFunctionCall(GOVERNOR_CANCEL_ABI, 'cancel', [102n])), gas: 500_000n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, accessList: [], chainId: 1n, nonce: 0n }
+		return [stackBlock({ transactions: [{ signedTransaction: mockSignTransaction(transaction), website: STACK_WEBSITE, created: new Date(0), originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] }, transactionIdentifier: 1n }] })]
+	},
 } as const
 export type ExampleStackName = keyof typeof EXAMPLE_STACKS
 export const isExampleStackName = (name: string): name is ExampleStackName => name in EXAMPLE_STACKS
