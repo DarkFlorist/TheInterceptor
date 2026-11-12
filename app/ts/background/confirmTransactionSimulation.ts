@@ -55,6 +55,10 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
+	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
+	confirmTransactionAbortController = new AbortController()
+	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -64,9 +68,6 @@ export async function refreshConfirmTransactionSimulation(
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()

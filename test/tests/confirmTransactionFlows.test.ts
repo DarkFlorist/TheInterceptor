@@ -3,6 +3,7 @@ import { resetConfirmTransactionTestState } from './confirmTransactionTestHarnes
 import './safeConfirmationFlows.suite.js'
 import './safeStackFlows.suite.js'
 import './confirmTransactionStrandedSimulation.suite.js'
+import './confirmTransactionSimulationAbortOrder.suite.js'
 import './terminalReplyDelivery.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)
