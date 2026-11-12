@@ -46,6 +46,10 @@ export async function refreshConfirmTransactionSimulation(
 	refresh = reserveConfirmTransactionSimulationRefresh(),
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
 	if (!refresh.claim()) return undefined
+	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
+	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
+	confirmTransactionAbortController = new AbortController()
+	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -54,12 +58,9 @@ export async function refreshConfirmTransactionSimulation(
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
 	}
-	// The tab read can yield to a newer refresh; stale work must not abort its controller.
+	// The tab read can yield to a newer refresh; a superseded run must not announce or start a simulation.
 	if (!refresh.isCurrent()) return undefined
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
