@@ -4,7 +4,7 @@ import { signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { type GovernanceVoteInputParameters, MessageToPopup, PopupMessage, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
-import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
+import { PopupMessageReplyRequests, PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
@@ -863,6 +863,197 @@ describe('popup async action UI', () => {
 		assert.equal(identifyRequestCount, 3)
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.name, 'Retried token')
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.decimals, 18n)
+		dom.restore()
+	})
+
+	test('identifies and saves an address pasted in EIP-3770 chain-specific form', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const pastedAddress = 0xab5801a7d398351b8be11c439e05c5b3259aec9bn
+		const sentMessages: unknown[] = []
+		let closeCount = 0
+		runtimeSendMessage = async (message) => {
+			sentMessages.push(message)
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') {
+				return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({
+					method: 'popup_requestIdentifyAddress',
+					data: { chainId: 1n, addressBookEntry: undefined },
+				})
+			}
+			if (getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry') {
+				return PopupRequestsReplies.popup_addOrModifyAddressBookEntry.serialize({ type: 'AddOrModifyAddressBookEntryReply', ok: true })
+			}
+			return undefined
+		}
+		const modifyAddressWindowState = signal({
+			windowStateId: 'eip3770-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact' as const,
+				address: ' eth:0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B ',
+				askForAddressAccess: true,
+				name: 'Pasted contact',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => { closeCount += 1 },
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+
+		const identifyMessage = sentMessages.find((message) => getRuntimeMethod(message) === 'popup_requestIdentifyAddress')
+		assert.deepEqual(PopupMessageReplyRequests.parse(identifyMessage), {
+			method: 'popup_requestIdentifyAddress',
+			data: { address: pastedAddress, chainId: 1n },
+		})
+		assert.equal(dom.document.body.textContent?.includes('Address is not valid'), false)
+		const createButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Create address')
+		if (createButton === undefined) throw new Error('Expected Create address button')
+		assert.equal(isDisabled(createButton), false)
+
+		await act(async () => {
+			await clickElement(createButton)
+			await settleAsyncUpdates()
+		})
+
+		const saveMessage = sentMessages.find((message) => getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry')
+		const parsedSaveMessage = PopupMessageReplyRequests.parse(saveMessage)
+		if (parsedSaveMessage.method !== 'popup_addOrModifyAddressBookEntry') throw new Error('Expected an address-book save message')
+		assert.equal(parsedSaveMessage.data.address, pastedAddress)
+		assert.equal(parsedSaveMessage.data.name, 'Pasted contact')
+		assert.equal(parsedSaveMessage.data.chainId, 1n)
+		assert.equal(closeCount, 1)
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
+	test('does not identify or save the address after an address-like chain prefix', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const sentMessages: unknown[] = []
+		let closeCount = 0
+		runtimeSendMessage = async (message) => {
+			sentMessages.push(message)
+			return undefined
+		}
+		// The visible leading token is a full address written with `0X`, so treating it as a chain short name would save the second address instead.
+		const modifyAddressWindowState = signal({
+			windowStateId: 'address-like-prefix-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact' as const,
+				address: '0XAb5801a7D398351b8bE11C439e05C5B3259aeC9B:0x0000000000000000000000000000000000000123',
+				askForAddressAccess: true,
+				name: 'Pasted contact',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => { closeCount += 1 },
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_requestIdentifyAddress'), false)
+		assert.equal(dom.document.body.textContent?.includes('Address is not valid'), true)
+		const createButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Create address')
+		if (createButton === undefined) throw new Error('Expected Create address button')
+		assert.equal(isDisabled(createButton), true)
+
+		await act(async () => {
+			await clickElement(createButton)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry'), false)
+		assert.equal(closeCount, 0)
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
+	test('does not identify or save an address whose chain prefix names another chain than the entry', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const sentMessages: unknown[] = []
+		let closeCount = 0
+		runtimeSendMessage = async (message) => {
+			sentMessages.push(message)
+			return undefined
+		}
+		const modifyAddressWindowState = signal({
+			windowStateId: 'other-chain-prefix-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact' as const,
+				address: 'gno:0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B',
+				askForAddressAccess: true,
+				name: 'Pasted contact',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => { closeCount += 1 },
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_requestIdentifyAddress'), false)
+		assert.equal(dom.document.body.textContent?.includes('Address is not valid'), true)
+		const createButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Create address')
+		if (createButton === undefined) throw new Error('Expected Create address button')
+		assert.equal(isDisabled(createButton), true)
+
+		await act(async () => {
+			await clickElement(createButton)
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(sentMessages.some((message) => getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry'), false)
+		assert.equal(closeCount, 0)
+		render(null, dom.document.body)
 		dom.restore()
 	})
 
