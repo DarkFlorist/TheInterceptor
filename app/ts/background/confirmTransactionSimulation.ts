@@ -44,6 +44,12 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
+	const confirmationRun = {
+		// Taken with the controller, before the first await, so run ids follow the order in which runs replace each other.
+		confirmationRunId: getNextConfirmationRunId(),
+		// Read once as the run starts, before its first lookup, so the workflow that stores the run can tell whether the address book changed during it.
+		addressBookRevisionBeforeLookups: getAddressBookRevision(),
+	}
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -51,11 +57,6 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
-	}
-	const confirmationRun = {
-		confirmationRunId: getNextConfirmationRunId(),
-		// Read once as the run starts, before its first lookup, so the workflow that stores the run can tell whether the address book changed during it.
-		addressBookRevisionBeforeLookups: getAddressBookRevision(),
 	}
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
