@@ -6,7 +6,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { EthereumSubscriptionsAndFilters, PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
@@ -51,6 +51,37 @@ function createMockEthSimulateV1Result(blockStateCallCount: number, aggregate3Ba
 	const nonAggregateBlocks = Array.from({ length: nonAggregateBlockCount }, (_, blockIndex) => blockIndex === 0 ? singleTransactionBlock : followupTransactionBlock)
 	if (!includesAggregate3BalanceCall) return nonAggregateBlocks
 	return [...nonAggregateBlocks, buildAggregate3BalanceBlock(aggregate3BalanceQueryCount)]
+}
+
+function createRecordingPort(postedMessages: unknown[]): browser.runtime.Port {
+	const event = {
+		addListener() { return undefined },
+		removeListener() { return undefined },
+		hasListener() { return false },
+	}
+	return {
+		name: 'recording-test-port',
+		disconnect() { return undefined },
+		postMessage(message: unknown) { postedMessages.push(message) },
+		onMessage: event,
+		onDisconnect: event,
+	}
+}
+
+function createConnectionsForSocket(socket: { readonly tabId: number, readonly connectionName: bigint }, port: browser.runtime.Port) {
+	return new Map([
+		[socket.tabId, {
+			connections: {
+				[`${ socket.tabId }-0x${ socket.connectionName.toString(16) }`]: {
+					port,
+					socket,
+					websiteOrigin: 'test',
+					approved: true,
+					wantsToConnect: false,
+				},
+			},
+		}],
+	])
 }
 
 function installBrowserMock() {
@@ -166,12 +197,13 @@ const blockNumber = 8443561n
 	}] as const
 
 	describe('EthereumSubscriptionService', () => {
-		test('unsupported subscription types reject with a provider JSON-RPC error', async () => {
+		test('unsupported subscription types reject with a provider JSON-RPC error without storing anything', async () => {
 			installBrowserMock()
-			const { createEthereumSubscription } = await loadModules()
+			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } = await loadModules()
 			const socket = { tabId: 1, connectionName: 1n }
 
-			for (const subscriptionType of ['logs', 'newPendingTransactions', 'syncing'] as const) {
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			for (const subscriptionType of ['logs', 'newPendingTransactions'] as const) {
 				await assert.rejects(
 					createEthereumSubscription({ method: 'eth_subscribe', params: [subscriptionType] }, socket),
 					(error: unknown) => error instanceof JsonRpcResponseError
@@ -179,6 +211,61 @@ const blockNumber = 8443561n
 						&& error.message.includes(subscriptionType),
 				)
 			}
+			assert.deepEqual(await getEthereumSubscriptionsAndFilters(), [])
+		})
+
+		test('syncing subscriptions send one false notification as their initial message, nothing on new blocks and can be unsubscribed', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, removeEthereumSubscription, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+			const socket = { tabId: 3, connectionName: 1n } as const
+			const postedMessages: unknown[] = []
+			const websiteTabConnections = createConnectionsForSocket(socket, createRecordingPort(postedMessages))
+
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			const { subscriptionId, sendInitialMessages } = await createEthereumSubscription({ method: 'eth_subscribe', params: ['syncing'] }, socket)
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => [subscription.type, subscription.subscriptionOrFilterId]), [['syncing', subscriptionId]])
+			// Creating the subscription sends nothing; the caller sends the initial messages once its reply was delivered.
+			assert.deepEqual(postedMessages, [])
+
+			sendInitialMessages(websiteTabConnections)
+			const expectedSyncingNotification = {
+				interceptorApproved: true,
+				type: 'result',
+				method: 'syncing',
+				subscription: subscriptionId,
+				result: { subscription: subscriptionId, result: false },
+			}
+			assert.deepEqual(postedMessages.map((message) => InterceptorMessageToInpage.parse(message)), [expectedSyncingNotification])
+
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+			await sendSubscriptionMessagesForNewBlock(blockNumber + 1n, ethereum, true, websiteTabConnections, async () => PASSTHROUGH_STATE)
+			assert.deepEqual(postedMessages.map((message) => InterceptorMessageToInpage.parse(message)), [expectedSyncingNotification])
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => subscription.subscriptionOrFilterId), [subscriptionId])
+
+			assert.equal(await removeEthereumSubscription(socket, subscriptionId), true)
+			assert.deepEqual(await getEthereumSubscriptionsAndFilters(), [])
+		})
+
+		test('previously stored newHeads records still parse alongside syncing records', () => {
+			const storedSubscriptions = EthereumSubscriptionsAndFilters.parse([
+				{ type: 'newHeads', subscriptionOrFilterId: '0x01', params: { method: 'eth_subscribe', params: ['newHeads'] }, subscriptionCreatorSocket: { tabId: 1, connectionName: '0x1' } },
+				{ type: 'syncing', subscriptionOrFilterId: '0x02', params: { method: 'eth_subscribe', params: ['syncing'] }, subscriptionCreatorSocket: { tabId: 1, connectionName: '0x1' } },
+			])
+			assert.deepEqual(storedSubscriptions.map((subscription) => [subscription.type, subscription.subscriptionOrFilterId, subscription.subscriptionCreatorSocket.connectionName]), [['newHeads', '0x01', 1n], ['syncing', '0x02', 1n]])
+		})
+
+		test('newHeads subscriptions have no initial messages', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const socket = { tabId: 4, connectionName: 1n } as const
+			const postedMessages: unknown[] = []
+			const websiteTabConnections = createConnectionsForSocket(socket, createRecordingPort(postedMessages))
+
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			const { sendInitialMessages } = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
+			sendInitialMessages(websiteTabConnections)
+			assert.deepEqual(postedMessages, [])
 		})
 
 		test('removeEthereumSubscription only removes the matching socket subscription', async () => {
@@ -363,7 +450,7 @@ const blockNumber = 8443561n
 					},
 				}],
 			])
-			const subscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
+			const { subscriptionId } = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
 			const splitSimulationInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -438,8 +525,8 @@ const blockNumber = 8443561n
 			])
 
 			await updateEthereumSubscriptionsAndFilters(() => [])
-			const staleSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, staleSocket)
-			const liveSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
+			const { subscriptionId: staleSubscriptionId } = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, staleSocket)
+			const { subscriptionId: liveSubscriptionId } = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
 
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
 
