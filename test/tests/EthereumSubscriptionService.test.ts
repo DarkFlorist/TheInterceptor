@@ -554,6 +554,54 @@ const blockNumber = 8443561n
 			assert.notEqual(staleSubscriptionId, liveSubscriptionId)
 		})
 
+		test('stale syncing subscriptions are pruned in the same single write while a live syncing subscription stays silent on new blocks', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+			const staleSocket = { tabId: 2, connectionName: 1n } as const
+			const liveSocket = { tabId: 2, connectionName: 2n } as const
+			const postedMessages: InterceptorMessageToInpage[] = []
+			const port = {
+				postMessage(message: unknown) {
+					postedMessages.push(InterceptorMessageToInpage.parse(message))
+				},
+			} as unknown as browser.runtime.Port
+			const websiteTabConnections = new Map([
+				[2, {
+					connections: {
+						'2-0x2': {
+							port,
+							socket: liveSocket,
+							websiteOrigin: 'test',
+							approved: true,
+							wantsToConnect: false,
+						},
+					},
+				}],
+			])
+
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			await createEthereumSubscription({ method: 'eth_subscribe', params: ['syncing'] }, staleSocket)
+			const { subscriptionId: liveSubscriptionId } = await createEthereumSubscription({ method: 'eth_subscribe', params: ['syncing'] }, liveSocket)
+			await updateEthereumSubscriptionsAndFilters((subscriptions) => subscriptions.concat(Array.from({ length: 128 }, (_, index) => ({
+				type: 'syncing',
+				subscriptionOrFilterId: `stale-syncing-${index}`,
+				params: { method: 'eth_subscribe', params: ['syncing'] },
+				subscriptionCreatorSocket: staleSocket,
+			}))))
+
+			const writes = spyOn(browser.storage.local, 'set')
+			try {
+				await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+				assert.equal(writes.mock.calls.length, 1)
+			} finally {
+				writes.mockRestore()
+			}
+
+			assert.deepEqual(postedMessages, [])
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => [subscription.type, subscription.subscriptionOrFilterId]), [['syncing', liveSubscriptionId]])
+		})
+
 		test('newHeads reuses one simulated state computation across multiple live subscribers', async () => {
 			installBrowserMock()
 			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock } = await loadModules()

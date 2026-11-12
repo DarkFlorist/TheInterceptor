@@ -84,6 +84,16 @@ describe('inpage message serialization', () => {
 		assert.equal(InterceptorMessageToInpage.safeParse(wireMessage).success, true)
 	})
 
+	test('eth_syncing replies and syncing subscription notifications use the split reply and callback codecs', () => {
+		const syncingReply = serializeInpageReply({ interceptorApproved: true, type: 'result', requestId: 12, bridgeRequestSettled: true, method: 'eth_syncing', result: false })
+		assert.deepEqual(JSON.parse(JSON.stringify(syncingReply)), { interceptorApproved: true, type: 'result', requestId: 12, bridgeRequestSettled: true, method: 'eth_syncing', result: false })
+		assert.equal(InterceptorMessageToInpage.safeParse(syncingReply).success, true)
+
+		const syncingNotification = serializeInpageCallback({ interceptorApproved: true, type: 'result', method: 'syncing', subscription: '0x01', result: { subscription: '0x01', result: false } })
+		assert.deepEqual(JSON.parse(JSON.stringify(syncingNotification)), { interceptorApproved: true, type: 'result', method: 'syncing', subscription: '0x01', result: { subscription: '0x01', result: false } })
+		assert.equal(InterceptorMessageToInpage.safeParse(syncingNotification).success, true)
+	})
+
 	test('error callbacks use the shared wire contract without reading success results', () => {
 		let resultReads = 0
 		const message = {
