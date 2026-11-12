@@ -134,10 +134,10 @@ function createAddingContactWindowState(address: string): ModifyAddressWindowSta
 	}
 }
 
-async function validateAddressWindowState(address: string) {
+async function validateAddressWindowState(address: string, existingEntries = [createContactEntry(0x1111111111111111111111111111111111111111n, 'Existing contact')]) {
 	const sentRuntimeMessages = installBrowserMock()
 	const modules = await loadModules()
-	await modules.updateUserAddressBookEntries(() => [createContactEntry(0x1111111111111111111111111111111111111111n, 'Existing contact')])
+	await modules.updateUserAddressBookEntries(() => existingEntries)
 	const requestedCodeAddresses: bigint[] = []
 	const newState = createAddingContactWindowState(address)
 	await modules.changeAddOrModifyAddressWindowState(createEthereumClient(modules, requestedCodeAddresses), {
@@ -152,7 +152,14 @@ describe('background handling of user-entered EIP-3770 addresses', () => {
 	test('validates a chain-specific address in the address-book editor without errors', async () => {
 		const { errorStates, requestedCodeAddresses } = await validateAddressWindowState(` eth:${ checksummedAddress } `)
 		assert.deepEqual(errorStates, [undefined])
-		assert.deepEqual(requestedCodeAddresses, [addressValue])
+		// The duplicate check reads only stored metadata, so validating a new address must not wait on an RPC lookup.
+		assert.deepEqual(requestedCodeAddresses, [])
+	})
+
+	test('detects an existing address-book entry from a chain-specific address', async () => {
+		const { errorStates, requestedCodeAddresses } = await validateAddressWindowState(` eth:${ checksummedAddress } `, [createContactEntry(addressValue, 'Existing contact')])
+		assert.deepEqual(errorStates, [{ blockEditing: true, message: 'The address already exists. Edit the existing record instead trying to add it again.' }])
+		assert.deepEqual(requestedCodeAddresses, [])
 	})
 
 	test('reports the checksum suggestion for a chain-specific address with a bad checksum', async () => {
