@@ -62,6 +62,18 @@ export const EthGetFeeHistoryResponse = funtypes.Intersect(
 	})
 )
 
+// Nodes add client-specific progress fields (for example Geth state counters, Besu knownStates/pulledStates or Erigon stages), so unknown fields pass through unchanged while the standard block fields are validated as quantities.
+const EthSyncingProgress = funtypes.Intersect(
+	funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown),
+	funtypes.ReadonlyObject({
+		startingBlock: EthereumQuantity,
+		currentBlock: EthereumQuantity,
+		highestBlock: EthereumQuantity,
+	}),
+)
+export type EthSyncingResponse = funtypes.Static<typeof EthSyncingResponse>
+export const EthSyncingResponse = funtypes.Union(funtypes.Literal(false), EthSyncingProgress)
+
 export type EthBalanceChanges = funtypes.Static<typeof EthBalanceChanges>
 export const EthBalanceChanges = funtypes.ReadonlyArray(
 	funtypes.ReadonlyObject({
@@ -489,6 +501,7 @@ const WalletGetPermissions = funtypes.ReadonlyObject({ method: funtypes.Literal(
 const EthAccounts = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') })
 const EthRequestAccounts = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') })
 const EthGasPrice = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') })
+const EthSyncing = funtypes.ReadonlyObject({ method: funtypes.Literal('eth_syncing') })
 
 // The members of EthereumJsonRpcRequest. ETHEREUM_JSON_RPC_REQUEST_CODEC_BY_METHOD below maps every method they accept back to its member.
 const ethereumJsonRpcRequestCodecs = [
@@ -517,6 +530,7 @@ const ethereumJsonRpcRequestCodecs = [
 	EthAccounts,
 	EthRequestAccounts,
 	EthGasPrice,
+	EthSyncing,
 	GetTransactionCount,
 	GetSimulationStack,
 	EthGetStorageAtParams,
@@ -575,6 +589,7 @@ const ETHEREUM_JSON_RPC_REQUEST_CODEC_BY_METHOD: { readonly [Method in EthereumJ
 	eth_accounts: EthAccounts,
 	eth_requestAccounts: EthRequestAccounts,
 	eth_gasPrice: EthGasPrice,
+	eth_syncing: EthSyncing,
 	eth_getTransactionCount: GetTransactionCount,
 	interceptor_getSimulationStack: GetSimulationStack,
 	eth_getStorageAt: EthGetStorageAtParams,
