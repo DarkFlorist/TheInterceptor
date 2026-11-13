@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -298,6 +299,16 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	// Cancellation and wallet replies must settle even while a gas edit is being simulated.
+	if (confirmation.data.action === 'accept') {
+		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
+		const forceSendGasLimit = confirmation.data.forceSendGasLimit
+		// A stale popup may only override simulation for the exact gas limit the user approved.
+		if (forceSendGasLimit !== undefined && (pendingTransactionOrMessage.type !== 'Transaction'
+			|| pendingTransactionOrMessage.originalRequestParameters.method !== 'eth_sendTransaction'
+			|| pendingTransactionOrMessage.originalRequestParameters.params[0].gas !== forceSendGasLimit)) return false
+		if (forceSendGasLimit === undefined && !isPendingTransactionGasLimitCurrent(pendingTransactionOrMessage)) return false
+	}
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -461,8 +472,18 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
 		}
 		case 'Transaction': {
-			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
-			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
+			const forceSendGasLimit = confirmation.data.action === 'accept' ? confirmation.data.forceSendGasLimit : undefined
+			// Keep old visualization results stale; only the explicitly approved stack transaction gets the edited gas.
+			const transactionToSimulate = forceSendGasLimit === undefined
+				? pendingTransactionOrMessage.transactionToSimulate
+				: {
+					...pendingTransactionOrMessage.transactionToSimulate,
+					originalRequestParameters: pendingTransactionOrMessage.originalRequestParameters,
+					transaction: { ...pendingTransactionOrMessage.transactionToSimulate.transaction, gas: forceSendGasLimit },
+					signedTransaction: undefined,
+				}
+			const signedTransaction = getSignedTransactionForSimulation(transactionToSimulate)
+			const transaction = { ...transactionToSimulate, signedTransaction }
 			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}

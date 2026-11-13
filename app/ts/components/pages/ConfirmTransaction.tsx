@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -109,6 +110,22 @@ export function shouldDisableSignableMessageConfirm(params: {
 }) {
 	if (!params.isValidMessage) return true
 	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
+}
+
+export function shouldDisableTransactionConfirm(pending: Extract<PendingTransactionOrSignableMessage, { type: 'Transaction' }>, forceSendEnabled: boolean) {
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+	if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
+	// Force-send explicitly accepts unsimulated gas edits, but never bypasses creation or signer blockers.
+	if (forceSendEnabled) return false
+	if (!isPendingTransactionGasLimitCurrent(pending)) return true
+	if (pending.popupVisualisation === undefined) return true
+	if (pending.popupVisualisation.statusCode !== 'success') return true
+	if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
+	const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
+	if (lastTx === undefined) return true
+	if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
+	if (lastTx.quarantine) return true
+	return false
 }
 
 export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
@@ -924,11 +941,15 @@ export function ConfirmTransaction() {
 
 	async function approveTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
+		const pending = currentPendingTransactionOrSignableMessage.value
+		const forceSendGasLimit = forceSend.value && pending.type === 'Transaction' && pending.originalRequestParameters.method === 'eth_sendTransaction'
+			? pending.originalRequestParameters.params[0].gas
+			: undefined
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier, action: 'accept' } })
+		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, action: 'accept', forceSendGasLimit } })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	async function rejectTransaction() {
@@ -1005,19 +1026,12 @@ export function ConfirmTransaction() {
 				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
 			})
 		}
-		if (forceSend.value) return false
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
-		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
-		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
-		if (lastTx === undefined) return true
-		if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
-		if (lastTx.quarantine) return true
-		return false
+		return shouldDisableTransactionConfirm(currentPendingTransactionOrSignableMessage.value, forceSend.value)
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
+		if (!isPendingTransactionGasLimitCurrent(pending)) return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
 		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
