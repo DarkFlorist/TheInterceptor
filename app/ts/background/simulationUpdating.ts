@@ -466,7 +466,22 @@ export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationSta
 // The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Safe layer owns it (createSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Safe execution simulation.
 export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment) => gasPayment === 'simulated-safe-executor' ? createSafeExecutionCallFormation(ethereum) : undefined
 
-export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+// What RPC preparation may produce for a block: everything but its signed messages, which withStackSignedMessages takes from the stack block.
+type PreparedBlockWithoutSignedMessages = Omit<SimulationStateInputBlock, 'signedMessages'>
+
+// The one place a prepared block gets its signed messages, always the stack block's own, so preparation steps cannot change which signed messages the simulation and personal_ecRecover see.
+const withStackSignedMessages = (stackInput: SimulationStateInput, preparedBlocks: readonly PreparedBlockWithoutSignedMessages[]): SimulationStateInput => {
+	// When no step ran, the stack input itself is the prepared input, keeping its identity for callers that compare it.
+	if (preparedBlocks === stackInput) return stackInput
+	if (preparedBlocks.length !== stackInput.length) throw new Error('RPC preparation must keep one block per stack block')
+	return stackInput.map((stackBlock, blockIndex) => {
+		const preparedBlock = preparedBlocks[blockIndex]
+		if (preparedBlock === undefined) throw new Error('RPC preparation must keep one block per stack block')
+		return { ...preparedBlock, signedMessages: stackBlock.signedMessages }
+	})
+}
+
+const prepareBlocksForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService): Promise<readonly PreparedBlockWithoutSignedMessages[]> => {
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
@@ -486,6 +501,8 @@ export const prepareSimulationInputForRpc = async (simulationInput: SimulationSt
 	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
 	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
 }
+
+export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => withStackSignedMessages(simulationInput, await prepareBlocksForRpc(simulationInput, ethereum))
 
 export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
