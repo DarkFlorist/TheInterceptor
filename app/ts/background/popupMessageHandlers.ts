@@ -539,6 +539,12 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 		case 'SignableMessage': {
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())
 			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
+			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
+			// Persisting the refreshed visualization means the popup only shows content the background will match an accept against. A message still being crafted is left to its creation flow.
+			await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+				if (current.type !== 'SignableMessage' || current.transactionOrMessageCreationStatus !== 'Simulated') return current
+				return { ...current, visualizedPersonalSignRequest }
+			})
 			const message: UpdateConfirmTransactionDialog = {
 				method: 'popup_update_confirm_transaction_dialog',
 				data: {
@@ -547,14 +553,13 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
+			// The request can be resolved during the awaits above; the popup needs a non-empty queue, and it closes by itself once the queue is empty.
+			const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+			if (pendingTransactionAndSignableMessages.length === 0) return
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
-					pendingTransactionAndSignableMessages: [{
-						...first,
-						visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise,
-						transactionOrMessageCreationStatus: 'Simulated' as const
-					}, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
+					pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: await currentBlockNumberPromise,
 					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
@@ -577,20 +582,22 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 						}
 					})
 				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async () => updatedFirst)
-				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-					data: {
-						pendingTransactionAndSignableMessages: [
-							updatedFirst
-							, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
-						currentBlockNumber: await currentBlockNumberPromise,
-						rpcConnectionStatus: await rpcConnectionStatusPromise,
-					}
-				}
 				const message: UpdateConfirmTransactionDialog = {
 					method: 'popup_update_confirm_transaction_dialog' as const,
 					data: {
 						visualizedSimulatorState: await visualizedSimulatorStatePromise,
+						currentBlockNumber: await currentBlockNumberPromise,
+						rpcConnectionStatus: await rpcConnectionStatusPromise,
+					}
+				}
+				// The request can be resolved during the awaits above; the popup needs a non-empty queue, and it closes by itself once the queue is empty.
+				const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+				if (pendingTransactionAndSignableMessages.length === 0) return
+				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
+					data: {
+						// Read back from storage so the popup shows exactly the stored content an accept is matched against.
+						pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: await currentBlockNumberPromise,
 						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}
