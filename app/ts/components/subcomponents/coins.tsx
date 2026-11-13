@@ -153,13 +153,16 @@ export function TokenSymbol(param: TokenSymbolParams) {
 		'--text-size': param.fontSize === 'big' ? 'var(--big-font-size)' : 'var(--normal-font-size)'
 	}
 
+	// The untrusted card has its own red background, so a row color chosen for the page background must not reach the token name
+	const untrustedCardStyles: JSX.CSSProperties = warningMessage === undefined ? {} : { color: 'var(--text-color)' }
+
 	const generateIcon = () => <AddressBookEntryIcon addressBookEntry = { param.tokenEntry } />
 	if (param.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS) {
 		return <InlineCard icon = { generateIcon } label = { tokenName } style = { { ...defaultCardStyles, ...param.style } } noCopy = { true } noExpandButtons />
 	}
 	return <>
 		<TokenIdOrNameOrNothing { ...param } />
-		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } warningMessage = { warningMessage } style = { { ...defaultCardStyles, ...param.style } } noExpandButtons />
+		<InlineCard icon = { generateIcon } copyValue = { tokenAddressString } label = { tokenName } onEditClicked = { () => param.renameAddressCallBack(param.tokenEntry) } warningMessage = { warningMessage } style = { { ...defaultCardStyles, ...param.style, ...untrustedCardStyles } } noExpandButtons />
 	</>
 }
 
