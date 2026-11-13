@@ -1655,6 +1655,34 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	test('emits the initial syncing notification to message listeners after the eth_subscribe request resolves', async () => {
+		const subscriptionId = `0x${ '12'.repeat(20) }`
+		const { fakeWindow, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_subscribe') return false
+				// Mirrors the background: the subscription id reply is posted before the initial notification on the same port.
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'eth_subscribe', result: subscriptionId })
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'syncing', subscription: subscriptionId, result: { subscription: subscriptionId, result: false } })
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?syncing-subscription', async () => {
+			let resolvedSubscriptionId: unknown
+			const notifications: { readonly message: unknown, readonly subscriptionIdWasResolved: boolean }[] = []
+			fakeWindow.ethereum.on('message', (message) => notifications.push({ message, subscriptionIdWasResolved: resolvedSubscriptionId === subscriptionId }))
+			resolvedSubscriptionId = await fakeWindow.ethereum.request({ method: 'eth_subscribe', params: ['syncing'] })
+			await waitFor(() => notifications.length > 0)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(resolvedSubscriptionId, subscriptionId)
+			assert.deepEqual(notifications, [{
+				message: { type: 'eth_subscription', data: { subscription: subscriptionId, result: false } },
+				subscriptionIdWasResolved: true,
+			}])
+			assert.deepEqual(interceptorErrorPayloads, [])
+		})
+	})
+
 	test('avoid hidden signer account sync on connect and preserve explicit account replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
