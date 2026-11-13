@@ -94,18 +94,29 @@ const simulationState: SimulationState = {
 	rpcNetwork: rpcEntry,
 }
 
+const getTransferToUniswapV2RouterTransaction = (tokenAddress: string) => EthereumUnsignedTransaction.parse({
+	type: undefined,
+	from: '0x0000000000000000000000000000000000000001',
+	nonce: '0x0',
+	gasPrice: '0x1',
+	gas: '0x5208',
+	to: tokenAddress,
+	value: '0x0',
+	input: encodeFunctionCall(transferAbi, 'transfer', [addressString(UNISWAP_V2_ROUTER_ADDRESS), 1n]),
+})
+
 describe('commonTokenOops', () => {
 	test('warns when a known token is transferred directly to a router contract', async () => {
-		const transaction = EthereumUnsignedTransaction.parse({
-			type: undefined,
-			from: '0x0000000000000000000000000000000000000001',
-			nonce: '0x0',
-			gasPrice: '0x1',
-			gas: '0x5208',
-			to: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-			value: '0x0',
-			input: encodeFunctionCall(transferAbi, 'transfer', [addressString(UNISWAP_V2_ROUTER_ADDRESS), 1n]),
-		})
+		const transaction = getTransferToUniswapV2RouterTransaction('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')
+
+		const result = await commonTokenOops(transaction, ethereum, undefined, simulationState)
+
+		assert.equal(result, 'Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens')
+	})
+
+	test('warns when a token bundled only under its checksummed address is transferred directly to a router contract', async () => {
+		const compoundPaxDollar = '0x041171993284df560249b57358f931d9eb7b925d'
+		const transaction = getTransferToUniswapV2RouterTransaction(compoundPaxDollar)
 
 		const result = await commonTokenOops(transaction, ethereum, undefined, simulationState)
 

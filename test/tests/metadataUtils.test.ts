@@ -6,6 +6,7 @@ import { MockRequestHandler } from '../MockRequestHandler.js'
 
 const requestHandler = new MockRequestHandler()
 const USDC_MAINNET_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+const COMPOUND_PAX_DOLLAR_CHECKSUMMED_ONLY_ADDRESS = 0x041171993284df560249b57358f931d9eb7b925dn
 
 const baseRpcEntry = {
 	httpsRpc: requestHandler.rpcUrl,
@@ -45,5 +46,41 @@ describe('getAddressMetaData', () => {
 		assert.equal(metadata.type, 'contact')
 		assert.equal(metadata.entrySource, 'OnChain')
 		assert.equal(metadata.chainId, 5n)
+	})
+
+	test('identifies a bundled token stored only under its checksummed address', async () => {
+		const metadata = await identifyAddress(mainnetEthereum, undefined, COMPOUND_PAX_DOLLAR_CHECKSUMMED_ONLY_ADDRESS, false)
+		assert.deepStrictEqual(metadata, {
+			name: 'Compound Pax Dollar',
+			symbol: 'cUSDP',
+			decimals: 8n,
+			logoUri: '../vendor/@darkflorist/address-metadata/images/contracts/compound.png',
+			address: COMPOUND_PAX_DOLLAR_CHECKSUMMED_ONLY_ADDRESS,
+			type: 'ERC20',
+			entrySource: 'DarkFloristMetadata',
+			chainId: 1n,
+		})
+	})
+
+	test('does not apply a bundled token stored only under its checksummed address to another chain', async () => {
+		const metadata = await identifyAddress(goerliEthereum, undefined, COMPOUND_PAX_DOLLAR_CHECKSUMMED_ONLY_ADDRESS, false)
+		assert.notEqual(metadata.name, 'Compound Pax Dollar')
+		assert.equal(metadata.type, 'contact')
+		assert.equal(metadata.entrySource, 'OnChain')
+		assert.equal(metadata.chainId, 5n)
+	})
+
+	test('keeps identifying a token stored under both casings by its lower case entry', async () => {
+		const metadata = await identifyAddress(mainnetEthereum, undefined, 0x028171bca77440897b824ca71d1c56cac55b68a3n, false)
+		assert.deepStrictEqual(metadata, {
+			name: 'Aave DAI',
+			symbol: 'ADAI',
+			decimals: 18n,
+			logoUri: '../vendor/@darkflorist/address-metadata/images/tokens/0x028171bca77440897b824ca71d1c56cac55b68a3.png',
+			address: 0x028171bca77440897b824ca71d1c56cac55b68a3n,
+			type: 'ERC20',
+			entrySource: 'DarkFloristMetadata',
+			chainId: 1n,
+		})
 	})
 })
