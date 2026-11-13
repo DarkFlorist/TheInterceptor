@@ -59,7 +59,20 @@ export function stringToAddress(addressString: string | undefined) {
 
 export const bytes32String = (bytes32: bigint): `0x${ string }` => `0x${ bytes32.toString(16).padStart(64, '0') }`
 
+const hexEncodedBytes = /^0x(?:[0-9a-fA-F]{2})*$/
+
+// Reads two hex digits per byte in one pass, so the cost grows linearly with the input; callers pass an even number of hex digits.
+function hexDigitsToBytes(hexDigits: string) {
+	const bytes = new Uint8Array(hexDigits.length / 2)
+	for (let index = 0; index < bytes.length; index++) {
+		bytes[index] = Number.parseInt(hexDigits.slice(index * 2, index * 2 + 2), 16)
+	}
+	return bytes
+}
+
 export function stringToUint8Array(data: string) {
+	if (hexEncodedBytes.test(data)) return hexDigitsToBytes(data.slice(2))
+	// Any other string keeps its original reading as a BigInt literal sized by its character count, so callers see the same bytes or the same rejection.
 	const dataLength = (data.length - 2) / 2
 	if (dataLength === 0) return new Uint8Array()
 	return bigintToUint8Array(BigInt(data), dataLength)
@@ -77,11 +90,10 @@ export function dataStringWith0xStart(data: Uint8Array | null): `0x${ string }` 
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	if (typeof value === 'number') value = BigInt(value)
 	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${ value } into a ${ numberOfBytes }-byte unsigned integer.`)
-	const result = new Uint8Array(numberOfBytes)
-	for (let i = 0; i < result.length; ++i) {
-		result[i] = Number((value >> BigInt(numberOfBytes - i - 1) * 8n) & 0xffn)
-	}
-	return result
+	// A size below one byte comes from a three-character string such as '0x1' and has always produced no bytes.
+	if (numberOfBytes < 1) return new Uint8Array()
+	if (!Number.isInteger(numberOfBytes)) throw new RangeError(`Cannot split a value into a fractional number of bytes (${ numberOfBytes }).`)
+	return hexDigitsToBytes(value.toString(16).padStart(numberOfBytes * 2, '0'))
 }
 
 export function stringifyJSONWithBigInts(value: unknown, space?: string | number): string {
