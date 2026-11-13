@@ -81,6 +81,9 @@ export class JsonRpcResponseError extends Error {
 	}
 }
 
+// Nodes report a revert as code 3, or with their own code and the word in the message. Any other JSON-RPC error says nothing about the contract.
+export const isExecutionRevert = (error: unknown) => error instanceof JsonRpcResponseError && (error.code === 3 || /revert/iu.test(error.message))
+
 export function isFailedToFetchError(error: unknown) {
 	if (getInterceptorInternalErrorClassification(error) === 'failedToFetch') return true
 	return isBrowserFetchTransportError(error)
