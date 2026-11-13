@@ -1,7 +1,9 @@
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
-import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
-import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
+import { getRpcEntryIdentityKey } from '../../app/ts/utils/rpcNetworkChange.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
@@ -470,5 +472,144 @@ describe('settings import', () => {
 		const websiteAccess = await getWebsiteAccess()
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+	})
+})
+
+describe('settings export of RPC URL credentials', () => {
+	const credentialedRpcEntry: RpcEntry = { name: 'Private node', chainId: 1n, httpsRpc: 'https://alice:s3cret@node.example/v1', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const credentialFreeRpcEntry: RpcEntry = { ...credentialedRpcEntry, httpsRpc: 'https://node.example/v1' }
+	const publicRpcEntry: RpcEntry = { ...credentialedRpcEntry, name: 'Public node', httpsRpc: 'https://public.example', primary: false }
+
+	beforeEach(() => {
+		browserMock.reset()
+	})
+
+	async function exportWithActiveRpc(rpcEntries: readonly RpcEntry[], activeRpcEntry: RpcEntry) {
+		const { changeSimulationMode, exportSettingsAndAddressBook } = await settingsModulePromise
+		const { setRpcList } = await storageVariablesModulePromise
+		await setRpcList(rpcEntries)
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: activeRpcEntry })
+		return await exportSettingsAndAddressBook()
+	}
+
+	test('removes the userinfo from the exported RPC URL', async () => {
+		const exportedSettings = await exportWithActiveRpc([credentialedRpcEntry], credentialedRpcEntry)
+		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.deepEqual(exportedSettings.settings.rpcNetwork, credentialFreeRpcEntry)
+
+		const exportedFileContents = JSON.stringify(serialize(ExportedSettings, exportedSettings))
+		assert.equal(exportedFileContents.includes('alice'), false)
+		assert.equal(exportedFileContents.includes('s3cret'), false)
+		assert.equal(exportedFileContents.includes('@node.example'), false)
+	})
+
+	test('imports the credential-free RPC on another device without adding an RPC entry', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getRpcList } = await storageVariablesModulePromise
+		const exportedSettings = await exportWithActiveRpc([credentialedRpcEntry], credentialedRpcEntry)
+
+		browserMock.reset()
+		const rpcEntriesBeforeImport = await getRpcList()
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, credentialFreeRpcEntry)
+		assert.deepEqual(await getRpcList(), rpcEntriesBeforeImport)
+	})
+
+	test('selects the stored credentialed entry when re-importing where it still exists', async () => {
+		const { changeSimulationMode, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getRpcList } = await storageVariablesModulePromise
+		const rpcEntries = [publicRpcEntry, credentialedRpcEntry]
+		const exportedSettings = await exportWithActiveRpc(rpcEntries, credentialedRpcEntry)
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: publicRpcEntry })
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		const { activeRpcNetwork } = await getSettings()
+		assert.deepEqual(activeRpcNetwork, credentialedRpcEntry)
+		assert.equal(getRpcEntryIdentityKey(activeRpcNetwork), getRpcEntryIdentityKey(credentialedRpcEntry))
+		assert.deepEqual(await getRpcList(), rpcEntries)
+	})
+
+	test('selects the stored credentialed entry renamed after the export, since only chain ID and credential-free URL are matched', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getRpcList, setRpcList } = await storageVariablesModulePromise
+		const exportedSettings = await exportWithActiveRpc([publicRpcEntry, credentialedRpcEntry], credentialedRpcEntry)
+		const renamedRpcEntries = [publicRpcEntry, { ...credentialedRpcEntry, name: 'Renamed private node' }]
+		await setRpcList(renamedRpcEntries)
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, renamedRpcEntries[1])
+		assert.deepEqual(await getRpcList(), renamedRpcEntries)
+	})
+
+	test('keeps the credential-free import when the stored credentialed entry is on another chain', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { setRpcList } = await storageVariablesModulePromise
+		const exportedSettings = await exportWithActiveRpc([credentialedRpcEntry], credentialedRpcEntry)
+		await setRpcList([publicRpcEntry, { ...credentialedRpcEntry, chainId: 10n }])
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, credentialFreeRpcEntry)
+	})
+
+	test('keeps a credential-free selection stored next to its credentialed counterpart', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { getRpcList } = await storageVariablesModulePromise
+		const anonymousRpcEntry = { ...credentialFreeRpcEntry, primary: false }
+		const rpcEntries = [anonymousRpcEntry, credentialedRpcEntry]
+		const exportedSettings = await exportWithActiveRpc(rpcEntries, anonymousRpcEntry)
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, anonymousRpcEntry)
+		assert.deepEqual(await getRpcList(), rpcEntries)
+	})
+
+	// A malformed port, a malformed host, an @ in the path and query, and a missing scheme: none of these split into userinfo and host.
+	const unsplittableCredentialRpcUrls = [
+		'https://alice:s3cret@rpc.example:99999/v1',
+		'https://alice:s3cret@rpc exa.mple/v1',
+		'https://alice:s3cret@rpc.example:99999/team@v1?contact=ops@example.com',
+		'alice:s3cret@rpc.example/v1',
+	]
+
+	const assertExportFileHasNoSecret = (exportedSettings: ExportedSettings, rpcUrl: string) => {
+		const exportedFileContents = JSON.stringify(serialize(ExportedSettings, exportedSettings))
+		assert.equal(exportedFileContents.includes('alice'), false, rpcUrl)
+		assert.equal(exportedFileContents.includes('s3cret'), false, rpcUrl)
+	}
+
+	test('removes credentials from active RPC URLs the URL parser cannot split', async () => {
+		for (const rpcUrl of unsplittableCredentialRpcUrls) {
+			browserMock.reset()
+			assertExportFileHasNoSecret(await exportWithActiveRpc([credentialedRpcEntry], { ...credentialedRpcEntry, httpsRpc: rpcUrl }), rpcUrl)
+		}
+	})
+
+	test('keeps credentials of unsplittable RPC URLs out of an export made after importing them', async () => {
+		const { exportSettingsAndAddressBook, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const baseExport = await exportWithActiveRpc([publicRpcEntry], publicRpcEntry)
+		if (baseExport.version !== '1.6') throw new Error('Expected current settings export version')
+		for (const rpcUrl of unsplittableCredentialRpcUrls) {
+			browserMock.reset()
+			const importedFileContents = JSON.stringify(serialize(ExportedSettings, { ...baseExport, settings: { ...baseExport.settings, rpcNetwork: { ...credentialedRpcEntry, httpsRpc: rpcUrl } } }))
+			await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(importedFileContents)))
+			assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, rpcUrl)
+
+			assertExportFileHasNoSecret(await exportSettingsAndAddressBook(), rpcUrl)
+		}
+	})
+
+	test('keeps the credential-free import when several stored entries differ only in credentials', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const otherCredentialsRpcEntry = { ...credentialedRpcEntry, httpsRpc: 'https://bob:other-secret@node.example/v1', primary: false }
+		const exportedSettings = await exportWithActiveRpc([credentialedRpcEntry, otherCredentialsRpcEntry], credentialedRpcEntry)
+
+		await importSettingsAndAddressBook(exportedSettings)
+
+		assert.deepEqual((await getSettings()).activeRpcNetwork, credentialFreeRpcEntry)
 	})
 })

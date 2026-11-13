@@ -4,6 +4,7 @@ import type { ChainEntry, RpcEntries, RpcEntry, RpcNetwork } from '../../types/r
 import { type ReadonlySignal, type Signal, useComputed } from '@preact/signals'
 import type { ChainIdWithUniversal } from '../../types/addressBookTypes.js'
 import { DropDownMenu } from './DropDownMenu.js'
+import { redactRpcUrlCredentials } from '../../utils/rpcUrlCredentials.js'
 
 interface RpcSelectorParams {
 	rpcNetwork: ReadonlySignal<RpcNetwork | undefined>
@@ -19,8 +20,9 @@ export function findRpcEntryByIdentityKey(rpcEntries: RpcEntries, key: string) {
 
 function getBaseRpcEntryLabel(rpcEntries: RpcEntries, entry: RpcNetwork) {
 	const sameName = rpcEntries.filter((other) => other.name === entry.name)
-	if (sameName.some((other) => other.chainId !== entry.chainId && other.httpsRpc === entry.httpsRpc)) return `${ entry.name } (chain ${ entry.chainId }, ${ entry.httpsRpc })`
-	return sameName.some((other) => other.httpsRpc !== entry.httpsRpc) ? `${ entry.name } (${ entry.httpsRpc })` : entry.name
+	const displayedRpcUrl = entry.httpsRpc === undefined ? undefined : redactRpcUrlCredentials(entry.httpsRpc)
+	if (sameName.some((other) => other.chainId !== entry.chainId && other.httpsRpc === entry.httpsRpc)) return `${ entry.name } (chain ${ entry.chainId }, ${ displayedRpcUrl })`
+	return sameName.some((other) => other.httpsRpc !== entry.httpsRpc) ? `${ entry.name } (${ displayedRpcUrl })` : entry.name
 }
 
 export function getRpcEntryLabel(rpcEntries: RpcEntries, entry: RpcNetwork) {
