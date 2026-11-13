@@ -1745,11 +1745,13 @@ const getSimulatedBlockHeaderTemplate = (simulationState: SimulationState, block
 	return simulationState.simulatedBlocks[blockDelta]?.blockHeader
 }
 
+const isEthBalanceQuery = (balanceQuery: BalanceQuery) => balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type === 'ERC20'
+
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInputMinimalData, balanceQueries: BalanceQuery[]): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
 	const deduplicatedBalanceQueries = deduplicateByFunction(balanceQueries, (query: BalanceQuery) => `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : '' }`)
 	const tokenAndEthBalancesInputData = stringToUint8Array(encodeFunctionCall(Multicall3ABI, 'aggregate3', [deduplicatedBalanceQueries.map((balanceQuery) => {
-		if (balanceQuery.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balanceQuery.type === 'ERC20') {
+		if (isEthBalanceQuery(balanceQuery)) {
 			return {
 				target: addressString(MULTICALL3),
 				allowFailure: true,
@@ -1781,6 +1783,17 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		chainId: ethereumClientService.getChainId(),
 	} as const
 	const aggregate3CallResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationStateInput, callTransaction)
+	const tokenBalanceQueries = deduplicatedBalanceQueries.filter((balanceQuery) => !isEthBalanceQuery(balanceQuery))
+	if (aggregate3CallResult?.status === 'failure' && tokenBalanceQueries.length > 0) {
+		// allowFailure does not protect the batch: Multicall3 still pays to copy each token's reply, so one contract can run the whole call out of gas, and the failure does not say which one. getEthBalance runs no token code, so ETH balances are retried alone and every token balance stays unknown, which the UI hides rather than showing as zero.
+		const ethBalances = await getSimulatedTokenBalances(ethereumClientService, requestAbortController, simulationStateInput, deduplicatedBalanceQueries.filter(isEthBalanceQuery))
+		return [...ethBalances, ...tokenBalanceQueries.map((balanceQuery) => ({
+			token: balanceQuery.token,
+			tokenId: 'tokenId' in balanceQuery ? balanceQuery.tokenId : undefined,
+			owner: balanceQuery.owner,
+			balance: undefined,
+		}))]
+	}
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData = decodeFunctionOutput(Multicall3ABI, 'aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))
 	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')

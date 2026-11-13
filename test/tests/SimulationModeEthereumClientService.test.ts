@@ -11,7 +11,7 @@ import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse 
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
-import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
@@ -83,6 +83,20 @@ function testBytes32(suffix: string) {
 
 const zeroBytes256 = `0x${'0'.repeat(512)}`
 
+const createRawLog = (address: bigint, topics: readonly string[], data: string) => ({
+	address: addressString(address),
+	topics,
+	data,
+	blockNumber: '0x1463610',
+	transactionHash: testBytes32('1'),
+	transactionIndex: '0x0',
+	blockHash: testBytes32('2'),
+	logIndex: '0x1',
+	removed: false,
+})
+const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const ERC1155_TRANSFER_SINGLE_TOPIC = '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62'
+
 const blockNumber = 8443561n
 const rpcNetwork = {
 	name: 'Goerli',
@@ -104,6 +118,8 @@ class MockEthereumJSONRpcRequestHandler {
 	public minimumSuccessfulGasLimit: bigint | undefined = undefined
 	public malformedGetCodeReturn = false
 	public balance = 0n
+	public failedAggregate3Batches: 'none' | 'containing-token-query' | 'all' = 'none'
+	public additionalTransactionLogs: readonly ReturnType<typeof createRawLog>[] = []
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
 	public syncingResponse: unknown = false
@@ -112,7 +128,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetStorageAtCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBlockByHashErrorsByHash = new Map<bigint, Error>()
-	public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, lastCallGas: bigint | undefined, lastCallNonce: bigint | undefined, lastCallAuthorizationList: readonly { chainId: bigint, address: bigint, nonce: bigint, r?: bigint, s?: bigint, yParity?: 'even' | 'odd' }[] | undefined, hasGetCodeOverride: boolean, traceTransfers: boolean | undefined, validation: boolean | undefined, parentBlockTag: EthSimulateV1BlockTag | undefined }[] = []
+	public readonly ethSimulateV1Calls: { blockStateCallCount: number, aggregate3BalanceQueryCount: number | undefined, aggregate3Targets: readonly bigint[] | undefined, lastCallGas: bigint | undefined, lastCallNonce: bigint | undefined, lastCallAuthorizationList: readonly { chainId: bigint, address: bigint, nonce: bigint, r?: bigint, s?: bigint, yParity?: 'even' | 'odd' }[] | undefined, hasGetCodeOverride: boolean, traceTransfers: boolean | undefined, validation: boolean | undefined, parentBlockTag: EthSimulateV1BlockTag | undefined }[] = []
 	public readonly ethSimulateV1Requests: EthSimulateV1Params[] = []
 
 	public clearCache = () => undefined
@@ -168,15 +184,16 @@ class MockEthereumJSONRpcRequestHandler {
 				const lastCallNonce = lastCall?.nonce
 				const lastCallAuthorizationList = lastCall?.authorizationList
 				const hasGetCodeOverride = lastBlockStateCall?.stateOverrides?.[addressString(0x1ce438391307f908756fefe0fe220c0f0d51508an)]?.code !== undefined
-				const aggregate3BalanceQueryCount = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
+				const aggregate3Targets = lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith('0x82ad56cb')
 					? (() => {
 						const decoded = decodeFunctionDataStrict(Multicall3ABI, dataStringWith0xStart(lastCallInput))
 						if (decoded.functionName !== 'aggregate3') throw new Error('expected aggregate3 call')
-						return decoded.args[0].length
+						return decoded.args[0].map((call) => BigInt(call.target))
 					})()
 					: undefined
+				const aggregate3BalanceQueryCount = aggregate3Targets?.length
 				const blockStateCallCount = rpcRequest.params[0]?.blockStateCalls.length ?? 0
-				this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount, lastCallGas, lastCallNonce, lastCallAuthorizationList, hasGetCodeOverride, traceTransfers: rpcRequest.params[0].traceTransfers, validation: rpcRequest.params[0].validation, parentBlockTag: rpcRequest.params[1] })
+				this.ethSimulateV1Calls.push({ blockStateCallCount, aggregate3BalanceQueryCount, aggregate3Targets, lastCallGas, lastCallNonce, lastCallAuthorizationList, hasGetCodeOverride, traceTransfers: rpcRequest.params[0].traceTransfers, validation: rpcRequest.params[0].validation, parentBlockTag: rpcRequest.params[1] })
 				if (this.rejectOmittedGas && lastCallGas === undefined) {
 					throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'gas required' } })
 				}
@@ -227,9 +244,15 @@ class MockEthereumJSONRpcRequestHandler {
 					})
 				}
 				const result = createMockEthSimulateV1Result(blockStateCallCount, aggregate3BalanceQueryCount)
-				if (aggregate3BalanceQueryCount !== undefined) return result
 				const lastBlock = result.at(-1)
 				const lastResult = lastBlock?.calls[0]
+				if (aggregate3Targets !== undefined) {
+					const failsThisBatch = this.failedAggregate3Batches === 'all' || (this.failedAggregate3Batches === 'containing-token-query' && aggregate3Targets.some((target) => target !== MULTICALL3))
+					if (!failsThisBatch) return result
+					if (lastBlock === undefined || lastResult === undefined) throw new Error('missing aggregate3 simulation fixture block')
+					const { returnData: _returnData, logs: _logs, ...failedCallBase } = lastResult
+					return createMockEthSimulateV1ResultWithCustomLastBlock(blockStateCallCount, { ...lastBlock, calls: [{ ...failedCallBase, returnData: '0x', status: '0x0', error: { code: -32000, message: 'out of gas' } }] })
+				}
 				if (lastBlock === undefined || lastResult === undefined) return result
 				const gasUsed = this.simulatedCallGasUsed === undefined ? lastResult.gasUsed : `0x${ this.simulatedCallGasUsed.toString(16) }`
 				const maxUsedGas = this.simulatedCallMaxUsedGas === undefined ? lastResult.maxUsedGas ?? gasUsed : `0x${ this.simulatedCallMaxUsedGas.toString(16) }`
@@ -237,6 +260,7 @@ class MockEthereumJSONRpcRequestHandler {
 					...lastResult,
 					gasUsed,
 					maxUsedGas,
+					logs: [...('logs' in lastResult ? lastResult.logs : []), ...this.additionalTransactionLogs],
 				}
 				const callResult = lastCallGas !== undefined && this.minimumSuccessfulGasLimit !== undefined && lastCallGas < this.minimumSuccessfulGasLimit
 					? (() => {
@@ -385,6 +409,67 @@ describe('SimulationModeEthereumClientService', () => {
 	const createDappEthSimulateV1Request = (blockTag: EthSimulateV1BlockTag | undefined = 'latest', validation = false): EthSimulateV1Params => ({
 		method: 'eth_simulateV1',
 		params: blockTag === undefined ? [createDappEthSimulateV1Payload(validation)] : [createDappEthSimulateV1Payload(validation), blockTag],
+	})
+
+	describe('token balances after a transaction', () => {
+		const sender = exampleTransaction.from
+		const ethReceiver = exampleTransaction.to
+		const firstToken = 0x7000n
+		const secondToken = 0x7001n
+		const erc1155Token = 0x7002n
+		const tokenReceiver = 0xabcdn
+		const tokenId = 5n
+		const createErc20TransferLog = (token: bigint) => createRawLog(token, [ERC20_TRANSFER_TOPIC, bytes32String(sender), bytes32String(tokenReceiver)], bytes32String(1n))
+		const createErc1155TransferLog = () => createRawLog(erc1155Token, [ERC1155_TRANSFER_SINGLE_TOPIC, bytes32String(sender), bytes32String(sender), bytes32String(tokenReceiver)], encodeAbiValues(['uint256', 'uint256'], [tokenId, 1n]))
+		const createEthereumWithTokenLogs = (failedAggregate3Batches: MockEthereumJSONRpcRequestHandler['failedAggregate3Batches']) => {
+			const handler = new MockEthereumJSONRpcRequestHandler()
+			handler.failedAggregate3Batches = failedAggregate3Batches
+			handler.additionalTransactionLogs = [createErc20TransferLog(firstToken), createErc20TransferLog(secondToken), createErc1155TransferLog()]
+			return { handler, tokenEthereum: new EthereumClientService(handler, async () => undefined, async () => undefined, rpcNetwork) }
+		}
+		const getTokenBalancesAfter = async (tokenEthereum: EthereumClientService) => {
+			const simulationState = await createSimulationState(tokenEthereum, undefined, createSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const transaction = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]
+			if (transaction === undefined) throw new Error('simulated transaction missing')
+			return transaction.tokenBalancesAfter
+		}
+		const getAggregate3Batches = (handler: MockEthereumJSONRpcRequestHandler) => handler.ethSimulateV1Calls.flatMap((call) => call.aggregate3Targets === undefined ? [] : [call.aggregate3Targets])
+
+		test('keeps ETH balances and leaves token balances unknown when an aggregate3 containing token queries fails', async () => {
+			const { handler, tokenEthereum } = createEthereumWithTokenLogs('containing-token-query')
+			const tokenBalancesAfter = await getTokenBalancesAfter(tokenEthereum)
+
+			assert.deepEqual(tokenBalancesAfter.filter((balance) => balance.token === ETHEREUM_LOGS_LOGGER_ADDRESS), [
+				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: sender, balance: 1n },
+				{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: ethReceiver, balance: 2n },
+			])
+			assert.deepEqual(tokenBalancesAfter.filter((balance) => balance.token !== ETHEREUM_LOGS_LOGGER_ADDRESS), [
+				{ token: firstToken, tokenId: undefined, owner: sender, balance: undefined },
+				{ token: firstToken, tokenId: undefined, owner: tokenReceiver, balance: undefined },
+				{ token: secondToken, tokenId: undefined, owner: sender, balance: undefined },
+				{ token: secondToken, tokenId: undefined, owner: tokenReceiver, balance: undefined },
+				{ token: erc1155Token, tokenId, owner: sender, balance: undefined },
+				{ token: erc1155Token, tokenId, owner: tokenReceiver, balance: undefined },
+			])
+			assert.deepEqual(getAggregate3Batches(handler).at(-1), [MULTICALL3, MULTICALL3])
+		})
+
+		test('queries ETH and token balances in one aggregate3 when it succeeds', async () => {
+			const { handler, tokenEthereum } = createEthereumWithTokenLogs('none')
+			const tokenBalancesAfter = await getTokenBalancesAfter(tokenEthereum)
+
+			assert.equal(getAggregate3Batches(handler).length, 1)
+			assert.equal(tokenBalancesAfter.length, 8)
+			assert.equal(tokenBalancesAfter.every((balance) => balance.balance !== undefined), true)
+		})
+
+		test('still fails when an aggregate3 of only ETH queries fails', async () => {
+			const { handler, tokenEthereum } = createEthereumWithTokenLogs('all')
+
+			await assert.rejects(getTokenBalancesAfter(tokenEthereum), /Failed aggregate3/)
+			assert.equal(getAggregate3Batches(handler).length, 2)
+		})
 	})
 
 	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {
