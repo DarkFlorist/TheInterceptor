@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from './addressBookTypes.js'
+import { SafeSignatureRequirement } from './safeTypes.js'
 import { NamedTokenId, SimulationState, TokenPriceEstimate, VisualizedSimulationState } from './visualizer-types.js'
 import { EthereumQuantity, serialize } from './wire-types.js'
 
@@ -27,7 +28,10 @@ export const SimulateExecutionReplyData = funtypes.Union(
 			visualizedSimulationState: VisualizedSimulationState,
 			tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
 			simulationState: funtypes.Union(SimulationState),
-		}),
+		}).And(funtypes.ReadonlyPartial({
+			// Set for a Gnosis Safe transaction preview when the Safe answered its owner reads.
+			safeSignatureRequirement: SafeSignatureRequirement,
+		})),
 	}),
 )
 
