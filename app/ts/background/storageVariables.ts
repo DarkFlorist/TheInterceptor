@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { confirmationRuns } from './confirmationRunTracker.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -79,16 +80,38 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 	})
 }
 
+// Builds what build makes of the stored confirmations, read under the lock of their writers, so no write lands between the read and the build. build may read other storage, such as the active network, but never an RPC, as every writer of the confirmations waits for it.
+export async function buildFromPendingTransactionsAndMessages<T>(build: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<T>) {
+	return await pendingTransactionsSemaphore.execute(async () => await build(await readPendingTransactionsAndMessagesWithRecovery()))
+}
+
+// Sends what createMessages makes of the stored confirmations, built under the lock of their writers as buildFromPendingTransactionsAndMessages builds, and starts the sends under that lock, so the messages reach the windows ahead of the message of any later write. The deliveries that send starts are awaited after the lock is released. send is passed in because the sending module depends on this one.
+export async function publishPendingTransactionsAndMessages<Message>(createMessages: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly Message[]>, send: (message: Message) => Promise<void>) {
+	const deliveries = await buildFromPendingTransactionsAndMessages(async (pendingTransactionsOrMessages) => (await createMessages(pendingTransactionsOrMessages)).map((message) => send(message)))
+	await Promise.all(deliveries)
+	return deliveries.length > 0
+}
+
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
 
+// Disposes of the request's confirmation run tracker if the request is not stored, for an entry that reserved a run for it and then found it gone, or never stored it, so no tracker outlives its request. It reads under the lock of the queue's writers, so an append of the request is not missed.
+export async function releaseConfirmationRunsIfRequestGone(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await pendingTransactionsSemaphore.execute(async () => {
+		const stored = (await readPendingTransactionsAndMessagesWithRecovery()).some((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (!stored) confirmationRuns.dispose(uniqueRequestIdentifier)
+	})
+}
+
+// Removes the request from the confirmation queue and disposes of its confirmation run tracker, which nothing needs once the request is gone.
 export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (foundPromise === undefined) return pendingTransactionsOrMessages
 		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
 	})
+	confirmationRuns.dispose(uniqueRequestIdentifier)
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined

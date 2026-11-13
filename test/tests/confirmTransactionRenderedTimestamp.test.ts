@@ -144,6 +144,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 		activeAddress,
 		created,
 		transactionIdentifier,
+		requestedChainId: 1n,
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
@@ -156,6 +157,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				error: {
 					code: -32000,
 					message: 'simulation failed',
@@ -254,6 +256,7 @@ function makeSimulatedPendingTransaction(value: bigint, simulationOptions?: Tran
 				uniqueRequestIdentifier: failed.uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 2 },
 				addressBookEntries: [safeEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
 				tokenPriceEstimates: [],
 				namedTokenIds: [],
@@ -666,12 +669,12 @@ describe('ConfirmTransaction', () => {
 		}
 
 		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [olderPendingTransaction],
+			pendingTransactionsAndMessages: [{ ...olderPendingTransaction, requestedChainId: fakeRpcNetwork.chainId }],
 		})
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+			await refreshPopupConfirmTransactionSimulation(() => simulator, olderPendingTransaction.uniqueRequestIdentifier)
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()

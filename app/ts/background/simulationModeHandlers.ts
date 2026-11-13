@@ -1,5 +1,6 @@
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../types/confirmationRequest.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { GetInstalledServices } from '../simulation/serviceLifecycle.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
@@ -40,6 +41,7 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 export async function sendTransaction(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
+	getInstalledServices: GetInstalledServices,
 	activeAddress: bigint | undefined,
 	confirmation: TransactionConfirmationRequest,
 	request: InterceptedRequest,
@@ -48,7 +50,7 @@ export async function sendTransaction(
 	simulationMode = true,
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
-	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, getInstalledServices, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }
@@ -133,6 +135,7 @@ export async function syncing(ethereumClientService: EthereumClientService) {
 export async function personalSign(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
+	getInstalledServices: GetInstalledServices,
 	activeAddress: bigint | undefined,
 	confirmation: MessageConfirmationRequest,
 	request: InterceptedRequest,
@@ -140,7 +143,7 @@ export async function personalSign(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, getInstalledServices, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }

@@ -571,21 +571,18 @@ const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Readon
 	data: funtypes.Unknown
 }).asReadonly()
 
+// The confirmation queue as the background sends it, the window's only source of the queue. It is sent right after every stored change and carries nothing that needs an RPC, so it is never held back by one; the block number and the simulation view come in UpdateConfirmTransactionDialog.
 export type UpdateConfirmTransactionDialogPendingTransactions = {
 	readonly method: 'popup_update_confirm_transaction_dialog_pending_transactions'
 	readonly data: {
 		readonly pendingTransactionAndSignableMessages: readonly PopupPendingTransactionOrSignableMessage[]
-		readonly currentBlockNumber: funtypes.Static<typeof EthereumQuantity>
-		readonly rpcConnectionStatus: funtypes.Static<typeof RpcConnectionStatus>
 	}
 }
 const createUpdateConfirmTransactionDialogPendingTransactionsRuntype = () => funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.ReadonlyObject({
 		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
-		currentBlockNumber: EthereumQuantity,
-		rpcConnectionStatus: funtypes.Union(RpcConnectionStatus, funtypes.Undefined),
-	})
+	}),
 }).asReadonly()
 type UpdateConfirmTransactionDialogPendingTransactionsRuntype = ReturnType<typeof createUpdateConfirmTransactionDialogPendingTransactionsRuntype>
 const UpdateConfirmTransactionDialogPendingTransactionsRuntype: UpdateConfirmTransactionDialogPendingTransactionsRuntype = createUpdateConfirmTransactionDialogPendingTransactionsRuntype()
@@ -1041,7 +1038,8 @@ const PopupMessageRuntype = funtypes.Union(
 	ChangeActiveAddress,
 	ChangePage,
 	RequestAccountsFromSigner,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshConfirmTransactionDialogSimulation'), data: funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier }) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestConfirmTransactionQueue') }),
 	RefreshConfirmTransactionMetadata,
 	InterceptorAccess,
 	InterceptorAccessRefresh,

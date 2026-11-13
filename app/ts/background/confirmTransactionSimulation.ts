@@ -3,11 +3,12 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
-import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
+import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
@@ -16,11 +17,10 @@ import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
-
-let confirmTransactionAbortController = new AbortController()
-export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+import { confirmationRuns } from './confirmationRunTracker.js'
 
 export async function refreshConfirmTransactionSimulation(
+	confirmationRunId: ConfirmationRunId,
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	activeAddress: bigint,
@@ -29,10 +29,6 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -40,7 +36,29 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
+		confirmationRunId,
 	}
+	const abortController = confirmationRuns.startRun(uniqueRequestIdentifier, confirmationRunId)
+	if (abortController === undefined) return undefined
+	try {
+		return await simulateConfirmationRun(ethereum, tokenPriceService, info, abortController, safeSigningRequest)
+	} finally {
+		confirmationRuns.finishRun(uniqueRequestIdentifier, abortController)
+	}
+}
+
+type ConfirmationRunInfo = {
+	readonly uniqueRequestIdentifier: UniqueRequestIdentifier
+	readonly transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed
+	readonly simulationMode: boolean
+	readonly activeAddress: bigint
+	readonly signerName: SignerName
+	readonly tabIdOpenedFrom: number
+	readonly confirmationRunId: ConfirmationRunId
+}
+
+async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, info: ConfirmationRunInfo, thisConfirmTransactionAbortController: AbortController, safeSigningRequest: SafeTransactionSigningRequest | undefined): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { transactionToSimulate } = info
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined

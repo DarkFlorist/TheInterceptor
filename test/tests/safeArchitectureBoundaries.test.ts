@@ -19,6 +19,57 @@ test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', 
 	assert.doesNotMatch(backgroundSource, /Gnosis Safe message signing is not supported|Gnosis Safe transaction proposals require/u)
 })
 
+// A pending request's two locks have one owner, which exposes only the ordered ways to take them: resolveSerially, whose commits take the commit lock inside the resolution lock, and commitOnly, which takes only the commit lock. No other module keeps a lock keyed on a pending request, so the order cannot be broken elsewhere. Whether a lock is held across an RPC is shown by the behaviour tests that hold an RPC while approving and rejecting.
+test('the locks of a pending request have one owner, which exposes only the ordered ways to take them', async () => {
+	const locks = await import('../../app/ts/background/pendingRequestLocks.js')
+	assert.equal(typeof locks.resolveSerially, 'function')
+	assert.equal(typeof locks.commitOnly, 'function')
+	for (const name of ['commitIfStillPending', 'runUnderResolutionLock', 'runUnderCommitLock']) assert.equal(name in locks, false, name)
+	const backgroundDirectory = new URL('../../app/ts/background/', import.meta.url).pathname
+	const keyedLockOwners: string[] = []
+	for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: backgroundDirectory })) {
+		if (/createScopedKeyedSerialExecutor</u.test(await Bun.file(`${ backgroundDirectory }${ file }`).text())) keyedLockOwners.push(file)
+	}
+	// The others serialize per tab or per website connection, not per pending request.
+	assert.deepEqual(keyedLockOwners.toSorted(), ['iconHandler.ts', 'pendingRequestLocks.ts', 'signerStateOwnership.ts', 'windows/interceptorAccess.ts'])
+})
+
+// Showing what is stored only reads it, so a status has one owner and not also every window update.
+test('the window updates only read what is stored', () => {
+	const getFunctionSource = (name: string) => {
+		const start = confirmTransactionSource.indexOf(`async function ${ name }(`)
+		assert.notEqual(start, -1, name)
+		return confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start))
+	}
+	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage/u, view)
+})
+
+// The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the push and the bootstrap reply share one projection, which derives them through showWithCurrentNetworkRefusals under the queue lock, and no other code builds a queue for the window. The installed client comes from the getCurrent of the services owner, passed as a parameter, so the dependency is in every signature and nothing has to be installed in a module slot first.
+test('the window queue is built only with the installed services passed in as a parameter, and no module keeps an installed-services slot', async () => {
+	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const builders: string[] = []
+	const installedServicesSlots: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
+		const source = await Bun.file(`${ appDirectory }${ file }`).text()
+		if (file !== 'utils/popupPendingRequest.ts' && /toPopupPendingTransactionOrSignableMessage\(/u.test(source)) builders.push(file)
+		if (/^(?:export )?let \w+: SimulationServicesOwner\b/mu.test(source) && file !== 'background/background-startup.ts') installedServicesSlots.push(file)
+		if (/installedSimulationServices|getInstalledSimulationServices|setInstalledSimulationServicesOwner/u.test(source)) installedServicesSlots.push(file)
+	}
+	assert.deepEqual(builders, ['background/windows/confirmTransaction.ts'])
+	assert.match(confirmTransactionSource, /export const readConfirmationQueue = async \(getInstalledServices: GetInstalledServices\) => await buildFromPendingTransactionsAndMessages\(async \(pending\) => await projectConfirmationQueue\(getInstalledServices, pending\)\)/u)
+	assert.match(popupMessageHandlersSource, /await readConfirmationQueue\(getInstalledServices\)/u)
+	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /await showWithCurrentNetworkRefusals\(getInstalledServices, /u, builder)
+	assert.deepEqual(installedServicesSlots, [])
+	assert.equal(await Bun.file(`${ appDirectory }background/installedSimulationServices.ts`).exists(), false)
+	const transactionNetworkSource = await Bun.file(`${ appDirectory }background/transactionNetwork.ts`).text()
+	assert.match(transactionNetworkSource, /export async function showWithCurrentNetworkRefusals<T>\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /export async function publishConfirmationView\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /export const publishConfirmationQueue = async \(getInstalledServices: GetInstalledServices\)/u)
+	assert.match(confirmTransactionSource, /export async function resolvePendingTransactionOrMessage\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /async function showNetworkRefusal\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(popupMessageHandlersSource, /export async function popupReadyAndListening\(getInstalledServices: GetInstalledServices, /u)
+})
+
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {
 	assert.match(confirmTransactionSource, /resolveSafeConfirmation\(/u)
 	assert.match(confirmTransactionSource, /resolveSafeSignerReply\(/u)

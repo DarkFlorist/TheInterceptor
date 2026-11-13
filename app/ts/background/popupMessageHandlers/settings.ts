@@ -5,7 +5,8 @@ import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, importSettingsAndAddressBook } from '../settings.js'
+import { getUseTabsInsteadOfPopup } from '../../utils/pageSafeSettings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 export async function settingsOpened() {
@@ -49,7 +50,8 @@ export async function exportSettings() {
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
 	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
 	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	// Sent once the client is replaced, as the confirmation window asks for its queue again on this message and shows what the installed client allows.
+	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 }

@@ -10,7 +10,7 @@ import type { GetSimulationStack, SimulationStackVersion } from '../../types/Jso
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
-import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getAddressToMakeRich, getSettings } from '../settings.js'
 import { assertNever } from '../../utils/typescript.js'
 import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
@@ -43,7 +43,7 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 		case '2.0.0': return { version, payload: getSimulatedStackV2(simulationState) } as const
 		case '1.0.0':
 		case '1.0.1': {
-			const addressToMakeRich = await getAddressToMakeRich()
+			const addressToMakeRich = await getAddressToMakeRich(await getSettings())
 			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } as const
 		}
 		default: assertNever(version)

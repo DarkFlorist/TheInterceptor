@@ -42,6 +42,8 @@ export function createSafeAddressBookEntry(overrides: Partial<SafeEntry> = {}): 
 
 export function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
+	type StorageChangeListener = (changes: Record<string, { readonly newValue?: unknown }>, areaName: string) => void
+	const storageChangeListeners = new Set<StorageChangeListener>()
 	const sentMessages: RuntimeMessage[] = []
 	const liveTabIds = new Set<number>()
 	const liveWindowIds = new Set<number>()
@@ -88,11 +90,28 @@ export function createBrowserMock() {
 					return getItems(keys)
 				},
 				async set(items: Record<string, unknown>) {
-					if (storageSetHandler !== undefined) return await storageSetHandler(items, () => Object.assign(storageState, items))
-					Object.assign(storageState, items)
+					const writeStoredItems = () => {
+						Object.assign(storageState, items)
+						const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { newValue }]))
+						// Delivered in a later task, after the write is stored, as browsers deliver storage.onChanged.
+						setTimeout(() => { for (const listener of storageChangeListeners) listener(changes, 'local') }, 0)
+					}
+					if (storageSetHandler !== undefined) return await storageSetHandler(items, writeStoredItems)
+					writeStoredItems()
 				},
 				async remove(keys: string | string[]) { removeItems(keys) },
 			},
+			// Storage reports a write to its listeners asynchronously, once the write is stored, as browser storage does.
+			onChanged: {
+				addListener: (listener: StorageChangeListener) => { storageChangeListeners.add(listener) },
+				removeListener: (listener: StorageChangeListener) => { storageChangeListeners.delete(listener) },
+			},
+		},
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
 		},
 		tabs: {
 			async sendMessage(tabId: number, message: unknown) {
@@ -495,7 +514,8 @@ export const signedTransaction = modules.mockSignTransaction(unsignedTransaction
 export const created = new Date('2024-01-01T00:00:00.000Z')
 export const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
 export const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
-export const safeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+export const safeTestOwnerPrivateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+export const safeTestOwnerAccount = privateKeyToAccount(safeTestOwnerPrivateKey)
 export const safeTestOwnerAddress = BigInt(safeTestOwnerAccount.address)
 
 export function createSafeStackTransactionFixture(options: {
@@ -558,6 +578,7 @@ export const popupVisualisation = {
 			transaction: unsignedTransaction,
 		},
 		signerName: 'NoSignerDetected',
+		confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		namedTokenIds: [],
@@ -584,6 +605,7 @@ export const pendingTransaction = {
 		activeAddress,
 		created,
 		transactionIdentifier: 1n,
+		requestedChainId: fakeRpcNetwork.chainId,
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
 		popupVisualisation,
@@ -595,6 +617,7 @@ export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 export function createDisconnectedPort() {

@@ -44,6 +44,7 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 	const reply = await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -109,6 +110,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	const reply = await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -131,7 +133,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	if (pendingFailure.transactionToSimulate.success) throw new Error('Expected Safe preparation failure')
 	assert.match(pendingFailure.transactionToSimulate.error.message, /current Gnosis Safe nonce 1 is beyond this stack's final nonce 0/u)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	}), false)
@@ -238,6 +240,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -276,7 +279,9 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 		input: new Uint8Array(),
 	}, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
-	const popupVisualisation = await (await import('../../app/ts/background/confirmTransactionSimulation.js')).refreshConfirmTransactionSimulation(
+	const confirmTransactionSimulation = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const popupVisualisation = await confirmTransactionSimulation.refreshConfirmTransactionSimulation(
+		(await import('../../app/ts/background/confirmationRunTracker.js')).confirmationRuns.reserve(uniqueRequestIdentifier),
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		activeAddress,
@@ -386,7 +391,7 @@ test('does not show simulation-mode stack setup in a Safe signing confirmation',
 	})
 	browserMock.sentMessages.length = 0
 
-	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+	await modules.updateConfirmTransactionView(() => simulator)
 
 	const dialogUpdate = browserMock.sentMessages.find((message) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog')
 	if (!isRecord(dialogUpdate) || !isRecord(dialogUpdate.data) || !isRecord(dialogUpdate.data.visualizedSimulatorState)) {
@@ -690,7 +695,7 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 		}],
 	})
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 
 	const [refreshed] = await modules.getPendingTransactionsAndMessages()
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
@@ -753,7 +758,7 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 	})
 	fakeSafeContract.requestedRpcMethods.splice(0, fakeSafeContract.requestedRpcMethods.length)
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 
 	const [refreshed] = await modules.getPendingTransactionsAndMessages()
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {

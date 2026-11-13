@@ -39,6 +39,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { observeActiveNetworkChanges, repairCorruptActiveNetwork } from './activeNetworkStorage.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -282,6 +283,7 @@ async function startup() {
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+	await repairCorruptActiveNetwork()
 	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
@@ -297,8 +299,7 @@ async function startup() {
 
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
+		await resolvePendingRequestsForMissingConfirmationWindows(getSimulationServices, websiteTabConnections)
 		await prunePendingTerminalRepliesForMissingTabs()
 	},
 	onFailure: (error) => {
@@ -335,18 +336,17 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
 	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	return await onCloseWindowOrTab({ type: 'popup' as const, id }, getSimulationServices, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
 	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	return await onCloseWindowOrTab({ type: 'tab' as const, id }, getSimulationServices, websiteTabConnections)
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
 browser.tabs.onUpdated.addListener(onTabUpdated)
+browser.storage.onChanged.addListener(observeActiveNetworkChanges)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))

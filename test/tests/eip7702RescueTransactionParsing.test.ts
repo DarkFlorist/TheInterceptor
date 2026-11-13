@@ -279,6 +279,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		activeAddress: transactionToSimulate.transaction.from,
 		created: transactionToSimulate.created,
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		requestedChainId: rpcNetwork.chainId,
 		transactionToSimulate,
 		website: transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -291,6 +292,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected',
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
 				tokenPriceQuoteToken: undefined,
@@ -315,6 +317,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 	return PendingTransactionOrSignableMessage.parse(serialize(PendingTransactionOrSignableMessage, pendingTransaction))
 }
 
+// The raw transaction must be signed for rpcNetwork, the network it is requested on, or its approval is refused.
 async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes: Uint8Array) {
 	const browserMock = installBrowserMock()
 	try {
@@ -343,9 +346,9 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 		const pendingTransaction = makeSimulatedPendingRawTransaction(transactionToSimulate)
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 
+		const ethereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
 		await resolvePendingTransactionOrMessage(
-			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
-			{} as never,
+			() => ({ ethereum, tokenPriceService: {} as never }),
 			browserMock.websiteTabConnections,
 			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
 		)
@@ -788,7 +791,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const sponsor = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip1559',
-			chainId: 5,
+			chainId: rpcNetwork.chainId,
 			nonce: 7,
 			maxFeePerGas: 2n,
 			maxPriorityFeePerGas: 1n,
@@ -806,12 +809,12 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const victim = privateKeyToTestAccount('0x0000000000000000000000000000000000000000000000000000000000000002')
 		const clearDelegationAuthorization = await victim.signAuthorization({
 			address: zeroAddress,
-			chainId: 5,
+			chainId: rpcNetwork.chainId,
 			nonce: 5,
 		})
 		const signedTransaction = await sponsor.signTransaction({
 			type: 'eip7702',
-			chainId: 5,
+			chainId: rpcNetwork.chainId,
 			nonce: 7,
 			maxFeePerGas: 2n,
 			maxPriorityFeePerGas: 1n,
