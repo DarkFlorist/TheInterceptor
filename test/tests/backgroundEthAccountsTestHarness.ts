@@ -78,6 +78,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, active: true } },
 			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
 			async update() { return undefined },
+			async reload() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
