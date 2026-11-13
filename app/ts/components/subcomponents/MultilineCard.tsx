@@ -8,10 +8,19 @@ type MultilineCardProps = {
 	icon: ActionableIconProps
 	label: ActionableTextProps
 	note: ActionableTextProps
+	presentationOnly?: boolean
 	style?: JSX.CSSProperties
 }
 
-export const MultilineCard = ({ icon, label, note, style }: MultilineCardProps) => {
+export const MultilineCard = ({ icon, label, note, presentationOnly = false, style }: MultilineCardProps) => {
+	if (presentationOnly) {
+		const CardIcon = icon.icon
+		return <figure class = 'multiline-card multiline-card--presentation' role = 'figure' style = { style }>
+			<span class = 'multiline-card-presentation-icon' aria-hidden = 'true'><CardIcon /></span>
+			<span class = 'multiline-card-presentation-label'><TextNode displayText = { label.displayText } value = { label.displayText } /></span>
+			<span class = 'multiline-card-presentation-note'><TextNode displayText = { note.displayText } value = { note.displayText } /></span>
+		</figure>
+	}
 	return (
 		<figure class = 'multiline-card' role = 'figure' style = { style }>
 			<ActionableIcon { ...icon } />

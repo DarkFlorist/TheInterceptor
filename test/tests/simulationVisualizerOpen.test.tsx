@@ -1243,8 +1243,8 @@ describe('simulation visualizer open replies', () => {
 				await clickElement(getButtonByText(dom.document.body, 'Change'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
-			// The picker is a lazy popup page; a second import of its module can resolve before the page's own loader, so wait for the rendered card.
-			const findNextWalletCard = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			// Wait for the lazy page to render its accessible wallet choice.
+			const findNextWalletCard = () => collectElements(dom.document.body, 'button').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('interceptor-dialog-choice') && element.textContent?.includes('Next wallet'))
 			await waitForRenderedCondition(() => findNextWalletCard() !== undefined, 'the next wallet in the address picker')
 			const nextCard = findNextWalletCard()
 			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')

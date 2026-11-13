@@ -33,7 +33,9 @@ export const popupSettingsCommandHandlers = {
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
-		if (await modifyMakeMeRich(request)) {
+		const result = await modifyMakeMeRich(request)
+		if (typeof result !== 'boolean') return { type: 'PopupSettingsChangeReply', ok: false, message: result.error }
+		if (result) {
 			const outcome = await queuePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
 			if (outcome.status === 'observed' && !outcome.available) {
 				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
