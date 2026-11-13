@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
@@ -9,6 +9,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
+import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
@@ -30,6 +31,18 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
+export type FailedTransactionPreview = funtypes.Static<typeof FailedTransactionPreview>
+const FailedTransactionPreview = funtypes.ReadonlyObject({
+	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+	parsedInputData: EnrichedEthereumInputData,
+})
+
+// Identifies the confirmation simulation run that produced a visualisation, across background restarts too: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A confirmation stored by a version without run ids decodes as a run of no lifetime, which no run's lifetime matches: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
+export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
+const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
+const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, ConfirmationRunId>(undefined, CONFIRMATION_RUN_OF_NO_LIFETIME)))
+
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
@@ -38,7 +51,12 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-})
+	// Names one confirmation simulation run of this pending transaction.
+	confirmationRunId: ConfirmationRunIdCodec,
+}).And(funtypes.ReadonlyPartial({
+	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
+	failedTransactionPreview: FailedTransactionPreview,
+}))
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
 const ConfirmTransactionDialogState = funtypes.Intersect(
