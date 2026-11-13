@@ -132,15 +132,19 @@ export function FetchSimulationStack() {
 	}, [])
 
 	async function approve() {
-		if (changeRequest.value === undefined) return
-		await tryFocusingTabOrWindow({ type: 'tab', id: changeRequest.value.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: true, uniqueRequestIdentifier: changeRequest.value.uniqueRequestIdentifier, simulationStackVersion: changeRequest.value?.simulationStackVersion } })
+		// Read once: a newer request can replace the shown one during the focus wait, and this click answers the request it was made on
+		const shownRequest = changeRequest.value
+		if (shownRequest === undefined) return
+		await tryFocusingTabOrWindow({ type: 'tab', id: shownRequest.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: true, uniqueRequestIdentifier: shownRequest.uniqueRequestIdentifier, simulationStackVersion: shownRequest.simulationStackVersion } })
 	}
 
 	async function reject() {
-		if (changeRequest.value === undefined) return
-		await tryFocusingTabOrWindow({ type: 'tab', id: changeRequest.value.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: false, uniqueRequestIdentifier: changeRequest.value.uniqueRequestIdentifier, simulationStackVersion: changeRequest.value?.simulationStackVersion } })
+		// Read once, as in approve
+		const shownRequest = changeRequest.value
+		if (shownRequest === undefined) return
+		await tryFocusingTabOrWindow({ type: 'tab', id: shownRequest.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_fetchSimulationStackRequestConfirmation', data: { accept: false, uniqueRequestIdentifier: shownRequest.uniqueRequestIdentifier, simulationStackVersion: shownRequest.simulationStackVersion } })
 	}
 
 	const allowRequest = () => {
