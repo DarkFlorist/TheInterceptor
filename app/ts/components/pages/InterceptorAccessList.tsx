@@ -4,99 +4,29 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { CopyToClipboard } from '../subcomponents/CopyToClipboard.js'
 import { addressString, checksummedAddress } from '../../utils/bigint.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import type { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../../types/websiteAccessTypes.js'
-import { modifyObject } from '../../utils/typescript.js'
-import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import { type EditableAccess, type NetworkBlockDecisions, getAccessListSave, getShownNetworkBlockMode, hasEditableAccessChanged, mergeRefreshedWebsiteAccess, setNetworkBlockDecision } from './interceptorAccessListEditing.js'
+import type { AddressBookEntry, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
 
-interface ModifiedAddressAccess {
-	address: bigint,
-	access: boolean,
-	removed: boolean,
-}
-
-interface EditableAccess {
-	websiteAccess: WebsiteAccess,
-	addressAccess: readonly WebsiteAddressAccess[],
-	addressAccessModified: readonly ModifiedAddressAccess[],
-	access: boolean | undefined,
-	interceptorDisabled: boolean | undefined,
-	removed: boolean,
-	declarativeNetRequestBlockMode: 'block-all' | 'disabled' | undefined
-}
-
 interface AccessChanges {
 	access?: boolean,
 	removed?: boolean,
 	interceptorDisabled?: boolean,
-	declarativeNetRequestBlockMode?: 'block-all' | 'disabled'
 }
 
 export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	const editableAccessList = useSignal<readonly EditableAccess[] | undefined>(undefined)
+	// Only the user's explicit block toggles, by hostname; never replaced by settings refreshes.
+	const networkBlockDecisions = useSignal<NetworkBlockDecisions>(new Map())
 	const metadata = useSignal<Map<string, AddressBookEntry>>(new Map())
 	const { value: saveChangesState, waitFor: waitForSaveChangesState, reset: resetSaveChangesState } = useAsyncState<void>()
 
 	function updateEditableAccessList(newList: WebsiteAccessArray | undefined) {
-		if (newList === undefined) { editableAccessList.value = undefined; return }
-		const current = editableAccessList.value
-		if (current === undefined) {
-			editableAccessList.value = newList.map((x) => ({
-				websiteAccess: x,
-				addressAccess: x.addressAccess === undefined ? [] : x.addressAccess,
-				addressAccessModified: x.addressAccess === undefined ? [] : x.addressAccess.map((addr) => ({
-					address: addr.address,
-					access: addr.access,
-					removed: false,
-				})),
-				access: x.access,
-				interceptorDisabled: x.interceptorDisabled,
-				removed: false,
-				declarativeNetRequestBlockMode: x.declarativeNetRequestBlockMode,
-			}))
-			return
-		}
-		// update only the changed entities
-		const merge = (newAccess: WebsiteAccess): EditableAccess => {
-			const previousEntity = current.find((x) => x.websiteAccess.website.websiteOrigin === newAccess.website.websiteOrigin)
-			if (previousEntity === undefined) {
-				return {
-					websiteAccess: newAccess,
-					addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
-					addressAccessModified: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => ({
-						address: addr.address,
-						access: addr.access,
-						removed: false,
-					})),
-					access: newAccess.access,
-					interceptorDisabled: newAccess.interceptorDisabled,
-					removed: false,
-					declarativeNetRequestBlockMode: newAccess.declarativeNetRequestBlockMode,
-				}
-			}
-			// we need to merge edited and new updated access rights together
-			const mergeAddressAccess = (addr: WebsiteAddressAccess, modifiedAddressAccess: readonly ModifiedAddressAccess[], previousEntity: readonly WebsiteAddressAccess[]) => {
-				const previousModifiedAccess = modifiedAddressAccess.find((x) => x.address === addr.address)
-				const previousAccess = previousEntity.find((x) => x.address === addr.address)
-				return {
-					address: addr.address,
-					access: previousModifiedAccess === undefined || previousAccess === undefined ? addr.access : (previousModifiedAccess.access === previousAccess.access ? addr.access : previousModifiedAccess.access),
-					removed: previousModifiedAccess === undefined ? false : previousModifiedAccess.removed,
-				}
-			}
-
-			const addressAccessModified = newAccess.addressAccess === undefined ? [] : newAccess.addressAccess.map((addr) => mergeAddressAccess(addr, previousEntity.addressAccessModified, previousEntity.addressAccess))
-			return modifyObject(previousEntity, {
-				websiteAccess: newAccess,
-				addressAccess: newAccess.addressAccess === undefined ? [] : newAccess.addressAccess,
-				addressAccessModified: addressAccessModified,
-				access: previousEntity.access === previousEntity.websiteAccess.access ? newAccess.access : previousEntity.access,
-			})
-		}
-		editableAccessList.value = newList.map((x) => merge(x))
+		editableAccessList.value = newList === undefined ? undefined : mergeRefreshedWebsiteAccess(editableAccessList.value, newList)
 	}
 
 	useSignalEffect(() => {
@@ -118,11 +48,14 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					access: changes.access === undefined ? x.access : changes.access,
 					interceptorDisabled: changes.interceptorDisabled === undefined ? x.interceptorDisabled : changes.interceptorDisabled,
 					removed: changes.removed === undefined ? x.removed : changes.removed,
-					declarativeNetRequestBlockMode: changes.declarativeNetRequestBlockMode ?? x.declarativeNetRequestBlockMode
 				}
 			}
 			return x
 		})
+	}
+
+	function setNetworkBlockMode(websiteOrigin: string, declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode) {
+		networkBlockDecisions.value = setNetworkBlockDecision(networkBlockDecisions.value, websiteOrigin, declarativeNetRequestBlockMode)
 	}
 
 	function setAddressAccess(index: number, addressIndex: number, changes: AccessChanges) {
@@ -140,32 +73,16 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					access: x.access,
 					interceptorDisabled: changes.interceptorDisabled === undefined ? x.interceptorDisabled : changes.interceptorDisabled,
 					removed: x.removed,
-					declarativeNetRequestBlockMode: changes.declarativeNetRequestBlockMode ?? x.declarativeNetRequestBlockMode
 				}
 			}
 			return x
 		})
 	}
 
-	function hasChanged(state: EditableAccess) {
-		if (state.removed
-			|| state.access !== state.websiteAccess.access
-			|| state.interceptorDisabled !== state.websiteAccess.interceptorDisabled
-			|| state.declarativeNetRequestBlockMode !== state.websiteAccess.declarativeNetRequestBlockMode
-		) return true
-		for (const [index, access] of state.addressAccessModified.entries()) {
-			const addressAccessAtIndex = state.addressAccess[index]
-			if (addressAccessAtIndex === undefined) throw new Error('addressAccessAtIndex was undefined')
-			if (access.removed || addressAccessAtIndex.access !== access.access) {
-				return true
-			}
-		}
-		return false
-	}
 	function areThereChanges() {
 		if (editableAccessList.value === undefined) return false
 		for (const state of editableAccessList.value) {
-			if (hasChanged(state)) return true
+			if (hasEditableAccessChanged(state, networkBlockDecisions.value)) return true
 		}
 		return false
 	}
@@ -173,27 +90,10 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 	async function saveChanges() {
 		if (!areThereChanges()) return param.goHome()
 		if (editableAccessList.value === undefined) return param.goHome()
-		const changedEntry = (editable: EditableAccess) => {
-			return {
-				oldEntry: editable.websiteAccess,
-				newEntry: {
-					website: editable.websiteAccess.website,
-					addressAccess: editable.addressAccessModified.filter((x) => !x.removed).map((addr) => ({
-						address: BigInt(addr.address),
-						access: addr.access,
-					})),
-					...(editable.access !== undefined ? { access: editable.access } : {}),
-					...(editable.interceptorDisabled !== undefined ? { interceptorDisabled: editable.interceptorDisabled } : {}),
-					...(editable.declarativeNetRequestBlockMode !== undefined ? { declarativeNetRequestBlockMode: editable.declarativeNetRequestBlockMode } : {}),
-				},
-				removed: editable.removed,
-			}
-		}
-		const changedEntries = editableAccessList.value.filter((access) => hasChanged(access)).map((x) => changedEntry(x))
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeInterceptorAccess', data: changedEntries })
-		const newEntries = editableAccessList.value.filter((state) => !state.removed).map((x) => changedEntry(x).newEntry)
-		updateEditableAccessList(newEntries)
-		param.websiteAccess.value = newEntries
+		const { message, savedWebsiteAccess } = getAccessListSave(editableAccessList.value, networkBlockDecisions.value)
+		sendPopupMessageToBackgroundPage(message)
+		updateEditableAccessList(savedWebsiteAccess)
+		param.websiteAccess.value = savedWebsiteAccess
 		return param.goHome()
 	}
 
@@ -267,7 +167,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Disable Interceptor for the site (not recommended). </p>
 											</label>
 											<label class = 'form-control' style = 'margin: auto'>
-												<input type = 'checkbox' checked = { access.declarativeNetRequestBlockMode === 'block-all' } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { declarativeNetRequestBlockMode: e.target.checked ? 'block-all' : 'disabled' }) } } } />
+												<input type = 'checkbox' checked = { getShownNetworkBlockMode(access, networkBlockDecisions.value) === 'block-all' } onInput = { e => { if (e.target instanceof HTMLInputElement) { setNetworkBlockMode(access.websiteAccess.website.websiteOrigin, e.target.checked ? 'block-all' : 'disabled') } } } />
 												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Block all external requests made by the site (not recommended). </p>
 											</label>
 											{ access.addressAccess.length === 0 ? <p class = 'paragraph'> No individual address accesses given </p> : <>

@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { assertPrivateProviderBridge, closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -43,6 +43,8 @@ async function clickButton(connection: CdpConnection, selector: string) {
 
 const fakeSignerPreload = `(() => {
 	globalThis.__fakeSignerPreloadStarted = true
+	let resolveSignerReady
+	globalThis.__interceptorChromeCommunicationSignerReady = new Promise((resolve) => { resolveSignerReady = resolve })
 	const requests = []
 	const aggregateRequests = []
 	const listeners = new Map()
@@ -53,7 +55,10 @@ const fakeSignerPreload = `(() => {
 		request: async ({ method }) => {
 			requests.push(method)
 			switch (method) {
-				case 'eth_chainId': return '0x1'
+				// The inpage bridge requests the chain after the background confirms the selected signer.
+				case 'eth_chainId':
+					resolveSignerReady()
+					return '0x1'
 				case 'eth_accounts':
 				case 'eth_requestAccounts': return [${ JSON.stringify(FAKE_SIGNER_ADDRESS) }]
 				case 'eth_sendTransaction': return ${ JSON.stringify(FAKE_SIGNED_TRANSACTION_HASH) }
@@ -115,21 +120,20 @@ async function main() {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
 			await pageConnection.send('Page.navigate', { url: server.baseUrl })
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'access request')
-
-			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
-			accessTargetId = accessTarget.id
-			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
 			try {
-				await waitForButtonEnabled(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
-				await clickButton(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
-			} finally {
-				accessConnection.close()
-			}
-			try {
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'access request')
+				const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
+				accessTargetId = accessTarget.id
+				const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
+				try {
+					await waitForButtonEnabled(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+					await clickButton(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
+				} finally {
+					accessConnection.close()
+				}
 				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'access approval')
 			} catch (error) {
-				const accessState = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, preloadStarted: globalThis.__fakeSignerPreloadStarted, signerRequests: globalThis.__fakeSignerRequests, aggregateRequests: globalThis.__aggregateSignerRequests, ethereumType: typeof globalThis.ethereum, isBraveWallet: globalThis.ethereum?.isBraveWallet, isMetaMask: globalThis.ethereum?.isMetaMask })')
+				const accessState = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, preloadStarted: globalThis.__fakeSignerPreloadStarted, signerRequests: globalThis.__fakeSignerRequests, aggregateRequests: globalThis.__aggregateSignerRequests, ethereumType: typeof globalThis.ethereum, isInterceptor: globalThis.ethereum?.isInterceptor, isBraveWallet: globalThis.ethereum?.isBraveWallet, isMetaMask: globalThis.ethereum?.isMetaMask })')
 				throw new Error(`Access approval failed with page state ${ JSON.stringify(accessState) }`, { cause: error })
 			}
 
@@ -172,6 +176,7 @@ async function main() {
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingResult?.status === 'rejected'`).catch(() => false), 10_000, 'closed-popup transaction rejection')
 			const rejectedSigningResult = await pageConnection.evaluate<{ status?: string, code?: number }>('globalThis.__signingResult')
 			if (rejectedSigningResult.code !== 4001) throw new Error(`Unexpected closed-popup rejection code: ${ rejectedSigningResult.code ?? 'missing' }`)
+			await assertPrivateProviderBridge(pageConnection)
 			console.warn('Interceptor Chrome signing communication test passed.')
 		} finally {
 			pageConnection.close()

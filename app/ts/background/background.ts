@@ -1,3 +1,4 @@
+import { SAFE_APPS_REQUEST_METHOD } from '../types/safeRpcMethods.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -45,17 +46,7 @@ if (initializeWatchAssetWindowListeners()) {
 
 const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const INTERNAL_PROVIDER_METHODS = [
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'InterceptorError',
-	'safe_apps_request',
-	'signer_chainChanged',
-	'signer_reply',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
+const isInternalProviderMethod = (method: string) => isProviderMethod(method) || method === 'InterceptorError' || method === SAFE_APPS_REQUEST_METHOD
 
 // A reply plus optional work that may only run once the page has it, e.g. notifications for a subscription id the reply carries; keeping the work beside the reply keeps RPCReply plain, serializable wire data. Only handleContentScriptMessage delivers these, right after handling: replies sent later (confirmation windows, MV2 reconnect retries, persisted terminal replies) answer requests whose handler returned doNotReply, so they never have follow-up work.
 type HandledRpcRequest = { readonly reply: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
@@ -240,6 +231,11 @@ const providerHandlers = {
 
 function isProviderMethod(method: string): method is keyof typeof providerHandlers {
 	return hasOwnKey(providerHandlers, method)
+}
+
+// The content script supplies this marker only for private-bridge callbacks; public provider payloads cannot set it. Only registered incoming callbacks release capacity.
+export function isInternalProviderCallback(request: InterceptedRequest) {
+	return request.interceptorInternalRequest === true && isProviderMethod(request.method)
 }
 
 function getProviderHandler(method: string) {
@@ -540,7 +536,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 		let rpcContext: RpcRequestContext = { request }
-		if (request.method === 'safe_apps_request') {
+		if (request.method === SAFE_APPS_REQUEST_METHOD) {
 			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 			if (admission.kind === 'reply') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, admission.reply))
 			rpcContext = admission.context

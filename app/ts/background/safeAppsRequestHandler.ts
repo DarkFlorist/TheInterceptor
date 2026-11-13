@@ -1,3 +1,4 @@
+import { SAFE_APPS_REQUEST_METHOD } from '../types/safeRpcMethods.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
@@ -19,7 +20,7 @@ type SafeAppsAdmission = { readonly kind: 'execute', readonly context: RpcReques
 // Admission owns the secondary protocol; execution rejoins the shared RPC policy and confirmation pipeline.
 export async function prepareSafeAppsRequest(ethereum: EthereumClientService, connections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, safeSigningMode: boolean): Promise<SafeAppsAdmission> {
 	const reply = (message: InterceptedRequestForward): SafeAppsAdmission => ({ kind: 'reply', reply: message })
-	const failure = (code: number, message: string) => reply({ type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code, message } })
+	const failure = (code: number, message: string) => reply({ type: 'result', method: SAFE_APPS_REQUEST_METHOD, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code, message } })
 	const enabled = await getSafeAppsCompatibilityMode()
 	const eligible = enabled && safeSigningMode && await isSafeAppsConnectionEligible(connections, request.uniqueRequestIdentifier.requestSocket, settings)
 	if (!eligible) return failure(-32602, 'Interceptor Safe Apps compatibility is not enabled for this connection.')
@@ -34,7 +35,7 @@ export async function prepareSafeAppsRequest(ethereum: EthereumClientService, co
 			getTransaction: async (safeTxHash) => await fetchSafeAppsTransaction(chainId, safeAddress, safeTxHash),
 		})
 		const result = command.kind === 'settings' ? { kind: 'result' as const, value: { offChainSigning: command.offChainSigning } } : command
-		return reply({ type: 'result', method: 'safe_apps_request', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+		return reply({ type: 'result', method: SAFE_APPS_REQUEST_METHOD, result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 	} catch (error: unknown) {
 		if (isSafeAppsRequestPolicyError(error)) return failure(-32602, error.message)
 		if (isSafeContractValidationFailure(error) || isSafeOwnerValidationFailure(error)) return failure(-32000, error.message)
