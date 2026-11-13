@@ -3,7 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
+import type { ConfirmationRunRecord, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
@@ -14,12 +14,23 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
+import { getAddressBookRevision, getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
+let latestConfirmationRunId = 0
+// Every confirmation simulation run gets a new id, which relabelStoredSimulation uses to tell a re-labelled run from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards.
+function getNextConfirmationRunId() {
+	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
+	return latestConfirmationRunId
+}
+
+// A confirmation run's visualisation, which the dialog is sent, and its record, which background storage keeps beside it.
+export type SimulatedConfirmationRun = { readonly popupVisualisation: ConfirmTransactionTransactionSingleVisualization, readonly confirmationRun: ConfirmationRunRecord }
+
+// Returns the run without storing it; the confirmation workflows store it with storeConfirmationRun in confirmationRunStorage.ts and then catch it up on address-book changes made during it (relabelStoredRunIfAddressBookChangedDuringIt in confirmationRelabel.ts).
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -28,11 +39,17 @@ export async function refreshConfirmTransactionSimulation(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
-): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+): Promise<SimulatedConfirmationRun | undefined> {
 	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
+	const confirmationRun = {
+		// Taken with the controller, before the first await, so run ids follow the order in which runs replace each other.
+		confirmationRunId: getNextConfirmationRunId(),
+		// Read once as the run starts, before its first lookup, so the workflow that stores the run can tell whether the address book changed during it.
+		addressBookRevisionBeforeLookups: getAddressBookRevision(),
+	}
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -64,14 +81,14 @@ export async function refreshConfirmTransactionSimulation(
 				? simulationInput
 				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
-			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
+			return await visualizeSimulatorStateAndRecordLookups(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
 		const visualizedSimulatorState = await getNewVisualizedSimulationState()
 		const availableAbis = visualizedSimulatorState.addressBookEntries
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
-			return { statusCode: 'failed', data: {
+			return { confirmationRun, popupVisualisation: { statusCode: 'failed', data: {
 				...info,
 				simulationStartedTimestamp,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
@@ -79,16 +96,18 @@ export async function refreshConfirmTransactionSimulation(
 					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
 					simulationConductedTimestamp: new Date(),
 				}
-			} }
+			} } }
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
-		return {
+		// The record of the run's lookups is stored beside the visualisation, never in it.
+		const { recordedVisualisationLookups, ...visualisation } = visualizedSimulatorState
+		return { confirmationRun: { ...confirmationRun, recordedVisualisationLookups }, popupVisualisation: {
 			statusCode: 'success',
 			data: {
 				...info,
 				simulationStartedTimestamp,
-				...visualizedSimulatorState,
+				...visualisation,
 				transactionToSimulate: {
 					...transactionToSimulate,
 					...transactionToSimulate.success ? {
@@ -102,7 +121,7 @@ export async function refreshConfirmTransactionSimulation(
 					} }
 				}
 			}
-		}
+		} }
 	} catch (error) {
 		if (isNewBlockAbort(error)) return undefined
 		if (isFailedToFetchError(error)) return undefined
@@ -119,7 +138,7 @@ export async function refreshConfirmTransactionSimulation(
 			const recipient = params.to
 			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
 		}
-		return { statusCode: 'failed', data: {
+		return { confirmationRun, popupVisualisation: { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
 			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
@@ -127,6 +146,6 @@ export async function refreshConfirmTransactionSimulation(
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()
 			}
-		} }
+		} } }
 	}
 }

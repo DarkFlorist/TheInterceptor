@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { keccak_256 } from '@noble/hashes/sha3'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, type VisualizedSimulationState, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -15,7 +15,7 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -470,6 +470,60 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const exportedCalls = isRecord(exportedSimulation) && Array.isArray(exportedSimulation.blockStateCalls) ? exportedSimulation.blockStateCalls.flatMap((blockStateCall) => blockStateCall.calls) : []
 	assert.deepEqual(exportedCalls.map((call) => BigInt(call.from)), [SAFE_EXECUTION_SIMULATION_EXECUTOR], 'the exported request runs the stacked Safe execution as the preview does')
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+})
+
+const getLastVisualizedTransaction = (visualizedSimulationState: VisualizedSimulationState) => visualizedSimulationState.success ? visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1) : undefined
+const getLastSimulatedInputTransaction = (simulationState: { readonly simulationStateInput: SimulationStateInput }) => simulationState.simulationStateInput.at(-1)?.transactions.at(-1)
+
+test('re-labels a simulation-mode Gnosis Safe execution in the confirmation and the stack after an address-book change, without simulating again', async () => {
+	const { publishAddressBookChangeAndRelabelSimulations } = await import('../../app/ts/background/addressBookChangePublication.js')
+	const { updatePopupVisualisationState } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+	const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+	configureSafe()
+	const simulator = createRecordingSimulator()
+	const transactionParams = await createTransferParams({})
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	const pendingBefore = await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, transactionParams, createWebsiteTabConnections([]))
+	if (pendingBefore.popupVisualisation.statusCode !== 'success') throw new Error('Expected a successful Safe execution simulation')
+	await stackFormedTransaction(simulator, transactionParams, 2n, 'simulated-safe-executor')
+	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
+	const stackBefore = await getPopupVisualisationState()
+	if (stackBefore.simulationState.kind !== 'simulated') throw new Error('Expected a simulated stack')
+	const calledContractName = 'Called contract'
+	assert.notEqual(getLastVisualizedTransaction(pendingBefore.popupVisualisation.data.visualizedSimulationState)?.transaction.to?.name, calledContractName)
+	assert.notEqual(getLastVisualizedTransaction(stackBefore.visualizedSimulationState)?.transaction.to?.name, calledContractName)
+
+	await modules.updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: calledContractName, address: CALLED_CONTRACT, entrySource: 'User', chainId: fakeRpcNetwork.chainId }])
+	simulator.simulatedCalls.length = 0
+	fakeSafeContract.requestedRpcMethods.length = 0
+	browserMock.sentMessages.length = 0
+	await publishAddressBookChangeAndRelabelSimulations(simulator)
+	const deadline = Date.now() + 2_000
+	while (!browserMock.sentMessages.some((message) => message.method === 'popup_simulationsRelabelled')) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for the re-label notification')
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+
+	assert.deepEqual(simulator.simulatedCalls, [], 'the re-label runs neither the Safe\'s call nor its executor\'s call')
+	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
+	const [pendingAfter] = await modules.getPendingTransactionsAndMessages()
+	if (pendingAfter?.type !== 'Transaction' || pendingAfter.transactionOrMessageCreationStatus !== 'Simulated' || pendingAfter.popupVisualisation.statusCode !== 'success') throw new Error('Expected the re-labelled confirmation to stay simulated')
+	const confirmationAfter = pendingAfter.popupVisualisation.data
+	assert.equal(pendingAfter.confirmationRun?.confirmationRunId, pendingBefore.confirmationRun?.confirmationRunId)
+	assert.notEqual(pendingAfter.confirmationRun, undefined)
+	const relabelledConfirmationTransaction = getLastVisualizedTransaction(confirmationAfter.visualizedSimulationState)
+	assert.equal(relabelledConfirmationTransaction?.transaction.to?.name, calledContractName)
+	assert.deepEqual(relabelledConfirmationTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'the re-labelled confirmation still shows the transaction running through the Safe')
+	assert.equal(getLastSimulatedInputTransaction(confirmationAfter.simulationState)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the re-label keeps the run\'s executor call')
+	const stackAfter = await getPopupVisualisationState()
+	if (stackAfter.simulationState.kind !== 'simulated') throw new Error('Expected the re-labelled stack to stay simulated')
+	assert.equal(stackAfter.simulationId, stackBefore.simulationId)
+	const relabelledStackTransaction = getLastVisualizedTransaction(stackAfter.visualizedSimulationState)
+	assert.equal(relabelledStackTransaction?.transaction.to?.name, calledContractName)
+	assert.deepEqual(relabelledStackTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'the re-labelled stack still shows the transaction running through the Safe')
+	assert.equal(getLastSimulatedInputTransaction(stackAfter.simulationState.value)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the re-label keeps the stack\'s executor call')
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 })
 
 const SAFE_CALL_WEBSITE = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }

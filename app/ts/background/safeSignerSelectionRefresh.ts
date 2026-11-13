@@ -14,6 +14,8 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { storeConfirmationRun } from './confirmationRunStorage.js'
+import { relabelStoredRunIfAddressBookChangedDuringIt } from './confirmationRelabel.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
@@ -337,6 +339,8 @@ function mergeSafeSignerSelectionRefresh(
 				transactionOrMessageCreationStatus: refreshedFlow.pending.transactionOrMessageCreationStatus,
 				transactionToSimulate: refreshedFlow.pending.transactionToSimulate,
 				popupVisualisation: refreshedFlow.pending.popupVisualisation,
+				// The run's record travels with the visualisation it describes.
+				confirmationRun: refreshedFlow.pending.confirmationRun,
 			}
 			: {},
 	})
@@ -434,6 +438,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
+// A refreshed direct Safe execution carries a new confirmation run, so the refresh is stored with storeConfirmationRun, and a run it stored is caught up on address-book changes made during it, as every confirmation workflow does.
 export async function refreshAndPersistSafeSignerSelection(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
@@ -472,7 +477,7 @@ export async function refreshAndPersistSafeSignerSelection(
 		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
 	}
 	let persistedPending: PendingTransactionOrSignableMessage | undefined
-	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+	const storedRun = await storeConfirmationRun(pending.uniqueRequestIdentifier, async (current) => {
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
@@ -481,5 +486,6 @@ export async function refreshAndPersistSafeSignerSelection(
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
 		return persistedPending
 	})
+	await relabelStoredRunIfAddressBookChangedDuringIt(ethereum.getRpcEntry(), storedRun)
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }

@@ -57,7 +57,7 @@ test('an older confirmation simulation whose tab state loads late does not abort
 	assert.equal(newerRunAbortSignal.aborted, false, 'the older run must not abort the newer run\'s in-flight simulation')
 
 	releaseNewerRunRpc.resolve()
-	const newerRunVisualisation = await newerRun
+	const newerRunVisualisation = (await newerRun)?.popupVisualisation
 	if (newerRunVisualisation?.statusCode !== 'success') throw new Error('The newer confirmation simulation did not produce a preview')
 	assert.equal(newerRunVisualisation.data.uniqueRequestIdentifier.requestSocket.tabId, newerRunTabId)
 })

@@ -3,7 +3,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, StoredCompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import type { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -123,19 +124,19 @@ export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
 // Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
-export async function getPopupVisualisationState() {
+export async function getPopupVisualisationState(): Promise<StoredCompleteVisualizedSimulation> {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
+	return await getLargeStateValue('popupVisualisation', StoredCompleteVisualizedSimulation) ?? emptyResults
 }
 
-export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
+export const setPopupVisualisationState = async (newResults: StoredCompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: StoredCompleteVisualizedSimulation) => Promise<StoredCompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
+		await setLargeStateValue('popupVisualisation', StoredCompleteVisualizedSimulation, newRequests)
 		return newRequests
 	})
 }
@@ -280,6 +281,28 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
 }
 
+// The revision of the stored names a metadata lookup reads: the user's address book and the known ENS names, which address-book changes edit. writeAddressBookStorage is their only writer and advances it once each write is stored, cached identifications included, so no caller decides whether its write matters to a run. A confirmation run records it when it starts and the workflow that stores the run compares it with the settled revision (relabelStoredRunIfAddressBookChangedDuringIt in confirmationRelabel.ts). Kept in memory only, as no run outlives the background.
+let addressBookRevision = 0
+// Held around each address-book write and the revision step after it, so a settled read never falls between a stored write and its revision step.
+const addressBookRevisionSemaphore = new Semaphore(1)
+
+export const getAddressBookRevision = () => addressBookRevision
+
+// Waits for an address-book write in progress, so the revision returned matches the stored names: the same revision means nothing was written since it was read, and a later one means the written names are already readable.
+export const getSettledAddressBookRevision = async () => await addressBookRevisionSemaphore.execute(async () => addressBookRevision)
+
+type AddressBookStorageItems = { readonly userAddressBookEntriesV3: AddressBookEntries } | { readonly ensNameHashes: ENSNameHashes } | { readonly ensLabelHashes: ENSLabelHashes }
+
+async function writeAddressBookStorage(items: AddressBookStorageItems) {
+	await addressBookRevisionSemaphore.execute(async () => {
+		await browserStorageLocalSet(items)
+		addressBookRevision += 1
+	})
+}
+
+// Replaces the stored address book as it is; for the address-book migration, which reads entries that do not parse yet.
+export const setUserAddressBookEntries = async (entries: AddressBookEntries) => await writeAddressBookStorage({ userAddressBookEntriesV3: entries })
+
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
@@ -287,12 +310,12 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
 	if (repairedEntries !== undefined) {
-		await browserStorageLocalSet({ userAddressBookEntriesV3: repairedEntries })
+		await writeAddressBookStorage({ userAddressBookEntriesV3: repairedEntries })
 		return repairedEntries
 	}
 	console.warn('userAddressBookEntriesV3 was corrupt:')
 	console.warn(rawEntries)
-	await browserStorageLocalSet({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
+	await writeAddressBookStorage({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
 	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
@@ -302,7 +325,7 @@ const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
+		await writeAddressBookStorage({ userAddressBookEntriesV3: updateFunc(entries) })
 	})
 }
 
@@ -318,7 +341,7 @@ export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressB
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
+		await writeAddressBookStorage({ userAddressBookEntriesV3: entries.concat(newEntry) })
 	})
 }
 
@@ -374,7 +397,7 @@ export async function addEnsNodeHash(name: string) {
 	await ensNodeHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsNodeHashes() || []
 		if (oldEntries.find((old) => old.nameHash === entry.nameHash)) return
-		return await browserStorageLocalSet({ ensNameHashes: [...oldEntries, entry] })
+		await writeAddressBookStorage({ ensNameHashes: [...oldEntries, entry] })
 	})
 }
 
@@ -386,7 +409,7 @@ export async function addEnsLabelHash(label: string) {
 	await ensLabelHashesSemaphore.execute(async () => {
 		const oldEntries = await getEnsLabelHashes() || []
 		if (oldEntries.find((old) => old.labelHash === entry.labelHash)) return
-		return await browserStorageLocalSet({ ensLabelHashes: [...oldEntries, entry] })
+		await writeAddressBookStorage({ ensLabelHashes: [...oldEntries, entry] })
 	})
 }
 

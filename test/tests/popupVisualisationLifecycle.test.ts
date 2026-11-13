@@ -43,6 +43,15 @@ describe('popup visualisation lifecycle', () => {
 		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'updating' }, { simulationId: 4, simulationUpdatingState: 'updating' }), false)
 	})
 
+	test('within one simulation id and stage a lower metadata revision predates a re-labelled state, and a re-label never outranks the stage order', () => {
+		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'done' }, { simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 1 }), true)
+		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 1 }, { simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 2 }), true)
+		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 2 }, { simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 1 }), false)
+		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 1 }, { simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 1 }), false)
+		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'updating', metadataRevision: 3 }, { simulationId: 4, simulationUpdatingState: 'done' }), true)
+		assert.equal(predatesVisualisation({ simulationId: 4, simulationUpdatingState: 'done', metadataRevision: 3 }, { simulationId: 5, simulationUpdatingState: 'updating' }), true)
+	})
+
 	test('the updater builds every state derived from the stored visualisation with retainPreviousVisualisation', () => {
 		assert.match(updaterSource, /retainPreviousVisualisation\(popupVisualisation, /u)
 		assert.doesNotMatch(updaterSource, /\bmodifyObject\(|\.\.\.popupVisualisation\b/u)

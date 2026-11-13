@@ -19,6 +19,13 @@ const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/b
 const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
 const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
+const confirmationRunStorageSource = await Bun.file(new URL('../../app/ts/background/confirmationRunStorage.ts', import.meta.url)).text()
+const confirmationRelabelSource = await Bun.file(new URL('../../app/ts/background/confirmationRelabel.ts', import.meta.url)).text()
+const storageVariablesSource = await Bun.file(new URL('../../app/ts/background/storageVariables.ts', import.meta.url)).text()
+const addressBookChangePublicationSource = await Bun.file(new URL('../../app/ts/background/addressBookChangePublication.ts', import.meta.url)).text()
+const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const storedRunVisualisationSource = await Bun.file(new URL('../../app/ts/background/storedRunVisualisation.ts', import.meta.url)).text()
+const metadataUtilsSource = await Bun.file(new URL('../../app/ts/background/metadataUtils.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
@@ -126,7 +133,8 @@ test('popup method guards reject inherited object keys', () => {
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
-	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
+	// A refreshed direct Safe execution carries a new confirmation run, so the refresh persists through the confirmation-run writer.
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?storeConfirmationRun\(/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
@@ -134,6 +142,56 @@ test('Safe signer refresh persistence is isolated from confirmation resolution',
 	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(confirmTransactionSource, /function mergeSafeSignerSelectionRefresh/u)
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
+})
+
+test('the simulation and utils layers take the metadata lookup types from types/, not from the background', async () => {
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const importsLookupTypeFromBackground = /import\s+(?:type\s+)?\{[^}]*\b(?:IdentifyAddress|LookUpEnsName|MetadataLookups)\b[^}]*\}\s+from\s+'[^']*\/background\//u
+	const offendingFiles: string[] = []
+	for await (const file of new Bun.Glob('{simulation,utils}/**/*.ts').scan({ cwd: appSourceDirectory })) {
+		if (importsLookupTypeFromBackground.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) offendingFiles.push(file)
+	}
+	assert.deepEqual(offendingFiles, [])
+})
+
+test('the confirmation-run writer only stores, and each confirmation workflow catches the run it stored up on address-book changes made during it', () => {
+	// The writer depends only on the pending-confirmation storage: no re-label, publication or address-book revision.
+	assert.deepEqual([...confirmationRunStorageSource.matchAll(/^import .* from '([^']+)'$/gmu)].map(([, module]) => module), ['../types/accessRequest.js', '../utils/requests.js', './storageVariables.js'])
+	assert.doesNotMatch(confirmationRunStorageSource, /[Rr]elabel\w*\(|AddressBookRevision/u)
+	// The publication starts its re-labels and knows nothing of runs in flight; the address-book write itself advances the revision.
+	assert.doesNotMatch(addressBookChangePublicationSource, /confirmationRunStorage\.js|AddressBookRevision/u)
+	// Every workflow that stores a confirmation run stores it with the writer and then requests the catch-up for the run the writer returned.
+	for (const [name, source] of [['windows/confirmTransaction.ts', confirmTransactionSource], ['safeSignerSelectionRefresh.ts', safeSignerSelectionRefreshSource], ['popupMessageHandlers.ts', popupMessageHandlersSource]] as const) {
+		const storeCalls = [...source.matchAll(/const (\w+) = await storeConfirmationRun\(/gu)].map(([, storedRun]) => storedRun)
+		assert.notDeepEqual(storeCalls, [], name)
+		assert.equal(storeCalls.length, [...source.matchAll(/storeConfirmationRun\(/gu)].length, name)
+		for (const storedRun of storeCalls) assert.match(source, new RegExp(`await relabelStoredRunIfAddressBookChangedDuringIt\\([^,]+, ${ storedRun }\\)`, 'u'), name)
+	}
+})
+
+test('only the address-book storage writes the stored names a metadata lookup reads, through the one writer that advances the address-book revision', async () => {
+	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const lookupStorageKeyWrite = /browserStorageLocalSet2?\(\{[^}]*\b(?:userAddressBookEntriesV3|ensNameHashes|ensLabelHashes)\b/u
+	const offendingFiles: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory })) {
+		if (lookupStorageKeyWrite.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) offendingFiles.push(file)
+	}
+	assert.deepEqual(offendingFiles, [])
+	assert.match(storageVariablesSource, /async function writeAddressBookStorage\(items: AddressBookStorageItems\) \{\n\tawait addressBookRevisionSemaphore\.execute\(async \(\) => \{\n\t\tawait browserStorageLocalSet\(items\)\n\t\taddressBookRevision \+= 1\n/u)
+	assert.equal([...storageVariablesSource.matchAll(/addressBookRevision \+= 1/gu)].length, 1)
+})
+
+test('the stored-data visualisation of a re-label lives apart from live simulation and builds the same typed lookups', () => {
+	// simulationUpdating.ts keeps live node-backed simulation; replaying a stored run belongs to storedRunVisualisation.ts.
+	assert.doesNotMatch(simulationUpdatingSource, /replayRecordedProtectorChainReads|lookUpMetadataForRelabel|function visualizeStoredRunWithoutNode/u)
+	assert.match(storedRunVisualisationSource, /export async function visualizeStoredRunWithoutNode\(/u)
+	// The re-label's address fallback is re-label display policy, so it sits with the other stored-run lookups, not in the generic identification of metadataUtils.ts.
+	assert.match(storedRunVisualisationSource, /export function lookUpMetadataForRelabel\(/u)
+	assert.match(storedRunVisualisationSource, /function getIdentifiedOrBareAddressEntry\(/u)
+	assert.doesNotMatch(metadataUtilsSource, /lookUpMetadataForRelabel|getIdentifiedOrBareAddressEntry/u)
+	// Both modes build their lookups as VisualisationLookups, so a lookup either one leaves out fails typecheck.
+	assert.match(simulationUpdatingSource, /function lookUpVisualisationOnNode\([^)]*\): VisualisationLookups \{/u)
+	assert.match(storedRunVisualisationSource, /function lookUpVisualisationFromStoredRun\([^)]*\): VisualisationLookups \{/u)
 })
 
 test('Safe pending flow discrimination has one owner', () => {

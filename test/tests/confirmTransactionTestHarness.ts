@@ -47,6 +47,7 @@ export function createBrowserMock() {
 	const liveWindowIds = new Set<number>()
 	let manifestVersion = 3
 	let tabMessageHandler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined
+	let runtimeMessageHandler: ((message: RuntimeMessage) => Promise<unknown>) | undefined
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
 	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
 	let tabUpdateHandler: ((tabId: number) => Promise<void>) | undefined
@@ -72,6 +73,8 @@ export function createBrowserMock() {
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
 				await runtimeSendMessageHandler?.(message)
+				const reply = await runtimeMessageHandler?.(message)
+				if (reply !== undefined) return reply
 				if (message.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 				}
@@ -160,6 +163,8 @@ export function createBrowserMock() {
 		setStorageGetHandler(handler: typeof storageGetHandler) { storageGetHandler = handler },
 		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
+		// Lets a test act as an open view that receives, and may answer, popup messages while the background awaits their delivery.
+		setRuntimeMessageHandler(handler: typeof runtimeMessageHandler) { runtimeMessageHandler = handler },
 		setTabUpdateHandler(handler: typeof tabUpdateHandler) { tabUpdateHandler = handler },
 		setWindowRemoveHandler(handler: typeof windowRemoveHandler) { windowRemoveHandler = handler },
 		setWindowCreateHandler(handler: typeof windowCreateHandler) { windowCreateHandler = handler },
@@ -172,6 +177,7 @@ export function createBrowserMock() {
 			liveTabIds.clear()
 			liveWindowIds.clear()
 			tabMessageHandler = undefined
+			runtimeMessageHandler = undefined
 			storageGetHandler = undefined
 			storageSetHandler = undefined
 			tabUpdateHandler = undefined
