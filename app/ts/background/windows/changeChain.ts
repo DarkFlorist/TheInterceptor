@@ -1,6 +1,5 @@
 import { isSignerChainChangePending, changeActiveRpc } from '../walletSwitch.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { Future } from '../../utils/future.js'
 import type { ChainChangeConfirmation } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -11,9 +10,11 @@ import { replyToInterceptedRequest } from '../messageSending.js'
 import type { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
+import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
-let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
+// Only this background instance's waiter: the stored request is the copy that survives a restart and feeds the dialog page, and openedDialog is the window, not the request
+let pendForUserReply: PendingDialogReply<ChainChangeConfirmation> | undefined
 
 let chainChangeResolutionInProgress = false
 
@@ -27,7 +28,8 @@ export async function updateChainChangeViewWithPendingRequest() {
 
 export async function resolveChainChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
-		pendForUserReply.resolve(confirmation)
+		// A dialog from before a background restart stays open after its decision, so it can still confirm while a newer request is waiting
+		pendForUserReply.tryResolve(confirmation.data.uniqueRequestIdentifier, confirmation)
 		return
 	}
 	await runExclusiveChainChangeResolution(async () => {
@@ -82,7 +84,8 @@ export const openChangeChainDialog = async (
 ) => {
 	if (openedDialog !== undefined || pendForUserReply || isSignerChainChangePending() || chainChangeResolutionInProgress) return userDeniedChange
 
-	pendForUserReply = new Future<ChainChangeConfirmation>()
+	const pendingReply = createPendingDialogReply<ChainChangeConfirmation>(request.uniqueRequestIdentifier)
+	pendForUserReply = pendingReply
 
 	const onCloseWindowOrTab = async (popupOrTab: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject signature
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
@@ -123,7 +126,7 @@ export const openChangeChainDialog = async (
 				rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier),
 			)
 		}
-		const reply = await pendForUserReply
+		const reply = await pendingReply.reply
 
 		// forward message to content script
 		const resolution = runExclusiveChainChangeResolution(async () => await resolve(simulationServicesOwner, websiteTabConnections, reply, simulationMode))
