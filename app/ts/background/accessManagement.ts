@@ -147,12 +147,13 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
-export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => {
+export async function setInterceptorDisabledForWebsite(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
+	return await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousWebsiteAccess) => {
 		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
 		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
 		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
+		const accessWithUpdatedDisabledState = { ...previousAccess, interceptorDisabled }
+		return replaceElementInReadonlyArray(previousWebsiteAccess, index, accessWithUpdatedDisabledState)
 	})
 }
 
