@@ -4,5 +4,6 @@ import './safeConfirmationFlows.suite.js'
 import './safeStackFlows.suite.js'
 import './confirmTransactionSimulationAbortOrder.suite.js'
 import './terminalReplyDelivery.suite.js'
+import './popupRefreshNewerStack.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)

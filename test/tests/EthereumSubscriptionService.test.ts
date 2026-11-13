@@ -12,6 +12,7 @@ import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, Multicall3ABI } from '
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -177,7 +178,7 @@ const blockNumber = 8443561n
 		chainId: 1n,
 	} as const
 
-	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
+	const createEthereum = () => new EthereumClientService(new MockEthereumJSONRpcRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 	const createSimulationInput = (gas: bigint, nonce: bigint, transactionIdentifier: bigint) => [{
 		stateOverrides: {},
 		transactions: [{

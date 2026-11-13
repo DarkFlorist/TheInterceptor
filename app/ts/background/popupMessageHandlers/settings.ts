@@ -7,6 +7,8 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
+import { selectionShowsStack } from '../../utils/simulationSelection.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -51,5 +53,8 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	if (primary === undefined) return
+	simulationServicesOwner.reset(primary)
+	// Refreshes holding the replaced services now step aside, so the reset queues the one for the services it installed, as a selection change does.
+	if (selectionShowsStack(settings)) await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 }

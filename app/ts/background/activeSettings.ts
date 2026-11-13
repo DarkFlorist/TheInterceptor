@@ -14,7 +14,8 @@ import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress,
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
-import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { selectionNeedsRefresh } from '../utils/simulationSelection.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -135,8 +136,8 @@ async function runActiveSettingsChange(
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
-			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			// The same rule by which a refresh queued for the previous selection steps aside, so the change publishes whatever that refresh no longer may.
+			if (selectionNeedsRefresh(previousSettings, updatedSettings)) {
 				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())

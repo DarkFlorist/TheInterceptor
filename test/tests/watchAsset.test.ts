@@ -5,6 +5,7 @@ import { getWatchAssetRpcParseFailureReply } from '../../app/ts/background/watch
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const tokenAddress = '0x1111111111111111111111111111111111111111'
 const rpcEntry = {
@@ -24,7 +25,7 @@ class UnusedRequestHandler {
 	public readonly getChainId = async () => 1n
 }
 
-const ethereum = new EthereumClientService(new UnusedRequestHandler(), async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(new UnusedRequestHandler(), async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 const websiteTabConnections: WebsiteTabConnections = new Map()
 const website = { websiteOrigin: 'https://dapp.example', title: 'Dapp', icon: undefined }
 const interceptedRequest = {

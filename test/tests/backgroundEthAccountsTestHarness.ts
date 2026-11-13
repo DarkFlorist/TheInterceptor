@@ -8,6 +8,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type Listener = () => void
 export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -220,7 +221,7 @@ export function createEthereumWithGetBlockCounter(
 			new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc),
 			async () => undefined,
 			async () => undefined,
-			rpcEntry,
+			rpcEntry, alwaysLive,
 	),
 		{
 			get(target, property, receiver) {
@@ -258,8 +259,12 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current = initial
+	// The clients supply their own liveness when the test constructs them; this owner only swaps which pair it hands out.
 	return {
 		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		reset: network => {
+			current = reset === undefined ? current : reset(network)
+			return current
+		},
 	}
 }

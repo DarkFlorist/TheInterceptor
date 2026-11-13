@@ -16,6 +16,7 @@ import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedS
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
 import { installDomMock } from './domMock.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => unknown
 
@@ -174,7 +175,7 @@ const requestHandler = {
 		}
 	},
 }
-const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 const simulationServicesOwner = {
 	getCurrent: () => ({ ethereum, tokenPriceService }),

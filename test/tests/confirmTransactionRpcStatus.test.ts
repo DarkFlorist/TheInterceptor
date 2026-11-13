@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDomMock } from './domMock.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
@@ -291,7 +292,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 				if (rpcRequest.method === 'eth_blockNumber') return '0x7b'
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		await updateConfirmTransactionView(ethereum, tokenPriceService)

@@ -3,6 +3,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
@@ -673,7 +674,7 @@ test('refreshes the selected signer and uses services installed during the walle
 			retiredClientRequests++
 			throw new Error('Confirmation used services captured before the wallet refresh')
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const owner = createTestSimulationServicesOwner({
 		ethereum: retiredEthereum,
 		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
