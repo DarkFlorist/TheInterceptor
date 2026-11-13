@@ -58,6 +58,18 @@ export const EthGetFeeHistoryResponse = funtypes.Intersect(
 	})
 )
 
+// Nodes add client-specific progress fields (for example Geth state counters, Besu knownStates/pulledStates or Erigon stages), so unknown fields pass through unchanged while the standard block fields are validated as quantities.
+const EthSyncingProgress = funtypes.Intersect(
+	funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown),
+	funtypes.ReadonlyObject({
+		startingBlock: EthereumQuantity,
+		currentBlock: EthereumQuantity,
+		highestBlock: EthereumQuantity,
+	}),
+)
+export type EthSyncingResponse = funtypes.Static<typeof EthSyncingResponse>
+export const EthSyncingResponse = funtypes.Union(funtypes.Literal(false), EthSyncingProgress)
+
 export type EthBalanceChanges = funtypes.Static<typeof EthBalanceChanges>
 export const EthBalanceChanges = funtypes.ReadonlyArray(
 	funtypes.ReadonlyObject({
@@ -503,6 +515,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_syncing') }),
 	GetTransactionCount,
 	GetSimulationStack,
 	EthGetStorageAtParams,
