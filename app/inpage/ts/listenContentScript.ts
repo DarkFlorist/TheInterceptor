@@ -1,6 +1,6 @@
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
-function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
+function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
@@ -113,7 +113,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			...(typeof method === 'string' ? { requestMethod: method } : {}),
 		}
 	}
-	const formatForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => {
+	const formatForwardedDiagnostics = (source: 'inpage' | 'content-script', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => {
 		return [
 			`${ source }: ${ summary }`,
 			`phase: ${ phase }`,
@@ -122,8 +122,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			`thrown:\n${ stringifyForwardedThrownValue(thrown) }`,
 		].join('\n\n')
 	}
-	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
-	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script' | 'document-start', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, message, raw, context)
+	const serializeForwardedDiagnostics = (source: 'inpage' | 'content-script', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
+	const createForwardedDiagnosticsFromRaw = (source: 'inpage' | 'content-script', phase: string, message: string, raw: unknown, context: ForwardedDiagnosticsRequestContext = {}): string => formatForwardedDiagnostics(source, phase, message, raw, context)
 	const isIgnorableContentScriptPortError = (error: Error) => error.message.includes('Attempting to use a disconnected port object')
 		|| error.message.includes('Could not establish connection. Receiving end does not exist')
 		|| error.message.includes('Extension context invalidated')

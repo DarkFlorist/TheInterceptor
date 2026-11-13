@@ -22,7 +22,11 @@ export type FirefoxPage = {
 
 export type FirefoxSession = {
 	browserVersion: string
+	extensionOrigin: string
+	openPage: (url: string) => Promise<FirefoxPage>
 	openExtensionPage: (pagePath: string) => Promise<FirefoxPage>
+	waitForPage: (urlPrefix: string, timeoutMilliseconds: number) => Promise<FirefoxPage>
+	reinstallExtension: () => Promise<void>
 	close: () => Promise<void>
 }
 
@@ -109,6 +113,8 @@ async function createWebDriverSession(port: number) {
 		prefs: {
 			'browser.shell.checkDefaultBrowser': false,
 			'browser.startup.page': 0,
+			// Firefox asks before opening a URL with a user name for a site that does not require one, which would block navigation to the credential-bearing test URLs.
+			'network.http.phishy-userpass-length': 255,
 		},
 	}
 	if (process.env.FIREFOX_BIN !== undefined && process.env.FIREFOX_BIN.length > 0) firefoxOptions.binary = process.env.FIREFOX_BIN
@@ -242,7 +248,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 	await ensureExtensionReady(extensionDirectory)
 	const geckodriverBinary = await findGeckodriverBinary()
 	const port = await findAvailablePort()
-	const driverProcess = spawn(geckodriverBinary, ['--host', '127.0.0.1', '--port', String(port)], {
+	const driverProcess = spawn(geckodriverBinary, ['--host', '127.0.0.1', '--port', String(port), '--websocket-port', '0'], {
 		cwd: REPO_ROOT,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	})
@@ -274,44 +280,65 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 		const extensionUuid = await readExtensionUuid(webDriverSession.profileDirectory, extensionId)
 		const extensionOrigin = `moz-extension://${ extensionUuid }`
 		const activeBidi = bidi
+		const createPage = (context: string): FirefoxPage => ({
+			evaluate: async <T = unknown>(expression: string) => remoteValue<T>(await activeBidi.send('script.evaluate', {
+				expression,
+				target: { context },
+				awaitPromise: true,
+			})),
+			setViewport: async (width: number, height: number) => {
+				await activeBidi.send('browsingContext.setViewport', {
+					context,
+					viewport: { width, height },
+					devicePixelRatio: 1,
+				})
+			},
+			captureScreenshot: async () => {
+				const screenshot = await activeBidi.send('browsingContext.captureScreenshot', {
+					context,
+					origin: 'document',
+					format: { type: 'image/png' },
+				})
+				const data = readStringProperty(screenshot, 'data')
+				if (data === undefined) throw new Error('Firefox did not return screenshot data.')
+				return data
+			},
+			close: async () => {
+				await activeBidi.send('browsingContext.close', { context })
+			},
+		})
+		const openPage = async (url: string): Promise<FirefoxPage> => {
+			const creation = await activeBidi.send('browsingContext.create', { type: 'tab' })
+			const context = readStringProperty(creation, 'context')
+			if (context === undefined) throw new Error('Firefox did not return a browsing context ID.')
+			await activeBidi.send('browsingContext.navigate', {
+				context,
+				url,
+				wait: 'complete',
+			})
+			return createPage(context)
+		}
+		// Finds a top-level window or tab the browser or extension opened itself, such as an extension popup window.
+		const waitForPage = async (urlPrefix: string, timeoutMilliseconds: number): Promise<FirefoxPage> => {
+			const deadline = Date.now() + timeoutMilliseconds
+			while (Date.now() < deadline) {
+				const contexts = readProperty(await activeBidi.send('browsingContext.getTree', { maxDepth: 0 }), 'contexts')
+				const match = Array.isArray(contexts) ? contexts.find((context: unknown) => readStringProperty(context, 'url')?.startsWith(urlPrefix) === true) : undefined
+				const context = readStringProperty(match, 'context')
+				if (context !== undefined) return createPage(context)
+				await sleep(100)
+			}
+			throw new Error(`Timed out waiting for a Firefox page starting with ${ urlPrefix }.`)
+		}
 		return {
 			browserVersion: webDriverSession.browserVersion,
-			openExtensionPage: async (pagePath: string) => {
-				const creation = await activeBidi.send('browsingContext.create', { type: 'tab' })
-				const context = readStringProperty(creation, 'context')
-				if (context === undefined) throw new Error('Firefox did not return a browsing context ID.')
-				await activeBidi.send('browsingContext.navigate', {
-					context,
-					url: `${ extensionOrigin }/${ pagePath }`,
-					wait: 'complete',
-				})
-				return {
-					evaluate: async <T = unknown>(expression: string) => remoteValue<T>(await activeBidi.send('script.evaluate', {
-						expression,
-						target: { context },
-						awaitPromise: true,
-					})),
-					setViewport: async (width: number, height: number) => {
-						await activeBidi.send('browsingContext.setViewport', {
-							context,
-							viewport: { width, height },
-							devicePixelRatio: 1,
-						})
-					},
-					captureScreenshot: async () => {
-						const screenshot = await activeBidi.send('browsingContext.captureScreenshot', {
-							context,
-							origin: 'document',
-							format: { type: 'image/png' },
-						})
-						const data = readStringProperty(screenshot, 'data')
-						if (data === undefined) throw new Error('Firefox did not return screenshot data.')
-						return data
-					},
-					close: async () => {
-						await activeBidi.send('browsingContext.close', { context })
-					},
-				}
+			extensionOrigin,
+			openPage,
+			openExtensionPage: async (pagePath: string) => await openPage(`${ extensionOrigin }/${ pagePath }`),
+			waitForPage,
+			// Installing the same extension again upgrades it in place, as an extension update does: Firefox restarts its background and keeps its internal UUID.
+			reinstallExtension: async () => {
+				await activeBidi.send('webExtension.install', { extensionData: { type: 'path', path: path.resolve(extensionDirectory) } })
 			},
 			close: async () => {
 				activeBidi.close()
