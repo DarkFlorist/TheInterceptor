@@ -1,11 +1,12 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { SYSTEM_ADDRESS, MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { recogniseProtocolEthTransferLogs } from './protocolEthTransferLogs.js'
 import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -127,8 +128,10 @@ export type PreparedEthSimulateV1InputBlock = {
 	readonly inputBlock: SimulationStateInputMinimalDataBlock
 	readonly rpcBlockCount: number
 }
+// A simulation the Interceptor runs for itself names its parent block by tag, so the code check can read the system address at the same block.
+type InterceptorEthSimulateV1Request = { readonly method: 'eth_simulateV1', readonly params: readonly [EthSimulateV1Params['params'][0], EthereumBlockTag] }
 export type PreparedEthSimulateV1Input = {
-	readonly request: EthSimulateV1Params
+	readonly request: InterceptorEthSimulateV1Request
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
@@ -141,6 +144,7 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
+	private systemAddressCodeCheck: { readonly blockNumber: bigint, readonly hasCode: Promise<boolean> } | undefined = undefined
 
 	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
@@ -329,7 +333,7 @@ export class EthereumClientService {
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const parentBlock = await this.getBlock(requestAbortController)
 		if (parentBlock === null) throw new Error('The latest block is null')
-		const call: EthSimulateV1Params = {
+		const call: InterceptorEthSimulateV1Request = {
 			method: 'eth_simulateV1',
 			params: [{
 				blockStateCalls: blockStateCalls,
@@ -338,10 +342,32 @@ export class EthereumClientService {
 			},
 			blockTag === parentBlock.number + 1n ? blockTag - 1n : blockTag
 		] }
-		return await this.ethSimulateV1Request(call, requestAbortController)
+		return await this.simulateRecognisingEthTransfers(call, requestAbortController)
 	}
 
-	public readonly ethSimulateV1Request = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
+	// Every simulation the Interceptor runs for itself goes through here, so callers get ETH transfers from ETHEREUM_LOGS_LOGGER_ADDRESS whichever method they use.
+	private readonly simulateRecognisingEthTransfers = async (request: InterceptorEthSimulateV1Request, requestAbortController: AbortController | undefined) => {
+		const result = EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
+		const [{ blockStateCalls }, simulationParentBlockTag] = request.params
+		return await recogniseProtocolEthTransferLogs(result, blockStateCalls, async () => await this.systemAddressHasCode(simulationParentBlockTag))
+	}
+
+	// A stack's balance queries resend its transfer logs at the same block, so one read per block serves them all. The read takes no abort controller because simulations share it, and a failed read is forgotten so the next simulation retries.
+	private readonly systemAddressHasCode = async (blockTag: EthereumBlockTag) => {
+		if (typeof blockTag !== 'bigint') return (await this.getCode(SYSTEM_ADDRESS, blockTag, undefined)).length > 0
+		if (this.systemAddressCodeCheck?.blockNumber === blockTag) return await this.systemAddressCodeCheck.hasCode
+		const check = { blockNumber: blockTag, hasCode: this.getCode(SYSTEM_ADDRESS, blockTag, undefined).then((code) => code.length > 0) }
+		this.systemAddressCodeCheck = check
+		try {
+			return await check.hasCode
+		} catch (error: unknown) {
+			if (this.systemAddressCodeCheck === check) this.systemAddressCodeCheck = undefined
+			throw error
+		}
+	}
+
+	// Answers a website's own eth_simulateV1, which must get exactly what the node returned, so it skips simulateRecognisingEthTransfers.
+	public readonly ethSimulateV1PassthroughForWebsite = async (request: EthSimulateV1Params, requestAbortController: AbortController | undefined) => {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
@@ -483,13 +509,12 @@ export class EthereumClientService {
 		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
 		return {
 			prepared,
-			result: EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(prepared.request)),
+			result: await this.simulateRecognisingEthTransfers(prepared.request, undefined),
 		}
 	}
 
 	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
-		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController)
-		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
+		return (await this.simulatePrepared(simulationStateInput, blockNumber, requestAbortController)).result
 	}
 
 	public readonly web3ClientVersion = async (requestAbortController: AbortController | undefined) => {
