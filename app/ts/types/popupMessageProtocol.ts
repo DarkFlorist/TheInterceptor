@@ -68,6 +68,7 @@ export const popupMessageProtocol = {
 	popup_requestLatestUnexpectedError: { domain: 'diagnostics' },
 	popup_fetchSimulationStackRequestConfirmation: { domain: 'simulation' },
 	popup_readyAndListening: { domain: 'confirmation' },
+	popup_requestConfirmTransactionQueue: { domain: 'confirmation' },
 	popup_UnexpectedErrorOccured: { domain: 'diagnostics', legacyWireName: true },
 	popup_requestInterceptorSimulationInput: { domain: 'simulation' },
 	popup_importSimulationStack: { domain: 'simulation' },

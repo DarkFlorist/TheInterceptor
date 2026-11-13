@@ -16,6 +16,7 @@ import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -278,6 +279,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		simulationMode: true,
 		activeAddress: transactionToSimulate.transaction.from,
 		created: transactionToSimulate.created,
+		instanceId: 'raw transaction instance',
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
 		transactionToSimulate,
 		website: transactionToSimulate.website,
@@ -319,11 +321,9 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 	const browserMock = installBrowserMock()
 	try {
 		const [
-			{ browserStorageLocalSet2 },
 			{ formSendRawTransaction, resolvePendingTransactionOrMessage },
 			{ getInterceptorTransactionStack },
 		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/windows/confirmTransaction.js'),
 			import('../../app/ts/background/storageVariables.js'),
 		])
@@ -341,13 +341,13 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 		const signedTransaction = transactionToSimulate.signedTransaction
 		if (signedTransaction === undefined) throw new Error('Expected raw transaction to carry the original signed transaction')
 		const pendingTransaction = makeSimulatedPendingRawTransaction(transactionToSimulate)
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+		await seedPendingRequestStorage({ pendingTransactionsAndMessages: [pendingTransaction] })
 
 		await resolvePendingTransactionOrMessage(
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
+			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, instanceId: pendingTransaction.instanceId, action: 'accept' } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages

@@ -3,6 +3,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDomMock } from './domMock.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
@@ -241,7 +242,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const browser = installBrowserMock()
 		const dom = installDomMock()
 		const [
-			{ browserStorageLocalSet, browserStorageLocalSet2 },
+			{ browserStorageLocalSet },
 			{ defaultActiveAddresses, defaultRpcs },
 			{ setRpcConnectionStatus },
 			{ updateConfirmTransactionView },
@@ -273,7 +274,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			makeCurrentAddressRich: false,
 			fixedAddressRichList: [],
 		})
-		await browserStorageLocalSet2({
+		await seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [makePendingTransaction()],
 		})
 		await setRpcConnectionStatus({
@@ -441,24 +442,23 @@ describe('confirm transaction rpc status bootstrap', () => {
 
 	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const pendingTransaction = makeUnexpectedSimulationFailurePendingTransaction('Failed to decode ABI data')
+		// No bootstrap reply arrives, as while the RPC is unreachable, so the window shows the queue from the queue reply alone.
 		installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
 			const typedMessage = message as { method?: string }
 			if (typedMessage.method === 'popup_readyAndListening') return undefined
+			if (typedMessage.method === 'popup_requestConfirmTransactionQueue') return serialize(PopupRequestsReplies.popup_requestConfirmTransactionQueue, { method: 'popup_requestConfirmTransactionQueue', data: { pendingTransactionAndSignableMessages: [pendingTransaction] } })
 			if (typedMessage.method === 'popup_requestSettings') return undefined
 			return undefined
 		})
 		const [
-			{ browserStorageLocalSet2 },
 			{ ConfirmTransaction },
 		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 		])
-
-		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('Failed to decode ABI data')],
-		})
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -474,24 +474,23 @@ describe('confirm transaction rpc status bootstrap', () => {
 
 	test('opens address editing from an execution error preview', async () => {
 		const dom = installDomMock()
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+		const pendingTransaction = makeUnexpectedSimulationFailurePendingTransaction('execution reverted')
+		// No bootstrap reply arrives, as while the RPC is unreachable, so the window shows the queue from the queue reply alone.
 		installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
 			const typedMessage = message as { method?: string }
 			if (typedMessage.method === 'popup_readyAndListening') return undefined
+			if (typedMessage.method === 'popup_requestConfirmTransactionQueue') return serialize(PopupRequestsReplies.popup_requestConfirmTransactionQueue, { method: 'popup_requestConfirmTransactionQueue', data: { pendingTransactionAndSignableMessages: [pendingTransaction] } })
 			if (typedMessage.method === 'popup_requestSettings') return undefined
 			return undefined
 		})
 		const [
-			{ browserStorageLocalSet2 },
 			{ ConfirmTransaction },
 		] = await Promise.all([
-			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 		])
-
-		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('execution reverted')],
-		})
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
