@@ -1,5 +1,7 @@
 import type { Signal } from '@preact/signals'
+import type { RpcNetwork } from '../../types/rpc.js'
 import type { RpcConnectionStatus } from '../../types/user-interface-types.js'
+import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText, type SignerAvailability } from '../../utils/networkWithoutRpcUi.js'
 import { getRpcWarningState, shouldShowRpcWarningCountdown } from '../../utils/rpcConnectionUi.js'
 import { humanReadableDate } from '../ui-utils.js'
 import { ErrorComponent } from './Error.js'
@@ -40,4 +42,17 @@ export function NetworkErrors({ rpcConnectionStatus } : NetworkErrorParams) {
 	return <ErrorComponent warning = { true } text = {
 		<>The connected RPC ({ status.rpcNetwork.name }) seems to be stuck at block { latestBlock.number } (occurred on: { humanReadableDate(latestBlock.timestamp) }). Retrying now.</>
 	}/>
+}
+
+type NetworkWithoutRpcErrorParams = {
+	rpcNetwork: RpcNetwork | undefined
+	simulationMode: boolean
+	signerAvailability: SignerAvailability
+}
+
+export function NetworkWithoutRpcError({ rpcNetwork, simulationMode, signerAvailability }: NetworkWithoutRpcErrorParams) {
+	if (rpcNetwork === undefined) return <></>
+	const warningState = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, signerAvailability)
+	if (warningState.kind === 'none') return <></>
+	return <ErrorComponent text = { getNetworkWithoutRpcWarningText(rpcNetwork.name, warningState) }/>
 }
