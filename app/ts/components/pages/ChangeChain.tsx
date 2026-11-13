@@ -42,16 +42,17 @@ export function ChangeChain() {
 			chainChangeData.value = parsed.data
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => { void sendPopupReadyAndListening('changeChain') }, [])
 
 	async function changeChain(accept: boolean) {
-		if (chainChangeData.value === undefined) return
-		await tryFocusingTabOrWindow({ type: 'tab', id: chainChangeData.value.request.uniqueRequestIdentifier.requestSocket.tabId })
-		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept, uniqueRequestIdentifier: chainChangeData.value.request.uniqueRequestIdentifier, rpcNetwork: chainChangeData.value.rpcNetwork } })
+		// Read once: a newer request can replace the shown one during the focus wait, and this click answers the request it was made on
+		const shownChainChange = chainChangeData.value
+		if (shownChainChange === undefined) return
+		await tryFocusingTabOrWindow({ type: 'tab', id: shownChainChange.request.uniqueRequestIdentifier.requestSocket.tabId })
+		await sendPopupMessageToBackgroundPage({ method: 'popup_changeChainDialog', data: { accept, uniqueRequestIdentifier: shownChainChange.request.uniqueRequestIdentifier, rpcNetwork: shownChainChange.rpcNetwork } })
 	}
 
 	const reject = createAsyncActionRunner(
