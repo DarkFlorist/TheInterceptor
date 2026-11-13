@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { isStackOverflowError } from '../utils/caughtErrors.js'
 import { JSONEncodeableObject, isJSON, jsonParserWithNumbersAsStringsConverter } from '../utils/json.js'
 import { EnrichedGroupedSolidityType } from './solidityType.js'
 import { EthereumQuantity, NonHexBigInt, serialize } from './wire-types.js'
@@ -18,8 +19,14 @@ const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 
 const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: value => {
-		if (!isJSON(value) || !EIP712MessageUnderlying.test(jsonParserWithNumbersAsStringsConverter(value))) return { success: false, message: `${ value } is not EIP712 message` }
-		return { success: true, value: EIP712MessageUnderlying.parse(jsonParserWithNumbersAsStringsConverter(value)) }
+		try {
+			if (!isJSON(value) || !EIP712MessageUnderlying.test(jsonParserWithNumbersAsStringsConverter(value))) return { success: false, message: `${ value } is not EIP712 message` }
+			return { success: true, value: EIP712MessageUnderlying.parse(jsonParserWithNumbersAsStringsConverter(value)) }
+		} catch (error: unknown) {
+			// Websites control this string, and both the JSON reviver and the codecs recurse once per nesting level.
+			if (isStackOverflowError(error)) return { success: false, message: 'EIP712 message is nested too deeply to validate.' }
+			throw error
+		}
 	},
 	serialize: value => {
 		if (!EIP712MessageUnderlying.test(value)) return { success: false, message: `${ value } is not a EIP712 message.`}
