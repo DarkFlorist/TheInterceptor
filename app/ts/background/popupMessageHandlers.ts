@@ -18,7 +18,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
-import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, isRecognizedEntrySource, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt } from '../utils/bigint.js'
@@ -914,7 +914,7 @@ const getErrorIfAnyWithIncompleteAddressBookEntry = async (ethereum: EthereumCli
 		const address = parseUserEnteredAddress(incompleteAddressBookEntry.address, incompleteAddressBookEntry.chainId)
 		if (address !== undefined && incompleteAddressBookEntry.addingAddress) {
 			const identifiedAddress = await identifyAddress(ethereum, undefined, address)
-			if (identifiedAddress.entrySource !== 'OnChain' && identifiedAddress.entrySource !== 'FilledIn') {
+			if (isRecognizedEntrySource(identifiedAddress.entrySource)) {
 				return 'The address already exists. Edit the existing record instead trying to add it again.'
 			}
 		}

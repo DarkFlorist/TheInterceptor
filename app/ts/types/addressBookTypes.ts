@@ -7,6 +7,18 @@ export const ChainIdWithUniversal = funtypes.Union(EthereumQuantity, funtypes.Li
 
 export const doAddressBookChainIdsMatch = (left: ChainIdWithUniversal | undefined, right: ChainIdWithUniversal | undefined) => (left ?? 1n) === (right ?? 1n)
 
+// A recognized entry was vetted: the user added it, or The Interceptor ships it (bundled DarkFloristMetadata or its own Interceptor definitions). OnChain entries are recorded automatically from on-chain lookups of any address the extension sees and FilledIn entries are placeholders, so neither says the address was vetted.
+export function isRecognizedEntrySource(entrySource: EntrySource) {
+	switch (entrySource) {
+		case 'User':
+		case 'DarkFloristMetadata':
+		case 'Interceptor': return true
+		case 'OnChain':
+		case 'FilledIn': return false
+		default: return assertNever(entrySource)
+	}
+}
+
 export type EntrySource = funtypes.Static<typeof EntrySource>
 export const EntrySource = funtypes.Union(
 	funtypes.Literal('DarkFloristMetadata'),
