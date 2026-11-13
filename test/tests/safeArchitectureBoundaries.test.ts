@@ -6,6 +6,8 @@ const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const importedSimulationStackSource = await Bun.file(new URL('../../app/ts/background/importedSimulationStack.ts', import.meta.url)).text()
+const importedStackTrustSource = await Bun.file(new URL('../../app/ts/background/importedStackTrust.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
@@ -75,8 +77,8 @@ test('every decision whether the node runs a transaction as an executed call goe
 		const codeLines = (await Bun.file(new URL(`../../app/ts/${ file }`, import.meta.url)).text()).split('\n').filter((line) => !/^\s*(?:\/\/|\*|\/\*)/u.test(line))
 		if (codeLines.some((line) => /simulationOptions\??\.executeThroughSafe/u.test(line))) readers.push(file)
 	}
-	// The import admission removes the field itself, so it reads it directly.
-	assert.deepEqual(readers.sort(), ['background/importedSimulationStack.ts', 'types/visualizer-types.ts'])
+	// The import admission drops an imported transaction's whole simulationOptions, so it never reads executeThroughSafe either.
+	assert.deepEqual(readers.sort(), ['types/visualizer-types.ts'])
 })
 
 test('simulation stack import applies every imported-stack admission rule from one module', () => {
@@ -84,6 +86,9 @@ test('simulation stack import applies every imported-stack admission rule from o
 	assert.match(popupMessageHandlersSource, /\.\.\.prevStack\.operations, \.\.\.admission\.operations\]/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /preSimulationTransaction\.safeTransaction !== undefined|executeThroughSafe/u)
 	assert.doesNotMatch(safeTransactionConfirmationSource, /withoutImportedGnosisSafeExecutions/u)
+	assert.match(importedSimulationStackSource, /const \{ simulationOptions: _claimedSimulationOptions, \.\.\.preSimulationTransaction \} = operation\.preSimulationTransaction/u)
+	assert.match(importedSimulationStackSource, /importedFromExport: true/u)
+	assert.doesNotMatch(importedStackTrustSource, /simulationOptions|importedFromExport: true|ExportedInterceptorStackOperation/u)
 })
 
 test('Gnosis Safe confirmation takes its request-shape policy from the Safe domain layer', () => {

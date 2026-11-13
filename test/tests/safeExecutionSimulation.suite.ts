@@ -624,6 +624,7 @@ for (const { description, imported } of importCases) {
 	test(description, async () => {
 		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 		await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
-		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), ORDINARY_SIMULATION_OPTIONS)
+		// An imported transaction keeps none of its claimed simulation options (admitImportedSimulationStackOperations), which leaves it an ordinary transaction.
+		assert.equal(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), undefined)
 	})
 }

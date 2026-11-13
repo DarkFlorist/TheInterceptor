@@ -197,8 +197,9 @@ export const FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Readonly
 export type WebsiteCreatedEthereumTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumTransactionOrFailed>
 export const WebsiteCreatedEthereumTransactionOrFailed = funtypes.Union(WebsiteCreatedEthereumTransaction, FailedToCreateWebsiteCreatedEthereumTransaction)
 
-export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
-export const SignedMessageTransaction = funtypes.ReadonlyObject({
+// The fields of a signed message, which are also exactly what a simulation stack export file carries for it (see InterceptorSimulationExport). New message fields belong here so they round-trip through export files; only this extension's own state about a message goes in SignedMessageTransaction below.
+export type ExportedSignedMessageTransaction = funtypes.Static<typeof ExportedSignedMessageTransaction>
+export const ExportedSignedMessageTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	fakeSignedFor: EthereumAddress,
@@ -211,6 +212,13 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	safeMessageReview: SafeMessageReview,
 	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
 	activeAddress: EthereumAddress,
+}))
+
+// A signed message in this extension's own simulation stack and simulation state.
+export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
+export const SignedMessageTransaction = ExportedSignedMessageTransaction.And(funtypes.ReadonlyPartial({
+	// Internal provenance, set only by admitImportedSimulationStackOperations (background/importedSimulationStack.ts) when a message is imported from an export file. It is the stack's own record and stays in the persisted stack and the simulation state built from it, because the signature visualizer (flagImportedSignature) reads it from there. It is not part of ExportedSignedMessageTransaction, which the export file schema is built on, and funtypes drops fields a schema does not declare on both parse and serialize, so an export file never carries the marker and an import file that claims it cannot set it.
+	importedFromExport: funtypes.Literal(true),
 }))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
@@ -553,20 +561,24 @@ export const EditEnsNamedHashWindowState = funtypes.ReadonlyObject({
 	name: funtypes.Union(funtypes.Undefined, funtypes.String)
 })
 
+const TransactionStackOperation = funtypes.ReadonlyObject({
+	type: funtypes.Literal('Transaction'),
+	preSimulationTransaction: PreSimulationTransaction
+})
+
+const TimeManipulationStackOperation = funtypes.ReadonlyObject({
+	type: funtypes.Literal('TimeManipulation'),
+	blockTimeManipulation: BlockTimeManipulation
+})
+
 export type InterceptorStackOperation = funtypes.Static<typeof InterceptorStackOperation>
 export const InterceptorStackOperation = funtypes.Union(
-	funtypes.ReadonlyObject({
-		type: funtypes.Literal('Transaction'),
-		preSimulationTransaction: PreSimulationTransaction
-	}),
+	TransactionStackOperation,
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('Message'),
 		signedMessageTransaction: SignedMessageTransaction
 	}),
-	funtypes.ReadonlyObject({
-		type: funtypes.Literal('TimeManipulation'),
-		blockTimeManipulation: BlockTimeManipulation
-	})
+	TimeManipulationStackOperation
 )
 
 export type InterceptorTransactionStack = funtypes.Static<typeof InterceptorTransactionStack>
@@ -577,10 +589,27 @@ export const InterceptorTransactionStack = funtypes.ReadonlyObject({
 // How resolving a pending request changed the simulation stack, which decides the view work done once the website has its answer.
 export type SimulationStackChange = 'changed' | 'unchanged' | 'safeProposalStored'
 
+// The stack operations of an export file: the same as InterceptorStackOperation, except that messages are ExportedSignedMessageTransaction (see SignedMessageTransaction.importedFromExport).
+export type ExportedInterceptorStackOperation = funtypes.Static<typeof ExportedInterceptorStackOperation>
+export const ExportedInterceptorStackOperation = funtypes.Union(
+	TransactionStackOperation,
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('Message'),
+		signedMessageTransaction: ExportedSignedMessageTransaction
+	}),
+	TimeManipulationStackOperation
+)
+
+export type ExportedInterceptorTransactionStack = funtypes.Static<typeof ExportedInterceptorTransactionStack>
+export const ExportedInterceptorTransactionStack = funtypes.ReadonlyObject({
+	operations: funtypes.ReadonlyArray(ExportedInterceptorStackOperation),
+})
+
+// The simulation stack export file format, used both to write export files and to parse files the user imports.
 export type InterceptorSimulationExport = funtypes.Static<typeof InterceptorSimulationExport>
 export const InterceptorSimulationExport = funtypes.ReadonlyObject({
 	name: funtypes.Literal('Interceptor Simulation Export'),
 	version: funtypes.Literal('1.0.0'),
 	eth_simulateV1: EthSimulateV1Params,
-	interceptorSimulateStack: InterceptorTransactionStack,
+	interceptorSimulateStack: ExportedInterceptorTransactionStack,
 })
