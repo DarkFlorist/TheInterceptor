@@ -1,6 +1,7 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { getInterceptorDisabledSites, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { updateContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { updateWebsiteAccess } from './settings.js'
+import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
 
 function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
 	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
@@ -15,6 +16,7 @@ export async function updateWebsiteAccessAndContentScriptInjectionStrategy(updat
 		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
 		return nextWebsiteAccess
 	})
+	// This awaited update owns the popup's result: its failure rejects the operation before any tab reload, while the storage listener separately reports its own attempt.
 	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
 	return disabledSitesChanged
 }

@@ -367,6 +367,20 @@ function formatBunBuildLogs(logs: readonly BuildMessage[]) {
 		.join('\n')
 }
 
+// The build package stays self-contained, so it lists the injected classic scripts itself; injectedScripts.test.ts checks this matches INPAGE_SCRIPTS in app/ts/config/injectedScripts.ts.
+export const INPAGE_RUNTIME_SCRIPTS = {
+	documentStart: '/inpage/js/document_start.js',
+	provider: '/inpage/js/inpage.js',
+	contentListener: '/inpage/js/listenContentScript.js',
+	contentListenerBootstrap: '/inpage/js/listenContentScriptBootstrap.js',
+	safeAppsHost: '/inpage/js/safeAppsHostBootstrap.js',
+	prepareSafeApp: '/inpage/js/prepareSafeAppBootstrap.js',
+	cancelSafeAppPreparation: '/inpage/js/cancelSafeAppPreparationBootstrap.js',
+	clearSafeAppPreparationCancellation: '/inpage/js/clearSafeAppPreparationCancellationBootstrap.js',
+	readDocumentOrigin: '/inpage/js/readDocumentOrigin.js',
+} as const
+const inpageRuntimeScriptPaths = Object.values(INPAGE_RUNTIME_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1)))
+
 const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'backgroundServiceWorker.js'),
 	path.join(appDirectory, 'js', 'background', 'background-startup.js'),
@@ -380,19 +394,11 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'settingsView.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	...inpageRuntimeScriptPaths,
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
-const classicRuntimeEntrypointPaths = new Set([
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-])
+const classicRuntimeEntrypointPaths = new Set(inpageRuntimeScriptPaths)
 
 export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {
 	try {
@@ -423,34 +429,70 @@ function getExistingRuntimeEntrypointPaths() {
 	return runtimeEntrypointPaths.filter((entrypointPath) => fs.existsSync(entrypointPath))
 }
 
-async function bundleChromeRuntimeEntrypoints() {
+// Provider bundling and MV2 embedding share the runtime resolver and one output owner.
+export function embedInpageProvider(documentStartSource: string, providerSource: string) {
+	assertClassicEntrypointHasNoModuleSyntax('inpage.js', providerSource)
+	const sourceFile = ts.createSourceFile('document_start.js', documentStartSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+	const argumentsToReplace: ts.StringLiteral[] = []
+	const visit = (node: ts.Node) => {
+		if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'injectScript' && node.arguments.length === 1) {
+			const argument = node.arguments[0]
+			if (argument !== undefined && ts.isStringLiteral(argument)) argumentsToReplace.push(argument)
+		}
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	const argument = argumentsToReplace[0]
+	if (argumentsToReplace.length !== 1 || argument === undefined) throw new Error('Expected one provider injection in document_start.js')
+	return documentStartSource.slice(0, argument.getStart(sourceFile)) + JSON.stringify(providerSource) + documentStartSource.slice(argument.end)
+}
+
+type RuntimeBundleOptions = {
+	readonly root: string
+	readonly outdir: string
+	readonly inpagePath: string
+	readonly documentStartPath: string
+}
+
+export async function buildRuntimeEntrypoints(entrypoints: readonly string[], options: RuntimeBundleOptions): Promise<RuntimeEntrypointCopy[]> {
+	// Preparation relies on its final promise expression; only the provider needs an isolated IIFE scope.
+	const formats: readonly ('esm' | 'iife')[] = ['esm', 'iife']
+	for (const format of formats) {
+		const group = entrypoints.filter((entrypoint) => (entrypoint === options.inpagePath ? 'iife' : 'esm') === format)
+		if (group.length === 0) continue
+		const buildResult = await Bun.build({ entrypoints: group, outdir: options.outdir, root: options.root, target: 'browser', format, splitting: false, external: [...externalRuntimeModules] })
+		if (!buildResult.success) throw new Error(`Failed to bundle runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
+	}
+	const bundledEntrypoints = entrypoints.map((entrypointPath) => {
+		const relativeEntrypointPath = path.relative(options.root, entrypointPath).replace(/\.[cm]?[jt]sx?$/, '.js')
+		const bundledEntrypointPath = path.join(options.outdir, relativeEntrypointPath)
+		if (!fs.existsSync(bundledEntrypointPath)) throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
+		return { bundledEntrypointPath, entrypointPath, requiresClassicSyntax: classicRuntimeEntrypointPaths.has(entrypointPath) || entrypointPath === options.inpagePath || entrypointPath === options.documentStartPath }
+	})
+	const documentStart = bundledEntrypoints.find(({ entrypointPath }) => entrypointPath === options.documentStartPath)
+	if (documentStart !== undefined) {
+		const provider = bundledEntrypoints.find(({ entrypointPath }) => entrypointPath === options.inpagePath)
+		if (provider === undefined) throw new Error('The document-start bundle requires the provider bundle.')
+		// Embed the exact provider bytes that will be copied for MV3, after both bundles exist and before validation/copying.
+		const embedded = embedInpageProvider(fs.readFileSync(documentStart.bundledEntrypointPath, 'utf8'), fs.readFileSync(provider.bundledEntrypointPath, 'utf8'))
+		fs.writeFileSync(documentStart.bundledEntrypointPath, embedded)
+	}
+	return bundledEntrypoints
+}
+
+async function bundleRuntimeEntrypoints() {
 	const existingEntrypoints = getExistingRuntimeEntrypointPaths()
 	if (existingEntrypoints.length === 0) return
 	const bundledOutputDirectory = path.join(appDirectory, '.runtime-bundles')
 	fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 	ensureDirectoryExists(bundledOutputDirectory)
 	try {
-		const buildResult = await Bun.build({
-			entrypoints: existingEntrypoints,
-			outdir: bundledOutputDirectory,
+		copyRuntimeEntrypoints(await buildRuntimeEntrypoints(existingEntrypoints, {
 			root: appDirectory,
-			target: 'browser',
-			format: 'esm',
-			splitting: false,
-			external: [...externalRuntimeModules],
-		})
-		if (!buildResult.success) {
-			throw new Error(`Failed to bundle Chrome runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
-		}
-		const entrypointsToCopy = existingEntrypoints.map((entrypointPath) => {
-			const relativeEntrypointPath = path.relative(appDirectory, entrypointPath)
-			const bundledEntrypointPath = path.join(bundledOutputDirectory, relativeEntrypointPath)
-			if (!fs.existsSync(bundledEntrypointPath)) {
-				throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
-			}
-			return { bundledEntrypointPath, entrypointPath, requiresClassicSyntax: classicRuntimeEntrypointPaths.has(entrypointPath) }
-		})
-		copyRuntimeEntrypoints(entrypointsToCopy)
+			outdir: bundledOutputDirectory,
+			inpagePath: path.join(appDirectory, INPAGE_RUNTIME_SCRIPTS.provider.slice(1)),
+			documentStartPath: path.join(appDirectory, INPAGE_RUNTIME_SCRIPTS.documentStart.slice(1)),
+		}))
 	} finally {
 		fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 	}
@@ -587,7 +629,7 @@ export function stripSourceMappingUrlComment(text: string) {
 }
 
 export async function replaceImportsInJSFiles() {
-	await bundleChromeRuntimeEntrypoints()
+	await bundleRuntimeEntrypoints()
 	for (const folder of getRuntimeFiles()) ensureDirectoryExists(folder)
 	const runtimeDependencyGraph = rewriteRuntimeImportsAndCollectDependencyGraph()
 	const missingRuntimeImportIssues = runtimeDependencyGraph.missingRuntimeImportIssues

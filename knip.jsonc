@@ -20,6 +20,12 @@
 				"app/inpage/ts/inpage.ts",
 				"app/inpage/ts/listenContentScript.ts",
 				"app/inpage/ts/listenContentScriptBootstrap.ts",
+				// injected classic scripts listed in INPAGE_RUNTIME_SCRIPTS (build/bundler.mts)
+				"app/inpage/ts/safeAppsHostBootstrap.ts",
+				"app/inpage/ts/prepareSafeAppBootstrap.ts",
+				"app/inpage/ts/cancelSafeAppPreparationBootstrap.ts",
+				"app/inpage/ts/clearSafeAppPreparationCancellationBootstrap.ts",
+				"app/inpage/ts/readDocumentOrigin.ts",
 				"app/ts/simulationStack.ts",
 				"test/tests/*.test.ts",
 				"test/tests/*.ts"

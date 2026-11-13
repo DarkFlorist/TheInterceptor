@@ -3,6 +3,10 @@ import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
+export function getInterceptorDisabledSites(websiteAccess: WebsiteAccessArray): string[] {
+	return websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
+}
+
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string): ApprovalState {
 	for (const web of websiteAccess) {
 		if (web.website.websiteOrigin !== websiteOrigin) continue
