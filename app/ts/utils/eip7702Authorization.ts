@@ -63,15 +63,57 @@ export const hasPartialEip7702AuthorizationSignature = (authorization: Eip7702Au
 	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
 }
 
-const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => {
-	return EthereumAddress.parse(eip7702Authorization.getAuthority({
-		chainId: authorization.chainId,
-		address: addressString(authorization.address),
-		nonce: authorization.nonce,
-		r: BigInt(bytes32String(authorization.r)),
-		s: BigInt(bytes32String(authorization.s)),
-		yParity: authorization.yParity === 'even' ? 0 : 1,
-	}))
+// The secp256k1 group order n. The node accepts an authorization signature only with r and s in [1, n - 1] and s no greater than n / 2: replacing s with n - s and flipping yParity yields a second signature that recovers the same authority.
+const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+export const SECP256K1_HALF_ORDER = SECP256K1_ORDER / 2n
+// EIP-7702 skips an authorization whose nonce is not below 2**64 - 1.
+const EIP7702_AUTHORIZATION_NONCE_LIMIT = 2n ** 64n - 1n
+
+const recoverEip7702AuthorizationAuthoritySync = (authorization: SignedEip7702Authorization): bigint => EthereumAddress.parse(eip7702Authorization.getAuthority({
+	chainId: authorization.chainId,
+	address: addressString(authorization.address),
+	nonce: authorization.nonce,
+	r: BigInt(bytes32String(authorization.r)),
+	s: BigInt(bytes32String(authorization.s)),
+	yParity: authorization.yParity === 'even' ? 0 : 1,
+}))
+
+const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => recoverEip7702AuthorizationAuthoritySync(authorization)
+
+// What the signature library throws for an in-range signature no public key recovers from: an r that is no curve point's x coordinate, or a recovery that lands on the point at infinity. Tests pin these messages, so a library change fails them instead of hiding other errors.
+const isUnrecoverableSignatureError = (error: unknown) => error instanceof Error && (error.message.startsWith('bad point:') || error.message.startsWith('invalid recovery:'))
+
+// The authority the node recovers from an authorization: projectEip7702AuthorizationForRpc sends only the signed fields, so authority metadata never reaches it. Undefined for a missing, zero, out-of-range, high-s or unrecoverable signature, which the node skips; this includes the r = s = 0 mock signature of an unsigned authorization.
+export const getNodeRecoveredEip7702Authority = (authorization: Eip7702Authorization): bigint | undefined => {
+	if (!hasEip7702AuthorizationSignature(authorization)) return undefined
+	if (authorization.r < 1n || authorization.r >= SECP256K1_ORDER || authorization.s < 1n || authorization.s > SECP256K1_HALF_ORDER) return undefined
+	try {
+		return recoverEip7702AuthorizationAuthoritySync(authorization)
+	} catch (error: unknown) {
+		if (isUnrecoverableSignatureError(error)) return undefined
+		throw error
+	}
+}
+
+// The authority's account state an authorization is checked against; undefined fields are unknown.
+export type Eip7702AuthorityState = {
+	readonly nonce: bigint | undefined
+	// Whether the authority's code may be replaced: empty code or a delegation designator.
+	readonly acceptsAuthorization: boolean | undefined
+}
+
+// The single owner of EIP-7702's per-authorization validity rules, returning the authority whose nonce the node raises and whose code it sets, or undefined when the node skips the authorization: chain ID 0 or the current chain, a nonce below 2**64 - 1, a signature the node recovers an authority from (getNodeRecoveredEip7702Authority), an authority whose code is empty or a delegation, and a nonce equal to the authority's current nonce. Unknown authority state fails closed.
+export const getApplicableEip7702Authority = (
+	authorization: Eip7702Authorization,
+	chainId: bigint,
+	getAuthorityState: (authority: bigint) => Eip7702AuthorityState,
+): bigint | undefined => {
+	if (authorization.chainId !== 0n && authorization.chainId !== chainId) return undefined
+	if (authorization.nonce >= EIP7702_AUTHORIZATION_NONCE_LIMIT) return undefined
+	const authority = getNodeRecoveredEip7702Authority(authorization)
+	if (authority === undefined) return undefined
+	const authorityState = getAuthorityState(authority)
+	return authorityState.acceptsAuthorization === true && authorityState.nonce !== undefined && authorityState.nonce === authorization.nonce ? authority : undefined
 }
 
 const normalizeEip7702Authorization = async (authorization: Eip7702Authorization): Promise<NormalizedEip7702Authorization> => {
