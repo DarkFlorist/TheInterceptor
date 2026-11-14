@@ -1297,11 +1297,13 @@ export const simulatedCallFromInput = async (
 	simulationStateInput: ResolvedSimulationInput,
 	params: SimulatedCallParams,
 	blockTag: EthereumBlockTag = 'latest',
+	// The block the simulation input runs on top of; a caller that prepared the input for a specific parent block passes it, so a newer block cannot change the state the call sees.
+	baseBlockTag: EthereumBlockTag = 'latest',
 ) => {
 	return await simulatedCallWithPreparedInputContext(
 		ethereumClientService,
 		requestAbortController,
-		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput),
+		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput, baseBlockTag),
 		params,
 		blockTag,
 	)

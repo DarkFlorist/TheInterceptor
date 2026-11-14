@@ -79,11 +79,11 @@ const containsExecTransactionSelector = (data: Uint8Array) => {
 	return false
 }
 
-// Reads a Gnosis Safe's nonce after a prepared simulation input runs. prepareSafeExecutionSimulationInput takes it as a parameter so tests can answer for a node.
-export type SafeNonceAfterInputReader = (preparedInputBefore: SimulationStateInput, safeAddress: bigint) => Promise<bigint>
+// Reads a Gnosis Safe's nonce after a prepared simulation input runs on top of the given parent block, the block the input was prepared for, so a newer block cannot shift the nonce. prepareSafeExecutionSimulationInput takes it as a parameter so tests can answer for a node.
+export type SafeNonceAfterInputReader = (preparedInputBefore: SimulationStateInput, safeAddress: bigint, parentBlockNumber: bigint) => Promise<bigint>
 
-export const createSafeNonceAfterInputReader = (ethereum: EthereumClientService): SafeNonceAfterInputReader => async (preparedInputBefore, safeAddress) => {
-	const call = await simulatedCallFromInput(ethereum, undefined, { kind: 'simulated', value: preparedInputBefore }, { to: safeAddress, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, value: 0n, input: stringToUint8Array(encodeFunctionCall(SAFE_ABI, 'nonce', [])) })
+export const createSafeNonceAfterInputReader = (ethereum: EthereumClientService): SafeNonceAfterInputReader => async (preparedInputBefore, safeAddress, parentBlockNumber) => {
+	const call = await simulatedCallFromInput(ethereum, undefined, { kind: 'simulated', value: preparedInputBefore }, { to: safeAddress, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, value: 0n, input: stringToUint8Array(encodeFunctionCall(SAFE_ABI, 'nonce', [])) }, 'latest', parentBlockNumber)
 	if (!('result' in call) || call.result === undefined) throw new Error(`Failed to read the Gnosis Safe nonce in the simulation: ${ 'error' in call ? call.error?.message : 'no result' }`)
 	return decodeFunctionOutput(SAFE_ABI, 'nonce', call.result)
 }
@@ -163,7 +163,7 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 			if (safeState === undefined) throw new Error('The Gnosis Safe state of the execution was not read.')
 			const nonceMayHaveChanged = executedSafes.has(safeAddress) || earlierCalldataCanExecuteASafe
 			const inputBeforeExecution = withFirstBlockOverrides([...preparedBlocks, { ...block, transactions: [...preparedTransactions] }], { approvedHashSlotsBySafe: new Map(approvedHashSlotsBySafe), executorBalance })
-			const nonceAtExecution = nonceMayHaveChanged ? await readSafeNonceAfterInput(inputBeforeExecution, safeAddress) : safeState.nonce
+			const nonceAtExecution = nonceMayHaveChanged ? await readSafeNonceAfterInput(inputBeforeExecution, safeAddress, parentBlockNumber) : safeState.nonce
 			executedSafes.add(safeAddress)
 			// The data the Safe calls or delegate-calls with, a MultiSend batch included.
 			if (containsExecTransactionSelector(execution.message.data)) earlierCalldataCanExecuteASafe = true

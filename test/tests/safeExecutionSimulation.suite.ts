@@ -10,7 +10,7 @@ import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types
 import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { classifyCaughtError } from '../../app/ts/utils/errors.js'
-import { estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { createSafeNonceAfterInputReader, estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
 import { SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../../app/ts/safe/safeExecutionRouting.js'
 import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
@@ -19,7 +19,7 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -313,6 +313,32 @@ test('reads the Gnosis Safe\'s nonce from the simulation after a Safe execution 
 		assert.deepEqual(nonceReader.reads.map((read) => read.preparedInputBefore[0]?.transactions), [[relay]])
 		assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 6n)).sort())
 	}
+})
+
+test('reads a Gnosis Safe\'s nonce in a simulation on top of the parent block the input was prepared for, not a newer latest block', async () => {
+	configureSafe()
+	const parentBlockNumber = 120n
+	// A newer block arrived after the input was prepared for block 120.
+	const newerLatestBlockNumber = 130n
+	const simulatedOnBlockTags: unknown[] = []
+	const recordingRequestHandler = {
+		...fakeRequestHandler,
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			if (rpcRequest.method === 'eth_getBlockByNumber') {
+				const blockTag = rpcRequest.params?.[0]
+				return modules.serialize(modules.EthereumBlockHeader, { ...makeFakeBlock(), number: typeof blockTag === 'bigint' ? blockTag : newerLatestBlockNumber })
+			}
+			if (rpcRequest.method === 'eth_simulateV1') simulatedOnBlockTags.push(rpcRequest.params?.[1])
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}
+	const recordingEthereum = new modules.EthereumClientService(recordingRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ordinaryTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
+	const preparedInputBefore = [createBlock([{ ...ordinaryTransaction, signedTransaction: { ...ordinaryTransaction.signedTransaction, from: ORDINARY_ACCOUNT } }])]
+
+	assert.equal(await createSafeNonceAfterInputReader(recordingEthereum)(preparedInputBefore, SAFE_ADDRESS, parentBlockNumber), fakeSafeContract.nonce)
+	assert.ok(simulatedOnBlockTags.length > 0, 'the nonce is read through a simulation')
+	assert.deepEqual(simulatedOnBlockTags, simulatedOnBlockTags.map(() => parentBlockNumber), 'every simulation the read runs builds on the parent block')
 })
 
 test('approves a Safe execution at one nonce however many execTransaction selectors a page stuffs into calldata', async () => {
