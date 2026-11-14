@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { BlockTimeManipulation, SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
@@ -61,7 +62,6 @@ const mockBrowser = makeMockBrowser()
 Object.defineProperty(globalThis, 'browser', { value: mockBrowser, configurable: true, writable: true })
 Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
 
-const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
 const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers.js')
 const { mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
@@ -167,7 +167,7 @@ describe('simulate delay editor', () => {
 		assert.deepStrictEqual({ ...stack.operations[1].blockTimeManipulation }, newDelay)
 	})
 
-	test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
+	test('the simulation input has one block transition per remaining delay', async () => {
 		await resetStack()
 
 		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
@@ -178,7 +178,7 @@ describe('simulate delay editor', () => {
 			},
 		})
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.equal(simulationInput.length, 2)
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [
 			{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
@@ -201,7 +201,7 @@ describe('simulate delay editor', () => {
 			},
 		})
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepStrictEqual(simulationInput, [])
 	})
 
@@ -220,7 +220,7 @@ describe('simulate delay editor', () => {
 			}],
 		}))
 
-		assert.deepEqual(await getCurrentSimulationInput(), [])
+		assert.deepEqual(await readActiveSimulationInput(), [])
 	})
 })
 
@@ -256,7 +256,7 @@ describe('eth_simulateV1 block timestamps', () => {
 	const getCurrentStackBlockTimeSteps = async () => {
 		const parentBlock = await ethereumClientService.getBlock(undefined, 1n)
 		if (parentBlock === null) throw new Error('missing parent block')
-		const prepared = await ethereumClientService.prepareEthSimulateV1Input(await getCurrentSimulationInput(), 1n, undefined)
+		const prepared = await ethereumClientService.prepareEthSimulateV1Input(await readActiveSimulationInput(), 1n, undefined)
 		let previousTime = dateToBigintSeconds(parentBlock.timestamp)
 		return prepared.blockOverrides.map((blockOverride) => {
 			if (blockOverride.time === undefined) throw new Error('missing block time')
@@ -321,7 +321,7 @@ describe('eth_simulateV1 block timestamps', () => {
 			],
 		}))
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
 	})
 
@@ -334,7 +334,7 @@ describe('eth_simulateV1 block timestamps', () => {
 			],
 		}))
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
 	})
 

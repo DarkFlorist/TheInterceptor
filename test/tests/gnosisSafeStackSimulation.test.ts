@@ -9,6 +9,7 @@ import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -389,7 +390,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		})
 
-		const simulationInput = await modules.getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		const executionTimestamp = new Date('2024-01-02T00:00:00.000Z')
 		const executionStateOverrides = {
 			'0x0000000000000000000000000000000000000001': { code: new Uint8Array([1, 2, 3]) },
@@ -468,7 +469,10 @@ describe('Gnosis Safe stack simulation', () => {
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, recipient, operation)
 		const namedContract = { ...recipient, address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n }
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: namedContract }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
+		// The snapshot only serves the network the services were made for, so that network is the active one, with an empty stack.
+		await modules.browserStorageLocalSet({ simulationMode: true, independentActiveSimulationAddress: activeAddress.address, activeRpcNetwork: fakeRpcNetwork, interceptorTransactionStack: { operations: [] } })
+		const network = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 0) })
+		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: namedContract }, network)
 
 		if (reply.success) throw new Error('expected no simulated outcome')
 		assert.match(reply.errorMessage, message)
@@ -627,11 +631,12 @@ describe('Gnosis Safe stack simulation', () => {
 		})
 
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
-		const simulationInput = await modules.getCurrentSimulationInput()
-		assert.equal(simulationInput.length, seedStack ? 1 : 0)
-		assert.equal(simulationInput[0]?.transactions.length, seedStack ? 1 : undefined)
+		const network = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService })
+		const snapshot = modules.requireSimulationSnapshot(network.simulation)
+		assert.equal(snapshot.simulationStateInput.length, seedStack ? 1 : 0)
+		assert.equal(snapshot.simulationStateInput[0]?.transactions.length, seedStack ? 1 : undefined)
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, simulationInput, ethereum, tokenPriceService)
+		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, network)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
 

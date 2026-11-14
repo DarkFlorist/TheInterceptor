@@ -4,6 +4,14 @@ import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDomMock } from './domMock.js'
 
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async (services: Parameters<typeof import('../../app/ts/background/networkTransitionLock.js').readNetworkSnapshotForServices>[0]) => {
+	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: services.ethereum.getRpcEntry() })
+	return await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices(services)
+}
+
 type RuntimeMessageListener = (message: unknown) => unknown
 
 type TestDomNode = {
@@ -294,7 +302,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
-		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		await updateConfirmTransactionView(await readNetworkState({ ethereum, tokenPriceService }))
 
 		const initialMessage = browser.sentMessages.find((message) =>
 			typeof message === 'object'

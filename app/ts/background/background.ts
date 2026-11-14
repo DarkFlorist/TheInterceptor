@@ -1,6 +1,7 @@
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
+import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
@@ -9,21 +10,23 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
+import { withSuppressedUnscopedConnectionEventsForSocket } from './websiteConnectionEvents.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type SwitchEthereumChainParams, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
+import { buildExecutionSimulationStateFromPreparedInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc, requireSimulationSnapshot } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { type NetworkSnapshot, readNetworkSnapshot } from './networkTransitionLock.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -63,26 +66,38 @@ type HandledRpcRequest = { readonly reply: RPCReply, readonly afterReplyDelivere
 type AfterReplyDelivered = () => void | Promise<void>
 const replyWithoutFollowUp = (reply: RPCReply): HandledRpcRequest => ({ reply, afterReplyDelivered: undefined })
 
-async function handleRPCRequest(
-	simulationServicesOwner: SimulationServicesOwner,
-	websiteTabConnections: WebsiteTabConnections,
-	socket: WebsiteSocket,
-	website: Website,
-	context: RpcRequestContext,
-	settings: Settings,
-	activeAddress: bigint | undefined,
-	publishRpcConnectionStatus: PublishRpcConnectionStatus,
-	simulationOverlayEnabled: boolean,
-	safeSigningMode: boolean,
-	activeSafeSigner: bigint | undefined,
-): Promise<HandledRpcRequest> {
-	// Select one execution pair after admission; lazy simulation preparation uses this same pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+// Everything a request may use: the network read when it was admitted, so a handler added to rpcRequestHandlers cannot reach services installed later. Requests that must act on the live network go through LiveNetworkRpcFlows.
+type AdmittedRpcRequest = {
+	readonly network: NetworkSnapshot
+	readonly context: RpcRequestContext
+	readonly websiteTabConnections: WebsiteTabConnections
+	readonly socket: WebsiteSocket
+	readonly website: Website
+	readonly activeAddress: bigint | undefined
+	readonly publishRpcConnectionStatus: PublishRpcConnectionStatus
+	readonly simulationOverlayEnabled: boolean
+	readonly safeSigningMode: boolean
+	readonly activeSafeSigner: bigint | undefined
+}
+
+// The only flows that hold the services owner: a confirmation waits for the user and reads the services again with the stack it appends to, and a chain switch acts on the live network. They start from the admitted network, and nothing else in handleRPCRequest sees the owner.
+const createLiveNetworkRpcFlows = (simulationServicesOwner: SimulationServicesOwner, { network, context: { request, confirmation }, websiteTabConnections, website, activeAddress }: AdmittedRpcRequest) => ({
+	signMessage: async (signRequest: SignMessageParams, simulationMode: boolean) => await personalSign(simulationServicesOwner, network, activeAddress, confirmation?.kind === 'message' ? confirmation : { kind: 'message', parameters: signRequest }, request, website, websiteTabConnections, simulationMode),
+	sendTransaction: async (transactionRequest: SendRawTransactionParams | SendTransactionParams, simulationMode: boolean) => await sendTransaction(simulationServicesOwner, network, activeAddress, confirmation?.kind === 'transaction' ? confirmation : { kind: 'transaction', parameters: transactionRequest }, request, website, websiteTabConnections, simulationMode),
+	switchEthereumChain: async (switchRequest: SwitchEthereumChainParams) => await switchEthereumChain(simulationServicesOwner, websiteTabConnections, switchRequest, request, network.settings.simulationMode, website),
+})
+
+type LiveNetworkRpcFlows = ReturnType<typeof createLiveNetworkRpcFlows>
+
+async function handleRPCRequest(admitted: AdmittedRpcRequest, liveNetworkFlows: LiveNetworkRpcFlows): Promise<HandledRpcRequest> {
+	const { network, context, websiteTabConnections, socket, website, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, activeSafeSigner } = admitted
+	const { settings, simulation } = network
+	const { ethereum } = network.services
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
-		if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
+		if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(requireSimulationSnapshot(simulation).simulationStateInput, ethereum)))()
 		return await simulationInputPromise
 	}
 	const getExecutionSimulationState = async () => {
@@ -153,6 +168,7 @@ async function handleRPCRequest(
 	}
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
+	// Wakes the client this request runs on. If a network switch after admission retired it, it stays asleep, and the switch's own services serve the active network.
 	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 	type ParsedRpcRequest = typeof parsedRequest
 	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<HandledRpcRequest>
@@ -161,10 +177,10 @@ async function handleRPCRequest(
 	const rpcRequestHandler = <Method extends ParsedRpcRequest['method']>(method: Method, handler: (context: undefined, request: Extract<ParsedRpcRequest, { readonly method: Method }>) => Promise<RPCReply>) => {
 		return rpcRequestHandlerWithFollowUp(method, async (context, rpcRequest) => replyWithoutFollowUp(await handler(context, rpcRequest)))
 	}
-	const signMessage = async (signRequest: Extract<ParsedRpcRequest, { readonly method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v2' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4' }>) => await personalSign(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'message' ? confirmation : { kind: 'message', parameters: signRequest }, request, website, websiteTabConnections, !forwardToSigner)
+	const signMessage = async (signRequest: SignMessageParams) => await liveNetworkFlows.signMessage(signRequest, !forwardToSigner)
 	const sendEthereumTransaction = async (transactionRequest: Extract<ParsedRpcRequest, { readonly method: 'eth_sendRawTransaction' | 'eth_sendTransaction' }>) => {
 		if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(transactionRequest)
-		return await sendTransaction(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'transaction' ? confirmation : { kind: 'transaction', parameters: transactionRequest }, request, website, websiteTabConnections, !forwardToSigner)
+		return await liveNetworkFlows.sendTransaction(transactionRequest, !forwardToSigner)
 	}
 	const rpcRequestHandlers = {
 		eth_getBlockByHash: rpcRequestHandler('eth_getBlockByHash', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getBlockByHash(ethereum, simulationInput, rpcRequest))),
@@ -186,7 +202,7 @@ async function handleRPCRequest(
 		eth_signTypedData_v2: rpcRequestHandler('eth_signTypedData_v2', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v3: rpcRequestHandler('eth_signTypedData_v3', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v4: rpcRequestHandler('eth_signTypedData_v4', async (_context, rpcRequest) => await signMessage(rpcRequest)),
-		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await switchEthereumChain(simulationServicesOwner, websiteTabConnections, rpcRequest, request, settings.simulationMode, website)),
+		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await liveNetworkFlows.switchEthereumChain(rpcRequest)),
 		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
 		wallet_requestPermissions: rpcRequestHandler('wallet_requestPermissions', async () => await requestPermissions(activeAddress, website)),
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
@@ -204,7 +220,7 @@ async function handleRPCRequest(
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
 		eth_syncing: rpcRequestHandler('eth_syncing', async () => await syncing(ethereum)),
 		eth_getTransactionCount: rpcRequestHandler('eth_getTransactionCount', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getTransactionCount(ethereum, simulationInput, rpcRequest))),
-		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), simulationOverlayEnabled, websiteTabConnections, rpcRequest, website, request, socket)),
+		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(simulationOverlayEnabled, simulation), simulationOverlayEnabled, websiteTabConnections, rpcRequest, website, request, socket)),
 		eth_simulateV1: rpcRequestHandler('eth_simulateV1', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => ethSimulateV1(ethereum, simulationInput, rpcRequest))),
 		wallet_addEthereumChain: rpcRequestHandler('wallet_addEthereumChain', async (_context, rpcRequest) => {
 			if (forwardToSigner) return getForwardingMessage(rpcRequest)
@@ -307,13 +323,15 @@ async function persistApprovedAccountsForAccountRequest(
 	website: Website,
 	resolved: RPCReply,
 	activeAddress: bigint | undefined,
+	requestChainId: bigint,
 ): Promise<void> {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
 
+	// Website access is read now so concurrent approvals are not lost, while the address entries come from the chain the request ran on.
 	const settings = await getSettings()
 	for (const account of accounts) {
-		const addressEntry = await getActiveAddressEntryForChain(account, settings.activeRpcNetwork.chainId)
+		const addressEntry = await getActiveAddressEntryForChain(account, requestChainId)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
 		if (addressEntry.askForAddressAccess === false) continue
 		if (existingApprovalState === 'hasAccess') continue
@@ -535,13 +553,14 @@ const replyDeliveredWithoutFollowUp = (replyDelivered: boolean | undefined): Con
 async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const settings = await getSettings()
+		const network = await readNetworkSnapshot(simulationServicesOwner)
+		const { settings } = network
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 		let rpcContext: RpcRequestContext = { request }
 		if (request.method === 'safe_apps_request') {
-			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+			const admission = await prepareSafeAppsRequest(network.services.ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 			if (admission.kind === 'reply') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, admission.reply))
 			rpcContext = admission.context
 		}
@@ -549,7 +568,19 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 		// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
-		const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+		const admitted: AdmittedRpcRequest = {
+			network,
+			context: rpcContext,
+			websiteTabConnections,
+			socket: request.uniqueRequestIdentifier.requestSocket,
+			website,
+			activeAddress: activeAddress.address,
+			publishRpcConnectionStatus,
+			simulationOverlayEnabled,
+			safeSigningMode,
+			activeSafeSigner: walletSelectedSafeSigner,
+		}
+		const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(admitted, createLiveNetworkRpcFlows(simulationServicesOwner, admitted))
 		// Permission persistence carries the owner through any follow-up access prompts.
 		await persistApprovedAccountsForAccountRequest(
 			simulationServicesOwner,
@@ -558,6 +589,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 			website,
 			resolved,
 			activeAddress.address,
+			settings.activeRpcNetwork.chainId,
 		)
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }

@@ -127,6 +127,18 @@ describe('fetch simulation stack dialog late confirmations', () => {
 		assert.equal((await newDialog).outcome, 'rejected')
 	})
 
+	// Rejections reach the dialog through rejectFetchSimulationStackRequest (popupMessageHandlers routes every non-accept there), which must also only answer the request it names.
+	test('a late rejection through the reject path for the old request leaves the new request waiting', async () => {
+		resetDialogEnvironment()
+		const { modules, newDialog } = await openRejectedDialogThenNewDialog()
+
+		await modules.rejectFetchSimulationStackRequest(new Map(), fetchConfirmation(oldIdentifier, false))
+
+		assert.equal(await isStillWaiting(newDialog), true)
+		await modules.rejectFetchSimulationStackRequest(new Map(), fetchConfirmation(newIdentifier, false))
+		assert.equal((await newDialog).outcome, 'rejected')
+	})
+
 	test('the new request still takes its own accept after a late confirmation', async () => {
 		resetDialogEnvironment()
 		const { modules, newDialog } = await openRejectedDialogThenNewDialog()

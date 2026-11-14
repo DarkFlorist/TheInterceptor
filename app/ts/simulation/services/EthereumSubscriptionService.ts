@@ -57,6 +57,8 @@ type NewBlockSources = {
 	readonly isSimulation: boolean
 	readonly getLiveBlock: () => Promise<LiveBlock>
 	readonly getSimulatedBlocks: () => Promise<readonly SimulatedBlock[]>
+	// Asked after every await and before sending, because a network change can commit while a block or a simulation is awaited; once it is false, nothing more is sent for this block.
+	readonly networkIsCurrent: () => boolean
 }
 type EthSubscriptionTypeBehaviour = {
 	// Sent once, right after the subscriber received the eth_subscribe reply carrying the subscription id.
@@ -71,6 +73,7 @@ const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptio
 		sendInitialMessages: () => undefined,
 		sendNewBlockMessages: async (websiteTabConnections, subscription, newBlockSources) => {
 			const newBlock = await newBlockSources.getLiveBlock()
+			if (!newBlockSources.networkIsCurrent()) return
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
 				type: 'result',
 				method: 'newHeads' as const,
@@ -78,7 +81,9 @@ const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptio
 				subscription: subscription.subscriptionOrFilterId,
 			})
 			if (!newBlockSources.isSimulation) return
-			for (const simulatedBlock of await newBlockSources.getSimulatedBlocks()) {
+			const simulatedBlocks = await newBlockSources.getSimulatedBlocks()
+			if (!newBlockSources.networkIsCurrent()) return
+			for (const simulatedBlock of simulatedBlocks) {
 				// post our simulated blocks on top (reorg them)
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
 					type: 'result',
@@ -103,12 +108,14 @@ const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptio
 	},
 }
 
+// The caller decides whether the network these blocks describe is still the active one; this transport only asks before each send, because a network change can commit while it awaits a block or a simulation.
 export async function sendSubscriptionMessagesForNewBlock(
 	blockNumber: bigint,
 	ethereumClientService: EthereumClientService,
 	isSimulation: boolean,
 	websiteTabConnections: WebsiteTabConnections,
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
+	networkIsCurrent: () => boolean,
 ) {
 	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
 	let liveBlockPromise: Promise<LiveBlock> | undefined
@@ -138,7 +145,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		})()
 		return await simulatedBlocksPromise
 	}
-	const newBlockSources = { isSimulation, getLiveBlock, getSimulatedBlocks }
+	const newBlockSources = { isSimulation, getLiveBlock, getSimulatedBlocks, networkIsCurrent }
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
 		const tabConnection = websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId)
 		if (tabConnection?.connections[websiteSocketToString(subscriptionOrFilter.subscriptionCreatorSocket)] === undefined) { // connection removed
@@ -147,6 +154,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		}
 		if (subscriptionOrFilter.type === 'eth_newFilter') continue // filters are polled through eth_getFilterChanges instead
 		await ethSubscriptionTypes[subscriptionOrFilter.type].sendNewBlockMessages(websiteTabConnections, subscriptionOrFilter, newBlockSources)
+		if (!networkIsCurrent()) return
 	}
 	return
 }

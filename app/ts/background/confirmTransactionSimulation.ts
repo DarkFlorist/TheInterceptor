@@ -1,7 +1,5 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
@@ -14,21 +12,22 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, visualizeSimulatorState } from './simulationUpdating.js'
+import { getTabState } from './storageVariables.js'
+import type { SimulationSnapshot } from './networkTransitionLock.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
 
 export async function refreshConfirmTransactionSimulation(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
+	simulation: SimulationSnapshot,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { ethereum, tokenPriceService } = simulation.services
 	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
@@ -44,8 +43,8 @@ export async function refreshConfirmTransactionSimulation(
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput()
-		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+		? simulation.simulationStateInput
+		: createSafeSigningSimulationInput(simulation.interceptorTransactionStack, safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success

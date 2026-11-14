@@ -5,7 +5,9 @@ const backgroundSource = await Bun.file(new URL('../../app/ts/background/backgro
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
+const networkTransitionSource = await Bun.file(new URL('../../app/ts/background/networkTransition.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const simulationInputBuildingSource = await Bun.file(new URL('../../app/ts/background/simulationInputBuilding.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
@@ -56,9 +58,9 @@ test('Safe transaction confirmation owns stored stack reconciliation', () => {
 
 test('everything that sends the simulation stack to the node runs its Gnosis Safe executions through the Safe', () => {
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,2}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(stackSimulationInput, ethereumClientService\)/u)
-	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereumClientService\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereum\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,5}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(snapshot\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereum\)/u)
 })
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {
@@ -98,13 +100,15 @@ test('the Gnosis Safe domain layer does not import background orchestration', ()
 })
 
 test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
-	assert.match(activeSettingsSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(activeSettingsSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
-	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
-	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(simulationUpdatingSource, /if \(!settings\.simulationMode\) break/u)
+	for (const source of [activeSettingsSource, networkTransitionSource]) {
+		assert.match(source, /from '\.\.\/utils\/activeStackContext\.js'/u)
+		assert.doesNotMatch(source, /from '\.\.\/safe\/safeStack\.js'/u)
+		assert.doesNotMatch(source, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
+	}
+	assert.match(simulationInputBuildingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(networkTransitionSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /from '\.\.\/safe\/safeStack\.js'/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /if \(!settings\.simulationMode\) break/u)
 })
 
 test('the confirmation presentation imports shared Safe flow policy from the domain layer', () => {
@@ -133,11 +137,28 @@ test('signer ownership and Safe Apps eligibility use the same top-frame predicat
 })
 
 
+test('closing a window and startup recovery read the network inside the no-response retry, not before it', async () => {
+	const startup = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
+	assert.doesNotMatch(startup, /\breadNetwork(?:Snapshot|State)\b/u)
+})
+
 test('dialog and RPC delegate simulation share state-override construction', async () => {
 	const safeSimulation = await Bun.file(new URL('../../app/ts/safe/safeSimulation.ts', import.meta.url)).text()
 	assert.match(simulationUpdatingSource, /return prepareSafeDelegateStateOverrides\(/u)
 	assert.match(safeSimulation, /stateOverrides: prepareSafeDelegateStateOverrides\(/u)
 	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
+})
+
+test('RPC handlers run on the admitted network and only the live flows hold the services owner', () => {
+	const rpcHandlers = backgroundSource.slice(backgroundSource.indexOf('async function handleRPCRequest('), backgroundSource.indexOf('const providerHandlers = {'))
+	assert.match(rpcHandlers, /rpcRequestHandlers = \{/u)
+	assert.doesNotMatch(rpcHandlers, /simulationServicesOwner|getCurrent\(\)/u)
+})
+
+test('only the network transition lock can build a read that pairs services with a stack', async () => {
+	const lockSource = await Bun.file(new URL('../../app/ts/background/networkTransitionLock.ts', import.meta.url)).text()
+	assert.match(lockSource, /^const readUnderNetworkLock: unique symbol/mu)
+	assert.doesNotMatch(lockSource, /^export const readUnderNetworkLock/mu)
 })
 
 test('the content-script router delegates Safe Apps admission and error mapping to its feature handler', async () => {

@@ -1,17 +1,19 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
+import { getSimulationProviderForSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { reportUnexpectedError } from '../utils/errors.js'
+import { publishUnavailableSimulationVisualisation, updatePopupVisualisationForSnapshot } from './popupVisualisationUpdater.js'
+import type { SimulationRead, SimulationSnapshot, UnavailableSimulation } from './networkTransitionLock.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
 
 export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
 
-// An observed result describes stored availability after an attempt, not which request published it.
+// An observed result describes whether the attempt produced a visualisation for its snapshot, not what storage holds afterwards.
 export function createPopupSimulationRefresher<T extends RevisionedPopupSimulationRefresh>(refresh: (services: T) => Promise<boolean>) {
 	type Entry = { services: T, readonly result: Future<PopupSimulationRefreshOutcome> }
 	let pending: Entry | undefined
@@ -56,21 +58,38 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 	}
 }
 
-const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot }) => {
-	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot })
+const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ invalidateOldState = false, snapshot }) => {
+	const result = await updatePopupVisualisationForSnapshot(snapshot, { invalidateOldState, skipIfUnchanged: !invalidateOldState })
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
-export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const snapshot = await captureSimulationSnapshot()
-	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
+// With no stack there is nothing to simulate. Both failures end here, so a settings change that queued this refresh still completes.
+async function publishUnavailableSimulation(simulation: UnavailableSimulation): Promise<PopupSimulationRefreshOutcome> {
+	await reportUnexpectedError(simulation.error)
+	try {
+		await publishUnavailableSimulationVisualisation(simulation)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error)
+	}
+	return { status: 'observed', available: false }
+}
+
+// Callers read the snapshot under the transition lock, so its settings and stack describe one network; the simulation itself runs outside the lock.
+export async function queuePopupSimulationRefresh(simulation: SimulationRead, { invalidateOldState }: { readonly invalidateOldState?: boolean } = {}): Promise<PopupSimulationRefreshOutcome> {
+	if (simulation.kind === 'unavailable') return await publishUnavailableSimulation(simulation)
+	// The change that replaced these services queues the refresh of its own network.
+	if (simulation.kind === 'replaced') return { status: 'observed', available: false }
+	const snapshot = simulation
+	const provider = getSimulationProviderForSnapshot(snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.
 	const revision = block === undefined ? Symbol('uncached block') : stringifyJSONWithBigInts([
-		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
+		getPopupVisualisationFingerprint(snapshot.simulationStateInput, snapshot.services.ethereum.getRpcEntry(), block.number),
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,
+		// A refresh read before a later network change is discarded when it runs, so a refresh of the same network read after the change, even with the same client and input, must not join it.
+		snapshot.networkChangeGeneration,
 	])
-	return await refreshRevision({ ...services, revision, snapshot })
+	return await refreshRevision({ ...snapshot.services, invalidateOldState, revision, snapshot })
 }

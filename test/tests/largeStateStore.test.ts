@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
-import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, prepareLargeStateWrite, removeLargeStateValue, setLargeStateValue, setLargeStateValues } from '../../app/ts/utils/largeStateStore.js'
+import { alwaysWrite, estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, prepareLargeStateWrite, removeLargeStateValue, setLargeStateValue, setLargeStateValues } from '../../app/ts/utils/largeStateStore.js'
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { getPopupVisualisationState, updateInterceptorTransactionStack, updatePopupVisualisationWithCallBack, updateTransactionState } from '../../app/ts/background/storageVariables.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
@@ -218,7 +218,7 @@ describe('large state store helpers', () => {
 	test('stores and reads large state from IndexedDB', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment()
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 		assert.equal('interceptorTransactionStack' in storageState, false)
 		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
@@ -232,7 +232,7 @@ describe('large state store helpers', () => {
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, stack),
 			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, []),
-		])
+		], alwaysWrite)
 
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
 		assert.deepEqual(indexedDbState.get('safeTransactionStacks'), [])
@@ -257,7 +257,7 @@ describe('large state store helpers', () => {
 		storageState.interceptorTransactionStack = serializedStack(staleStack)
 		storageState[transactionStackMigratedMarkerKey] = false
 
-		const write = setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		const write = setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 		await markerWriteStarted
 		const concurrentRead = getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack)
 		releaseMarkerWrite()
@@ -273,7 +273,7 @@ describe('large state store helpers', () => {
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, stack),
 			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, []),
-		])
+		], alwaysWrite)
 
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
 		assert.equal(indexedDbState.has('safeTransactionStacks'), false)
@@ -284,7 +284,7 @@ describe('large state store helpers', () => {
 	test('falls back to storage.local when IndexedDB writes fail', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment({ putError: new Error('put failed') })
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
@@ -293,7 +293,7 @@ describe('large state store helpers', () => {
 	test('retries IndexedDB open after a transient open failure', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment({ openErrors: [new Error('open failed')] })
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
 
@@ -307,7 +307,7 @@ describe('large state store helpers', () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment({ putError: new Error('put failed') })
 		indexedDbState.set('interceptorTransactionStack', serializedStack(staleStack))
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack(staleStack))
@@ -330,7 +330,7 @@ describe('large state store helpers', () => {
 
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), staleStack)
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack(staleStack))
@@ -348,7 +348,7 @@ describe('large state store helpers', () => {
 
 		Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
 		assert.equal(storageState[transactionStackDeleteMarkerKey], false)
@@ -367,7 +367,7 @@ describe('large state store helpers', () => {
 		storageState[transactionStackMigratedMarkerKey] = true
 		Object.defineProperty(globalThis, 'indexedDB', { value: undefined, configurable: true, writable: true })
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
 		assert.equal(storageState[transactionStackDeleteMarkerKey], false)
@@ -395,7 +395,7 @@ describe('large state store helpers', () => {
 	test('falls back to storage.local when IndexedDB write transaction aborts after request success', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment({ putTransactionAbortAfterRequestSuccess: new Error('commit failed') })
 
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack, alwaysWrite)
 
 		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
 		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
@@ -480,7 +480,7 @@ describe('large state store helpers', () => {
 		const savedResults = serialize(CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation(77, 'done', 2))
 		indexedDbState.set('popupVisualisation', savedResults)
 
-		await assert.rejects(updatePopupVisualisationWithCallBack(async () => assert.fail('must not update unreadable visualisation')), (caught: unknown) => caught === error)
+		await assert.rejects(updatePopupVisualisationWithCallBack(async () => assert.fail('must not update unreadable visualisation'), alwaysWrite), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
 		assert.deepEqual(storageState, {})
 	})
@@ -512,7 +512,7 @@ describe('large state store helpers', () => {
 
 			await assert.rejects(
 				operation === 'write'
-					? setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, staleStack)
+					? setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, staleStack, alwaysWrite)
 					: removeLargeStateValue('interceptorTransactionStack'),
 				(caught: unknown) => caught === error,
 			)

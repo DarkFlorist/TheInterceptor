@@ -7,6 +7,8 @@ import { updateTransactionState } from './storageVariables.js'
 export type ReconciledStoredSafeState = {
 	readonly safeState: SafeContractState
 	readonly storedStack: SafeTransactionStack | undefined
+	// Whether reconciliation dropped operations the Safe has already executed from storage, so a stack read before it is out of date.
+	readonly removedExecutedOperations: boolean
 }
 
 export async function reconcileStoredSafeState(
@@ -16,11 +18,16 @@ export async function reconcileStoredSafeState(
 ): Promise<ReconciledStoredSafeState> {
 	const safeState = knownSafeState ?? await getSafeContractState(ethereum, safeAddress)
 	const chainId = ethereum.getChainId()
-	const transactionState = await updateTransactionState((previousState) =>
-		reconcileSafeTransactionState(previousState, chainId, safeAddress, safeState.nonce)
-	)
+	let removedExecutedOperations = false
+	const transactionState = await updateTransactionState((previousState) => {
+		const reconciledState = reconcileSafeTransactionState(previousState, chainId, safeAddress, safeState.nonce)
+		// reconcileSafeTransactionState returns the state it was given when the Safe executed none of the stored operations.
+		removedExecutedOperations = reconciledState !== previousState
+		return reconciledState
+	})
 	return {
 		safeState,
+		removedExecutedOperations,
 		storedStack: transactionState.safeTransactionStacks.find((stack) =>
 			stack.chainId === chainId && stack.safeAddress === safeAddress
 		),
