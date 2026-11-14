@@ -3,7 +3,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
@@ -1221,4 +1221,156 @@ test('propagates unexpected Safe signer-reply RPC and storage failures', async (
 	} finally {
 		browserMock.setStorageSetHandler(undefined)
 	}
+})
+
+const otherChainRpcNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: 1338n }
+
+// Services for a second chain on which the Safe has the same address, owners, and nonce as on fakeRpcNetwork, so only the chain differs.
+function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
+	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork)
+	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
+}
+
+async function prepareSafeProposalFromFakeRpcNetwork(approvalStatus: { readonly status: 'WaitingForUser' } | { readonly status: 'WaitingForSigner' }, safeOwners: readonly bigint[] = [safeTestOwnerAddress], proposalChainId = fakeRpcNetwork.chainId) {
+	const safeSignerAddress = safeTestOwnerAddress
+	fakeSafeContract.owners = [...safeOwners]
+	await modules.updateUserAddressBookEntries(() => [proposalChainId, otherChainRpcNetwork.chainId].map((chainId) => createSafeAddressBookEntry({ chainId, safeSignerAddresses: [safeSignerAddress] })))
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [safeSignerAddress],
+		activeSigningAddress: safeSignerAddress,
+	}))
+	const safeTx = createSafeTx(proposalChainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	fakeSafeContract.transactionHash = safeTxHash
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus,
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: safeOwners, threshold: 2n },
+				safeTxHash,
+				safeTx,
+			} },
+		}],
+	})
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, postedMessages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port,
+				socket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	return { safeTx, postedMessages, websiteTabConnections }
+}
+
+test('refuses to forward a Safe proposal prepared on another chain after the network switches', async () => {
+	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' })
+	const otherChainSimulator = createOtherChainSimulator()
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	}), false)
+
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const [refusedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refusedProposal?.approvalStatus.status, 'SignerError')
+	if (refusedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
+	assert.match(refusedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338\. Prepare it again on the current network\./u)
+	assert.equal(getPendingSafeProposal(refusedProposal)?.safeTx.domain.chainId, fakeRpcNetwork.chainId)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+test('does not store a Safe proposal signed for another chain after the network switches', async () => {
+	const { safeTx, postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForSigner' })
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	const otherChainSimulator = createOtherChainSimulator()
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
+	}), false)
+
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
+	const [rejectedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(rejectedProposal?.approvalStatus.status, 'SignerError')
+	if (rejectedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
+	assert.match(rejectedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+})
+
+test('does not add an unsigned Safe proposal prepared on another chain to the Safe stack', async () => {
+	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' })
+	const otherChainSimulator = createOtherChainSimulator()
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
+	}), false)
+
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
+	const [rejectedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(rejectedProposal?.approvalStatus.status, 'SignerError')
+	if (rejectedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
+	assert.match(rejectedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+})
+
+test('does not move a Safe proposal to the connected chain when the wallet switches owners after the network switches', async () => {
+	const otherOwner = recipientAddress
+	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' }, [safeTestOwnerAddress, otherOwner])
+	// The Safe on the other chain would hash a rebuilt proposal with that chain's domain.
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(createSafeTx(otherChainRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)))
+	const otherChainSimulator = createOtherChainSimulator()
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	}, { selectedSigner: otherOwner, verificationError: undefined }), false)
+
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const [refusedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(getPendingSafeProposal(refusedProposal)?.safeTx.domain.chainId, fakeRpcNetwork.chainId)
+	assert.equal(refusedProposal?.approvalStatus.status, 'SignerError')
+	if (refusedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
+	assert.match(refusedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+})
+
+test('refuses a Safe proposal whose domain chain and connected chain are both the missing chain ID 0', async () => {
+	const missingChainIdRpcNetwork = { ...fakeRpcNetwork, name: 'Missing Chain ID', chainId: 0n }
+	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' }, [safeTestOwnerAddress], missingChainIdRpcNetwork.chainId)
+	const missingChainIdSimulator = createOtherChainSimulator(missingChainIdRpcNetwork)
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(missingChainIdSimulator.ethereum, missingChainIdSimulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'accept', uniqueRequestIdentifier },
+	}), false)
+
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const [refusedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refusedProposal?.approvalStatus.status, 'SignerError')
+	if (refusedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal missing-chain-ID error')
+	assert.match(refusedProposal.approvalStatus.message, /Gnosis Safe transactions require a chain ID\./u)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })

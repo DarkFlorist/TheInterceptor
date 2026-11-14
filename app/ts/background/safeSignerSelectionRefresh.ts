@@ -11,7 +11,7 @@ import type { OriginalSendRequestParameters } from '../types/JsonRpc-types.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
 import { modifyObject } from '../utils/typescript.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
@@ -56,6 +56,8 @@ async function refreshSafeTransactionSignerSelection(
 	selectedSigner: bigint,
 ) {
 	const pending = flow.pending
+	// The proposal is rebuilt with the connected chain's services, which would silently move a proposal prepared on another chain to this one.
+	assertSafeProposalChainMatchesConnectedNetwork(ethereum, pending.safeFlow.safeTransaction.safeTx)
 	const executionGasLimit = pending.safeFlow.safeTransaction.executionGasLimit ?? (
 		'transactionToSimulate' in pending && pending.transactionToSimulate.success
 			? pending.transactionToSimulate.transaction.gas
