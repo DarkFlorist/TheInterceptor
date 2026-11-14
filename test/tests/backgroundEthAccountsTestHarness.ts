@@ -1,5 +1,6 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -8,6 +9,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 type Listener = () => void
 export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
@@ -25,15 +27,21 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, initialSessionRules = [] }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly initialSessionRules?: readonly { readonly id: number, readonly condition: { readonly tabIds?: readonly number[] } }[] } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	type SessionRule = { readonly id: number, readonly condition: { readonly tabIds?: readonly number[] } }
+	// Session rules survive service-worker restarts, so tests can seed them to model rules applied before a restart.
+	const sessionRules: SessionRule[] = [...initialSessionRules]
 	const requestBlockingCalls = {
 		declarativeNetRequestUpdates: 0,
+		dynamicRuleUpdates: 0,
+		sessionRuleUpdates: 0,
+		blockedSessionTabIds: initialSessionRules.flatMap((rule) => rule.condition.tabIds ?? []),
 		webRequestListenerAdds: 0,
 		webRequestListenerRemovals: 0,
 	}
@@ -103,13 +111,18 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		},
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
-			async getSessionRules() { return [] },
+			async getSessionRules() { return [...sessionRules] },
 			async updateDynamicRules() {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
+				requestBlockingCalls.dynamicRuleUpdates += 1
 				return undefined
 			},
-			async updateSessionRules() {
+			async updateSessionRules(update: { readonly removeRuleIds?: readonly number[], readonly addRules?: readonly SessionRule[] }) {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
+				requestBlockingCalls.sessionRuleUpdates += 1
+				const remainingRules = sessionRules.filter((rule) => update.removeRuleIds?.includes(rule.id) !== true)
+				sessionRules.splice(0, sessionRules.length, ...remainingRules, ...(update.addRules ?? []))
+				requestBlockingCalls.blockedSessionTabIds = sessionRules.flatMap((rule) => rule.condition.tabIds ?? [])
 				return undefined
 			},
 		},
@@ -142,6 +155,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
+		...await import('../../app/ts/background/connectionRegistration.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...safeApps,
 		initializeSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
@@ -151,7 +165,9 @@ export async function loadModules() {
 		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/rpcConfigurationStorage.js'),
 		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/windows/changeChain.js'),
@@ -205,10 +221,11 @@ export function createEthereumWithGetBlockCounter(
 		readonly getStorageAtResult?: bigint
 	} = {},
 ) {
+	// On the default network the empty mock storage resolves to: request handling refuses services that do not serve the stored network.
 	const rpcEntry: RpcEntry = {
 		name: 'Test RPC',
 		chainId: 1n,
-		httpsRpc: 'http://127.0.0.1:8545',
+		httpsRpc: DEFAULT_RPCS[0].httpsRpc,
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
 		primary: true,
@@ -257,9 +274,23 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 }
 
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
-	let current = initial
+	let current: SimulationServices | undefined = initial
 	return {
 		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		requireCurrent: () => {
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			return current
+		},
+		reset: network => {
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			if (reset !== undefined) current = reset(network)
+			return current
+		},
+		recover: network => {
+			if (reset !== undefined) current = reset(network)
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			return current
+		},
+		clear: () => { current = undefined },
 	}
 }

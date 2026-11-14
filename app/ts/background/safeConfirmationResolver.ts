@@ -6,8 +6,8 @@ import { getErrorMessage } from '../utils/caughtErrors.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning } from '../safe/safeCore.js'
+import { getOutboxSafeProposals, getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState } from './storageVariables.js'
+import { assertSafeContractStateUnchanged, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, assertSafeProposalChainMatchesConnectedNetwork } from '../safe/safeCore.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
@@ -253,7 +253,7 @@ async function refreshSafeProposalNonce(
 		? undefined
 		: reconcileSafeTransactionStack(storedStackBeforeReconciliation, safeState.nonce)
 	const firstUncommittedNonce = safeState.nonce + BigInt(storedStack?.transactions.length ?? 0)
-	const precedingPendingCount = (await getPendingTransactionsAndMessages()).filter((candidate) => {
+	const precedesCurrentRequest = (candidate: PendingTransactionOrSignableMessage) => {
 		const candidateFlow = getSafePendingFlow(candidate)
 		if (candidateFlow?.kind !== 'proposal') return false
 		const candidateRequest = candidateFlow.pending.safeTransaction
@@ -261,8 +261,10 @@ async function refreshSafeProposalNonce(
 			&& candidateRequest.safeTx.domain.chainId === ethereum.getChainId()
 			&& candidateRequest.safeTx.message.nonce >= firstUncommittedNonce
 			&& candidateRequest.safeTx.message.nonce < currentRequest.safeTx.message.nonce
-	}).length
-	if (precedingPendingCount > 0) throw createSafeSignerSelectionFailure('Approve or reject the earlier pending Gnosis Safe proposals before signing this one.')
+	}
+	if ((await getPendingTransactionsAndMessages()).some(precedesCurrentRequest)) throw createSafeSignerSelectionFailure('Approve or reject the earlier pending Gnosis Safe proposals before signing this one.')
+	// A signed proposal waiting in the outbox for its Safe stack still holds its earlier nonce.
+	if ((await getOutboxSafeProposals()).some(precedesCurrentRequest)) throw createSafeSignerSelectionFailure('An earlier signed Gnosis Safe proposal is still being added to the Safe stack. Sign this one once it is added.')
 	if (currentRequest.safeTx.message.nonce === firstUncommittedNonce) return undefined
 	const executionGasLimit = currentRequest.executionGasLimit ?? (
 		'transactionToSimulate' in pending && pending.transactionToSimulate.success

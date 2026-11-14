@@ -1,20 +1,47 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
 
 const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
-let storageReadError: Error | undefined
+const runtimeMessages: unknown[] = []
+let nextStorageReadError: Error | undefined
+let everyStorageReadError: Error | undefined
+let preferenceReadError: Error | undefined
+let rpcConfigurationReadCount = 0
+let failRpcConfigurationReadAt: number | undefined
+let rpcConfigurationReadStarted: (() => void) | undefined
+let resumeRpcConfigurationRead: Promise<void> | undefined
 
 Object.defineProperty(globalThis, 'browser', {
 	configurable: true,
 	writable: true,
 	value: {
+		runtime: {
+			lastError: undefined,
+			sendMessage: async (message: unknown) => { runtimeMessages.push(message) },
+		},
 		storage: {
 			local: {
 				get: async (keys: string | readonly string[]) => {
-					if (storageReadError !== undefined) throw storageReadError
+					if (everyStorageReadError !== undefined) throw everyStorageReadError
+					if (preferenceReadError !== undefined && (Array.isArray(keys) ? keys : [keys]).includes('useTabsInsteadOfPopup')) throw preferenceReadError
 					const requestedKeys = Array.isArray(keys) ? keys : [keys]
-					return Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
+					const result = Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
+					if (requestedKeys.includes('rpcEntries') && requestedKeys.includes('activeRpcNetwork')) {
+						rpcConfigurationReadCount += 1
+						if (rpcConfigurationReadCount === failRpcConfigurationReadAt) throw new Error('RPC configuration read failed')
+						rpcConfigurationReadStarted?.()
+						await resumeRpcConfigurationRead
+					}
+					if (nextStorageReadError !== undefined) {
+						const error = nextStorageReadError
+						nextStorageReadError = undefined
+						throw error
+					}
+					return result
 				},
 				set: async (items: Record<string, unknown>) => {
 					writes.push(items)
@@ -25,14 +52,30 @@ Object.defineProperty(globalThis, 'browser', {
 		},
 	},
 })
+Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+const { getRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
+const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcList, promoteRpcAsPrimary, selectPrimaryRpc, setRpcConfiguration } = await import('../../app/ts/background/rpcConfigurationStorage.js')
+const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+const { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, settingsOnAdmittedRpcNetwork } = await import('../../app/ts/background/settings.js')
+const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+const { transitionRpcList } = await import('../../app/ts/background/rpcConfigurationLifecycle.js')
+const ignoreRecoveryPublication = async (): Promise<readonly unknown[]> => []
 
 describe('local storage codecs', () => {
 	beforeEach(() => {
 		for (const key of Object.keys(storedItems)) delete storedItems[key]
 		writes.length = 0
-		storageReadError = undefined
+		runtimeMessages.length = 0
+		nextStorageReadError = undefined
+		everyStorageReadError = undefined
+		preferenceReadError = undefined
+		rpcConfigurationReadCount = 0
+		failRpcConfigurationReadAt = undefined
+		rpcConfigurationReadStarted = undefined
+		resumeRpcConfigurationRead = undefined
 	})
 
 	test('serializes only present active-address properties, including explicit clears', async () => {
@@ -49,7 +92,7 @@ describe('local storage codecs', () => {
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: 2n,
 			independentActiveSimulationAddress: 1n,
-		})
+		}, ignoreRecoveryPublication)
 	})
 
 	test('distinguishes absent, explicitly cleared, and corrupt active-address properties', async () => {
@@ -67,7 +110,624 @@ describe('local storage codecs', () => {
 		const invalidResult = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
 		assert.equal(invalidResult.success, false)
 
-		storageReadError = new Error('Storage temporarily unavailable')
+		nextStorageReadError = new Error('Storage temporarily unavailable')
 		await assert.rejects(browserStorageLocalGet2Result('pendingTransactionsAndMessages'), /Storage temporarily unavailable/)
+	})
+})
+
+describe('RPC storage recovery', () => {
+	const customPrimaryRpc: RpcEntry = {
+		name: 'Custom primary',
+		chainId: 1n,
+		httpsRpc: 'https://primary.example',
+		currencyName: 'Ether',
+		currencyTicker: 'ETH',
+		primary: true,
+		minimized: true,
+	}
+	const customFallbackRpc: RpcEntry = {
+		...customPrimaryRpc,
+		name: 'Custom fallback',
+		httpsRpc: 'https://fallback.example',
+		primary: false,
+	}
+
+	beforeEach(async () => {
+		for (const key of Object.keys(storedItems)) delete storedItems[key]
+		writes.length = 0
+		runtimeMessages.length = 0
+		nextStorageReadError = undefined
+		everyStorageReadError = undefined
+		preferenceReadError = undefined
+		rpcConfigurationReadCount = 0
+		failRpcConfigurationReadAt = undefined
+		rpcConfigurationReadStarted = undefined
+		resumeRpcConfigurationRead = undefined
+		await browserStorageLocalSet({ rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
+		writes.length = 0
+	})
+
+	test('selects the primary RPC entry, else the first one, optionally among one chain', () => {
+		const otherChainRpc: RpcEntry = { ...customFallbackRpc, name: 'Other chain', chainId: 5n }
+		assert.equal(selectPrimaryRpc([customFallbackRpc, customPrimaryRpc]), customPrimaryRpc)
+		assert.equal(selectPrimaryRpc([otherChainRpc, customFallbackRpc]), otherChainRpc)
+		assert.equal(selectPrimaryRpc([otherChainRpc, customFallbackRpc, customPrimaryRpc], 1n), customPrimaryRpc)
+		assert.equal(selectPrimaryRpc([customPrimaryRpc, otherChainRpc], 5n), otherChainRpc)
+		assert.equal(selectPrimaryRpc([customPrimaryRpc], 5n), undefined)
+	})
+
+	test('does not overwrite custom RPCs when extension storage temporarily rejects a read', async () => {
+		const storedRpcEntries = storedItems.rpcEntries
+		const readError = new Error('Extension storage is temporarily unavailable')
+		nextStorageReadError = readError
+
+		await assert.rejects(promoteRpcAsPrimary(customFallbackRpc), (error: unknown) => error === readError)
+
+		assert.equal(writes.length, 0)
+		assert.deepEqual(storedItems.rpcEntries, storedRpcEntries)
+	})
+
+	test('represents settings snapshot read failures as unavailable without fabricating settings', async () => {
+		const readError = new Error('Extension storage is temporarily unavailable')
+		nextStorageReadError = readError
+
+		const snapshot = await getSettingsSnapshot()
+
+		assert.deepEqual(snapshot.rpcConfiguration, { status: 'unavailable', reason: 'read-failed', error: readError })
+		assert.equal(snapshot.status, 'unavailable')
+		assert.deepEqual(snapshot.status === 'unavailable' ? snapshot.websiteApprovals : undefined, { status: 'unreadable', error: readError })
+		assert.equal(writes.length, 0)
+	})
+
+	test('propagates unexpected RPC configuration resolver failures', async () => {
+		const resolverError = new Error('Unexpected RPC resolver failure')
+		const originalGet = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async () => Object.defineProperty({}, 'rpcEntries', {
+				enumerable: true,
+				get() { throw resolverError },
+			}),
+		})
+
+		try {
+			await assert.rejects(getRpcConfigurationState(), (error: unknown) => error === resolverError)
+			await assert.rejects(getRpcConfigurationStateWithStorageSnapshot([]), (error: unknown) => error === resolverError)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+		}
+	})
+
+	test('returns no settings instead of the captured website approvals after a storage read failure', async () => {
+		await browserStorageLocalSet({
+			independentActiveSimulationAddress: 123n,
+			activeSigningSafeAddress: 456n,
+			openedPageV2: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: true,
+			websiteAccess: [{
+				website: { websiteOrigin: 'https://approved.example', icon: undefined, title: 'Approved' },
+				addressAccess: [{ address: 123n, access: true }],
+				access: true,
+			}],
+			simulationMode: false,
+		})
+		const initialSnapshot = await getSettingsSnapshot()
+		if (initialSnapshot.status === 'unavailable') throw new Error('Expected initial settings')
+		writes.length = 0
+		const readError = new Error('Extension storage is temporarily unavailable')
+		nextStorageReadError = readError
+
+		const settings = settingsOnAdmittedRpcNetwork(await getAdmittedRpcNetworkSnapshot(captureRpcNetwork(initialSnapshot.settings)))
+
+		// The captured approval may have been revoked since capture, so an unreadable store must not reproduce it.
+		assert.equal(settings, undefined)
+		assert.equal(writes.length, 0)
+	})
+
+	test('pauses instead of using defaults for corrupt RPC storage values', async () => {
+		storedItems.rpcEntries = 'not-an-rpc-list'
+		storedItems.rpcConnectionStatus = 'not-a-connection-status'
+		const warnings: unknown[][] = []
+		const originalWarn = console.warn
+		console.warn = (...parameters: unknown[]) => { warnings.push(parameters) }
+		try {
+			await assert.rejects(getRpcList(), isRpcConfigurationUnavailableError)
+			const connectionStatus = await getRpcConnectionStatus()
+
+			assert.equal(connectionStatus, undefined)
+			assert.equal(writes.length, 0)
+			assert.equal(warnings.length, 4)
+			assert.equal(warnings[0]?.[0], 'Rpc entries was corrupt:')
+			assert.equal(typeof warnings[1]?.[0], 'object')
+			assert.equal(warnings[2]?.[0], 'Connection status was corrupt:')
+			assert.equal(typeof warnings[3]?.[0], 'object')
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
+	test('initializes bundled defaults only when the RPC configuration has never been stored', async () => {
+		for (const key of Object.keys(storedItems)) delete storedItems[key]
+		writes.length = 0
+
+		const configuration = await getRpcConfigurationState()
+
+		assert.equal(configuration.status, 'ready')
+		if (configuration.status !== 'ready') return
+		assert.equal(configuration.rpcEntries[0]?.name, 'Ethereum Mainnet')
+		assert.equal(configuration.activeRpcNetwork.name, 'Ethereum Mainnet')
+		assert.equal(writes.length, 1)
+		assert.deepEqual(Object.keys(writes[0] ?? {}).sort(), ['activeRpcNetwork', 'rpcEntries'])
+	})
+
+	test('treats a corrupt active RPC selection as unavailable without overwriting it', async () => {
+		storedItems.activeRpcNetwork = 'not-an-rpc-network'
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const configuration = await getRpcConfigurationState()
+			assert.equal(configuration.status, 'unavailable')
+			if (configuration.status === 'unavailable') assert.equal(configuration.reason, 'corrupt')
+			assert.equal(writes.length, 0)
+			assert.equal(storedItems.activeRpcNetwork, 'not-an-rpc-network')
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
+	test('does not fabricate a network in settings when no active RPC selection can be read', async () => {
+		storedItems.activeRpcNetwork = 'not-an-rpc-network'
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const snapshot = await getSettingsSnapshot()
+			assert.equal(snapshot.rpcConfiguration.status, 'unavailable')
+			assert.equal(snapshot.status, 'unavailable')
+			await assert.rejects(getRequiredSettings(), isRpcConfigurationUnavailableError)
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
+	test('migrates a partial custom configuration without introducing bundled defaults', async () => {
+		delete storedItems.rpcEntries
+		writes.length = 0
+
+		const configuration = await getRpcConfigurationState()
+
+		assert.equal(configuration.status, 'ready')
+		if (configuration.status !== 'ready') return
+		assert.deepEqual(configuration.rpcEntries, [customPrimaryRpc])
+		assert.equal(configuration.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
+		assert.deepEqual(writes, [{ rpcEntries: storedItems.rpcEntries }])
+	})
+
+	test('serializes settings snapshot migration with a concurrent RPC configuration save', async () => {
+		delete storedItems.rpcEntries
+		writes.length = 0
+		let signalReadStarted: () => void = () => undefined
+		const readStarted = new Promise<void>((resolve) => { signalReadStarted = resolve })
+		let releaseRead: () => void = () => undefined
+		resumeRpcConfigurationRead = new Promise<void>((resolve) => { releaseRead = resolve })
+		rpcConfigurationReadStarted = signalReadStarted
+
+		const settingsPromise = getRequiredSettings()
+		await readStarted
+		let saveSettled = false
+		const savePromise = setRpcConfiguration([customFallbackRpc], customFallbackRpc).then(() => { saveSettled = true })
+		await Promise.resolve()
+		assert.equal(saveSettled, false)
+
+		releaseRead()
+		const [settings] = await Promise.all([settingsPromise, savePromise])
+		assert.equal(settings.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
+		const finalConfiguration = await getRpcConfigurationState()
+		assert.equal(finalConfiguration.status, 'ready')
+		if (finalConfiguration.status !== 'ready') return
+		assert.deepEqual(finalConfiguration.rpcEntries, [customFallbackRpc])
+		assert.deepEqual(finalConfiguration.activeRpcNetwork, customFallbackRpc)
+	})
+
+	test('treats an intentional signer-only selection without RPC entries as available configuration', async () => {
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: 1n,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		await browserStorageLocalSet({ activeRpcNetwork: signerOnlyNetwork })
+		delete storedItems.rpcEntries
+		writes.length = 0
+
+		const configuration = await getRpcConfigurationState()
+
+		assert.deepEqual(configuration, { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork })
+		assert.deepEqual(writes, [{ rpcEntries: [] }])
+	})
+
+	test('keeps an empty stored RPC list paused until the user chooses a replacement', async () => {
+		storedItems.rpcEntries = []
+		writes.length = 0
+
+		const unavailableConfiguration = await getRpcConfigurationState()
+		assert.equal(unavailableConfiguration.status, 'unavailable')
+		if (unavailableConfiguration.status === 'unavailable') assert.equal(unavailableConfiguration.reason, 'empty')
+		assert.equal(writes.length, 0)
+
+		await setRpcConfiguration([customFallbackRpc], customFallbackRpc)
+		const restoredConfiguration = await getRpcConfigurationState()
+		assert.equal(restoredConfiguration.status, 'ready')
+		if (restoredConfiguration.status === 'ready') {
+			assert.deepEqual(restoredConfiguration.rpcEntries, [customFallbackRpc])
+			assert.equal(restoredConfiguration.activeRpcNetwork.httpsRpc, customFallbackRpc.httpsRpc)
+		}
+	})
+
+	test('recovers an empty stored RPC list on the primary entry even when a non-primary entry precedes it', async () => {
+		storedItems.rpcEntries = []
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async () => undefined)
+		try {
+			const transition = await transitionRpcList(owner, [customFallbackRpc, customPrimaryRpc], 'edit')
+
+			assert.equal(transition.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
+			const restoredConfiguration = await getRpcConfigurationState()
+			assert.equal(restoredConfiguration.status, 'ready')
+			if (restoredConfiguration.status === 'ready') assert.equal(restoredConfiguration.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
+		} finally {
+			owner.clear()
+		}
+	})
+
+	test('background retry resumes stored RPC services and pauses them again if validation fails', async () => {
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+		assert.equal(owner.getCurrent() !== undefined, true)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customPrimaryRpc.httpsRpc)
+
+		storedItems.rpcEntries = 'not-an-rpc-list'
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+			assert.equal(owner.getCurrent() !== undefined, false)
+			assert.equal(runtimeMessages.length, 2)
+		} finally {
+			console.warn = originalWarn
+			owner.clear()
+		}
+	})
+
+	test('settings keeps recovery visible until the paused background owner resumes', async () => {
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+		await settingsOpened(owner)
+		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
+		if (settingsReply.method !== 'popup_requestSettingsReply') return
+		assert.equal(settingsReply.data.rpcStatus.available, false)
+		// Paused services leave the stored network readable, so pages can still browse local data for it.
+		if (!settingsReply.data.rpcStatus.available) assert.equal(settingsReply.data.rpcStatus.readableActiveRpcNetwork?.name, customPrimaryRpc.name)
+		assert.equal(owner.getCurrent() !== undefined, false)
+
+		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+		assert.equal(owner.getCurrent() !== undefined, true)
+		owner.clear()
+	})
+
+	test('settings still publishes the RPC status when a preference read fails', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const failedPreferenceRead = new Error('Preference read failed')
+		// Only the preference read fails; the RPC configuration is read normally.
+		preferenceReadError = failedPreferenceRead
+		try {
+			await assert.rejects(settingsOpened(owner), (error: unknown) => error === failedPreferenceRead)
+			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
+			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
+			if (rpcStatus.method !== 'popup_update_rpc_list') return
+			assert.deepEqual(rpcStatus.data, { available: true, rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
+		} finally {
+			owner.clear()
+		}
+	})
+
+	test('settings publishes an unavailable RPC status when no storage read succeeds', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const storageError = new Error('Storage unavailable')
+		everyStorageReadError = storageError
+		try {
+			await assert.rejects(settingsOpened(owner), (error: unknown) => error === storageError)
+			assert.equal(runtimeMessages.some((message) => MessageToPopup.parse(message).method === 'popup_requestSettingsReply'), false)
+			const rpcStatus = MessageToPopup.parse(runtimeMessages.at(-1))
+			assert.equal(rpcStatus.method, 'popup_update_rpc_list')
+			if (rpcStatus.method !== 'popup_update_rpc_list') return
+			assert.equal(rpcStatus.data.available, false)
+		} finally {
+			everyStorageReadError = undefined
+			owner.clear()
+		}
+	})
+
+	test('an unreadable RPC configuration is published as unavailable with the readable preferences, not reported as an unexpected error', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		await browserStorageLocalSet({ useTabsInsteadOfPopup: true, metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true })
+		writes.length = 0
+		// Only the RPC configuration read fails; the preference reads succeed.
+		failRpcConfigurationReadAt = 1
+		try {
+			await settingsOpened(owner)
+			assert.equal(runtimeMessages.length, 1, 'only the settings reply is sent, no unexpected-error message')
+			const settingsReply = MessageToPopup.parse(runtimeMessages[0])
+			assert.equal(settingsReply.method, 'popup_requestSettingsReply')
+			if (settingsReply.method !== 'popup_requestSettingsReply') return
+			assert.deepEqual(settingsReply.data.rpcStatus, { available: false, readableActiveRpcNetwork: undefined })
+			assert.equal(settingsReply.data.useTabsInsteadOfPopup, true)
+			assert.equal(settingsReply.data.metamaskCompatibilityMode, false)
+			assert.equal(settingsReply.data.safeAppsCompatibilityMode, true)
+			// An unexpected-error report would store the error and its diagnostic.
+			assert.equal(writes.some((items) => 'latestUnexpectedError' in items || 'interceptorErrorDiagnostics' in items), false)
+		} finally {
+			owner.clear()
+		}
+	})
+
+	test('an available RPC status needs its list and active network, and an unavailable one parses without them', () => {
+		const rpcListUpdate = (data: unknown) => MessageToPopup.safeParse({ role: 'all', method: 'popup_update_rpc_list', data }).success
+		assert.equal(rpcListUpdate({ available: false }), true)
+		assert.equal(rpcListUpdate({ available: true }), false)
+		assert.equal(rpcListUpdate({ available: true, rpcEntries: [] }), false)
+	})
+
+	test('settings uses one coherent RPC configuration snapshot', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		failRpcConfigurationReadAt = 2
+
+		await settingsOpened(owner)
+		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
+		if (settingsReply.method !== 'popup_requestSettingsReply') return
+		assert.deepEqual(settingsReply.data.rpcStatus, { available: true, rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
+		assert.equal(rpcConfigurationReadCount, 1)
+		assert.equal(owner.getCurrent() !== undefined, true)
+		owner.clear()
+	})
+
+	test('settings reports corrupt RPC storage without mutating the service lifecycle', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const previousActiveRpc = { ...customPrimaryRpc, name: 'Polygon', chainId: 137n, httpsRpc: 'https://polygon.example' }
+		await browserStorageLocalSet({ activeRpcNetwork: previousActiveRpc })
+		storedItems.rpcEntries = 'not-an-rpc-list'
+		storedItems.openedPageV2 = { page: 'Home' }
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await settingsOpened(owner)
+			const configuration = await getRpcConfigurationState()
+			assert.equal(configuration.status, 'unavailable')
+			assert.deepEqual('activeRpcNetwork' in configuration ? configuration.activeRpcNetwork : undefined, previousActiveRpc)
+			const settings = await getRequiredSettings()
+			assert.deepEqual(settings.openedPage, { page: 'Home' })
+			assert.deepEqual(settings.activeRpcNetwork, previousActiveRpc)
+			assert.equal(owner.getCurrent() !== undefined, true)
+		} finally {
+			console.warn = originalWarn
+			owner.clear()
+		}
+	})
+
+	test('ordinary RPC configuration reads do not change the service lifecycle', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		storedItems.rpcEntries = 'not-an-rpc-list'
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const configuration = await getRpcConfigurationState()
+			assert.equal(configuration.status, 'unavailable')
+			assert.equal(owner.getCurrent() !== undefined, true)
+		} finally {
+			console.warn = originalWarn
+			owner.clear()
+		}
+	})
+
+	test('explicit default restoration preserves the active selection while restoring the bundled list', async () => {
+		const privateRpc: RpcEntry = { ...customPrimaryRpc, name: 'Private chain', chainId: 31337n, httpsRpc: 'https://private.example' }
+		await setRpcConfiguration([privateRpc], privateRpc)
+		writes.length = 0
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+
+		await restoreDefaultRpcConfiguration(owner, new Map(), {
+			activeSimulationAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			activeRpcNetwork: privateRpc,
+			openedPage: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: true,
+		}, ignoreRecoveryPublication)
+
+		assert.equal(owner.getCurrent() !== undefined, true)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, privateRpc.httpsRpc)
+		assert.equal(writes.length, 1)
+		assert.deepEqual(Object.keys(writes[0] ?? {}), ['rpcEntries'])
+		const restoredConfiguration = await getRpcConfigurationState()
+		assert.equal(restoredConfiguration.status, 'ready')
+		if (restoredConfiguration.status === 'ready') assert.deepEqual(restoredConfiguration.activeRpcNetwork, privateRpc)
+		owner.clear()
+	})
+
+	test('default restoration preserves a signer-only selection without starting RPC services', async () => {
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: 31337n,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		await setRpcConfiguration([], signerOnlyNetwork)
+		writes.length = 0
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+		let recoveryPublications = 0
+
+		await restoreDefaultRpcConfiguration(owner, new Map(), {
+			activeSimulationAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			activeRpcNetwork: signerOnlyNetwork,
+			openedPage: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: false,
+		}, async () => { recoveryPublications += 1 })
+
+		assert.equal(owner.getCurrent() !== undefined, false)
+		assert.equal(recoveryPublications, 0)
+		assert.deepEqual(Object.keys(writes[0] ?? {}), ['rpcEntries'])
+		const restoredConfiguration = await getRpcConfigurationState()
+		assert.equal(restoredConfiguration.status, 'ready')
+		if (restoredConfiguration.status === 'ready') assert.deepEqual(restoredConfiguration.activeRpcNetwork, signerOnlyNetwork)
+	})
+
+	test.each([true, false])('normal RPC list saves cannot resume an owner paused while persistence is in flight (active primary: %j)', async (hasActivePrimary) => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const replacementRpc: RpcEntry = { ...customPrimaryRpc, name: 'Replacement', httpsRpc: 'https://replacement.example', primary: hasActivePrimary }
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: Record<string, unknown>) => {
+				await originalSet(items)
+				if ('rpcEntries' in items && !('activeRpcNetwork' in items)) owner.clear()
+			},
+		})
+
+		try {
+			await assert.rejects(setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [replacementRpc] }, {
+				activeSimulationAddress: undefined,
+				activeSigningSafeAddress: undefined,
+				activeRpcNetwork: customPrimaryRpc,
+				openedPage: { page: 'Settings' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: true,
+			}, ignoreRecoveryPublication), isRpcConfigurationUnavailableError)
+			assert.equal(owner.getCurrent() !== undefined, false)
+			// The list write is committed, so its status is still published after the failed services change, and it reports the paused services instead of a resumed configuration.
+			const rpcListUpdates = runtimeMessages.flatMap((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list' && 'data' in message ? [message.data] : [])
+			assert.deepEqual(rpcListUpdates.map((rpcStatus) => rpcStatus.available), [false])
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+			owner.clear()
+		}
+	})
+
+	test.each(['paused', 'corrupt'] as const)('ordinary RPC list saves refuse unavailable configuration without writing (%s)', async (failure) => {
+		const owner = createSimulationServicesOwner(failure === 'paused' ? undefined : customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		if (failure === 'corrupt') {
+			storedItems.rpcEntries = 'not-an-rpc-list'
+		}
+		writes.length = 0
+
+		try {
+			await assert.rejects(setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, {
+				activeSimulationAddress: undefined,
+				activeSigningSafeAddress: undefined,
+				activeRpcNetwork: customPrimaryRpc,
+				openedPage: { page: 'Settings' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: true,
+			}, ignoreRecoveryPublication), isRpcConfigurationUnavailableError)
+			assert.deepEqual(writes, [])
+			assert.equal(owner.getCurrent() !== undefined, false)
+			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list'), false)
+		} finally {
+			owner.clear()
+		}
+	})
+
+	test('a deliberately emptied RPC list can be repopulated with a custom endpoint', async () => {
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const settings: Parameters<typeof setNewRpcList>[3] = {
+			activeSimulationAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			activeRpcNetwork: customPrimaryRpc,
+			openedPage: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: true,
+		}
+
+		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [] }, settings, ignoreRecoveryPublication)
+		assert.equal(owner.getCurrent() !== undefined, false)
+		const unavailableListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(unavailableListUpdate.method, 'popup_update_rpc_list')
+		if (unavailableListUpdate.method === 'popup_update_rpc_list') {
+			assert.equal(unavailableListUpdate.data.available, false)
+		}
+
+		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
+
+		assert.equal(owner.getCurrent() !== undefined, true)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customFallbackRpc.httpsRpc)
+		assert.deepEqual(await getRpcList(), [customFallbackRpc])
+		assert.deepEqual((await getRpcConfigurationState()).status, 'ready')
+		owner.clear()
+	})
+
+	test('a signer-only selection can clear and repopulate its RPC list without requiring services', async () => {
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: 1n,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		await browserStorageLocalSet({ activeRpcNetwork: signerOnlyNetwork, rpcEntries: [customPrimaryRpc] })
+		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const settings: Parameters<typeof setNewRpcList>[3] = {
+			activeSimulationAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			activeRpcNetwork: signerOnlyNetwork,
+			openedPage: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: false,
+		}
+
+		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [] }, settings, ignoreRecoveryPublication)
+		assert.equal(owner.getCurrent() !== undefined, false)
+		const emptyConfiguration = await getRpcConfigurationState()
+		assert.deepEqual(emptyConfiguration, { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork })
+		const emptyListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(emptyListUpdate.method, 'popup_update_rpc_list')
+		if (emptyListUpdate.method === 'popup_update_rpc_list') {
+			assert.equal(emptyListUpdate.data.available, true)
+			if (emptyListUpdate.data.available) assert.deepEqual(emptyListUpdate.data.rpcEntries, [])
+		}
+
+		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+		assert.equal(owner.getCurrent() !== undefined, false)
+		const retryListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(retryListUpdate.method, 'popup_update_rpc_list')
+		if (retryListUpdate.method === 'popup_update_rpc_list') {
+			assert.equal(retryListUpdate.data.available, true)
+			if (retryListUpdate.data.available) assert.deepEqual(retryListUpdate.data.rpcEntries, [])
+		}
+
+		await settingsOpened(owner)
+		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(settingsReply.method, 'popup_requestSettingsReply')
+		if (settingsReply.method === 'popup_requestSettingsReply') assert.equal(settingsReply.data.rpcStatus.available, true)
+
+		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
+		assert.equal(owner.getCurrent() !== undefined, false)
+		assert.deepEqual(await getRpcList(), [customFallbackRpc])
+		const repopulatedConfiguration = await getRpcConfigurationState()
+		assert.equal(repopulatedConfiguration.status, 'ready')
+		if (repopulatedConfiguration.status === 'ready') assert.deepEqual(repopulatedConfiguration.activeRpcNetwork, signerOnlyNetwork)
 	})
 })

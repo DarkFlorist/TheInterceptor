@@ -14,6 +14,7 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import type { ChainEntry, RpcEntries } from './types/rpc.js'
 import { ChainSelector } from './components/subcomponents/ChainSelector.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser.js'
+import { getReadableRpcNetwork } from './utils/rpcNetworkChange.js'
 import { addressEditEntry } from './components/ui-utils.js'
 import { createAsyncActionRunner, useAsyncState } from './utils/preact-utilities.js'
 import { AsyncActionButton } from './components/subcomponents/AsyncAction.js'
@@ -210,6 +211,8 @@ export function AddressBook() {
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
 	const activeChainId = useComputed(() => activeChain.value?.chainId ?? 1n)
+	const activeChainName = useComputed(() => activeChain.value?.name)
+	const activeNetworkUnreadable = useSignal(false)
 	const rpcEntries = useSignal<RpcEntries>([])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
@@ -239,10 +242,14 @@ export function AddressBook() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
+				const { rpcStatus } = parsed.data
+				if (rpcStatus.available) rpcEntries.value = rpcStatus.rpcEntries
+				const readableRpcNetwork = getReadableRpcNetwork(rpcStatus)
+				activeNetworkUnreadable.value = readableRpcNetwork === undefined
+				if (readableRpcNetwork === undefined) return false
 				const prevActiveNetwork = activeChain.peek()
-				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === parsed.data.activeRpcNetwork.chainId) {
-					activeChain.value = parsed.data.activeRpcNetwork
+				if (prevActiveNetwork === undefined || prevActiveNetwork.chainId === readableRpcNetwork.chainId) {
+					activeChain.value = readableRpcNetwork
 					if (prevActiveNetwork === undefined || viewFilter.value.chain === undefined) {
 						viewFilter.value = { ...viewFilter.value, chain: activeChain.value === undefined ? undefined : { name: activeChain.value.name, chainId: activeChain.value.chainId } }
 					}
@@ -277,6 +284,8 @@ export function AddressBook() {
 	}
 
 	function GetNoResultsError() {
+		// Without a chain there is nothing to query: either the first settings reply is still on its way, or no active network can be read.
+		if (viewFilter.value.chain === undefined) return activeNetworkUnreadable.value ? <div class = 'address-book-empty-state'>The active network could not be read, so address book entries cannot be shown. Restore the RPC configuration in Settings.</div> : <></>
 		const activeFilterName = getAddressBookFilterDisplayName(viewFilter.value.activeFilter)
 		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
 			? `No entries found for "${ viewFilter.value.searchString }" in ${ activeFilterName } on ${ viewFilter.value.chain?.name }`
@@ -343,7 +352,7 @@ export function AddressBook() {
 				<div class = 'address-book-layout'>
 					<div class = 'address-book-sidebar'>
 						<div class = 'address-book-chain-selector'>
-							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain } buttonClassses = 'button is-primary chainSelector'/>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { activeChainId } changeChain = { changeActiveChain } buttonClassses = 'button is-primary chainSelector' unlistedChainName = { activeChainName }/>
 						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>

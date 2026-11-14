@@ -38,6 +38,7 @@ import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
+import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -73,7 +74,7 @@ async function bootstrapConfirmTransactionDialog(
 	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
 		if (hasLoadedPendingTransaction()) return
 		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
-		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+		if (reply?.method === 'popup_readyAndListening' && reply.ok && reply.data.confirmTransactionBootstrap !== undefined) {
 			applyBootstrapData(reply.data.confirmTransactionBootstrap)
 		}
 		if (hasLoadedPendingTransaction()) return
@@ -82,7 +83,7 @@ async function bootstrapConfirmTransactionDialog(
 }
 
 async function hydratePendingTransactionsFromStorage() {
-	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
+	return getConfirmationWindowRequests((await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? [])
 }
 
 const getResultsForTransaction = (visualizedSimulationState: VisualizedSimulationState, transactionIdentifier: bigint) => {
@@ -677,6 +678,7 @@ const RejectButton = ({ onClick, state }: RejectButtonParams) => {
 	</div>
 }
 
+
 type ButtonsParams = {
 	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
 	reject: () => void
@@ -848,7 +850,7 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
+				if (parsed.data.rpcStatus.available) rpcEntries.value = parsed.data.rpcStatus.rpcEntries
 				return false
 			}
 			if (parsed.method === 'popup_UnexpectedErrorOccured') {
@@ -910,7 +912,7 @@ export function ConfirmTransaction() {
 			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
 		})
 		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
-			if (cancelled || reply?.method !== 'popup_readyAndListening') return
+			if (cancelled || reply?.method !== 'popup_readyAndListening' || !reply.ok) return
 			const bootstrapData = reply.data.confirmTransactionBootstrap
 			if (bootstrapData === undefined) return
 			applyBootstrapData(bootstrapData)

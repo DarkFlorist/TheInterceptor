@@ -1,7 +1,10 @@
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
 function installEthSyncingRpcMock(syncingResults: readonly unknown[]) {
@@ -23,9 +26,44 @@ function installEthSyncingRpcMock(syncingResults: readonly unknown[]) {
 }
 
 describe('background eth_accounts', () => {
+	test('completes the signer handshake while RPC settings are unavailable', async () => {
+		installBrowserMock()
+		const { getTabState, handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://rpc-unavailable.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt-active-network' })
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 990, requestSocket: socket },
+				method: 'connected_to_signer',
+				params: [true, 'MetaMask', 2],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.deepEqual(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 990)?.result, { metamaskCompatibilityMode: false })
+		assert.equal(messages.some((message) => message.method === 'request_signer_chainId'), false)
+		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+		const tabState = await getTabState(socket.tabId)
+		assert.equal(tabState.signerName, 'MetaMask')
+		assert.equal(tabState.signerConnected, true)
+	})
+
 	test('resolves an access prompt with the services installed after it opened', async () => {
 		installBrowserMock()
-		const { requestAccessFromUser, resolveInterceptorAccess, getPendingAccessRequests, getSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const { requestAccessFromUser, resolveInterceptorAccess, getPendingAccessRequests, getRequiredSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const website = { websiteOrigin: 'https://access-reset.example', icon: undefined, title: undefined }
 		const account = 1n
@@ -47,7 +85,7 @@ describe('background eth_accounts', () => {
 		await requestAccessFromUser(owner, connections, socket, website, {
 			interceptorRequest: true, usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 992, requestSocket: socket }, method: 'eth_chainId', params: [],
-		}, address, await getSettings(), address, noopPublishRpcConnectionStatus)
+		}, address, await getRequiredSettings(), address, noopPublishRpcConnectionStatus)
 		const pending = (await getPendingAccessRequests())[0]
 		assert.ok(pending !== undefined)
 		owner.reset(installed.ethereum.getRpcEntry())
@@ -281,6 +319,497 @@ describe('background eth_accounts', () => {
 			method: 'eth_getStorageAt',
 			params: ['0xe592427a0aece92de3edee1f18e0157c05861564', '0x0', 'latest'],
 		})
+	})
+
+	// Starts a signing-mode wallet_addEthereumChain request, which is forwarded to the signer in signing mode and answered with error 10000 in simulation mode.
+	const startSigningModeAddEthereumChainRequest = async ({ websitePromise, publishRpcConnectionStatus = noopPublishRpcConnectionStatus, servicesAreSleeping = false }: {
+		readonly websitePromise?: Promise<{ readonly websiteOrigin: string, readonly icon: undefined, readonly title: undefined }>
+		readonly publishRpcConnectionStatus?: PublishRpcConnectionStatus
+		// Sleeping services with a disconnected status make the request wake them and await wake-status publishing.
+		readonly servicesAreSleeping?: boolean
+	} = {}) => {
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState, setRpcConnectionStatus } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: !servicesAreSleeping })
+		if (servicesAreSleeping) await setRpcConnectionStatus({ isConnected: false, lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'), latestBlock: undefined, rpcNetwork: ethereum.getRpcEntry(), retrying: false })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'wallet_addEthereumChain',
+			params: [{ chainId: '0xa', chainName: 'Parked chain', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://parked.invalid'] }],
+		}
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, websitePromise ?? website, simulationServicesOwner, socket, request, websiteTabConnections, publishRpcConnectionStatus)
+		const enableSimulationMode = async () => await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: account })
+		const getReply = () => messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		const wasForwardedToSigner = () => messages.some((message) => message.type === 'forwardToSigner')
+		return { website, requestPromise, enableSimulationMode, getReply, wasForwardedToSigner }
+	}
+
+	// Calls `onRead` with the 1-based count of settings snapshot reads (the reads that combine settings keys with the RPC configuration) and with the requested keys of every other read.
+	const observeStorageReads = (onRead: (read: { readonly settingsSnapshotReads: number, readonly keys: readonly string[] }) => Promise<void>) => {
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let settingsSnapshotReads = 0
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys: string | readonly string[]) => {
+				const requestedKeys = Array.isArray(keys) ? keys : [keys]
+				if (requestedKeys.includes('simulationMode') && requestedKeys.includes('rpcEntries')) settingsSnapshotReads += 1
+				await onRead({ settingsSnapshotReads, keys: requestedKeys })
+				return await originalGet(keys)
+			},
+		})
+	}
+
+	test('does not forward to the signer when simulation mode is enabled while the website lookup is pending', async () => {
+		installBrowserMock()
+		const parkedWebsite = createDeferredValue<{ readonly websiteOrigin: string, readonly icon: undefined, readonly title: undefined }>()
+		const signingModeSettingsRead = createDeferredValue<void>()
+		observeStorageReads(async ({ settingsSnapshotReads }) => {
+			if (settingsSnapshotReads === 2) signingModeSettingsRead.resolve(undefined)
+		})
+		const { website, requestPromise, enableSimulationMode, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest({ websitePromise: parkedWebsite.promise })
+		await signingModeSettingsRead.promise
+		await enableSimulationMode()
+		parkedWebsite.resolve(website)
+		await requestPromise
+
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, 10000)
+	})
+
+	// Parks a signing-mode request after its settings are read, applies an active RPC change, then releases it.
+	const runParkedRequestAcrossActiveRpcChange = async (changeActiveRpc: (admittedRpc: RpcNetwork) => Promise<void>) => {
+		const { getRequiredSettings } = await loadModules()
+		const parkedWebsite = createDeferredValue<{ readonly websiteOrigin: string, readonly icon: undefined, readonly title: undefined }>()
+		const signingModeSettingsRead = createDeferredValue<void>()
+		observeStorageReads(async ({ settingsSnapshotReads }) => {
+			if (settingsSnapshotReads === 2) signingModeSettingsRead.resolve(undefined)
+		})
+		const { website, requestPromise, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest({ websitePromise: parkedWebsite.promise })
+		await signingModeSettingsRead.promise
+		await changeActiveRpc((await getRequiredSettings()).activeRpcNetwork)
+		parkedWebsite.resolve(website)
+		await requestPromise
+		return { getReply, wasForwardedToSigner }
+	}
+
+	test('fails closed with 4901 instead of routing with a signing Safe selected on another chain while the request is parked', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration, changeSimulationMode, updateUserAddressBookEntries } = await loadModules()
+		// The user switches to chain B and selects a signing Safe that exists only there; the request was admitted on chain A.
+		const { getReply, wasForwardedToSigner } = await runParkedRequestAcrossActiveRpcChange(async (admittedRpc) => {
+			const otherChainRpc = { ...admittedRpc, name: 'Other chain', chainId: admittedRpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' }
+			const signer = 0x1111111111111111111111111111111111111111n
+			const otherChainSafe = 0x2222222222222222222222222222222222222222n
+			await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Other chain Safe', address: otherChainSafe, chainId: otherChainRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signer] }])
+			await setRpcConfiguration([admittedRpc, otherChainRpc], otherChainRpc)
+			await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: otherChainSafe })
+		})
+
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, 4901)
+	})
+
+	test('rejects a parked request with a retryable error when the active endpoint changed on the same chain', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { getReply, wasForwardedToSigner } = await runParkedRequestAcrossActiveRpcChange(async (admittedRpc) => {
+			const sameChainRpc = { ...admittedRpc, name: 'Same chain, other endpoint', httpsRpc: 'https://same-chain-other-endpoint.example.test' }
+			await setRpcConfiguration([admittedRpc, sameChainRpc], sameChainRpc)
+		})
+
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, -32603)
+		assert.match(getReply()?.error?.message ?? '', /RPC endpoint changed/)
+	})
+
+	test('continues a parked request when only the active RPC network metadata changed', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { getReply, wasForwardedToSigner } = await runParkedRequestAcrossActiveRpcChange(async (admittedRpc) => {
+			const renamedRpc = { ...admittedRpc, name: 'Renamed network' }
+			await setRpcConfiguration([renamedRpc], renamedRpc)
+		})
+
+		assert.equal(wasForwardedToSigner(), true)
+		assert.equal(getReply()?.error, undefined)
+	})
+
+	const consentFreeAddress = 0x3333333333333333333333333333333333333333n
+	const otherChainRpcOf = (admittedRpc: RpcNetwork) => ({ ...admittedRpc, name: 'Other chain', chainId: admittedRpc.chainId + 1n, httpsRpc: 'https://other-chain.example.test' })
+	const otherEndpointRpcOf = (admittedRpc: RpcNetwork) => ({ ...admittedRpc, name: 'Same chain, other endpoint', httpsRpc: 'https://same-chain-other-endpoint.example.test' })
+
+	// The website has page-level access and the address needs no address consent on the admitted chain only, so the same address needs consent on any other chain and access reconciliation unapproves the connection there, while an access check on the admitted chain would still grant it.
+	const createConsentFreeOnAdmittedChainConnection = async ({ approved, simulationMode, onPostMessage }: {
+		readonly approved: boolean
+		readonly simulationMode: boolean
+		readonly onPostMessage?: Parameters<typeof createPort>[1]
+	}) => {
+		const { changeSimulationMode, getRequiredSettings, setUseSignersAddressAsActiveAddress, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const admittedSettings = await getRequiredSettings()
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Consent-free on the admitted chain', address: consentFreeAddress, chainId: admittedSettings.activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }])
+		await changeSimulationMode({ simulationMode, activeSimulationAddress: simulationMode ? consentFreeAddress : undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, onPostMessage)
+		const connection = { port, socket, websiteOrigin, approved, wantsToConnect: true }
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 7, requestSocket: socket }, method: 'eth_chainId', params: [] }
+		const getReply = () => messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		return { admittedRpc: admittedSettings.activeRpcNetwork, connection, getReply, messages, port, request, simulationServicesOwner, socket, website, websiteOrigin, websiteTabConnections }
+	}
+
+	// Runs `onTabStateRead` once, at the first tab state read after the given settings read. Settings reads hold the RPC configuration lock, so an RPC change has to wait for a tab state read, which holds no lock.
+	const onFirstTabStateReadAfterSettingsRead = (settingsRead: number, onTabStateRead: () => Promise<void>) => {
+		let ran = false
+		observeStorageReads(async ({ settingsSnapshotReads, keys }) => {
+			if (ran || settingsSnapshotReads < settingsRead || !keys.includes('tabState_1')) return
+			ran = true
+			await onTabStateRead()
+		})
+	}
+
+	// Applies `changeActiveRpc` after the post-admission settings re-read, while the active address is resolved on the admitted network, then lets the request reach its access check.
+	const runRequestAcrossActiveRpcChangeBeforeAccessCheck = async (approved: boolean, changeActiveRpc: (context: Awaited<ReturnType<typeof createConsentFreeOnAdmittedChainConnection>>) => Promise<void>) => {
+		const { handleInterceptedRequest } = await loadModules()
+		const context = await createConsentFreeOnAdmittedChainConnection({ approved, simulationMode: true })
+		const { port, request, simulationServicesOwner, socket, website, websiteOrigin, websiteTabConnections } = context
+		onFirstTabStateReadAfterSettingsRead(2, async () => await changeActiveRpc(context))
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		return context
+	}
+
+	// A network transition stores the new network before it installs that network's services; this request is admitted between the two and parked on the website lookup.
+	const admitRequestBetweenNetworkWriteAndServicesInstallation = async (nextNetworkOf: (network: RpcNetwork) => RpcNetwork & { readonly httpsRpc: string }) => {
+		const { changeSimulationMode, getRequiredSettings, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const website = { websiteOrigin: 'https://admitted-mid-transition.example', icon: undefined, title: undefined }
+		const account = 1n
+		await setUseSignersAddressAsActiveAddress(false)
+		const original = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const nextNetwork = nextNetworkOf((await getRequiredSettings()).activeRpcNetwork)
+		installed.ethereum.getChainId = () => nextNetwork.chainId
+		installed.ethereum.getRpcEntry = () => nextNetwork
+		const owner = createTestSimulationServicesOwner(original, () => installed)
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, rpcNetwork: nextNetwork })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const parkedWebsite = createDeferredValue<typeof website>()
+		const requestPromise = handleInterceptedRequest(port, website.websiteOrigin, parkedWebsite.promise, owner, socket, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 991, requestSocket: socket }, method: 'eth_chainId', params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		const finish = async () => {
+			parkedWebsite.resolve(website)
+			await requestPromise
+			return messages.find((message) => message.requestId === 991)
+		}
+		return { finish, installServices: () => owner.reset(nextNetwork) }
+	}
+
+	test('a request admitted between the network write and the services installation uses the new network once they are installed', async () => {
+		installBrowserMock()
+		const { finish, installServices } = await admitRequestBetweenNetworkWriteAndServicesInstallation(otherChainRpcOf)
+
+		installServices()
+
+		assert.equal((await finish())?.result, '0x2')
+	})
+
+	test.each([
+		{ description: 'chain', nextNetworkOf: otherChainRpcOf },
+		{ description: 'endpoint', nextNetworkOf: otherEndpointRpcOf },
+	])('a request is not served by the previous $description while the transition has not installed the new services', async ({ nextNetworkOf }) => {
+		installBrowserMock()
+		const { finish } = await admitRequestBetweenNetworkWriteAndServicesInstallation(nextNetworkOf)
+
+		const reply = await finish()
+
+		assert.equal(reply?.error?.code, 4901)
+		assert.equal(reply?.result, undefined)
+	})
+
+	// Services that install whatever network they are given, so a test can compare them with the stored selection.
+	const createInstallingServicesOwner = () => {
+		const createServicesFor = (network: RpcNetwork) => {
+			const services = createEthereumWithGetBlockCounter({ count: 0 })
+			services.ethereum.getChainId = () => network.chainId
+			if (network.httpsRpc !== undefined) services.ethereum.getRpcEntry = () => ({ ...network, httpsRpc: network.httpsRpc })
+			return services
+		}
+		return createTestSimulationServicesOwner(createEthereumWithGetBlockCounter({ count: 0 }), createServicesFor)
+	}
+
+	const sendEthChainIdRequests = async (simulationServicesOwner: ReturnType<typeof createInstallingServicesOwner>, requestIds: readonly number[]) => {
+		const { changeSimulationMode, handleInterceptedRequest, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const website = { websiteOrigin: 'https://after-rpc-change.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 1n })
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: 1n, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
+		for (const requestId of requestIds) await handleInterceptedRequest(port, website.websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId, requestSocket: socket }, method: 'eth_chainId', params: [] }, websiteTabConnections, noopPublishRpcConnectionStatus)
+		return requestIds.map((requestId) => messages.find((message) => message.requestId === requestId))
+	}
+
+	test('saving the RPC list keeps services on a selected endpoint that is not the list primary, and requests keep working', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getRequiredSettings, publishRpcConfigurationRecovery, restoreDefaultRpcConfiguration, setNewRpcList } = await loadModules()
+		const owner = createInstallingServicesOwner()
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		const defaultRpc = (await getRequiredSettings()).activeRpcNetwork
+		if (defaultRpc.httpsRpc === undefined) throw new Error('The default network has an endpoint')
+		const customRpc = { ...defaultRpc, name: 'Custom endpoint', httpsRpc: 'https://custom-endpoint.example.test', primary: false }
+		await changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: customRpc, promptForAccessesIfNeeded: false })
+		await restoreDefaultRpcConfiguration(owner, websiteTabConnections, await getRequiredSettings(), publishRpcConfigurationRecovery)
+
+		await setNewRpcList(owner, websiteTabConnections, { method: 'popup_set_rpc_list', data: [{ ...defaultRpc, name: 'Renamed default' }] }, await getRequiredSettings(), publishRpcConfigurationRecovery)
+
+		assert.equal((await getRequiredSettings()).activeRpcNetwork.httpsRpc, customRpc.httpsRpc)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customRpc.httpsRpc)
+		assert.deepEqual((await sendEthChainIdRequests(owner, [71, 72])).map((reply) => reply?.result), ['0x1', '0x1'])
+	})
+
+	test('importing settings installs services for the imported network, and requests keep working', async () => {
+		installBrowserMock()
+		const { exportSettingsAndAddressBook, getRequiredSettings } = await loadModules()
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+		const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const owner = createInstallingServicesOwner()
+		const exported = await exportSettingsAndAddressBook()
+		const importedRpc = otherChainRpcOf((await getRequiredSettings()).activeRpcNetwork)
+		const fileContents = JSON.stringify(serialize(ExportedSettings, { ...exported, settings: { ...exported.settings, rpcNetwork: importedRpc } }))
+
+		await handlePopupRuntimeMessage(new Map(), owner, serialize(PopupMessage, { method: 'popup_import_settings', data: { fileContents } }), noopPublishRpcConnectionStatus)
+
+		assert.equal((await getRequiredSettings()).activeRpcNetwork.httpsRpc, importedRpc.httpsRpc)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, importedRpc.httpsRpc)
+		assert.deepEqual((await sendEthChainIdRequests(owner, [73, 74])).map((reply) => reply?.result), ['0x2', '0x2'])
+	})
+
+	test('does not re-approve a connection that a chain switch unapproved while the request was parked', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain } = await loadModules()
+		let approvedAfterChainSwitch: boolean | undefined
+		const { connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(true, async ({ admittedRpc, connection, simulationServicesOwner, websiteTabConnections }) => {
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: true, rpcNetwork: otherChainRpcOf(admittedRpc), promptForAccessesIfNeeded: false })
+			approvedAfterChainSwitch = connection.approved
+		})
+
+		assert.equal(approvedAfterChainSwitch, false)
+		assert.equal(getReply()?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
+	})
+
+	test('does not approve a connection when the endpoint changed while the request was parked', async () => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(false, async ({ admittedRpc }) => {
+			await setRpcConfiguration([admittedRpc, otherEndpointRpcOf(admittedRpc)], otherEndpointRpcOf(admittedRpc))
+		})
+
+		assert.equal(getReply()?.error?.code, -32603)
+		assert.match(getReply()?.error?.message ?? '', /RPC endpoint changed/)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
+	})
+
+	test.each([
+		{ description: 'nothing changed', renameActiveRpc: false },
+		{ description: 'only the active RPC network metadata changed', renameActiveRpc: true },
+	])('approves the connection on the admitted network when $description', async ({ renameActiveRpc }) => {
+		installBrowserMock()
+		const { setRpcConfiguration } = await loadModules()
+		const { admittedRpc, connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(false, async ({ admittedRpc }) => {
+			const renamedRpc = { ...admittedRpc, name: 'Renamed network' }
+			if (renameActiveRpc) await setRpcConfiguration([renamedRpc], renamedRpc)
+		})
+
+		assert.equal(getReply()?.error, undefined)
+		assert.equal(connection.approved, true)
+		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [[`0x${ admittedRpc.chainId.toString(16) }`]])
+	})
+
+	test('does not approve a connection when the RPC entries became corrupt while the request was parked', async () => {
+		installBrowserMock()
+		const { connection, getReply, messages } = await runRequestAcrossActiveRpcChangeBeforeAccessCheck(false, async () => {
+			await browser.storage.local.set({ rpcEntries: 'corrupt' })
+		})
+
+		assert.equal(getReply()?.error?.code, 4900)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+	})
+
+	test.each([
+		{ description: 'the RPC entries become corrupt', storedChange: 'corrupt' },
+		{ description: 'the chain changes', storedChange: 'chain' },
+		{ description: 'the endpoint changes', storedChange: 'endpoint' },
+	])('access reconciliation does not grant a connection when $description during its active-address lookup', async ({ storedChange }) => {
+		installBrowserMock()
+		const { getRequiredSettings, reconcileWebsiteApprovalAccesses, setRpcConfiguration } = await loadModules()
+		const { admittedRpc, connection, messages, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
+		const committedSettings = await getRequiredSettings()
+		// Read 1 is the request-block update and read 2 the reconciliation's own settings read; the tab state read after it belongs to the connection's address lookup.
+		onFirstTabStateReadAfterSettingsRead(2, async () => {
+			if (storedChange === 'corrupt') return await browser.storage.local.set({ rpcEntries: 'corrupt' })
+			const changedRpc = storedChange === 'chain' ? otherChainRpcOf(admittedRpc) : otherEndpointRpcOf(admittedRpc)
+			await setRpcConfiguration([admittedRpc, changedRpc], changedRpc)
+		})
+
+		await reconcileWebsiteApprovalAccesses(websiteTabConnections, committedSettings)
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
+	})
+
+	test('does not re-approve a connection after a chain switch during the signer account prompt', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, handleInterceptedRequest } = await loadModules()
+		let messageCountAtChainSwitch: number | undefined
+		let releaseSignerPrompt = async () => undefined as unknown
+		const context = await createConsentFreeOnAdmittedChainConnection({
+			approved: false,
+			simulationMode: false,
+			onPostMessage: (message) => {
+				if (message.method === 'request_signer_to_eth_accounts') void releaseSignerPrompt()
+			},
+		})
+		const { admittedRpc, connection, messages, port, simulationServicesOwner, socket, website, websiteOrigin, websiteTabConnections } = context
+		releaseSignerPrompt = async () => {
+			messageCountAtChainSwitch = messages.length
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: false, rpcNetwork: otherChainRpcOf(admittedRpc), promptForAccessesIfNeeded: false })
+			return await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 8, requestSocket: socket },
+				method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(consentFreeAddress)], requestAccounts: false }],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 9, requestSocket: socket }, method: 'eth_accounts' }, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.find((message) => message.method === 'eth_accounts' && message.requestId === 9)?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.slice(messageCountAtChainSwitch).some((message) => message.method === 'connect'), false)
+	})
+
+	test('does not approve a connection from the access prompt once the request is off the live network', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getRequiredSettings, requestAccessFromUser, setRpcConfiguration } = await loadModules()
+		const { admittedRpc, connection, getReply, messages, request, simulationServicesOwner, socket, website, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
+		const admittedSettings = await getRequiredSettings()
+		await setRpcConfiguration([admittedRpc, otherChainRpcOf(admittedRpc)], otherChainRpcOf(admittedRpc))
+
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, admittedSettings, undefined, noopPublishRpcConnectionStatus)
+
+		assert.equal(getReply()?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+	})
+
+	test('does not approve a connection while registering an access prompt once the request is off the live network', async () => {
+		installBrowserMock()
+		const { getPendingAccessRequests, getRequiredSettings, requestAccessFromUser, setRpcConfiguration, updateWebsiteAccess } = await loadModules()
+		const { admittedRpc, connection, getReply, messages, request, simulationServicesOwner, socket, website, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
+		// Undecided for the check before the dialog opens; the grant that lands with the network switch is what the registration re-check would act on.
+		await updateWebsiteAccess(() => [])
+		const admittedSettings = await getRequiredSettings()
+		onFirstTabStateReadAfterSettingsRead(1, async () => {
+			await setRpcConfiguration([admittedRpc, otherChainRpcOf(admittedRpc)], otherChainRpcOf(admittedRpc))
+			await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		})
+
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, admittedSettings, undefined, noopPublishRpcConnectionStatus)
+
+		assert.equal(getReply()?.error?.code, 4901)
+		assert.equal(connection.approved, false)
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
+		assert.deepEqual(await getPendingAccessRequests(), [])
+	})
+
+	test('does not forward to the signer when simulation mode is enabled while the tab state is being read', async () => {
+		installBrowserMock()
+		const tabStateReadStarted = createDeferredValue<void>()
+		const releaseTabStateRead = createDeferredValue<void>()
+		let paused = false
+		observeStorageReads(async ({ settingsSnapshotReads, keys }) => {
+			if (paused || settingsSnapshotReads < 3 || !keys.includes('tabState_1')) return
+			paused = true
+			tabStateReadStarted.resolve(undefined)
+			await releaseTabStateRead.promise
+		})
+		const { requestPromise, enableSimulationMode, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest()
+		await tabStateReadStarted.promise
+		await enableSimulationMode()
+		releaseTabStateRead.resolve(undefined)
+		await requestPromise
+
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, 10000)
+	})
+
+	test('does not forward to the signer when simulation mode is enabled while wake status is being published', async () => {
+		installBrowserMock()
+		const simulationModeSwitch = createDeferredValue<() => Promise<void>>()
+		let publishCalls = 0
+		const publishRpcConnectionStatus: PublishRpcConnectionStatus = async () => {
+			publishCalls += 1
+			if (publishCalls === 1) await (await simulationModeSwitch.promise)()
+		}
+		const { requestPromise, enableSimulationMode, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest({ publishRpcConnectionStatus, servicesAreSleeping: true })
+		simulationModeSwitch.resolve(enableSimulationMode)
+		await requestPromise
+
+		assert.equal(publishCalls > 0, true)
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, 10000)
+	})
+
+	test('does not forward to the signer when the settings read before posting the forward fails', async () => {
+		installBrowserMock()
+		observeStorageReads(async ({ settingsSnapshotReads, keys }) => {
+			if (settingsSnapshotReads >= 4 && keys.includes('simulationMode') && keys.includes('rpcEntries')) throw new Error('storage read failed')
+		})
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const { requestPromise, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest()
+			await requestPromise
+
+			assert.equal(wasForwardedToSigner(), false)
+			assert.equal(getReply()?.error?.code, 4900)
+		} finally {
+			console.warn = originalWarn
+		}
 	})
 
 	test('answers eth_syncing from the Interceptor RPC node in simulation and signing modes', async () => {
@@ -1121,7 +1650,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const {
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			getSigningAddressPreferences,
 			getTabState,
 			handleInterceptedRequest,
@@ -1174,7 +1703,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.chainId, 1n)
 		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
@@ -1189,7 +1718,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settingsAfterDisconnect = await getSettings()
+		const settingsAfterDisconnect = await getRequiredSettings()
 		assert.equal(settingsAfterDisconnect.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settingsAfterDisconnect, socket.tabId)), undefined)
 
@@ -1201,7 +1730,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			method: 'eth_accounts_reply',
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(safeSignerAddress)], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeAddress)
 
 		const otherSignerAddress = 0x5353535353535353535353535353535353535353n
 		assert.equal((await getSigningAddressPreferences()).some((preference) => preference.signerAddress === otherSignerAddress), false)
@@ -1214,7 +1743,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(otherSignerAddress)], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settingsAfterAccountChange = await getSettings()
+		const settingsAfterAccountChange = await getRequiredSettings()
 		assert.equal(settingsAfterAccountChange.activeSimulationAddress, safeAddress)
 		assert.equal(settingsAfterAccountChange.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settingsAfterAccountChange, socket.tabId))?.address, otherSignerAddress)
@@ -1228,7 +1757,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeSimulationMode,
 			createInternalMessageListener,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			INTERNAL_CHANNEL_NAME,
 			rememberSigningAddressPreference,
@@ -1279,7 +1808,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const completionChannel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 		const completionListener = createInternalMessageListener((message) => {
 			if (message.method !== 'window_signer_accounts_changed') return
-			void getSettings().then((currentSettings) => settingsSeenByAccountChangeWaiters.push(currentSettings.activeSigningSafeAddress))
+			void getRequiredSettings().then((currentSettings) => settingsSeenByAccountChangeWaiters.push(currentSettings.activeSigningSafeAddress))
 		})
 		completionChannel.addEventListener('message', completionListener)
 		await selectSignerAccount(safeOwner, 209)
@@ -1288,7 +1817,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		completionChannel.removeEventListener('message', completionListener)
 		completionChannel.close()
 		assert.deepEqual(settingsSeenByAccountChangeWaiters, [safeAddress])
-		let settings = await getSettings()
+		let settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
 		const signingAddressUpdate = runtimeMessages
@@ -1299,12 +1828,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(signingAddressUpdate.value.data.activeSigningSafeAddress, safeAddress)
 
 		await selectSignerAccount(directEoa, 210)
-		settings = await getSettings()
+		settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, directEoa)
 
 		await selectSignerAccount(safeOwner, 211)
-		settings = await getSettings()
+		settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
 	})
@@ -1545,7 +2074,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeActiveAddressAndChain,
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1590,7 +2119,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeAddress: safeAddress,
 			signingAddressSelection: 'safe',
 		})
-		assert.notEqual((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.notEqual((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1608,7 +2137,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			getActiveAddress,
 			getActiveAddressesForAllTabs,
 			getActiveOrFirstSignerAddress,
-			getSettings,
+			getRequiredSettings,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1627,7 +2156,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}])
 		await updateTabState(1, (previousState) => previousState)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.notEqual(settings.activeRpcNetwork.chainId, 2n)
 		assert.equal(await getActiveAddress(settings, 1), undefined)
 		assert.equal(await getActiveOrFirstSignerAddress(settings, 1), undefined)
@@ -1640,7 +2169,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeActiveAddressAndChain,
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1679,7 +2208,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeSignerAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeSignerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1695,7 +2224,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeAddress: safeAddress,
 			signingAddressSelection: 'safe',
 		})
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeSignerAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeSignerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1712,17 +2241,17 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeAddress: undefined,
 			signingAddressSelection: 'signer',
 		})
-		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
+		assert.equal((await getRequiredSettings()).activeSimulationAddress, safeAddress)
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 			simulationMode: true,
 		})
-		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
+		assert.equal((await getRequiredSettings()).activeSimulationAddress, safeAddress)
 	})
 
 	for (const access of ['denied', 'origin', 'tab'] as const) test(`requires website authorization in addition to a confirmed signer (${ access })`, async () => {
 		installBrowserMock()
 		const { signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
-		const { changeSimulationMode, getSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n })
 		const socket = { tabId: 1, connectionName: 0n }
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: 1n }))
@@ -1731,12 +2260,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://callback-authorization.example', approved: access === 'tab', wantsToConnect: false },
 		} }]])
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const before = { settings: await getSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }
+		const before = { settings: await getRequiredSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }
 		await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, access === 'origin' ? 'hasAccess' : 'noAccess', 1n)
 		if (access === 'denied') {
-			assert.deepEqual({ settings: await getSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }, before)
+			assert.deepEqual({ settings: await getRequiredSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }, before)
 		} else {
-			assert.equal((await getSettings()).activeRpcNetwork.chainId, 2n)
+			assert.equal((await getRequiredSettings()).activeRpcNetwork.chainId, 2n)
 			assert.equal((await getTabState(1)).signerChain, 2n)
 		}
 	})
@@ -1745,7 +2274,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1781,7 +2310,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.chainId, 2n)
 		assert.equal(settings.activeSimulationAddress, signerAddress)
 	})
@@ -1791,7 +2320,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const {
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1825,7 +2354,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, signerAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, signerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
@@ -1835,7 +2364,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.chainId, 2n)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, signerAddress)

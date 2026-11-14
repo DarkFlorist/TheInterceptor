@@ -30,7 +30,7 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getRpcList, promoteRpcAsPrimary, setRpcList } = await import('../../app/ts/background/storageVariables.js')
+const { getRpcList, promoteRpcAsPrimary, setRpcList } = await import('../../app/ts/background/rpcConfigurationStorage.js')
 
 const existingRpcEntries = [
 	{

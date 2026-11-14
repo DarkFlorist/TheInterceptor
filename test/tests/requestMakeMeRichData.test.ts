@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addressString, checksummedAddress } from '../../app/ts/utils/bigint.js'
@@ -67,6 +68,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
@@ -341,11 +343,11 @@ describe('startup storage recovery', () => {
 
 	test('recovers corrupt websiteAccess without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { getRequiredSettings } = await loadModules()
 		storageState.websiteAccess = [null]
 		storageState.simulationMode = false
 
-		const settings = await withSilencedConsole(async () => await getSettings())
+		const settings = await withSilencedConsole(async () => await getRequiredSettings())
 
 		assert.deepEqual(settings.websiteAccess, [])
 		assert.equal(settings.simulationMode, false)
@@ -355,14 +357,14 @@ describe('startup storage recovery', () => {
 
 	test('sanitizes remote website access icons in returned settings without mutating storage', async () => {
 		const storageState = installBrowserMock()
-		const { getSettings, getWebsiteAccess } = await loadModules()
+		const { getRequiredSettings, getWebsiteApprovalsSnapshot, requireReadableApprovals } = await loadModules()
 		storageState.websiteAccess = [
 			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
 			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
 		]
 
-		const settings = await withSilencedConsole(async () => await getSettings())
-		const websiteAccess = await withSilencedConsole(async () => await getWebsiteAccess())
+		const settings = await withSilencedConsole(async () => await getRequiredSettings())
+		const websiteAccess = await withSilencedConsole(async () => requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true })))
 
 		assert.equal(settings.websiteAccess[0]?.website.icon, undefined)
 		assert.equal(settings.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
@@ -376,11 +378,11 @@ describe('startup storage recovery', () => {
 
 	test('recovers corrupt openedPageV2 without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { getRequiredSettings } = await loadModules()
 		storageState.openedPageV2 = null
 		storageState.useSignersAddressAsActiveAddress = true
 
-		const settings = await withSilencedConsole(async () => await getSettings())
+		const settings = await withSilencedConsole(async () => await getRequiredSettings())
 
 		assert.deepEqual(settings.openedPage, { page: 'Home' })
 		assert.equal(settings.useSignersAddressAsActiveAddress, true)

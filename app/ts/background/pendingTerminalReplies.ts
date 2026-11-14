@@ -1,10 +1,10 @@
+import type { PendingSafeProposalStore, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
-import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-
-const pendingTerminalRepliesSemaphore = new Semaphore(1)
+import { movePendingSafeProposalToOutbox, queueTerminalRepliesUnlessDeferred } from './storageVariables.js'
+import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
@@ -20,7 +20,7 @@ export async function getPendingTerminalReplies(): Promise<readonly InterceptedR
 }
 
 async function updatePendingTerminalReplies(update: (pendingReplies: readonly InterceptedRequestForward[]) => readonly InterceptedRequestForward[]) {
-	return await pendingTerminalRepliesSemaphore.execute(async () => {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const pendingTerminalReplies = update(await getPendingTerminalReplies())
 		await browserStorageLocalSet({ pendingTerminalReplies })
 		return pendingTerminalReplies
@@ -32,6 +32,22 @@ export async function appendPendingTerminalReply(reply: InterceptedRequestForwar
 		...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)),
 		reply,
 	])
+}
+
+const withTerminalReply = (reply: InterceptedRequestForward) => async () => [...(await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)), reply]
+
+// Queues the website's proposal-hash reply together with moving the signed proposal from the pending queue to the Safe proposal outbox, unless the request is already answered.
+export async function writeSafeProposalReplyAndOutboxEntry(
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	createStore: (pendingProposal: PendingTransactionOrSignableMessage) => PendingSafeProposalStore,
+	reply: InterceptedRequestForward,
+) {
+	return await movePendingSafeProposalToOutbox(uniqueRequestIdentifier, createStore, withTerminalReply(reply), true)
+}
+
+// Queues a pending request's website reply unless the request holds a deferred Gnosis Safe signature this reply does not settle.
+export async function writeTerminalReplyUnlessDeferred(reply: InterceptedRequestForward, settledSignerReply?: string) {
+	return await queueTerminalRepliesUnlessDeferred(reply.uniqueRequestIdentifier, withTerminalReply(reply), settledSignerReply)
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {

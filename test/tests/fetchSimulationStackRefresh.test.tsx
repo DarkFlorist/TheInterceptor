@@ -1,3 +1,4 @@
+import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -112,7 +113,7 @@ const [
 	{ popupMessageHandler },
 	{ updatePopupVisualisationIfNeeded },
 	{ browserStorageLocalSet },
-	{ getSettings },
+	{ getSettingsSnapshot, settingsIfAvailable },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise },
 	{ EthereumClientService },
 	{ TokenPriceService },
@@ -176,9 +177,13 @@ const requestHandler = {
 }
 const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
-const simulationServicesOwner = {
-	getCurrent: () => ({ ethereum, tokenPriceService }),
-	reset: () => ({ ethereum, tokenPriceService }),
+const simulationServices = { ethereum, tokenPriceService }
+const simulationServicesOwner: SimulationServicesOwner = {
+	getCurrent: () => simulationServices,
+	requireCurrent: () => simulationServices,
+	reset: () => simulationServices,
+	recover: () => simulationServices,
+	clear: () => undefined,
 }
 
 // Requests that reach the real background dispatcher. The live consumer's cached home-data requests neither simulate nor publish simulation state, so they stay unanswered here.
@@ -187,7 +192,8 @@ const BACKGROUND_SIMULATION_REQUESTS = new Set(['popup_readyAndListening', 'popu
 async function dispatchToBackground(message: unknown) {
 	const method = getMessageMethod(message)
 	if (method === undefined || !BACKGROUND_SIMULATION_REQUESTS.has(method)) return undefined
-	return await popupMessageHandler(new Map(), simulationServicesOwner, message, await getSettings(), async () => undefined)
+	const settingsSnapshot = await getSettingsSnapshot()
+	return await popupMessageHandler(new Map(), simulationServicesOwner, message, settingsIfAvailable(settingsSnapshot), settingsSnapshot.rpcConfiguration, async () => undefined)
 }
 
 // Stands in for the home popup or simulation stack page: it answers the open-consumer probe and keeps each published state.
@@ -226,6 +232,7 @@ async function setUpSimulationModeWithOpenConsumer() {
 	routeBackgroundRequest = dispatchToBackground
 	await browserStorageLocalSet({
 		activeRpcNetwork: rpcNetwork,
+		rpcEntries: [rpcNetwork],
 		simulationMode: true,
 		independentActiveSimulationAddress: simulationAddress,
 		makeCurrentAddressRich: true,

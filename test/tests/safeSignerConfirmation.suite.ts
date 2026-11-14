@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -626,7 +627,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
-test('refreshes the selected signer and uses services installed during the wallet wait', async () => {
+test('refreshes the selected signer while keeping the services admitted before the wallet wait', async () => {
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress
 	fakeSafeContract.owners = [configuredSigner]
@@ -665,18 +666,18 @@ test('refreshes the selected signer and uses services installed during the walle
 	const socket = uniqueRequestIdentifier.requestSocket
 	const accountRequestEntered = createDeferredValue<void>()
 	const releaseAccountReply = createDeferredValue<void>()
-	let retiredClientRequests = 0
-	const retiredEthereum = new modules.EthereumClientService({
+	let admittedClientRequests = 0
+	const admittedEthereum = new modules.EthereumClientService({
 		rpcUrl: fakeRpcNetwork.httpsRpc,
 		clearCache() { return undefined },
-		async jsonRpcRequest() {
-			retiredClientRequests++
-			throw new Error('Confirmation used services captured before the wallet refresh')
+		async jsonRpcRequest(request) {
+			admittedClientRequests++
+			return await fakeRequestHandler.jsonRpcRequest(request)
 		},
 	}, async () => undefined, async () => undefined, fakeRpcNetwork)
 	const owner = createTestSimulationServicesOwner({
-		ethereum: retiredEthereum,
-		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
+		ethereum: admittedEthereum,
+		tokenPriceService: new modules.TokenPriceService(admittedEthereum, 60_000),
 	}, () => simulator)
 	let accountReply: Promise<unknown> | undefined
 	let websiteTabConnections: Map<number, {
@@ -733,7 +734,8 @@ test('refreshes the selected signer and uses services installed during the walle
 		},
 	}]])
 
-	const confirmation = modules.confirmDialog(owner, websiteTabConnections, {
+	const admittedServices = owner.requireCurrent()
+	const confirmation = modules.confirmDialog(admittedServices.ethereum, admittedServices.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	})
@@ -742,7 +744,7 @@ test('refreshes the selected signer and uses services installed during the walle
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply
-	assert.equal(retiredClientRequests, 0)
+	assert.equal(admittedClientRequests > 0, true)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'request_signer_to_eth_accounts'), true)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -900,6 +902,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 			uniqueRequestIdentifier: requestIdentifier,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -992,6 +995,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -1033,7 +1037,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		requiredChainId: fakeRpcNetwork.chainId,
 		simulateWithZeroBaseFee: true,
 	})
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await getRequiredSettings()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash
@@ -1143,6 +1147,7 @@ test('invalid Safe owner signatures retain the request as a signer error without
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,
@@ -1256,6 +1261,8 @@ async function prepareSafeProposalFromFakeRpcNetwork(approvalStatus: { readonly 
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus,
+			// A proposal waiting for the signer was forwarded to it on the chain it was prepared for, which the signature is then matched to.
+			...(approvalStatus.status === 'WaitingForSigner' ? { signerRequestChainId: proposalChainId } : {}),
 			safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress,
@@ -1302,23 +1309,21 @@ test('refuses to forward a Safe proposal prepared on another chain after the net
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
-test('does not store a Safe proposal signed for another chain after the network switches', async () => {
-	const { safeTx, postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForSigner' })
+// A signature is bound to the chain the signer was asked to sign for (signerRequestChainId), so a network switch after the signer was asked cannot move the proposal to the connected chain: it waits in the outbox for services for its own chain, where storing it runs the chain check (assertSafeProposalChainMatchesConnectedNetwork in safeConfirmationPersistence.ts).
+test('does not store a Safe proposal signed for another chain after the network switches, and keeps it for its own chain', async () => {
+	const { safeTx, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForSigner' })
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const otherChainSimulator = createOtherChainSimulator()
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+	await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
-	}), false)
+	})
 
-	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [], 'nothing is stored on the connected chain')
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
-	const [rejectedProposal] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(rejectedProposal?.approvalStatus.status, 'SignerError')
-	if (rejectedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
-	assert.match(rejectedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+	const { getPendingSafeProposalStores } = await import('../../app/ts/background/storageVariables.js')
+	assert.deepEqual((await getPendingSafeProposalStores()).map((store) => store.chainId), [fakeRpcNetwork.chainId], 'the signed proposal waits for its own chain')
 })
 
 test('does not add an unsigned Safe proposal prepared on another chain to the Safe stack', async () => {

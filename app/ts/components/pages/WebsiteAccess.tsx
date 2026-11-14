@@ -282,7 +282,7 @@ const WebsiteSettingsDetail = () => {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
+				if (parsed.data.rpcStatus.available) rpcEntries.value = parsed.data.rpcStatus.rpcEntries
 				return false
 			}
 			return false
