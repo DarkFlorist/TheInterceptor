@@ -15,7 +15,7 @@ import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type InterceptorStackOperation, InterceptorTransactionStack, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransaction, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type InterceptorStackOperation, type InterceptorTransactionStack, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransaction, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -55,7 +55,7 @@ const selectAddressesBeingMadeRich = (settings: Settings, makeCurrentAddressRich
 	return [...fixedAddressRichList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-// Everything getSimulationInputForStack reads: the stack and the values derived from one settings snapshot that decide the input. It holds nothing else, so unrelated settings such as website access stay out of it, and its fingerprint covers every field it has.
+// Everything getSimulationInputForStack reads: the stack and the values derived from one settings snapshot that decide the input. It holds nothing else, so unrelated settings such as website access stay out of it.
 export type StackSimulationContext = {
 	readonly stack: InterceptorTransactionStack
 	readonly chainId: bigint
@@ -78,9 +78,9 @@ export const captureStackSimulationContext = async () => {
 	return { snapshot, context: toStackSimulationContext(snapshot, await getInterceptorTransactionStack()) }
 }
 
-// Hashes every field of the context, so it changes whenever the input simulated from the context could change, including through a field added to the context later.
-export function getStackSimulationContextFingerprint(context: StackSimulationContext) {
-	return keccak256(stringToBytes(stringifyJSONWithBigInts({ ...context, stack: serialize(InterceptorTransactionStack, context.stack) })))
+// Identifies the simulation input built from the context with appendedOperations after the stack: a hash of that input itself, serialized whole. A wallet_sendCalls preview hashes the input it simulated, and approval hashes the input it would commit, so approval sees exactly whether the batch would now run on anything else. It is derived from what is simulated, not from a list of what the input depends on, so any change that changes the input, including through a setting added later, changes it, and one that does not leaves it unchanged. getSimulationInputHash identifies the input for caching and leaves out each transaction's simulation options (such as running it through a Gnosis Safe), which change what an approval commits, so it is not used here.
+export function getStackSimulationInputFingerprint(context: StackSimulationContext, appendedOperations: readonly InterceptorStackOperation[]) {
+	return keccak256(stringToBytes(stringifyJSONWithBigInts(serialize(SimulationStateInput, getSimulationInputForStack(context, appendedOperations)))))
 }
 
 // Converts the stack, followed by appendedOperations, into simulation input: consecutive transactions share a block until a message, a time manipulation or a change of base fee mode starts the next one. Operations previewed as appendedOperations therefore land exactly where approval adds them to the stack. With openBlockForNextTransaction the input ends with the block that a further transaction would join, even while that block is still empty, so the transaction can be estimated where approval would add it.

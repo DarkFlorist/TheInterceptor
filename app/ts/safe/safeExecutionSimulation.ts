@@ -1,7 +1,7 @@
 import { type EthereumClientService, getGasLeftInRpcBlock, getGasUsedInLastRpcBlock } from '../simulation/services/EthereumClientService.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { appendTransactionsToInput, getSimulatedSafeCallNonce } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
+import { type AppendedTransactionRpcBlock, estimateGasInRpcBlockItRunsIn, getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
@@ -135,9 +135,6 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 	return [{ ...firstBlock, stateOverrides }, ...laterBlocks]
 }
 
-// The RPC block an appended Gnosis Safe call runs in: the last RPC block of the input before it, or a new one that preparation starts for it.
-type SafeCallRpcBlock = 'lastRpcBlock' | 'nextRpcBlock'
-
 // The fields of the Safe's call that its gas estimate stacks it with.
 type SafeCallFields = Pick<PreSimulationTransaction, 'website' | 'created' | 'originalRequestParameters' | 'transactionIdentifier'>
 
@@ -193,11 +190,8 @@ export async function estimateSafeExecutionGas(
 	const lastRpcBlockIndex = preparedBeforeSafeCall.rpcBlocks.length - 1
 	// While its gas is at most what the last RPC block has left, preparation keeps the call in that block (fitsInRpcBlock), so every run of that estimate stays there.
 	const gasLeftInLastRpcBlock = getGasLeftInRpcBlock(getGasUsedInLastRpcBlock(preparedBeforeSafeCall), blockGasLimit)
-	const estimateInRpcBlock = async (rpcBlock: SafeCallRpcBlock) => rpcBlock === 'lastRpcBlock'
-		? await estimateIn(inputWithSafeCallInLastBlock, gasLeftInLastRpcBlock)
-		: await estimateIn(inputWithSafeCallInNewBlock, blockGasLimit)
 	// The RPC block that the preview and approval run the call in with the estimated gas, found by preparing the input as they do instead of by repeating preparation's rules: the executor's call gets the gas prepareSafeExecutionSimulationInput gives it (getSafeExecutorGasLimit), and prepareEthSimulateV1Input clamps it to the block gas limit and places it. This runs locally, without a simulation. The call is the input's last transaction, so it runs in the last RPC block, which is either the one before it or one preparation started for it.
-	const getRpcBlockOfSafeCall = async (safeCallGas: bigint): Promise<SafeCallRpcBlock> => {
+	const getRpcBlockOfSafeCall = async (safeCallGas: bigint): Promise<AppendedTransactionRpcBlock> => {
 		const runInput = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [...lastBlock.transactions.slice(0, -1), {
 			...safeCall,
 			signedTransaction: { ...safeCall.signedTransaction, gas: safeCallGas },
@@ -206,22 +200,15 @@ export async function estimateSafeExecutionGas(
 		const prepared = await ethereum.prepareEthSimulateV1Input(runInput, parentBlock.number, requestAbortController)
 		return prepared.rpcBlocks.length - 1 === lastRpcBlockIndex ? 'lastRpcBlock' : 'nextRpcBlock'
 	}
-	const isEstimateForItsRpcBlock = async (estimate: { error: ErrorWithCodeAndOptionalData } | { gas: bigint }, rpcBlock: SafeCallRpcBlock) => 'gas' in estimate && await getRpcBlockOfSafeCall(estimate.gas) === rpcBlock
-	const firstRpcBlock: SafeCallRpcBlock = gasLeftInLastRpcBlock === 0n ? 'nextRpcBlock' : 'lastRpcBlock'
-	const firstEstimate = await estimateInRpcBlock(firstRpcBlock)
-	if ('error' in firstEstimate) {
-		if (firstRpcBlock === 'nextRpcBlock') return firstEstimate
-		// The call may need more gas than the last RPC block has left, so preparation would run it in the next RPC block. That estimate counts only if preparation does run the call there with it; otherwise the call runs, and fails, in the last RPC block.
-		const nextRpcBlockEstimate = await estimateInRpcBlock('nextRpcBlock')
-		return await isEstimateForItsRpcBlock(nextRpcBlockEstimate, 'nextRpcBlock') ? nextRpcBlockEstimate : firstEstimate
-	}
-	const rpcBlockOfFirstEstimate = await getRpcBlockOfSafeCall(firstEstimate.gas)
-	if (rpcBlockOfFirstEstimate === firstRpcBlock) return firstEstimate
-	// With the estimated gas, the executor's call does not run in the RPC block it was estimated in, for example because execTransaction's own gas no longer fits in the last RPC block. The call is estimated once more where preparation runs it, and an estimate is never returned for a block the call does not run in.
-	const secondEstimate = await estimateInRpcBlock(rpcBlockOfFirstEstimate)
-	if ('error' in secondEstimate) return secondEstimate
-	if (await getRpcBlockOfSafeCall(secondEstimate.gas) === rpcBlockOfFirstEstimate) return secondEstimate
-	return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'The gas of the Gnosis Safe\'s call could not be estimated in the block it runs in.', data: '0x' } }
+	// The placement protocol is shared with simulateEstimateGasAppendedToSimulation; only the estimate per block and the way to find the block preparation picks are the executor call's own.
+	return await estimateGasInRpcBlockItRunsIn({
+		lastRpcBlockHasRoom: gasLeftInLastRpcBlock > 0n,
+		estimateIn: async (rpcBlock) => rpcBlock === 'lastRpcBlock'
+			? await estimateIn(inputWithSafeCallInLastBlock, gasLeftInLastRpcBlock)
+			: await estimateIn(inputWithSafeCallInNewBlock, blockGasLimit),
+		getRpcBlockItRunsIn: getRpcBlockOfSafeCall,
+		unplaceableEstimate: { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'The gas of the Gnosis Safe\'s call could not be estimated in the block it runs in.', data: '0x' } },
+	})
 }
 
 // The simulation options that mark a Gnosis Safe's own call to run through the Safe. Forming the call and estimating its gas both take them from here, so the estimate runs the call as the stack will.

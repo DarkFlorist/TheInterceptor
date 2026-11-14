@@ -7,6 +7,34 @@ import { JsonRpcResponseError } from '../../utils/errors.js'
 
 type GasEstimate = { error: ErrorWithCodeAndOptionalData } | { gas: bigint }
 
+// The RPC block a transaction appended after the simulation input runs in. Preparation keeps it in the input's last RPC block while its gas fits there and starts a new RPC block for it otherwise (fitsInRpcBlock in EthereumClientService.ts), so its gas decides the block, while the block it runs in decides its gas.
+export type AppendedTransactionRpcBlock = 'lastRpcBlock' | 'nextRpcBlock'
+
+/**
+ * The one protocol for estimating the gas of a transaction appended after the simulation input, in the RPC block it runs in: estimate in the last RPC block while it has room, check which RPC block preparation runs the transaction in with the estimated gas, and estimate once more there when that differs. An estimate that fails in the last RPC block counts in the next one only if preparation runs the transaction there with it; otherwise the transaction runs, and fails, in the last RPC block. An estimate is never returned for an RPC block the transaction does not run in with it: unplaceableEstimate is returned instead.
+ * simulateEstimateGasAppendedToSimulation and the Gnosis Safe executor's estimate (estimateSafeExecutionGas) both place their estimates with it, each with its own estimate per block and its own way of finding the block preparation picks.
+ */
+export async function estimateGasInRpcBlockItRunsIn(placement: {
+	readonly lastRpcBlockHasRoom: boolean
+	readonly estimateIn: (rpcBlock: AppendedTransactionRpcBlock) => Promise<GasEstimate>
+	readonly getRpcBlockItRunsIn: (gas: bigint) => Promise<AppendedTransactionRpcBlock>
+	readonly unplaceableEstimate: GasEstimate
+}): Promise<GasEstimate> {
+	const firstRpcBlock: AppendedTransactionRpcBlock = placement.lastRpcBlockHasRoom ? 'lastRpcBlock' : 'nextRpcBlock'
+	const firstEstimate = await placement.estimateIn(firstRpcBlock)
+	if ('error' in firstEstimate) {
+		if (firstRpcBlock === 'nextRpcBlock') return firstEstimate
+		const nextRpcBlockEstimate = await placement.estimateIn('nextRpcBlock')
+		return 'gas' in nextRpcBlockEstimate && await placement.getRpcBlockItRunsIn(nextRpcBlockEstimate.gas) === 'nextRpcBlock' ? nextRpcBlockEstimate : firstEstimate
+	}
+	const rpcBlockOfFirstEstimate = await placement.getRpcBlockItRunsIn(firstEstimate.gas)
+	if (rpcBlockOfFirstEstimate === firstRpcBlock) return firstEstimate
+	const secondEstimate = await placement.estimateIn(rpcBlockOfFirstEstimate)
+	if ('error' in secondEstimate) return secondEstimate
+	if (await placement.getRpcBlockItRunsIn(secondEstimate.gas) === rpcBlockOfFirstEstimate) return secondEstimate
+	return placement.unplaceableEstimate
+}
+
 const gasEstimationError = (message: string): GasEstimate => ({ error: {
 	code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
 	message,

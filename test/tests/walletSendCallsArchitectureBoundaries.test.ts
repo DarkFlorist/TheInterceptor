@@ -154,9 +154,9 @@ test('the batch id registry owns its records and their consistency with the queu
 })
 
 test('a wallet_sendCalls bundle exists by one definition, which the id registry, wallet_getCallsStatus and the resolution of an interrupted approval share', () => {
-	assert.match(walletSendCallsBatchIdsSource, /^export const isWalletSendCallsBundleOnStack = \(bundleTransactionIdentifiers: readonly bigint\[\], stackTransactionIdentifiers: readonly bigint\[\]\) => bundleTransactionIdentifiers\.every\(/mu)
+	assert.match(walletSendCallsBatchIdsSource, /^export const isWalletSendCallsBundleOnStack = \(bundleTransactionIdentifiers: readonly bigint\[\], stackTransactionIdentifiers: ReadonlySet<bigint>\) => bundleTransactionIdentifiers\.every\(/mu)
 	// The registry keeps an id in use and the status query reports a bundle by the same predicate, and the resolution decides from the stack state that the predicate classifies.
-	assert.match(walletSendCallsBatchIdsSource, /\|\| isWalletSendCallsBundleOnStack\(record\.transactionIdentifiers, /u)
+	assert.match(walletSendCallsBatchIdsSource, /\|\| isWalletSendCallsBundleOnStack\(record\.transactionIdentifiers, stackTransactionIdentifiers\)/u)
 	assert.match(walletSendCallsBatchIdsSource, /if \(isWalletSendCallsBundleOnStack\(batchTransactionIdentifiers, stackTransactionIdentifiers\)\) return 'bundleOnStack'/u)
 	assert.match(walletSendCallsBatchIdsSource, /if \(!isWalletSendCallsBundleOnStack\(record\.transactionIdentifiers, getStackTransactionIdentifiers\(await getInterceptorTransactionStack\(\)\)\)\) return undefined/u)
 	assert.match(walletSendCallsStatusSource, /await getWalletSendCallsBundleForRequester\(/u)
@@ -233,6 +233,16 @@ test('wallet_sendCalls resolves and compares the active account with the shared 
 	assert.deepEqual([...activeAddressSettingsSource.matchAll(/from '([^']+)'/gu)].map((match) => match[1]).sort(), ['../types/interceptor-messages.js', '../utils/bigint.js'])
 	for (const source of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsRpcSource, walletSendCallsStatusSource]) assert.doesNotMatch(source, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
 	assert.doesNotMatch(backgroundSource, /function getActiveAddressForRequest/u)
+})
+
+test('the generic appended estimate and the Gnosis Safe executor\'s estimate place their estimates with one shared protocol', async () => {
+	const safeExecutionSimulationSource = await readSource('safe/safeExecutionSimulation.ts')
+	const simulationModeSource = await readSource('simulation/services/SimulationModeEthereumClientService.ts')
+	for (const source of [safeExecutionSimulationSource, simulationModeSource]) {
+		assert.match(source, /\bestimateGasInRpcBlockItRunsIn\(\{/u)
+		// The retry and fallback rules live only in estimateGasInRpcBlockItRunsIn.
+		assert.doesNotMatch(source, /secondEstimate|rpcBlockOfFirstEstimate|nextRpcBlockEstimate/u)
+	}
 })
 
 test('both confirmation flows share the simulation run machinery from a neutral module', () => {

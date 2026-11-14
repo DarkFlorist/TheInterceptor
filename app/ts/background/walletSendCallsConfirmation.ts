@@ -14,7 +14,7 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
-import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getPreparedGovernanceVote, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
+import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getPreparedGovernanceVote, getStackSimulationInputFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
 import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSendCallTransactionIdentifier, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
@@ -46,14 +46,14 @@ async function formWalletSendCallsTransactions(ethereumClientService: EthereumCl
 		transactionsToSimulate.push(transactionToSimulate)
 		if (transactionToSimulate.success) preparedOperations.push(toWalletSendCallStackOperation(transactionToSimulate))
 	}
-	return { transactionsToSimulate, simulationInputWithBatch: getSimulationInputForStack(stackContext, preparedOperations) }
+	return { transactionsToSimulate, simulationInputWithBatch: getSimulationInputForStack(stackContext, preparedOperations), simulatedInputFingerprint: getStackSimulationInputFingerprint(stackContext, preparedOperations) }
 }
 
 // Prepares the batch's calls on top of the current simulation stack and simulates them with the shared run protocol. Like every run, it returns undefined when it was superseded or interrupted, so the previous results stay in place.
 async function simulatePendingTransactionBatch(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, pendingBatch: PendingTransactionBatch) {
 	return await runConfirmationSimulation(pendingBatch.uniqueRequestIdentifier, async (confirmationRun) => {
 		const { context: stackContext } = await captureStackSimulationContext()
-		const { transactionsToSimulate, simulationInputWithBatch } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
+		const { transactionsToSimulate, simulationInputWithBatch, simulatedInputFingerprint } = await formWalletSendCallsTransactions(ethereumClientService, pendingBatch, stackContext)
 		// Protectors run over each call while the run visualizes the simulation.
 		const popupVisualisation = await simulateConfirmationRun({
 			ethereum: ethereumClientService,
@@ -68,7 +68,7 @@ async function simulatePendingTransactionBatch(ethereumClientService: EthereumCl
 		return {
 			transactionsToSimulate,
 			popupVisualisation,
-			simulatedContextFingerprint: getStackSimulationContextFingerprint(stackContext),
+			simulatedInputFingerprint,
 			transactionOrMessageCreationStatus: transactionsToSimulate.every((transaction) => transaction.success) ? 'Simulated' as const : 'FailedToSimulate' as const,
 		}
 	})
@@ -291,7 +291,7 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 					const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, snapshot)
 					if (bindingError !== undefined) return { reason: 'bindingChanged' as const, error: bindingError }
 					// Another approval, or a change to the time manipulation or rich addresses, may have changed what the batch would run on since the preview.
-					return getStackSimulationContextFingerprint(toStackSimulationContext(snapshot, currentStack)) === pendingBatch.simulatedContextFingerprint ? undefined : { reason: 'simulationContextChanged' as const }
+					return getStackSimulationInputFingerprint(toStackSimulationContext(snapshot, currentStack), batchOperations) === pendingBatch.simulatedInputFingerprint ? undefined : { reason: 'simulationContextChanged' as const }
 				},
 				(prevStack) => ({ operations: [...prevStack.operations, ...batchOperations] }),
 			)

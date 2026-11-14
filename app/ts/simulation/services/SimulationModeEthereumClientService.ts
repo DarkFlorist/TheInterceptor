@@ -26,7 +26,7 @@ import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } fro
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
-import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
+import { estimateGasInRpcBlockItRunsIn, getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
 import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
@@ -483,12 +483,15 @@ export const simulateEstimateGasAppendedToSimulation = async (ethereumClientServ
 	// The reserve below the block gas limit only caps a single estimate, as it does in a new block; whether the transaction fits in the last RPC block is preparation's rule alone.
 	const singleEstimateGasCap = blockGasLimit * 1023n / 1024n
 	const gasLeftInLastRpcBlock = min(getGasLeftInRpcBlock(lastRpcBlockGas, blockGasLimit), singleEstimateGasCap)
-	const inLastRpcBlock = gasLeftInLastRpcBlock === 0n ? undefined : await estimateInBlock({ simulateWithZeroBaseFee: true, appendToLastPrefixBlock: true }, gasLeftInLastRpcBlock)
-	if (inLastRpcBlock !== undefined && 'gas' in inLastRpcBlock && fitsInRpcBlock(lastRpcBlockGas, inLastRpcBlock.gas, blockGasLimit)) return inLastRpcBlock
-	// The estimate in a new RPC block is kept only if preparation would indeed move the transaction there; otherwise the transaction fails where preparation keeps it.
-	const inNextRpcBlock = await estimateInBlock({ simulateWithZeroBaseFee: false }, singleEstimateGasCap)
-	if (inLastRpcBlock === undefined || ('gas' in inNextRpcBlock && !fitsInRpcBlock(lastRpcBlockGas, inNextRpcBlock.gas, blockGasLimit))) return inNextRpcBlock
-	return inLastRpcBlock
+	return await estimateGasInRpcBlockItRunsIn({
+		lastRpcBlockHasRoom: gasLeftInLastRpcBlock > 0n,
+		estimateIn: async (rpcBlock) => rpcBlock === 'lastRpcBlock'
+			? await estimateInBlock({ simulateWithZeroBaseFee: true, appendToLastPrefixBlock: true }, gasLeftInLastRpcBlock)
+			: await estimateInBlock({ simulateWithZeroBaseFee: false }, singleEstimateGasCap),
+		// The transaction runs as itself, so preparation's rule decides from its gas alone.
+		getRpcBlockItRunsIn: async (gas) => fitsInRpcBlock(lastRpcBlockGas, gas, blockGasLimit) ? 'lastRpcBlock' : 'nextRpcBlock',
+		unplaceableEstimate: { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'The gas of the transaction could not be estimated in the block it runs in.', data: '0x' } },
+	})
 }
 
 // The rule for funding the current account: only in simulation mode, and only while the make-me-rich option is on. Both the simulation input and the exported simulation stack use it.

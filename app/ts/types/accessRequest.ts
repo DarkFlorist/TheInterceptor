@@ -217,8 +217,8 @@ export const PendingTransactionBatch = funtypes.Intersect(
 			transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Simulated'), funtypes.Literal('FailedToSimulate')),
 			transactionsToSimulate: funtypes.ReadonlyArray(WebsiteCreatedEthereumTransactionOrFailed),
 			popupVisualisation: ConfirmTransactionBatchVisualization,
-			// Identifies everything the preview was simulated from: the stack and the settings, time manipulation and rich addresses its input depends on. Approval refuses the batch once any of them changed (see getStackSimulationContextFingerprint).
-			simulatedContextFingerprint: funtypes.String,
+			// Identifies the simulation input the preview simulated: the stack with the batch's calls appended (getStackSimulationInputFingerprint). Approval refuses the batch once the input it would commit differs.
+			simulatedInputFingerprint: funtypes.String,
 		}),
 	),
 )
