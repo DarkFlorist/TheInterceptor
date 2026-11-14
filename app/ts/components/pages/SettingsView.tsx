@@ -92,9 +92,7 @@ function ImportExport() {
 			downloadFile('interceptorSettingsAndAddressbook.json', parsed.data.fileContents)
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	const importSettings = (inputElement: { target: EventTarget | EventTarget & { files: FileList } | null }) => {
@@ -161,8 +159,7 @@ export function SettingsView() {
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
@@ -354,7 +351,7 @@ export function useRpcConnectionsState() {
 			if (parsedMessage.value.method === 'popup_requestSettingsReply') applyRpcStatus(parsedMessage.value.data.rpcStatus)
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
+		const removePopupMessageListener = noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		const initialUpdateVersion = updateVersion
 		// The section leaves `loading` on the RPC status the background publishes for this request, which it publishes even when the request fails (settingsOpened); a request that cannot be sent at all rejects here, so it shows the unavailable alert with its Retry and Restore controls instead of staying blank.
 		void sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_requestSettings' }).catch(async (error: unknown) => {
@@ -368,7 +365,7 @@ export function useRpcConnectionsState() {
 		})
 		return () => {
 			disposed = true
-			browser.runtime.onMessage.removeListener(trackRpcListChanges)
+			removePopupMessageListener()
 		}
 	}, [])
 

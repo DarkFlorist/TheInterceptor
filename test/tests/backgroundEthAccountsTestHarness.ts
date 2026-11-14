@@ -12,7 +12,7 @@ import { addressString } from '../../app/ts/utils/bigint.js'
 import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 type Listener = () => void
-type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 export function createDeferredSignal() {
