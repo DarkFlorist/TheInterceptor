@@ -256,7 +256,7 @@ describe('eth_simulateV1 block timestamps', () => {
 	const getCurrentStackBlockTimeSteps = async () => {
 		const parentBlock = await ethereumClientService.getBlock(undefined, 1n)
 		if (parentBlock === null) throw new Error('missing parent block')
-		const prepared = await ethereumClientService.prepareEthSimulateV1Input(await getCurrentSimulationInput(), 1n, undefined)
+		const prepared = await ethereumClientService.prepareEthSimulateV1Input(await readActiveSimulationInput(), 1n, undefined)
 		let previousTime = dateToBigintSeconds(parentBlock.timestamp)
 		return prepared.blockOverrides.map((blockOverride) => {
 			if (blockOverride.time === undefined) throw new Error('missing block time')
@@ -321,7 +321,7 @@ describe('eth_simulateV1 block timestamps', () => {
 			],
 		}))
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
 	})
 
@@ -334,7 +334,7 @@ describe('eth_simulateV1 block timestamps', () => {
 			],
 		}))
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
 	})
 
