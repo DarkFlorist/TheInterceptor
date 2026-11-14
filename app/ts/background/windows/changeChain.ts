@@ -4,7 +4,7 @@ import type { ChainChangeConfirmation } from '../../types/interceptor-messages.j
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, setChainChangeConfirmationPromise } from '../storageVariables.js'
-import { getRpcNetworkForChain } from '../rpcList.js'
+import { getRpcNetworkForChain } from '../rpcListStorage.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'

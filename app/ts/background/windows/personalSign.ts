@@ -5,7 +5,7 @@ import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, t
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getTabState } from '../storageVariables.js'
-import { getRpcNetworkForChain } from '../rpcList.js'
+import { getRpcNetworkForChain } from '../rpcListStorage.js'
 import { getAddressesForSolidityTypes, identifyAddress } from '../metadataUtils.js'
 import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { RpcNetwork } from '../../types/rpc.js'

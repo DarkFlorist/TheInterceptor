@@ -3,11 +3,11 @@ import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getSettings } from '../settings.js'
-import { broadcastCurrentRpcList } from '../rpcList.js'
+import { broadcastRpcListRequestReply } from '../rpcList.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
-	popup_requestRpcList: popupMessageHandler('popup_requestRpcList', async () => await broadcastCurrentRpcList()),
+	popup_requestRpcList: popupMessageHandler('popup_requestRpcList', async (_context, request) => await broadcastRpcListRequestReply(request.data.requestId)),
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {

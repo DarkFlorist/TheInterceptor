@@ -6,7 +6,7 @@ import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-type
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getRpcNetworkForChain } from './rpcList.js'
+import { getRpcNetworkForChain } from './rpcListStorage.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'

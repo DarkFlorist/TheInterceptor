@@ -4,7 +4,7 @@ import { createEthereumClientService } from '../simulation/serviceLifecycle.js'
 import type { RequestSafeContractState } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, reportUnexpectedError, shouldSuppressUnexpectedErrorReport } from '../utils/errors.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getPrimaryRpcForChain } from './rpcList.js'
+import { getPrimaryRpcForChain } from './rpcListStorage.js'
 import type { RpcEntry } from '../types/rpc.js'
 
 type SafeContractStateDependencies = {

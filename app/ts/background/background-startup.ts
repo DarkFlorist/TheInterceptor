@@ -7,7 +7,7 @@ import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulati
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
-import { getPrimaryRpcForChain } from './rpcList.js'
+import { getPrimaryRpcForChain } from './rpcListStorage.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'

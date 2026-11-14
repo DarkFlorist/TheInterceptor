@@ -718,7 +718,7 @@ describe('popup icon sync', () => {
 
 			// Every page that shows RPC connections asks for the list when it opens; the answer is broadcast to all open windows, Home included.
 			await act(() => {
-				listener?.({ role: 'all', method: 'popup_requestRpcListReply', data: [] }, undefined, () => undefined)
+				listener?.({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: 'settings-page-request', rpcEntries: [] } }, undefined, () => undefined)
 			})
 			assert.equal(sentMessages.some(isAnyHomeDataRequest), false)
 

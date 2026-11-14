@@ -20,8 +20,9 @@ Object.defineProperty(globalThis, 'browser', {
 			lastError: undefined,
 			sendMessage: async (message: unknown) => {
 				const parsed = MessageToPopup.parse(message)
-				if (parsed.method !== 'popup_update_rpc_list' && parsed.method !== 'popup_requestRpcListReply') return
-				broadcastRpcLists.push(parsed.data)
+				if (parsed.method === 'popup_update_rpc_list') broadcastRpcLists.push(parsed.data)
+				else if (parsed.method === 'popup_requestRpcListReply') broadcastRpcLists.push(parsed.data.rpcEntries)
+				else return
 				broadcastRpcListMethods.push(parsed.method)
 			},
 		},
@@ -43,7 +44,8 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { broadcastCurrentRpcList, getRpcList, promoteRpcAsPrimaryAndNotifyPages, setRpcListAndNotifyPages } = await import('../../app/ts/background/rpcList.js')
+const { broadcastRpcListRequestReply, promoteRpcAsPrimaryAndNotifyPages, setRpcListAndNotifyPages } = await import('../../app/ts/background/rpcList.js')
+const { getRpcList } = await import('../../app/ts/background/rpcListStorage.js')
 
 const existingRpcEntries = [
 	{
@@ -107,7 +109,7 @@ describe('RPC list concurrency', () => {
 	})
 
 	test('answers an RPC list request by broadcasting the stored list as a request reply, not as a change', async () => {
-		await broadcastCurrentRpcList()
+		await broadcastRpcListRequestReply('page-request')
 
 		assert.deepEqual(broadcastRpcLists, [existingRpcEntries])
 		assert.deepEqual(broadcastRpcListMethods, ['popup_requestRpcListReply'])
@@ -116,7 +118,7 @@ describe('RPC list concurrency', () => {
 	test('broadcasts a request that races a write before the write, never a stale list after it', async () => {
 		blockNextRpcListRead = true
 		blockedReadStarted = new Promise<void>((resolve) => { signalBlockedReadStarted = resolve })
-		const requestPromise = broadcastCurrentRpcList()
+		const requestPromise = broadcastRpcListRequestReply('page-request')
 		await blockedReadStarted
 
 		const settingsSavePromise = setRpcListAndNotifyPages(editedRpcEntries)
@@ -131,7 +133,7 @@ describe('RPC list concurrency', () => {
 
 	test('a request queued behind a write broadcasts the written list', async () => {
 		const settingsSavePromise = setRpcListAndNotifyPages(editedRpcEntries)
-		const requestPromise = broadcastCurrentRpcList()
+		const requestPromise = broadcastRpcListRequestReply('page-request')
 		await Promise.all([settingsSavePromise, requestPromise])
 
 		assert.deepEqual(broadcastRpcLists, [editedRpcEntries, editedRpcEntries])

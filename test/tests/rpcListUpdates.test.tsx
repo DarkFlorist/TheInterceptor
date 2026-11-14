@@ -46,6 +46,13 @@ function getMessageMethod(message: unknown) {
 	return message.method
 }
 
+function getRequestId(message: unknown) {
+	if (typeof message !== 'object' || message === null || !('data' in message)) return undefined
+	const { data } = message
+	if (typeof data !== 'object' || data === null || !('requestId' in data) || typeof data.requestId !== 'string') return undefined
+	return data.requestId
+}
+
 // The background answers popup_requestRpcList by broadcasting popup_requestRpcListReply; the mock answers synchronously, so a page that requested before subscribing would miss the answer.
 function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequestAnswer }: {
 	replyToMessage?: (message: unknown) => unknown
@@ -58,7 +65,9 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequ
 		if (getMessageMethod(message) !== 'popup_requestRpcList') return replyToMessage(message)
 		rpcListRequestCount += 1
 		if (rpcListRequestAnswer === undefined) return undefined
-		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_requestRpcListReply', data: rpcListRequestAnswer })
+		const requestId = getRequestId(message)
+		if (requestId === undefined) throw new Error('popup_requestRpcList was sent without a requestId')
+		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId, rpcEntries: rpcListRequestAnswer } })
 		for (const listener of [...listeners]) listener(answer)
 		return undefined
 	}
@@ -340,6 +349,35 @@ describe('useRpcConnectionsList', () => {
 			await page.browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesWhenPageOpened })
 			await page.browserMock.deliver({ role: 'all', method: 'popup_update_rpc_list', data: rpcEntriesAfterSettingsChange })
 			assert.deepEqual(readRenderedRpcEntryNames(page.root), ['Ethereum Mainnet', 'Gnosis'])
+		} finally {
+			await page.cleanup()
+		}
+	})
+
+	test('components on one page share one request and one listener', async () => {
+		const dom = installDomMock()
+		const browserMock = installPopupBrowserMock({ rpcListRequestAnswer: rpcEntriesWhenPageOpened })
+		try {
+			await act(async () => {
+				render(h('div', {}, h(RpcEntryNames, {}), h(RpcEntryNames, {})), dom.document.body)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(browserMock.countRpcListRequests(), 1)
+			assert.equal(browserMock.countMessageListeners(), 1)
+			assert.deepEqual(readRenderedRpcEntryNames(dom.document.body), ['Ethereum Mainnet', 'Ethereum Mainnet', 'Sepolia', 'Sepolia'])
+			await act(() => { render(null, dom.document.body) })
+			assert.equal(browserMock.countMessageListeners(), 0)
+		} finally {
+			browserMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('ignores the reply to another page\'s RPC list request', async () => {
+		const page = await renderRpcEntryNames(undefined)
+		try {
+			await page.browserMock.deliver({ role: 'all', method: 'popup_requestRpcListReply', data: { requestId: 'another-page-request', rpcEntries: rpcEntriesAfterSettingsChange } })
+			assert.deepEqual(readRenderedRpcEntryNames(page.root), [])
 		} finally {
 			await page.cleanup()
 		}
