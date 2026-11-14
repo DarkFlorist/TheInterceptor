@@ -4,7 +4,7 @@ import type { PendingTransactionBatch, WalletSendCallsBinding } from '../types/a
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EIP5792_ERROR_UNSUPPORTED_CHAIN_ID, JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
-import { haveSameActiveAddressSettings } from './backgroundUtils.js'
+import { haveSameActiveAddressSettings } from './activeAddressSettings.js'
 import { getSimulationSettingsSnapshot, type SimulationSettingsSnapshot } from './storedSettings.js'
 import { doWalletSendCallsMatchSimulatedTransactions, type WalletSendCallsError } from './walletSendCalls.js'
 import { hasAddressAccess } from './websiteAccessPolicy.js'

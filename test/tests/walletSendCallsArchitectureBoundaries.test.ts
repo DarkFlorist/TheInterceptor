@@ -9,6 +9,7 @@ const walletSendCallsConfirmationSource = await readSource('background/walletSen
 const walletSendCallsSource = await readSource('background/walletSendCalls.ts')
 const walletSendCallsBatchIdsSource = await readSource('background/walletSendCallsBatchIds.ts')
 const walletSendCallsBindingSource = await readSource('background/walletSendCallsBinding.ts')
+const activeAddressSettingsSource = await readSource('background/activeAddressSettings.ts')
 const walletSendCallsRpcSource = await readSource('background/walletSendCallsRpc.ts')
 const walletSendCallsStatusSource = await readSource('background/walletSendCallsStatus.ts')
 // The confirmation support that both confirmation flows share, one concern per module, and what each module owns.
@@ -226,7 +227,10 @@ test('the batch-free confirmation type is derived from the full union, and the q
 
 test('wallet_sendCalls resolves and compares the active account with the shared rule', () => {
 	assert.equal(importsFrom(walletSendCallsBindingSource, 'websiteActiveAddress.js'), true)
-	assert.match(walletSendCallsBindingSource, /import \{ haveSameActiveAddressSettings \} from '\.\/backgroundUtils\.js'/u)
+	assert.match(walletSendCallsBindingSource, /import \{ haveSameActiveAddressSettings \} from '\.\/activeAddressSettings\.js'/u)
+	// The approval check is a synchronous gate on a settings snapshot, so it stays off the extension messaging hub, and the active-address settings module it uses depends on nothing but the Settings type and a serializer.
+	assert.equal(importsFrom(walletSendCallsBindingSource, 'backgroundUtils.js'), false)
+	assert.deepEqual([...activeAddressSettingsSource.matchAll(/from '([^']+)'/gu)].map((match) => match[1]).sort(), ['../types/interceptor-messages.js', '../utils/bigint.js'])
 	for (const source of [walletSendCallsSource, walletSendCallsBindingSource, walletSendCallsRpcSource, walletSendCallsStatusSource]) assert.doesNotMatch(source, /getActiveAddressForCurrentSignerState|const haveSameActiveAddressSettings|activeSimulationAddress/u)
 	assert.doesNotMatch(backgroundSource, /function getActiveAddressForRequest/u)
 })

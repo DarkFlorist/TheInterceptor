@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
-import { ACTIVE_ADDRESS_SETTING_ROLES, getActiveAddressSettings, haveSameActiveAddressSettings } from '../../app/ts/background/backgroundUtils.js'
+import { ACTIVE_ADDRESS_SETTING_ROLES, getActiveAddressSettings, haveSameActiveAddressSettings } from '../../app/ts/background/activeAddressSettings.js'
 import { Settings } from '../../app/ts/types/interceptor-messages.js'
 
 const settings: Settings = {
