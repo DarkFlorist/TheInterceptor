@@ -31,7 +31,7 @@ test('a metadata refresh of an older transaction simulation does not replace a n
 			return readStoredItems()
 		})
 
-		await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService)
 		browserMock.setStorageGetHandler(undefined)
 
 		assert.ok(newerSimulation !== undefined)
@@ -142,6 +142,46 @@ test('confirmation runs of different requests overlap without aborting each othe
 	await olderRun.record
 	assert.equal((await newerRun.record)?.statusCode, 'success')
 	assert.equal(getInFlightConfirmationRunAbortController(uniqueRequestIdentifier), undefined)
+})
+
+test('the metadata refresh of the shown confirmation is cancelled with that confirmation\'s simulation run in flight', async () => {
+	const { getInFlightConfirmationRunAbortController, runConfirmationSimulation, simulateConfirmationRun } = await import('../../app/ts/background/confirmationSimulationRun.js')
+	const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
+	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const shownRequest = (await modules.getPendingTransactionsAndMessages())[0]?.uniqueRequestIdentifier
+	if (shownRequest === undefined) throw new Error('Expected a queued confirmation')
+	const runInFlight = createDeferredValue<void>()
+	const releaseRun = createDeferredValue<void>()
+	const run = runConfirmationSimulation(shownRequest, async (confirmationRun) => await simulateConfirmationRun({
+		ethereum: simulator.ethereum,
+		tokenPriceService: simulator.tokenPriceService,
+		confirmationRun,
+		activeAddress,
+		simulationMode: true,
+		calledContracts: [],
+		getSimulationInput: async () => {
+			runInFlight.resolve()
+			await releaseRun.promise
+			return await getCurrentSimulationInput()
+		},
+	}))
+	await runInFlight.promise
+	const runAbortController = getInFlightConfirmationRunAbortController(shownRequest)
+	if (runAbortController === undefined) throw new Error('Expected the run to be in flight')
+	const refreshAbortControllers: unknown[] = []
+	const recordingEthereum = new modules.EthereumClientService({
+		...fakeRequestHandler,
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }, requestAbortController?: AbortController) {
+			if (rpcRequest.method === 'eth_blockNumber') refreshAbortControllers.push(requestAbortController)
+			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+
+	await refreshPopupConfirmTransactionMetadata(recordingEthereum, simulator.tokenPriceService)
+	releaseRun.resolve()
+	await run
+
+	assert.deepEqual(refreshAbortControllers, [runAbortController], 'the refresh uses the abort controller of the shown confirmation\'s run in flight')
 })
 
 test('an eth_sendRawTransaction confirmation is prepared, simulated and stored', async () => {

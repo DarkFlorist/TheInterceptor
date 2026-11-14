@@ -527,12 +527,12 @@ async function refreshPendingTransactionMetadata(ethereum: EthereumClientService
 		: undefined, updateConfirmationWindow)
 }
 
-// Without an abort controller of its own, the refresh is aborted when a newer confirmation run of the request it refreshes replaces the run in flight, as its lookups are then outdated.
-export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, callerAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
+// Refreshes the metadata of the confirmation the window shows: the first one in the queue. Its lookups use the abort controller of that confirmation's simulation run in flight, if any (confirmationSimulationRun.ts owns run cancellation), so a newer run of the same confirmation, which makes the lookups outdated, aborts the refresh too. With no run in flight the refresh is not aborted.
+export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	const promises = await getPendingTransactionsAndMessages()
 	const first = promises[0]
 	if (first === undefined) return
-	const requestAbortController = callerAbortController ?? getInFlightConfirmationRunAbortController(first.uniqueRequestIdentifier)
+	const requestAbortController = getInFlightConfirmationRunAbortController(first.uniqueRequestIdentifier)
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())

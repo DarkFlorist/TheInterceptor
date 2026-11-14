@@ -457,7 +457,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		let reportedError: unknown
 		let reportCalls = 0
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, {
 			visualisation: {
 				async update() { throw refreshError },
 				async getStored() { return storedVisualisation },
@@ -520,7 +520,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)

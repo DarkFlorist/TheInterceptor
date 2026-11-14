@@ -372,7 +372,7 @@ test('a metadata refresh stores the re-visualized batch preview of the same simu
 	})
 	browserMock.sentMessages.length = 0
 
-	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService)
 	browserMock.setStorageSetHandler(undefined)
 
 	assert.equal(queueWrites, 1)
@@ -397,7 +397,7 @@ test('a metadata refresh that finishes after the batch was approved does not bri
 		return readStoredItems()
 	})
 
-	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+	await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService)
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.equal(await approvalDuringRefresh, true)
@@ -426,7 +426,7 @@ test('a metadata refresh of an older batch simulation does not replace a newer s
 			return readStoredItems()
 		})
 
-		await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+		await refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService)
 		browserMock.setStorageGetHandler(undefined)
 
 		assert.ok(newerSimulation !== undefined)
@@ -1386,7 +1386,7 @@ test('a network round trip keeps the batch preview of the network the batch was 
 
 	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
 	await refreshPopupConfirmTransactionSimulation(otherNetworkServices.ethereum, otherNetworkServices.tokenPriceService)
-	await refreshPopupConfirmTransactionMetadata(otherNetworkServices.ethereum, otherNetworkServices.tokenPriceService, undefined)
+	await refreshPopupConfirmTransactionMetadata(otherNetworkServices.ethereum, otherNetworkServices.tokenPriceService)
 	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
 
 	// The metadata refresh still reads the other network's block number for the popup, but nothing about the batch is prepared, simulated or visualized there.
