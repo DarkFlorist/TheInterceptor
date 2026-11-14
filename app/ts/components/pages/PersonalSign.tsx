@@ -375,7 +375,7 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-// A sign-in message can expire or become valid while its confirmation is open, and a pending request is not re-crafted as time passes, so its validity window is checked against the clock every second here instead of being stored in `quarantineReasons`. Approving a signature never depends on its warnings or its `quarantine` flag (see shouldDisableSignableMessageConfirm), so keeping the shown warning current is all that an approval-time recheck could add.
+// A sign-in message can expire or become valid while its confirmation is open, and a pending request is not re-crafted as time passes, so its validity window is checked against the clock every second here instead of being stored in `quarantineReasons`. The confirm button is gated by shouldDisableSignableMessageConfirm, which reads neither these warnings nor `quarantine`. `quarantine`, fixed when the request was crafted, only decides whether ConfirmTransaction offers the force-send acknowledgement, and it offers it only for a message the active address can sign, where the button is enabled regardless of that acknowledgement. A warning that appears or expires while the dialog is open therefore changes what is shown, not whether the signature can be approved, so keeping the shown warning current is all that an approval-time recheck could add.
 function SiweValidityWarnings({ message }: { message: SiweMessage }) {
 	const now = useSignal(Date.now())
 	useEffect(() => {
