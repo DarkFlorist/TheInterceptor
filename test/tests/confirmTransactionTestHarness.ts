@@ -360,6 +360,12 @@ export const fakeRpcNetwork = {
 }
 
 export const fakeBlock = makeFakeBlock()
+const isSafeNonceCall = (call: unknown) => {
+	if (!isRecord(call)) return false
+	const input = call.input instanceof Uint8Array ? call.input : call.data
+	return input instanceof Uint8Array && `0x${ Buffer.from(input).toString('hex').slice(0, 8) }` === encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10)
+}
+
 export const safeSelectors = {
 	messageHash: encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', ['0x']).slice(0, 10),
 	messageSignature: encodeFunctionCall(SAFE_MESSAGE_ABI, 'isValidSignature', [`0x${ '00'.repeat(32) }`, '0x']).slice(0, 10),
@@ -461,9 +467,12 @@ export const fakeRequestHandler = {
 				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
 				return modules.serialize(
 					modules.EthSimulateV1Result,
-					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) =>
-						makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0),
-					),
+					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => {
+						const calls: readonly unknown[] = Array.isArray(blockStateCall.calls) ? blockStateCall.calls : []
+						const result = makeFakeEthSimulateResult(0n, modules.Multicall3ABI, calls.length)
+						// The simulation reads a Gnosis Safe's nonce with a nonce() call after the input before an execution; the fake Safe executes nothing, so its nonce stays fakeSafeContract.nonce.
+						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])) } : callResult) }
+					}),
 				)
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)

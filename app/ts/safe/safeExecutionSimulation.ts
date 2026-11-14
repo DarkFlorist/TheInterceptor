@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionsToInput, getSimulatedSafeCallNonce } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionsToInput, getSimulatedSafeCallNonce, simulatedCallFromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -7,11 +7,11 @@ import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
 import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
-import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
+import { decodeFunctionOutput, encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
 import { getSafeTxHash } from '../utils/eip712.js'
 import { keccak256 } from '../utils/ethereumPrimitives.js'
-import { createSafeTxFromMessage, getSafeContractStateAtBlock, type SafeContractState } from './safeCore.js'
+import { createSafeTxFromMessage, getSafeContractStateAtBlock, SAFE_ABI, type SafeContractState } from './safeCore.js'
 import { prevalidatedSafeSignature, SAFE_EXECUTION_ABI } from './safeExecution.js'
 import { ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED } from '../utils/constants.js'
 import type { DistributiveOmit } from '../utils/typescript.js'
@@ -71,16 +71,39 @@ function getSafeExecution({ safeTransaction, signedTransaction, simulationOption
 	}
 }
 
-// At most this many relayed executions are counted. A page can stuff calldata with the selector, and each counted execution makes every later Safe execution hash and approve one more nonce; real transactions relay a Safe execution rarely, and hardly ever this often.
-const MAX_COUNTED_RELAYED_EXECUTIONS = 16n
-
-// A call to any Safe's execTransaction is encoded within the calldata of the calls that relay it, so its selector's occurrences in a transaction's calldata bound the Safe executions the transaction can make, whichever contracts relay them and however deeply.
-const countExecTransactionSelectors = (data: Uint8Array) => {
-	let occurrences = 0n
+// A call to any Safe's execTransaction is encoded within the calldata of the calls that relay it, so a transaction whose calldata has no execTransaction selector cannot hand on a Safe execution, whichever contracts it calls.
+const containsExecTransactionSelector = (data: Uint8Array) => {
 	for (let index = 0; index + SAFE_EXEC_TRANSACTION_SELECTOR.length <= data.length; index++) {
-		if (SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, offset) => data[index + offset] === byte)) occurrences++
+		if (SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, offset) => data[index + offset] === byte)) return true
 	}
-	return occurrences
+	return false
+}
+
+// Reads a Gnosis Safe's nonce after a prepared simulation input runs. prepareSafeExecutionSimulationInput takes it as a parameter so tests can answer for a node.
+export type SafeNonceAfterInputReader = (preparedInputBefore: SimulationStateInput, safeAddress: bigint) => Promise<bigint>
+
+export const createSafeNonceAfterInputReader = (ethereum: EthereumClientService): SafeNonceAfterInputReader => async (preparedInputBefore, safeAddress) => {
+	const call = await simulatedCallFromInput(ethereum, undefined, { kind: 'simulated', value: preparedInputBefore }, { to: safeAddress, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, value: 0n, input: stringToUint8Array(encodeFunctionCall(SAFE_ABI, 'nonce', [])) })
+	if (!('result' in call) || call.result === undefined) throw new Error(`Failed to read the Gnosis Safe nonce in the simulation: ${ 'error' in call ? call.error?.message : 'no result' }`)
+	return decodeFunctionOutput(SAFE_ABI, 'nonce', call.result)
+}
+
+type FirstBlockOverrides = {
+	readonly approvedHashSlotsBySafe: ReadonlyMap<bigint, Record<string, bigint>>
+	readonly executorBalance: bigint
+}
+
+// Every override is set in the first block, so it is in place before any execution runs.
+function withFirstBlockOverrides(blocks: SimulationStateInput, { approvedHashSlotsBySafe, executorBalance }: FirstBlockOverrides): SimulationStateInput {
+	const [firstBlock, ...laterBlocks] = blocks
+	if (firstBlock === undefined) return blocks
+	const stateOverrides: MutableStateOverrides = { ...firstBlock.stateOverrides }
+	for (const [safeAddress, approvedHashSlots] of approvedHashSlotsBySafe) {
+		const safeOverride = stateOverrides[addressString(safeAddress)]
+		stateOverrides[addressString(safeAddress)] = { ...safeOverride, stateDiff: { ...safeOverride?.stateDiff, ...approvedHashSlots } }
+	}
+	stateOverrides[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)] = { ...stateOverrides[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)], balance: executorBalance }
+	return [{ ...firstBlock, stateOverrides }, ...laterBlocks]
 }
 
 function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumSendableSignedTransaction, signingOwners: readonly bigint[], executorNonce: bigint, maxFeePerGas: bigint): EthereumSendableSignedTransaction {
@@ -111,56 +134,53 @@ function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumS
  * Prepares every Gnosis Safe execution in the input (authorizesExecutedCall: a Safe proposal, or a Safe's own call in simulation mode) to run the way the Safe runs it on-chain: SAFE_EXECUTION_SIMULATION_EXECUTOR calls the Safe's execTransaction with real fees in a block with the real base fee, and the Safe makes the call. The transaction's signedTransaction stays the Safe's call that the dialog shows; the call the node runs is its executedTransaction.
  * The simulation assumes the Safe's owners approved the call. The first block's state overrides mark the call's SafeTx hash as approved (approvedHashes) by every owner of the Safe at the parent block, and the execution carries their pre-validated signatures. The Safe can reach this state on-chain, through approveHash. An owner that an earlier execution on the stack removes still signs, so an execution after such a removal can fail the Safe's signature check (GS026).
  * The approvals are visible: a called contract that reads its Safe's approvedHashes for the current SafeTx hash finds them set, as it would if the owners had approved with approveHash, but not if they sign off-chain. A preview runs before the owners have signed, so it has to make the Safe accept approvals it doesn't have yet. The alternatives can be told apart as well: replacing the ecrecover precompile to accept made-up signatures puts code at its address, and lowering the threshold changes getThreshold. approvedHashes is the one of them the Safe can reach on-chain, and a contract can only see it by inspecting its own Safe, unlike a tx.origin that is a contract or a zero base fee.
- * The SafeTx hash includes the Safe's nonce at execution, and each earlier execution of the same Safe in the input raises it by one if it succeeds: a simulated execution of the Safe, or a call to its execTransaction that an earlier transaction makes, directly or relayed through other Safes, batches or contracts. So an execution is approved at every nonce from the Safe's nonce at the parent block up to that nonce plus the earlier simulated executions of the Safe and every execTransaction selector in the earlier transactions' calldata (countExecTransactionSelectors). Counting every selector can only approve nonces the Safe won't reach, which does no harm.
- * The selectors bound only the executions whose calls appear in the calldata, and at most MAX_COUNTED_RELAYED_EXECUTIONS of them count. A contract that executes a Safe more often than the calls it is handed, by repeating one or by building its own, or more often than that, raises the nonce past the approved range, and a later execution of that Safe then fails the signature check (GS025) in the preview: a visible failure, never a success that wouldn't happen. Reading each Safe's nonce from the simulation before every execution would close this, at the cost of a simulation per execution on every simulation of the stack.
+ * The SafeTx hash includes the Safe's nonce at execution, so each execution is approved at exactly that nonce, and no approval exists that the owners' approveHash calls could not also have made. Without an earlier transaction that can execute the Safe, that is the Safe's nonce at the parent block. An earlier execution of the same Safe, or an earlier transaction whose calldata has an execTransaction selector (containsExecTransactionSelector), may have raised it, so the nonce is then read from the simulation of the input before the execution (readSafeNonceAfterInput). A contract that executes a Safe without being handed the call in calldata builds its own execTransaction call; the next execution of that Safe then fails the signature check (GS025) in the preview: a visible failure, never a success that wouldn't happen.
  * The first block also funds the executor for every execution's gas at its maximum fee.
  */
-export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint): Promise<SimulationStateInput> {
+export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint, readSafeNonceAfterInput: SafeNonceAfterInputReader = createSafeNonceAfterInputReader(ethereum)): Promise<SimulationStateInput> {
 	const safeAddresses = new Set(input.flatMap((block) => block.transactions.filter(authorizesExecutedCall).map((transaction) => getSafeExecution(transaction).safeAddress)))
 	if (safeAddresses.size === 0 && input.every((block) => block.transactions.every((transaction) => transaction.executedTransaction === undefined))) return input
 	const safeStates = new Map(await Promise.all([...safeAddresses].map(async (safeAddress) => [safeAddress, await getSafeContractStateAtBlock(ethereum, safeAddress, parentBlockNumber)] as const)))
 	const maxFeePerGas = baseFeePerGas * 2n + EXECUTOR_MAX_PRIORITY_FEE_PER_GAS
-	const earlierSimulatedExecutionsBySafe = new Map<bigint, bigint>()
-	let earlierExecTransactionCalls = 0n
+	const executedSafes = new Set<bigint>()
+	let earlierCalldataCanExecuteASafe = false
 	const approvedHashSlotsBySafe = new Map<bigint, Record<string, bigint>>()
 	let executorNonce = 0n
 	let executorBalance = 0n
-	const preparedInput = input.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => {
-		if (!authorizesExecutedCall(transaction)) {
-			earlierExecTransactionCalls += countExecTransactionSelectors(transaction.signedTransaction.input)
-			return withoutExecutedTransaction(transaction)
-		}
-		const { signedTransaction } = transaction
-		const execution = getSafeExecution(transaction)
-		const { safeAddress } = execution
-		const safeState = safeStates.get(safeAddress)
-		if (safeState === undefined) throw new Error('The Gnosis Safe state of the execution was not read.')
-		const earlierSimulatedExecutions = earlierSimulatedExecutionsBySafe.get(safeAddress) ?? 0n
-		const earlierExecutions = earlierSimulatedExecutions + (earlierExecTransactionCalls < MAX_COUNTED_RELAYED_EXECUTIONS ? earlierExecTransactionCalls : MAX_COUNTED_RELAYED_EXECUTIONS)
-		earlierSimulatedExecutionsBySafe.set(safeAddress, earlierSimulatedExecutions + 1n)
-		// The data the Safe calls or delegate-calls with, a MultiSend batch included.
-		earlierExecTransactionCalls += countExecTransactionSelectors(execution.message.data)
-		const approvedHashSlots = approvedHashSlotsBySafe.get(safeAddress) ?? {}
-		for (let nonce = safeState.nonce; nonce <= safeState.nonce + earlierExecutions; nonce++) {
-			const safeTxHash = BigInt(getSafeTxHash(createSafeTxFromMessage(execution.chainId, safeAddress, { ...execution.message, nonce })))
+	const preparedBlocks: SimulationStateInput[number][] = []
+	for (const block of input) {
+		const preparedTransactions: SimulationInputTransaction[] = []
+		for (const transaction of block.transactions) {
+			if (!authorizesExecutedCall(transaction)) {
+				if (containsExecTransactionSelector(transaction.signedTransaction.input)) earlierCalldataCanExecuteASafe = true
+				preparedTransactions.push(withoutExecutedTransaction(transaction))
+				continue
+			}
+			const { signedTransaction } = transaction
+			const execution = getSafeExecution(transaction)
+			const { safeAddress } = execution
+			const safeState = safeStates.get(safeAddress)
+			if (safeState === undefined) throw new Error('The Gnosis Safe state of the execution was not read.')
+			const nonceMayHaveChanged = executedSafes.has(safeAddress) || earlierCalldataCanExecuteASafe
+			const inputBeforeExecution = withFirstBlockOverrides([...preparedBlocks, { ...block, transactions: [...preparedTransactions] }], { approvedHashSlotsBySafe: new Map(approvedHashSlotsBySafe), executorBalance })
+			const nonceAtExecution = nonceMayHaveChanged ? await readSafeNonceAfterInput(inputBeforeExecution, safeAddress) : safeState.nonce
+			executedSafes.add(safeAddress)
+			// The data the Safe calls or delegate-calls with, a MultiSend batch included.
+			if (containsExecTransactionSelector(execution.message.data)) earlierCalldataCanExecuteASafe = true
+			const safeTxHash = BigInt(getSafeTxHash(createSafeTxFromMessage(execution.chainId, safeAddress, { ...execution.message, nonce: nonceAtExecution })))
+			const approvedHashSlots = { ...approvedHashSlotsBySafe.get(safeAddress) }
 			for (const owner of getSigningOwners(safeState)) approvedHashSlots[getApprovedHashStorageSlot(owner, safeTxHash)] = 1n
+			approvedHashSlotsBySafe.set(safeAddress, approvedHashSlots)
+			const executedTransaction = createExecutorTransaction(execution, signedTransaction, getSigningOwners(safeState), executorNonce, maxFeePerGas)
+			executorNonce += 1n
+			executorBalance += executedTransaction.gas * maxFeePerGas
+			preparedTransactions.push({ ...transaction, executedTransaction })
 		}
-		approvedHashSlotsBySafe.set(safeAddress, approvedHashSlots)
-		const executedTransaction = createExecutorTransaction(execution, signedTransaction, getSigningOwners(safeState), executorNonce, maxFeePerGas)
-		executorNonce += 1n
-		executorBalance += executedTransaction.gas * maxFeePerGas
-		return { ...transaction, executedTransaction }
-	}) }))
-	const [firstBlock, ...laterBlocks] = preparedInput
-	// Without a Gnosis Safe execution there are no approvals to set and no executor to fund.
-	if (firstBlock === undefined || executorNonce === 0n) return preparedInput
-	const stateOverrides: MutableStateOverrides = { ...firstBlock.stateOverrides }
-	for (const [safeAddress, approvedHashSlots] of approvedHashSlotsBySafe) {
-		const safeOverride = stateOverrides[addressString(safeAddress)]
-		stateOverrides[addressString(safeAddress)] = { ...safeOverride, stateDiff: { ...safeOverride?.stateDiff, ...approvedHashSlots } }
+		preparedBlocks.push({ ...block, transactions: preparedTransactions })
 	}
-	stateOverrides[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)] = { ...stateOverrides[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)], balance: executorBalance }
-	return [{ ...firstBlock, stateOverrides }, ...laterBlocks]
+	// Without a Gnosis Safe execution there are no approvals to set and no executor to fund.
+	if (executorNonce === 0n) return preparedBlocks
+	return withFirstBlockOverrides(preparedBlocks, { approvedHashSlotsBySafe, executorBalance })
 }
 
 // The fields of the Safe's call that its gas estimate stacks it with.

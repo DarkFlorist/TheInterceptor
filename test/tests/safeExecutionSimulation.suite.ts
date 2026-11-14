@@ -87,6 +87,23 @@ const getSafeTxHashAt = (transaction: PreSimulationTransaction, nonce: bigint) =
 	return BigInt(getSafeTxHash(createSafeTx(fakeRpcNetwork.chainId, SAFE_ADDRESS, { to, value, input }, nonce)))
 }
 
+// Stands in for the node's simulation of the input before an execution: answers every Safe nonce read with nonceAfterInput and records what it was asked.
+const createSafeNonceReader = (nonceAfterInput: bigint) => {
+	const reads: { readonly preparedInputBefore: SimulationStateInput, readonly safeAddress: bigint }[] = []
+	const read = async (preparedInputBefore: SimulationStateInput, safeAddress: bigint) => {
+		reads.push({ preparedInputBefore, safeAddress })
+		return nonceAfterInput
+	}
+	return { reads, read }
+}
+
+const approvedSlotsAt = (safeTxHash: bigint) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, safeTxHash))
+const getProposalSafeTxHashAt = (proposal: PreSimulationTransaction, nonce: bigint) => {
+	const safeTx = proposal.safeTransaction?.safeTx
+	if (safeTx === undefined) throw new Error('Expected a Safe proposal')
+	return BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...safeTx.message, nonce })))
+}
+
 const configureSafe = () => {
 	fakeSafeContract.owners = OWNERS
 	fakeSafeContract.threshold = 2n
@@ -123,37 +140,49 @@ test('runs a Gnosis Safe execution as an executor calling execTransaction with r
 	})
 })
 
-test('approves a later execution of the same Gnosis Safe at every nonce the Safe can have by then', async () => {
+test('approves a later execution of the same Gnosis Safe only at the nonce the simulation of the earlier input gives the Safe', async () => {
 	configureSafe()
 	const firstCall = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
 	const secondCall = createSafeCall({ value: 2n, input: new Uint8Array(), gas: 126_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
 	const makeRichOverride = { [addressString(SAFE_ADDRESS)]: { balance: 10n ** 18n } }
-	const [firstBlock, secondBlock] = await prepareSafeExecutionSimulationInput([createBlock([firstCall], makeRichOverride), createBlock([secondCall])], ethereum, 123n, BASE_FEE_PER_GAS)
+	// The first execution raises the Safe's nonce from 5 to 6.
+	const nonceReader = createSafeNonceReader(6n)
+	const [firstBlock, secondBlock] = await prepareSafeExecutionSimulationInput([createBlock([firstCall], makeRichOverride), createBlock([secondCall])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
 	const firstExecuted = firstBlock?.transactions[0]?.executedTransaction
 	const secondExecuted = secondBlock?.transactions[0]?.executedTransaction
 	if (firstExecuted === undefined || secondExecuted === undefined) throw new Error('Expected both Safe executions to be prepared')
 	assert.equal(secondExecuted.nonce, 1n, 'the executor sends its calls in order')
 	assert.deepEqual(secondBlock?.stateOverrides, {}, 'every override is set at the start of the simulation')
 
-	const approvedSlots = [
-		...[5n].map((nonce) => getSafeTxHashAt(firstCall, nonce)),
-		// The first execution raises the Safe's nonce to 6 if it succeeds.
-		...[5n, 6n].map((nonce) => getSafeTxHashAt(secondCall, nonce)),
-	].flatMap((safeTxHash) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, safeTxHash)))
+	// The first execution needs no read: nothing before it can execute the Safe. The second reads the nonce after the prepared first block, which already carries the first execution, its approval and the executor's funding for it.
+	assert.equal(nonceReader.reads.length, 1)
+	const [read] = nonceReader.reads
+	assert.equal(read?.safeAddress, SAFE_ADDRESS)
+	assert.equal(read?.preparedInputBefore.length, 2)
+	assert.deepEqual(read?.preparedInputBefore[0]?.transactions[0]?.executedTransaction, firstExecuted)
+	assert.deepEqual(read?.preparedInputBefore[0]?.stateOverrides, {
+		[addressString(SAFE_ADDRESS)]: { balance: 10n ** 18n, stateDiff: Object.fromEntries(approvedSlotsAt(getSafeTxHashAt(firstCall, 5n)).map((slot) => [slot, 1n])) },
+		[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]: { balance: firstExecuted.gas * EXECUTOR_MAX_FEE_PER_GAS },
+	})
+	assert.deepEqual(read?.preparedInputBefore[1]?.transactions, [])
+
+	// Each execution is approved at exactly one nonce, so no approval exists that the owners could not also have made with approveHash.
+	const approvedSlots = [...approvedSlotsAt(getSafeTxHashAt(firstCall, 5n)), ...approvedSlotsAt(getSafeTxHashAt(secondCall, 6n))]
 	assert.deepEqual(firstBlock?.stateOverrides, {
 		[addressString(SAFE_ADDRESS)]: { balance: 10n ** 18n, stateDiff: Object.fromEntries(approvedSlots.map((slot) => [slot, 1n])) },
 		[addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR)]: { balance: (firstExecuted.gas + secondExecuted.gas) * EXECUTOR_MAX_FEE_PER_GAS },
 	})
 })
 
-test('counts a stacked execTransaction call to the Gnosis Safe among the executions that raise its nonce', async () => {
+test('reads the Gnosis Safe\'s nonce from the simulation after a stacked execTransaction call to it', async () => {
 	configureSafe()
 	const directExecution = { ...createSafeCall({ value: 0n, input: hexToBytes(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])), gas: 100_000n }, undefined) }
 	const directExecutionToSafe = { ...directExecution, signedTransaction: { ...directExecution.signedTransaction, from: ORDINARY_ACCOUNT, to: SAFE_ADDRESS } }
 	const safeCall = createSafeCall({ value: 2n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([directExecutionToSafe, safeCall])], ethereum, 123n, BASE_FEE_PER_GAS)
-	const approvedSlots = [5n, 6n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, getSafeTxHashAt(safeCall, nonce))))
-	assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlots.sort())
+	const nonceReader = createSafeNonceReader(6n)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([directExecutionToSafe, safeCall])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+	assert.deepEqual(nonceReader.reads.map((read) => read.preparedInputBefore[0]?.transactions), [[directExecutionToSafe]], 'the nonce is read after the stacked call, before the execution')
+	assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlotsAt(getSafeTxHashAt(safeCall, 6n)).sort())
 	assert.equal(preparedBlock?.transactions[0]?.executedTransaction, undefined, 'the stacked execTransaction call runs as it is')
 })
 
@@ -195,16 +224,17 @@ for (const { description, message, errorData, returnData } of revertResponses) {
 	})
 }
 
-test('counts a Gnosis Safe execution whose own call executes a Safe among the executions that raise that Safe\'s nonce', async () => {
+test('reads the Gnosis Safe\'s nonce from the simulation after an execution whose own call executes a Safe', async () => {
 	configureSafe()
 	// A Safe execution can call a Safe's execTransaction, here its own, which raises that Safe's nonce once more.
 	const nestedExecution = createSafeCall({ value: 0n, input: hexToBytes(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])), gas: 100_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
 	const nestedExecutionOfSafe = { ...nestedExecution, signedTransaction: { ...nestedExecution.signedTransaction, to: SAFE_ADDRESS } }
 	const safeCall = createSafeCall({ value: 2n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([nestedExecutionOfSafe, safeCall])], ethereum, 123n, BASE_FEE_PER_GAS)
-	const approvedSlotsOfSafeCall = [5n, 6n, 7n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, getSafeTxHashAt(safeCall, nonce))))
+	const nonceReader = createSafeNonceReader(7n)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([nestedExecutionOfSafe, safeCall])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+	assert.equal(nonceReader.reads.length, 1)
 	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
-	assert.ok(approvedSlotsOfSafeCall.every((slot) => stateDiff[slot] === 1n), 'the later execution is approved at the nonce after both executions of the first transaction')
+	assert.deepEqual(Object.keys(stateDiff).sort(), [...approvedSlotsAt(getSafeTxHashAt(nestedExecutionOfSafe, 5n)), ...approvedSlotsAt(getSafeTxHashAt(safeCall, 7n))].sort(), 'the later execution is approved only at the nonce after both executions of the first transaction')
 })
 
 // A Safe proposal of the signing-mode stack: the Safe's call is shown, and its SafeTx is what the Safe executes.
@@ -236,22 +266,22 @@ test('runs a Safe proposal as the executor executing its SafeTx, refund fields i
 	assert.deepEqual(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff, Object.fromEntries(SORTED_OWNERS.map((owner) => [approvedHashSlot(owner, safeTxHashAtSafeNonce), 1n])))
 })
 
-test('counts an execTransaction call inside a Safe proposal\'s MultiSend batch among the executions that raise the Safe\'s nonce', async () => {
+test('reads the Gnosis Safe\'s nonce from the simulation after a Safe proposal whose MultiSend batch executes the Safe', async () => {
 	configureSafe()
 	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } = await import('../../app/ts/safe/safeDelegateCalls.js')
 	const selfExecution = hexToBytes(encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(CALLED_CONTRACT), 0n, '0x', 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x']))
 	const batch = createSafeProposal({ to: SAFE_MULTI_SEND_CALL_ONLY, value: 0n, operation: 1n, data: encodeSafeBatch([{ to: SAFE_ADDRESS, value: 0n, data: selfExecution }, { to: CALLED_CONTRACT, value: 0n, data: new Uint8Array([1]) }]) })
 	const laterProposal = createSafeProposal({ value: 9n })
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([batch, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
-	const laterSafeTx = laterProposal.safeTransaction?.safeTx
-	if (laterSafeTx === undefined) throw new Error('Expected a Safe proposal')
-	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
 	// The batch's own execution and the execution its batch makes raise the nonce from 5 to 7.
-	const approvedSlotsOfLaterProposal = [5n, 6n, 7n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
-	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+	const nonceReader = createSafeNonceReader(7n)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([batch, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+	assert.equal(nonceReader.reads.length, 1)
+	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
+	assert.ok(approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 7n)).every((slot) => stateDiff[slot] === 1n))
+	assert.ok(approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 6n)).every((slot) => stateDiff[slot] === undefined), 'no approval at a nonce the Safe does not have at execution')
 })
 
-test('counts a Safe execution nested in a MultiSend batch that a stacked execTransaction call executes', async () => {
+test('reads the Gnosis Safe\'s nonce from the simulation after a stacked execTransaction call whose MultiSend batch executes the Safe again', async () => {
 	configureSafe()
 	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } = await import('../../app/ts/safe/safeDelegateCalls.js')
 	const encodeExecTransaction = (to: bigint, data: string, operation: bigint) => encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, data, operation, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])
@@ -259,16 +289,14 @@ test('counts a Safe execution nested in a MultiSend batch that a stacked execTra
 	const stackedCall = createSafeCall({ value: 0n, input: hexToBytes(encodeExecTransaction(SAFE_MULTI_SEND_CALL_ONLY, dataStringWith0xStart(batch), 1n)), gas: 200_000n }, undefined)
 	const stackedExecution = { ...stackedCall, signedTransaction: { ...stackedCall.signedTransaction, from: ORDINARY_ACCOUNT, to: SAFE_ADDRESS } }
 	const laterProposal = createSafeProposal({ value: 9n })
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([stackedExecution, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
-	const laterSafeTx = laterProposal.safeTransaction?.safeTx
-	if (laterSafeTx === undefined) throw new Error('Expected a Safe proposal')
-	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
 	// The stacked execution and the execution its batch makes raise the nonce from 5 to 7.
-	const approvedSlotsOfLaterProposal = [5n, 6n, 7n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
-	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+	const nonceReader = createSafeNonceReader(7n)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([stackedExecution, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+	assert.equal(nonceReader.reads.length, 1)
+	assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 7n)).sort())
 })
 
-test('counts a Safe execution that another Safe or any contract relays among the executions that raise the Safe\'s nonce', async () => {
+test('reads the Gnosis Safe\'s nonce from the simulation after a Safe execution that another Safe or any contract relays', async () => {
 	configureSafe()
 	const OTHER_SAFE = 0x7777777777777777777777777777777777777777n
 	const encodeExecTransaction = (to: bigint, data: string) => encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, data, 0n, 0n, 0n, 0n, addressString(0n), addressString(0n), '0x'])
@@ -278,33 +306,36 @@ test('counts a Safe execution that another Safe or any contract relays among the
 	// Any contract can relay an execution it is handed in its calldata.
 	const relayedByContract = createSafeCall({ value: 0n, input: hexToBytes(encodeFunctionCall([{ type: 'function', name: 'relay', stateMutability: 'nonpayable', inputs: [{ name: 'target', type: 'address' }, { name: 'data', type: 'bytes' }], outputs: [] }], 'relay', [addressString(SAFE_ADDRESS), encodeExecTransaction(CALLED_CONTRACT, '0x')])), gas: 200_000n }, undefined)
 	const byContract = { ...relayedByContract, signedTransaction: { ...relayedByContract.signedTransaction, from: ORDINARY_ACCOUNT, to: CALLED_CONTRACT } }
-	const laterProposal = createSafeProposal({ value: 9n })
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([throughOtherSafe, byContract, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
-	const laterSafeTx = laterProposal.safeTransaction?.safeTx
-	if (laterSafeTx === undefined) throw new Error('Expected a Safe proposal')
-	const stateDiff = preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}
-	// Three execTransaction calls may each have executed this Safe, so the nonce may be anywhere from 5 to 8.
-	const approvedSlotsOfLaterProposal = [5n, 6n, 7n, 8n].flatMap((nonce) => SORTED_OWNERS.map((owner) => approvedHashSlot(owner, BigInt(getSafeTxHash(createSafeTxFromMessage(fakeRpcNetwork.chainId, SAFE_ADDRESS, { ...laterSafeTx.message, nonce }))))))
-	assert.ok(approvedSlotsOfLaterProposal.every((slot) => stateDiff[slot] === 1n))
+	for (const relay of [throughOtherSafe, byContract]) {
+		const laterProposal = createSafeProposal({ value: 9n })
+		const nonceReader = createSafeNonceReader(6n)
+		const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([relay, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+		assert.deepEqual(nonceReader.reads.map((read) => read.preparedInputBefore[0]?.transactions), [[relay]])
+		assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 6n)).sort())
+	}
 })
 
-test('counts at most 16 relayed executions, however many execTransaction selectors a page stuffs into calldata', async () => {
+test('approves a Safe execution at one nonce however many execTransaction selectors a page stuffs into calldata', async () => {
 	configureSafe()
 	const stuffedCalldata = new Uint8Array(4 * 10_000)
 	for (let index = 0; index < stuffedCalldata.length; index += 4) stuffedCalldata.set([0x6a, 0x76, 0x12, 0x02], index)
 	const stuffedTransaction = createSafeCall({ value: 0n, input: stuffedCalldata, gas: 1_000_000n }, undefined)
 	const laterProposal = createSafeProposal({ value: 9n })
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([{ ...stuffedTransaction, signedTransaction: { ...stuffedTransaction.signedTransaction, from: ORDINARY_ACCOUNT } }, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
-	// The Safe's nonce 5 plus at most 16 relayed executions: nonces 5 to 21.
-	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, 17 * SORTED_OWNERS.length)
+	// Stuffed selectors execute nothing, so the simulation leaves the Safe's nonce at 5.
+	const nonceReader = createSafeNonceReader(5n)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([{ ...stuffedTransaction, signedTransaction: { ...stuffedTransaction.signedTransaction, from: ORDINARY_ACCOUNT } }, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+	assert.equal(nonceReader.reads.length, 1)
+	assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 5n)).sort())
 })
 
-test('approves a Safe execution only at the Safe\'s nonce when no earlier transaction can execute a Safe', async () => {
+test('approves a Safe execution at the Safe\'s nonce at the parent block, without simulating, when no earlier transaction can execute a Safe', async () => {
 	configureSafe()
 	const ordinaryTransaction = createSafeCall({ value: 1n, input: Uint8Array.from([0x12, 0x34]), gas: 21_000n }, undefined)
 	const laterProposal = createSafeProposal({ value: 9n })
-	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([ordinaryTransaction, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS)
-	assert.equal(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).length, SORTED_OWNERS.length)
+	const nonceReader = createSafeNonceReader(99n)
+	const [preparedBlock] = await prepareSafeExecutionSimulationInput([createBlock([ordinaryTransaction, laterProposal])], ethereum, 123n, BASE_FEE_PER_GAS, nonceReader.read)
+	assert.equal(nonceReader.reads.length, 0)
+	assert.deepEqual(Object.keys(preparedBlock?.stateOverrides[addressString(SAFE_ADDRESS)]?.stateDiff ?? {}).sort(), approvedSlotsAt(getProposalSafeTxHashAt(laterProposal, 5n)).sort())
 })
 
 test('drops the zero base fee flag of a Safe proposal stored by an earlier version and runs it with the real base fee', async () => {
