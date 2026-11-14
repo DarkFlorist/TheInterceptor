@@ -15,7 +15,7 @@ import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getPreparedGovernanceVote, getStackSimulationContextFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
 import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSendCallTransactionIdentifier, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
 import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount } from './walletSendCallsBinding.js'
@@ -25,7 +25,7 @@ import { refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './
 import { formRejectMessage } from './confirmationReplies.js'
 import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, removePendingRequestAndDeliverTerminalReply } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
-import { isSimulationModeSafeAccount } from '../safe/safeExecutionRouting.js'
+import { isSimulationModeSafeAccount } from './simulationModeSafeAccount.js'
 import { getTransactionBatchCallGasPayment } from '../safe/safePendingFlow.js'
 
 // Confirms simulation-mode wallet_sendCalls batches: admits a batch to the confirmation queue, previews it on top of the simulation stack, and approves or rejects it as a whole. The confirmation window admits every batch through admitTransactionBatch, and its generic dispatch hands every batch to resolvePendingTransactionBatch.
@@ -188,7 +188,7 @@ export async function admitTransactionBatch(
 	// The binding is the batch's only website origin and account; the website's icon and title are kept for display only.
 	const binding = { websiteOrigin: website.websiteOrigin, account: batchRequest.account, chainId: batchRequest.chainId }
 	// Decided before the confirmation lock, as a single transaction's Gnosis Safe preparation is.
-	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()), binding.account)
+	const executeCallsThroughSafe = await isSimulationModeSafeAccount(ethereumClientService, binding.account)
 	// The confirmation lock is held only while the batch is added to the confirmation queue, so the batch's simulation does not hold back the admission of other confirmations.
 	const admission = await runWithPendingConfirmationLock(async () => {
 		// Checked and recorded while holding the confirmation lock, so two concurrent requests cannot both claim the same batch id.
@@ -223,11 +223,17 @@ async function showAdmittedTransactionBatch(ethereumClientService: EthereumClien
 		await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 		await storeTransactionBatchSimulation(pendingBatch.uniqueRequestIdentifier, await simulatePendingTransactionBatch(ethereumClientService, tokenPriceService, pendingBatch))
 		await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
-		await tryFocusingTabOrWindow(openedDialog)
 	} catch(error: unknown) {
 		await reportLocalRecovery(error, { code: 'send_calls_preparation_failed', message: 'Removing the batch confirmation and returning a wallet-compatible rejection to the requesting page.', details: error instanceof Error ? error.stack : undefined })
 		// The preparation rejection takes the same durable path as a user's rejection. Only a batch that this cleanup removes unapproved gets it. Otherwise the batch was already approved or rejected once its preview was shown, or resolved while it simulated, and that resolution answered the website. Either way the website has its answer, so the admission itself does not reply.
 		await resolveTransactionBatchSerially(ethereumClientService, tokenPriceService, websiteTabConnections, pendingBatch.uniqueRequestIdentifier, async (storedBatch) => await rejectTransactionBatch(ethereumClientService, tokenPriceService, websiteTabConnections, storedBatch, formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to simulate the batch of calls')))
+		return
+	}
+	// Focusing only brings the dialog forward. The batch is already shown with its stored preview, so a browser window or tab error here is reported and the batch stays queued for the user to answer.
+	try {
+		await tryFocusingTabOrWindow(openedDialog)
+	} catch(error: unknown) {
+		await reportLocalRecovery(error, { code: 'send_calls_dialog_focus_failed', message: 'Keeping the batch confirmation queued; its window could not be focused.', details: error instanceof Error ? error.stack : undefined })
 	}
 }
 

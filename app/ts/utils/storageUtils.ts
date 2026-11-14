@@ -173,6 +173,19 @@ export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | Loc
 	}
 }
 
+// The wallet_sendCalls batch id records, parsed one by one, so a corrupt record is dropped on its own and every record that still holds an id for a queued or approved batch survives.
+export async function browserStorageLocalGetWalletSendCallsBatchIds(): Promise<{ readonly records: readonly WalletSendCallsBatchIdRecord[], readonly droppedCorruptRecords: number }> {
+	const { walletSendCallsBatchIds: storedRecords } = await browser.storage.local.get('walletSendCallsBatchIds')
+	const stored: unknown = storedRecords
+	if (stored === undefined) return { records: [], droppedCorruptRecords: 0 }
+	if (!Array.isArray(stored)) return { records: [], droppedCorruptRecords: 1 }
+	const records = stored.flatMap((record: unknown) => {
+		const parsed = WalletSendCallsBatchIdRecord.safeParse(record)
+		return parsed.success ? [parsed.value] : []
+	})
+	return { records, droppedCorruptRecords: stored.length - records.length }
+}
+
 export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }

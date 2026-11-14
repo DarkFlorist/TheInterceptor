@@ -6,7 +6,6 @@ import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
 import type { AddressBookEntry, SafeEntry } from '../types/addressBookTypes.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot, isSafeContractValidationFailure } from './safeCore.js'
-import { reportLocalRecovery } from '../utils/errors.js'
 import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from './safeExecution.js'
 
 const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
@@ -38,20 +37,20 @@ export function getSafeUnsupportedFormedTransactionReason(transaction: EthereumU
 	return undefined
 }
 
-// Whether the simulation runs the transactions an account sends through the Gnosis Safe it is: a Gnosis Safe among the address book entries of the client's chain, deployed with a version Interceptor supports. A single transaction checks it together with isSafeExecutableRequestFromActiveAddress; a wallet_sendCalls batch decides it once for its account when it is admitted and then runs each call the Safe can make through execTransaction through the Safe (getTransactionBatchCallGasPayment). It lives in this shared Safe layer so neither confirmation flow depends on the other's modules.
-export async function isSimulationModeSafeAccount(ethereum: EthereumClientService, chainAddressBookEntries: readonly AddressBookEntry[], account: bigint) {
-	if (!chainAddressBookEntries.some((entry) => entry.type === 'safe' && entry.address === account)) return false
+// Whether the simulation runs the transactions an account sends through the Gnosis Safe it is: a Gnosis Safe among the address book entries of the client's chain ('safe'), deployed with a version Interceptor supports, or else why not. A Safe that is configured but not deployed or not supported ('unsupportedSafe') carries its validation failure, so the caller can record the fallback; this layer decides only, without writing diagnostics or reading extension storage.
+export type SimulationModeSafeAccount =
+	| { readonly kind: 'safe' }
+	| { readonly kind: 'notConfiguredSafe' }
+	| { readonly kind: 'unsupportedSafe', readonly validationFailure: unknown }
+
+export async function getSimulationModeSafeAccount(ethereum: EthereumClientService, chainAddressBookEntries: readonly AddressBookEntry[], account: bigint): Promise<SimulationModeSafeAccount> {
+	if (!chainAddressBookEntries.some((entry) => entry.type === 'safe' && entry.address === account)) return { kind: 'notConfiguredSafe' }
 	try {
 		await getSafeContractSnapshot(ethereum, account)
-		return true
+		return { kind: 'safe' }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
-		await reportLocalRecovery(error, {
-			code: 'simulated_safe_execution_unavailable',
-			message: 'Simulating the Gnosis Safe\'s transaction as an ordinary transaction.',
-			details: error instanceof Error ? error.stack : undefined,
-		})
-		return false
+		return { kind: 'unsupportedSafe', validationFailure: error }
 	}
 }
 

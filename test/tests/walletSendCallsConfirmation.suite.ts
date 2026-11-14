@@ -920,6 +920,34 @@ test('resetting a corrupt confirmation queue frees the ids of its batches, and t
 	assert.deepEqual((await getBatchIdRecords()).map((record) => record.transactionIdentifiers), [(await getPendingBatch({ requestId: 78, requestSocket: socket })).transactionsToSimulate.map((transaction) => transaction.transactionIdentifier)])
 })
 
+test('a corrupt batch id record is dropped on its own, so the ids that intact records hold stay in use and their bundles stay findable', async () => {
+	const { websiteTabConnections } = await setUpWalletSendCallsTest()
+	await requestBatch(websiteTabConnections, withBatchId('0x01'))
+	const storedRecords = browserMock.storageState.walletSendCallsBatchIds
+	if (!Array.isArray(storedRecords)) throw new Error('Expected the stored batch id records')
+	browserMock.storageState.walletSendCallsBatchIds = [...storedRecords, { batchId: 7, binding: 'corrupt' }]
+
+	assert.deepEqual((await withSilencedConsole(async () => await getBatchIdRecords())).map((record) => record.batchId), ['0x01'])
+	assert.equal(await withSilencedConsole(async () => await isBatchIdInUse('0x01')), true, 'the queued batch keeps its id, so another request cannot reuse it')
+})
+
+test('a batch whose confirmation window cannot be focused stays queued with its preview instead of being rejected', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+	const updateWindow = browser.windows.update
+	const updateTab = browser.tabs.update
+	browser.windows.update = async () => { throw new Error('Transient browser window update failure') }
+	browser.tabs.update = async () => { throw new Error('Transient browser tab update failure') }
+	try {
+		assert.deepEqual(await withSilencedConsole(async () => await requestBatch(websiteTabConnections)), { type: 'doNotReply' })
+	} finally {
+		browser.windows.update = updateWindow
+		browser.tabs.update = updateTab
+	}
+	assert.equal((await getPendingBatch()).transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(getWalletSendCallsReply(postedMessages), undefined, 'the website gets no rejection while the batch waits for the user')
+	assert.equal((await getBatchIdRecords()).length, 1, 'the batch keeps its id record')
+})
+
 // Answers the batch while focusing the website's tab, which the confirmation window does once its queue is empty, fails. The answer must not depend on that view work, which reports its failure instead.
 async function answerBatchWhileFocusingTheWebsiteTabFails(answer: (websiteTabConnections: BatchTestConnections) => Promise<unknown>) {
 	const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()

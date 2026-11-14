@@ -335,12 +335,15 @@ test('a batch stores its website origin and account only in its binding', () => 
 test('both confirmation flows decide whether an account is a simulation-mode Gnosis Safe with one predicate from the shared Safe layer', async () => {
 	const safeExecutionRoutingSource = await readSource('safe/safeExecutionRouting.ts')
 	const safeTransactionConfirmationSource = await readSource('background/safeTransactionConfirmation.ts')
-	assert.match(safeExecutionRoutingSource, /^export async function isSimulationModeSafeAccount\(/mu)
-	// The shared Safe layer reads no extension storage; its callers pass the address book entries of the chain.
+	const simulationModeSafeAccountSource = await readSource('background/simulationModeSafeAccount.ts')
+	assert.match(safeExecutionRoutingSource, /^export async function getSimulationModeSafeAccount\(/mu)
+	// The shared Safe layer decides from the address book entries it is given and calls no storage or diagnostics API itself; the background module reads the entries and records a fallback.
 	assert.doesNotMatch(safeExecutionRoutingSource, /from '\.\.\/background\//u)
+	assert.doesNotMatch(safeExecutionRoutingSource, /\b(?:reportLocalRecovery|reportUnexpectedError|appendErrorDiagnostic|browserStorageLocal\w*|getUserAddressBookEntries\w*)\b|browser\.storage/u)
+	assert.match(simulationModeSafeAccountSource, /^export async function isSimulationModeSafeAccount\(/mu)
 	for (const flowSource of [safeTransactionConfirmationSource, walletSendCallsConfirmationSource]) {
 		assert.doesNotMatch(flowSource, /function isSimulationModeSafeAccount\b/u)
-		assert.match(flowSource, /^import \{[^}\n]*\bisSimulationModeSafeAccount\b[^}\n]*\} from '\.\.\/safe\/safeExecutionRouting\.js'$/mu)
+		assert.match(flowSource, /^import \{ isSimulationModeSafeAccount \} from '\.\/simulationModeSafeAccount\.js'$/mu)
 	}
 })
 

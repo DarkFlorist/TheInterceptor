@@ -2,7 +2,7 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalGetWalletSendCallsBatchIds, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -54,10 +54,11 @@ async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonl
 	return []
 }
 
-// Corrupt records are dropped, which only releases the ids they held.
+// Each record is parsed on its own, so a corrupt record is dropped without the others: only the ids that corrupt records held are released, and every batch whose record is intact keeps its id and stays findable by wallet_getCallsStatus.
 export async function getWalletSendCallsBatchIds(): Promise<readonly WalletSendCallsBatchIdRecord[]> {
-	const result = await browserStorageLocalGet2Result('walletSendCallsBatchIds')
-	return result.success ? result.value.walletSendCallsBatchIds ?? [] : []
+	const { records, droppedCorruptRecords } = await browserStorageLocalGetWalletSendCallsBatchIds()
+	if (droppedCorruptRecords > 0) console.warn(`Dropped ${ droppedCorruptRecords.toString() } corrupt wallet_sendCalls batch id record(s).`)
+	return records
 }
 
 type PendingTransactionsAndWalletSendCallsBatchIds = {
