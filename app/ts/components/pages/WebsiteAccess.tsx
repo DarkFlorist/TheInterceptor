@@ -15,7 +15,7 @@ import { useOptionalComputed } from '../../utils/OptionalSignal.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import type { RpcEntries } from '../../types/rpc.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
@@ -265,32 +265,12 @@ const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
-
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
-			return false
-		}
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	})
-
-	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 
 	if (selectedWebsiteAccess.value === undefined) return <></>
 

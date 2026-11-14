@@ -433,6 +433,7 @@ export type RenderedTreeNode = {
 	readonly attributes?: Readonly<AttributeMap>
 	readonly textContent?: string
 	readonly childNodes?: readonly RenderedTreeNode[]
+	readonly getAttribute?: (name: string) => string | null
 	readonly l?: Record<string, (event: unknown) => unknown>
 }
 
@@ -445,8 +446,12 @@ export function findRenderedElement(node: RenderedTreeNode, matches: (node: Rend
 	return undefined
 }
 
+export function findAllRenderedElements(node: RenderedTreeNode, matches: (node: RenderedTreeNode) => boolean): RenderedTreeNode[] {
+	return [...matches(node) ? [node] : [], ...(node.childNodes ?? []).flatMap((child) => findAllRenderedElements(child, matches))]
+}
+
 export async function clickRenderedElement(element: RenderedTreeNode) {
 	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
 	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element })
+	await clickHandler({ currentTarget: element, stopPropagation: () => undefined })
 }

@@ -11,6 +11,7 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import Hint from '../subcomponents/Hint.js'
 import type { RpcEntries } from '../../types/rpc.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
@@ -85,7 +86,7 @@ export function FetchSimulationStack() {
 	const modalState = useSignal<FetchSimulationStackModalState>({ page: 'noModal' })
 
 	const shownSimulationStack = useSignal<ShownSimulationStack>({ visualisation: createPassthroughCompleteVisualizedSimulation(), addressBookEntries: undefined })
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const { value: rejectRequestState, waitFor: waitForRejectRequest } = useAsyncState<void>()
 	const { value: allowRequestState, waitFor: waitForAllowRequest } = useAsyncState<void>()
 
@@ -98,10 +99,6 @@ export function FetchSimulationStack() {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
 			changeRequest.value = parsed.data
 			return false
@@ -128,7 +125,6 @@ export function FetchSimulationStack() {
 		void sendPopupReadyAndListening('fetchSimulationStack')
 		requestOpeningVisualisation()
 		requestOpeningMetadata()
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}, [])
 
 	async function approve() {

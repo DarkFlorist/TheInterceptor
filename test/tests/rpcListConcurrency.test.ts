@@ -1,5 +1,6 @@
 import * as assert from 'node:assert'
 import { beforeEach, describe, test } from 'bun:test'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import type { RpcEntries } from '../../app/ts/types/rpc.js'
 
 const storedItems: Record<string, unknown> = {}
@@ -7,11 +8,24 @@ let blockNextRpcListRead = false
 let releaseBlockedRead = () => undefined
 let signalBlockedReadStarted = () => undefined
 let blockedReadStarted = Promise.resolve()
+const broadcastRpcLists: RpcEntries[] = []
+// The message each broadcast list was sent as: popup_update_rpc_list for a change, popup_requestRpcListReply for a request answer.
+const broadcastRpcListMethods: string[] = []
 
 Object.defineProperty(globalThis, 'browser', {
 	configurable: true,
 	writable: true,
 	value: {
+		runtime: {
+			lastError: undefined,
+			sendMessage: async (message: unknown) => {
+				const parsed = MessageToPopup.parse(message)
+				if (parsed.method === 'popup_update_rpc_list') broadcastRpcLists.push(parsed.data)
+				else if (parsed.method === 'popup_requestRpcListReply') broadcastRpcLists.push(parsed.data.rpcEntries)
+				else return
+				broadcastRpcListMethods.push(parsed.method)
+			},
+		},
 		storage: {
 			local: {
 				get: async (keys: string | readonly string[]) => {
@@ -30,7 +44,8 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getRpcList, promoteRpcAsPrimary, setRpcList } = await import('../../app/ts/background/storageVariables.js')
+const { broadcastRpcListRequestReply, promoteRpcAsPrimaryAndNotifyPages, setRpcListAndNotifyPages } = await import('../../app/ts/background/rpcList.js')
+const { getRpcList } = await import('../../app/ts/background/rpcListStorage.js')
 
 const existingRpcEntries = [
 	{
@@ -73,19 +88,55 @@ describe('RPC list concurrency', () => {
 		releaseBlockedRead = () => undefined
 		signalBlockedReadStarted = () => undefined
 		blockedReadStarted = Promise.resolve()
-		await setRpcList(existingRpcEntries)
+		await setRpcListAndNotifyPages(existingRpcEntries)
+		broadcastRpcLists.length = 0
+		broadcastRpcListMethods.length = 0
 	})
 
 	test('does not let primary promotion overwrite a later settings save', async () => {
 		blockNextRpcListRead = true
 		blockedReadStarted = new Promise<void>((resolve) => { signalBlockedReadStarted = resolve })
-		const promotionPromise = promoteRpcAsPrimary(existingRpcEntries[1])
+		const promotionPromise = promoteRpcAsPrimaryAndNotifyPages(existingRpcEntries[1])
 		await blockedReadStarted
 
-		const settingsSavePromise = setRpcList(editedRpcEntries)
+		const settingsSavePromise = setRpcListAndNotifyPages(editedRpcEntries)
 		releaseBlockedRead()
 		await Promise.all([promotionPromise, settingsSavePromise])
 
 		assert.deepEqual(await getRpcList(), editedRpcEntries)
+		// Pages keep the last broadcast list, so the save must be broadcast after the promotion it was queued behind.
+		assert.deepEqual(broadcastRpcLists.at(-1), editedRpcEntries)
+	})
+
+	test('answers an RPC list request by broadcasting the stored list as a request reply, not as a change', async () => {
+		await broadcastRpcListRequestReply('page-request')
+
+		assert.deepEqual(broadcastRpcLists, [existingRpcEntries])
+		assert.deepEqual(broadcastRpcListMethods, ['popup_requestRpcListReply'])
+	})
+
+	test('broadcasts a request that races a write before the write, never a stale list after it', async () => {
+		blockNextRpcListRead = true
+		blockedReadStarted = new Promise<void>((resolve) => { signalBlockedReadStarted = resolve })
+		const requestPromise = broadcastRpcListRequestReply('page-request')
+		await blockedReadStarted
+
+		const settingsSavePromise = setRpcListAndNotifyPages(editedRpcEntries)
+		// Give an unordered write the chance to finish and broadcast while the request's read is still pending.
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		releaseBlockedRead()
+		await Promise.all([requestPromise, settingsSavePromise])
+
+		assert.deepEqual(broadcastRpcLists, [existingRpcEntries, editedRpcEntries])
+		assert.deepEqual(broadcastRpcListMethods, ['popup_requestRpcListReply', 'popup_update_rpc_list'])
+	})
+
+	test('a request queued behind a write broadcasts the written list', async () => {
+		const settingsSavePromise = setRpcListAndNotifyPages(editedRpcEntries)
+		const requestPromise = broadcastRpcListRequestReply('page-request')
+		await Promise.all([settingsSavePromise, requestPromise])
+
+		assert.deepEqual(broadcastRpcLists, [editedRpcEntries, editedRpcEntries])
+		assert.deepEqual(broadcastRpcListMethods, ['popup_update_rpc_list', 'popup_requestRpcListReply'])
 	})
 })
