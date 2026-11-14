@@ -2,6 +2,7 @@ import type { VisualizedPersonalSignRequest } from '../../types/personal-message
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { addressString } from '../../utils/bigint.js'
 import { assertNever } from '../../utils/typescript.js'
+import { getSiweOriginText } from '../../utils/siwe.js'
 
 function getPermitTokenLabel(entry: AddressBookEntry) {
 	const symbol = entry.type === 'ERC20' ? entry.symbol.trim() : ''
@@ -34,6 +35,15 @@ export function identifySignature(data: VisualizedPersonalSignRequest) {
 				rejectAction: `Reject ${ name }`,
 				simulationAction: `Simulate ${ name }`,
 				signingAction: `Sign ${ name }`,
+			}
+		}
+		case 'SignInWithEthereum': {
+			const origin = getSiweOriginText(data.message)
+			return {
+				title: `Sign in to ${ origin }`,
+				rejectAction: `Reject sign in to ${ origin }`,
+				simulationAction: `Simulate sign in to ${ origin }`,
+				signingAction: `Sign in to ${ origin }`,
 			}
 		}
 		case 'NotParsed': return {
