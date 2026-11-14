@@ -1,5 +1,5 @@
 import type { ComponentChild, ComponentChildren } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useCallback, useEffect, useRef } from 'preact/hooks'
 import { type Signal, useSignal, useSignalEffect } from '@preact/signals'
 
 interface Props {
@@ -10,6 +10,15 @@ interface Props {
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
 const showHintEventName = 'interceptor:show-hint'
+const viewportBorderPadding = 30
+// Wrapped hints stay narrower than the viewport by the padding calculateHintPosition keeps on both sides, so clamping their position never pushes them off screen.
+const hintMaxWidth = `calc(100% - ${ 2 * viewportBorderPadding }px)`
+const hintAnchorGap = 10
+
+// The viewport span a hint is placed next to. A pointer position has the same top and bottom, while a focused element spans its bounds so a hint placed above it does not cover it.
+export type HintAnchor = { x: number, top: number, bottom: number }
+
+const pointAnchor = (x: number, y: number): HintAnchor => ({ x, top: y, bottom: y })
 
 type ShowHintEventDetail = {
 	content: string
@@ -26,18 +35,30 @@ export const clearHintTimeouts = (timeoutIds: readonly (ReturnType<typeof setTim
 	for (const timeoutId of timeoutIds) clearTimeoutFunction(timeoutId ?? undefined)
 }
 
-export default function Container(props: Props) {
-	const copyAttribute = props.attribute || 'data-hint'
-	const toolTipAttribute = props.attribute || 'data-tooltip'
+// Shows the hints of the elements inside the element given to setContainerElement, and returns the hint to render inside that element. The page Container below hosts it in its own div, while an element such as an InlineCard can host its own hint without gaining a wrapper element. While isActive is false it listens to nothing and shows no hint, so a host that stays mounted after its hinted content goes away, such as a card whose warning is removed, drops an explanation that was open along with its pending timers.
+export function useHintContainer(attribute: string | undefined, template: ((content: string) => ComponentChildren) | undefined, isActive: boolean) {
+	const copyAttribute = attribute || 'data-hint'
+	const toolTipAttribute = attribute || 'data-tooltip'
 
 	const content = useSignal('')
-	const clickPosition = useSignal<{ x: number, y: number } | null>(null)
+	const anchor = useSignal<HintAnchor | undefined>(undefined)
 
-	const containerElementRef = useRef<HTMLDivElement | null>(null)
+	const containerElementRef = useRef<HTMLElement | null>(null)
+	// A callback ref, so the page container's div and a host element of another type, such as an InlineCard's span, can both be the container.
+	const setContainerElement = useCallback((element: HTMLElement | null) => { containerElementRef.current = element }, [])
 	const copyMessageTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const toolTipTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	// The element whose tooltip is displayed, kept only so a later event can tell that it no longer carries that tooltip. It is undefined while a copy message or nothing is displayed.
+	const displayedTooltipOwnerRef = useRef<Element | undefined>(undefined)
 
 	useEffect(() => {
+		// The cleanup of the previous active run already cancelled the pending timers; this hides a hint that was open when the host deactivated, which no later event inside the host would dismiss, and forgets it so reactivating cannot show it again.
+		if (!isActive) {
+			content.value = ''
+			anchor.value = undefined
+			displayedTooltipOwnerRef.current = undefined
+			return
+		}
 		const containerElement = containerElementRef.current
 		if (!containerElement) return
 
@@ -48,18 +69,84 @@ export default function Container(props: Props) {
 			return element
 		}
 
-		const hide = (event: Event) => {
+		// Cancels both the copy message and tooltip timers, so a stale copy message timer can neither clear a newly shown hint nor stop leaveTooltip from clearing it.
+		const cancelPendingHintTimeouts = () => {
+			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
+			copyMessageTimeoutIdRef.current = null
+			toolTipTimeoutIdRef.current = null
+		}
+
+		// Captured on the document because the element that scrolls is an ancestor of the container, and scroll events do not bubble.
+		const scrollEventTarget = containerElement.ownerDocument
+
+		const displayHint = (hintContent: string, hintAnchor: HintAnchor | undefined, tooltipOwner: Element | undefined) => {
+			content.value = hintContent
+			anchor.value = hintAnchor
+			displayedTooltipOwnerRef.current = tooltipOwner
+			// Listens only while it shows a keyboard-focused tooltip: one element has focus at a time, so however many containers a page renders, at most one runs on each scroll.
+			if (tooltipOwner !== undefined && tooltipOwner === getKeyboardFocusedTooltipElement()) scrollEventTarget.addEventListener('scroll', followKeyboardFocusedTooltip, { capture: true, passive: true })
+			else scrollEventTarget.removeEventListener('scroll', followKeyboardFocusedTooltip, { capture: true })
+		}
+
+		const hideHint = () => { displayHint('', undefined, undefined) }
+
+		// An element that is removed, or that Preact reuses for content without this tooltip, fires no mouseout or focusout, so every pointer, focus and scroll event Hint listens to first dismisses a tooltip its element no longer carries. A copy message has no owner, so its own timer still decides when it ends.
+		const dismissAbandonedTooltip = () => {
+			const tooltipOwner = displayedTooltipOwnerRef.current
+			if (tooltipOwner === undefined) return
+			if (containerElement.contains(tooltipOwner) && tooltipOwner.getAttribute(toolTipAttribute) === content.value) return
+			hideHint()
+		}
+
+		const showTooltipAtElement = (targetElement: Element) => {
+			const targetBounds = targetElement.getBoundingClientRect()
+			displayHint(targetElement.getAttribute(toolTipAttribute) || '', { x: targetBounds.left + targetBounds.width / 2, top: targetBounds.top, bottom: targetBounds.bottom }, targetElement)
+		}
+
+		// The tooltip element last pressed with the pointer, until focus next leaves an element. :focus-visible alone cannot tell that a pointer took over: an element that already has keyboard focus keeps it through a click.
+		let pointerPressedElement: Element | undefined
+
+		// Read from the document when needed rather than remembered, so it can never point at an element that lost focus or was removed: a removed element is no longer the active element or inside the container. Only keyboard focus counts, which :focus-visible tells apart: a click also focuses a focusable element, but the pointer already opened its tooltip by hovering, and that tooltip must end when the pointer leaves.
+		const getKeyboardFocusedTooltipElement = () => {
+			// An element's ownerDocument is never null (only a Document's own is), and the DOM typings declare Element.ownerDocument as Document.
+			const focusedElement = containerElement.ownerDocument.activeElement
+			if (!(focusedElement instanceof Element) || !focusedElement.hasAttribute(toolTipAttribute) || !focusedElement.matches(':focus-visible') || focusedElement === pointerPressedElement || !containerElement.contains(focusedElement)) return undefined
+			return focusedElement
+		}
+
+		// Ends the tooltip of the element the event left, unless a copy message is still showing, and shows tooltipToShowInstead if there is one.
+		const leaveTooltip = (event: Event, tooltipToShowInstead: Element | undefined) => {
 			if (getHintElement(event.target, toolTipAttribute) === undefined) return
 
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 
 			if (copyMessageTimeoutIdRef.current !== null) return
 
-			content.value = ''
-			clickPosition.value = null
+			if (tooltipToShowInstead !== undefined) {
+				showTooltipAtElement(tooltipToShowInstead)
+				return
+			}
+			hideHint()
+		}
+
+		// The pointer leaving any tooltip falls back to the tooltip of the element with keyboard focus, so mouse movement does not hide the explanation a keyboard user opened.
+		const mouseout = (event: MouseEvent) => {
+			dismissAbandonedTooltip()
+			leaveTooltip(event, getKeyboardFocusedTooltipElement())
+		}
+		const focusout = (event: FocusEvent) => {
+			dismissAbandonedTooltip()
+			pointerPressedElement = undefined
+			leaveTooltip(event, undefined)
+		}
+
+		const mousedown = (event: MouseEvent) => {
+			dismissAbandonedTooltip()
+			pointerPressedElement = getHintElement(event.target, toolTipAttribute)
 		}
 
 		const click = (event: MouseEvent) => {
+			dismissAbandonedTooltip()
 			const targetElement = getHintElement(event.target, copyAttribute)
 			if (targetElement === undefined || !targetElement.hasAttribute(timerAttribute)) return
 
@@ -71,12 +158,10 @@ export default function Container(props: Props) {
 			clearTimeout(copyMessageTimeoutIdRef.current ?? undefined)
 			copyMessageTimeoutIdRef.current = null
 
-			content.value = targetElement.getAttribute(copyAttribute) || ''
-			clickPosition.value = { x: event.clientX, y: event.clientY }
+			displayHint(targetElement.getAttribute(copyAttribute) || '', pointAnchor(event.clientX, event.clientY), undefined)
 
 			copyMessageTimeoutIdRef.current = setTimeout(() => {
-				content.value = ''
-				clickPosition.value = null
+				hideHint()
 				copyMessageTimeoutIdRef.current = null
 			}, parseInt(delayValue))
 		}
@@ -90,56 +175,86 @@ export default function Container(props: Props) {
 			if (!('delay' in detail) || typeof detail.delay !== 'number' || !Number.isFinite(detail.delay) || detail.delay < 0) return
 			if (!('x' in detail) || typeof detail.x !== 'number' || !('y' in detail) || typeof detail.y !== 'number') return
 
-			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
-			copyMessageTimeoutIdRef.current = null
-			toolTipTimeoutIdRef.current = null
-			content.value = detail.content
-			clickPosition.value = { x: detail.x, y: detail.y }
+			// The innermost container claims the event, so a hint requested inside a card that hosts its own hint is not shown by the page's container as well.
+			event.stopPropagation()
+			cancelPendingHintTimeouts()
+			displayHint(detail.content, pointAnchor(detail.x, detail.y), undefined)
 			copyMessageTimeoutIdRef.current = setTimeout(() => {
-				content.value = ''
-				clickPosition.value = null
+				hideHint()
 				copyMessageTimeoutIdRef.current = null
 			}, detail.delay)
 		}
 
 		const mouseover = (event: MouseEvent) => {
+			dismissAbandonedTooltip()
 			const targetElement = getHintElement(event.target, toolTipAttribute) ?? getHintElement(event.target, timerAttribute)
 			if (targetElement === undefined) return
 			clearTimeout(toolTipTimeoutIdRef.current ?? undefined)
 			const tooltipContent = targetElement.getAttribute(toolTipAttribute) || ''
 			toolTipTimeoutIdRef.current = setTimeout(() => {
-				content.value = tooltipContent
-				clickPosition.value = { x: event.clientX, y: event.clientY }
+				// An element removed while its tooltip was pending fires no mouseout, so its tooltip must not appear afterwards, also when Preact reused its node for content without that tooltip (the same check as dismissAbandonedTooltip).
+				if (!containerElement.contains(targetElement) || (targetElement.getAttribute(toolTipAttribute) || '') !== tooltipContent) return
+				// Cancelled only once the tooltip replaces a copy message, so a copy message the pointer merely passes over still ends on its own timer.
+				cancelPendingHintTimeouts()
+				displayHint(tooltipContent, pointAnchor(event.clientX, event.clientY), targetElement)
 			}, 250)
 		}
 
+		// Only a keyboard-focused element that carries the tooltip itself shows it, so focusable controls nested inside a tooltip wrapper such as CopyToClipboard keep their current behavior.
+		const focusin = () => {
+			dismissAbandonedTooltip()
+			const focusedTooltipElement = getKeyboardFocusedTooltipElement()
+			if (focusedTooltipElement === undefined) return
+			cancelPendingHintTimeouts()
+			showTooltipAtElement(focusedTooltipElement)
+		}
+
+		// Moves the tooltip of the keyboard-focused element along with it. It is kept rather than dismissed because tabbing to an element outside the view scrolls it into view, and that scroll event arrives after focusin. A hovered tooltip needs no handling: scrolling moves its element from under the pointer, which ends it through mouseout.
+		const followKeyboardFocusedTooltip = () => {
+			dismissAbandonedTooltip()
+			const tooltipOwner = displayedTooltipOwnerRef.current
+			if (tooltipOwner !== undefined && tooltipOwner === getKeyboardFocusedTooltipElement()) showTooltipAtElement(tooltipOwner)
+		}
+
 		containerElement.addEventListener('click', click)
+		containerElement.addEventListener('mousedown', mousedown)
 		containerElement.addEventListener('mouseover', mouseover)
-		containerElement.addEventListener('mouseout', hide)
-		containerElement.addEventListener('focusout', hide)
+		containerElement.addEventListener('mouseout', mouseout)
+		containerElement.addEventListener('focusin', focusin)
+		containerElement.addEventListener('focusout', focusout)
 		containerElement.addEventListener(showHintEventName, show)
 
 		return () => {
-			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
-			copyMessageTimeoutIdRef.current = null
-			toolTipTimeoutIdRef.current = null
+			cancelPendingHintTimeouts()
 			containerElement.removeEventListener('click', click)
+			containerElement.removeEventListener('mousedown', mousedown)
 			containerElement.removeEventListener('mouseover', mouseover)
-			containerElement.removeEventListener('mouseout', hide)
-			containerElement.removeEventListener('focusout', hide)
+			containerElement.removeEventListener('mouseout', mouseout)
+			containerElement.removeEventListener('focusin', focusin)
+			containerElement.removeEventListener('focusout', focusout)
 			containerElement.removeEventListener(showHintEventName, show)
+			scrollEventTarget.removeEventListener('scroll', followKeyboardFocusedTooltip, { capture: true })
 		}
-	}, [copyAttribute, toolTipAttribute])
+	}, [copyAttribute, toolTipAttribute, isActive])
 
+	const hint = content.value && anchor.value && (
+		// Keyed by content because a shown Hint measures itself as soon as its anchor changes, before Preact renders the new text, so reusing it would place new text by the size of the previous one; a fresh Hint is measured after its text renders.
+		<Hint
+			key = { content.value }
+			content = { content }
+			template = { template }
+			anchor = { anchor }
+		/>
+	)
+
+	return { setContainerElement, hint }
+}
+
+export default function Container(props: Props) {
+	const { setContainerElement, hint } = useHintContainer(props.attribute, props.template, true)
 	return (
-		<div ref = { containerElementRef } style = 'position: relative; overflow-x: hidden;'>
-			{ content.value && clickPosition.value && (
-				<Hint
-					content = { content }
-					template = { props.template }
-					clickPosition = { clickPosition }
-				/>
-			) }
+		<div ref = { setContainerElement } style = 'position: relative; overflow-x: hidden;'>
+			{ hint }
 			{ props.children }
 		</div>
 	)
@@ -148,36 +263,46 @@ export default function Container(props: Props) {
 interface HintProps {
 	content: Signal<string>
 	template?: (content: string) => ComponentChildren
-	clickPosition: Signal<{ x: number, y: number } | null>
+	anchor: Signal<HintAnchor | undefined>
 }
 
-function calculatePosition(clickPositionX: number, clickPositionY: number, hintWidth: number) {
-	const positionX = clickPositionX - hintWidth / 2
-	const positionY = clickPositionY + 10
-	const borderPadding = 30
+type Size = { width: number, height: number }
+
+// Centers the hint on its anchor horizontally and places it below the anchor, or above it when only the space above fits it, then keeps it within the border padding of the viewport so it stays visible even when neither side fits.
+export function calculateHintPosition(anchor: HintAnchor, hintSize: Size, viewportSize: Size) {
+	const positionX = anchor.x - hintSize.width / 2
+	const lowestTop = viewportSize.height - viewportBorderPadding - hintSize.height
+	const topBelowAnchor = anchor.bottom + hintAnchorGap
+	const topAboveAnchor = anchor.top - hintAnchorGap - hintSize.height
+	const preferredTop = topBelowAnchor > lowestTop && topAboveAnchor >= viewportBorderPadding ? topAboveAnchor : topBelowAnchor
 
 	return {
-		left: positionX + hintWidth > globalThis.innerWidth - borderPadding ? globalThis.innerWidth - borderPadding - hintWidth : (positionX < borderPadding ? borderPadding : positionX),
-		top: positionY,
+		left: positionX + hintSize.width > viewportSize.width - viewportBorderPadding ? viewportSize.width - viewportBorderPadding - hintSize.width : (positionX < viewportBorderPadding ? viewportBorderPadding : positionX),
+		top: Math.max(viewportBorderPadding, Math.min(preferredTop, lowestTop)),
 	}
 }
 
 function Hint(props: HintProps) {
+	const popoverElementRef = useRef<HTMLSpanElement>(null)
 	const hintElementRef = useRef<HTMLSpanElement>(null)
 	const dialogPosition = useSignal({ left: -1000, top: -1000 })
 
+	// A manual popover in the top layer, so neither a transformed or filtered ancestor, which would become the containing block of a fixed element, nor a modal dialog can misplace or cover a Hint rendered inside a card. It opens before the effect below measures it, because a closed popover is not rendered.
+	useEffect(() => { popoverElementRef.current?.showPopover() }, [])
+
 	useSignalEffect(() => {
-		if (hintElementRef.current === null) return
-		if (props.clickPosition.value === null) return
-		const measuredWidth = hintElementRef.current.getBoundingClientRect().width
-		dialogPosition.value = calculatePosition(props.clickPosition.value.x, props.clickPosition.value.y, measuredWidth)
+		const anchor = props.anchor.value
+		if (anchor === undefined || hintElementRef.current === null) return
+		const { width, height } = hintElementRef.current.getBoundingClientRect()
+		dialogPosition.value = calculateHintPosition(anchor, { width, height }, { width: globalThis.innerWidth, height: globalThis.innerHeight })
 	})
 
+	// A span, so the hint is valid inside phrasing content such as an InlineCard that hosts its own hint; being positioned, it is laid out as a block either way. The empty title stops a title on the element hosting the hint, such as an InlineCard's label, from appearing as a native tooltip over the hint.
 	return (
-		<div class = 'preact-hint' style = { dialogPosition.value }>
+		<span ref = { popoverElementRef } class = 'preact-hint' popover = 'manual' title = '' style = { { ...dialogPosition.value, maxWidth: hintMaxWidth } }>
 			<span class = 'preact-hint__content' ref = { hintElementRef }>
 				{ props.template ? props.template(props.content.value) : props.content.value }
 			</span>
-		</div>
+		</span>
 	)
 }

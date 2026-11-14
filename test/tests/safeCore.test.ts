@@ -4,7 +4,7 @@ import { AddressBookEntry, getSafeSignerAddresses } from '../../app/ts/types/add
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
-import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, getSafeTxSignerFacingTypedData, getSafeTxSigningHashes, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa, validateSafeTransactionForSigning } from '../../app/ts/safe/safeCore.js'
+import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, assertSafeDomainChainIsConnectedChain, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, getSafeTxSignerFacingTypedData, getSafeTxSigningHashes, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa, validateSafeTransactionForSigning } from '../../app/ts/safe/safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getMessageAndDomainHash, getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -66,6 +66,15 @@ describe('Safe transaction support', () => {
 		}), (error) => isSafeContractValidationFailure(error) && /zero gas reimbursement fields/u.test(error.message))
 	})
 
+	test('accepts a SafeTx domain chain only when it is the connected chain and that chain has an ID', () => {
+		const expectedFailure = (pattern: RegExp) => (error: unknown) => isSafeContractValidationFailure(error) && pattern.test(error.message)
+		assert.doesNotThrow(() => assertSafeDomainChainIsConnectedChain(1n, 1n))
+		assert.throws(() => assertSafeDomainChainIsConnectedChain(0n, 0n), expectedFailure(/require a chain ID/u))
+		assert.throws(() => assertSafeDomainChainIsConnectedChain(undefined, 0n), expectedFailure(/require a chain ID/u))
+		assert.throws(() => assertSafeDomainChainIsConnectedChain(2n, 1n), expectedFailure(/prepared for chain 2, but the connected network is chain 1\./u))
+		assert.throws(() => assertSafeDomainChainIsConnectedChain(undefined, 1n), expectedFailure(/prepared for an unspecified chain, but the connected network is chain 1\./u))
+	})
+
 	test('classifies stale or mismatched Safe transaction state as an expected validation failure', async () => {
 		const safeAddress = 0x1234n
 		const owner = 0x5678n
@@ -99,7 +108,7 @@ describe('Safe transaction support', () => {
 
 		await assert.rejects(validateSafeTransactionForSigning(
 			ethereum, safeAddress, owner, { ...currentSafeTx, domain: { ...currentSafeTx.domain, chainId: 2n } }, '1.4.1',
-		), expectedFailure(/chain ID does not match/u))
+		), expectedFailure(/prepared for chain 2, but the connected network is chain 1\./u))
 		await assert.rejects(validateSafeTransactionForSigning(
 			ethereum, safeAddress, owner, currentSafeTx, '1.3.0',
 		), expectedFailure(/address-book entry records 1\.3\.0/u))
