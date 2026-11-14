@@ -8,6 +8,8 @@ const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/act
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
+const transactionPreparationSource = await Bun.file(new URL('../../app/ts/background/transactionPreparation.ts', import.meta.url)).text()
+const confirmationWindowSource = await Bun.file(new URL('../../app/ts/background/confirmationWindow.ts', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
 const safeSourceFiles: string[] = []
 for await (const file of new Bun.Glob('*.ts').scan({ cwd: safeSourceDirectory, absolute: true })) safeSourceFiles.push(file)
@@ -31,8 +33,9 @@ test('the confirmation window delegates Gnosis Safe resolution, persistence, and
 
 test('the Safe layer alone decides how a simulated Gnosis Safe execution is formed', async () => {
 	const safeExecutionSimulationSource = await Bun.file(new URL('../../app/ts/safe/safeExecutionSimulation.ts', import.meta.url)).text()
-	assert.doesNotMatch(confirmTransactionSource, /executeThroughSafe: true|getSimulatedSafeCallNonce|'simulated-safe-executor'/u)
-	assert.match(confirmTransactionSource, /const executedCallFormation = getExecutedCallFormation\(ethereumClientService, gasPayment\)/u)
+	// Transactions confirmations simulate are formed in transactionPreparation.ts, which the confirmation window and wallet_sendCalls batches share.
+	for (const source of [confirmTransactionSource, transactionPreparationSource]) assert.doesNotMatch(source, /executeThroughSafe: true|getSimulatedSafeCallNonce|'simulated-safe-executor'/u)
+	assert.match(transactionPreparationSource, /const executedCallFormation = getExecutedCallFormation\(ethereumClientService, gasPayment\)/u)
 	assert.equal(safeExecutionSimulationSource.match(/executeThroughSafe: true/gu)?.length, 1, 'one factory builds the options that forming and estimating share')
 	assert.match(safeExecutionSimulationSource, /simulationOptions: createSafeExecutionSimulationOptions\(ethereum\.getChainId\(\)\),\n\t\}/u)
 })
@@ -41,7 +44,8 @@ test('Gnosis Safe persistence only persists, and the confirmation window shows t
 	const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
 	assert.doesNotMatch(safeConfirmationPersistenceSource, /from '(?:\.\.\/utils\/popupOrTab|\.\/popupVisualisationUpdater|\.\/windows\/[^']+)\.js'/u)
 	assert.doesNotMatch(safeConfirmationPersistenceSource, /\b(?:getHtmlFile|openPopupOrTab|updatePopupVisualisationIfNeeded|sendPopupMessageToOpenWindows)\b/u)
-	assert.match(confirmTransactionSource, /async function showStoredSafeProposal\(/u)
+	// The confirmation window's view work after a request is answered lives in confirmationWindow.ts, which the confirmation window and wallet_sendCalls batches share.
+	assert.match(confirmationWindowSource, /async function showStoredSafeProposal\(/u)
 })
 
 test('popup message handlers delegate Gnosis Safe stack import and export', () => {
@@ -58,7 +62,7 @@ test('everything that sends the simulation stack to the node runs its Gnosis Saf
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,2}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(stackSimulationInput, ethereumClientService\)/u)
 	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereumClientService\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereum\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,40}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereum\)/u)
 })
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {

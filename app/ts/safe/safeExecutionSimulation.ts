@@ -1,10 +1,11 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { type EthereumClientService, getGasLeftInRpcBlock, getGasUsedInLastRpcBlock } from '../simulation/services/EthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { appendTransactionsToInput, getSimulatedSafeCallNonce } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
+import { type AppendedTransactionRpcBlock, estimateGasInRpcBlockItRunsIn, getGasEstimateFromSimulation } from '../simulation/services/simulationGasEstimation.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type GasEstimationPlacement, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
@@ -29,6 +30,9 @@ const SAFE_APPROVED_HASHES_SLOT = 8n
 const EXECUTOR_MAX_PRIORITY_FEE_PER_GAS = 10n ** 8n // 0.1 nanoeth/gas
 // Gas for execTransaction's own work around the Safe's call: its calldata, the signature checks, the nonce update, its event and the Safe's guard if it has one. The node charges only the gas used, so a generous allowance only keeps an execution from failing for lack of gas.
 const SAFE_EXECUTION_GAS_ALLOWANCE = 1_000_000n
+
+// The executor's gas limit for a Safe's call with this gas: the Safe passes on at most 63/64 of the remaining gas to its call, and execTransaction's own work needs SAFE_EXECUTION_GAS_ALLOWANCE.
+const getSafeExecutorGasLimit = (safeCallGas: bigint) => safeCallGas * 64n / 63n + SAFE_EXECUTION_GAS_ALLOWANCE
 
 const compareAddresses = (first: bigint, second: bigint) => first < second ? -1 : first > second ? 1 : 0
 
@@ -59,8 +63,7 @@ function createExecutorTransaction(safeCall: SafeCall, signingOwners: readonly b
 		nonce: executorNonce,
 		maxFeePerGas,
 		maxPriorityFeePerGas: EXECUTOR_MAX_PRIORITY_FEE_PER_GAS,
-		// The Safe passes on at most 63/64 of the remaining gas to its call.
-		gas: safeCall.gas * 64n / 63n + SAFE_EXECUTION_GAS_ALLOWANCE,
+		gas: getSafeExecutorGasLimit(safeCall.gas),
 		to: safeCall.from,
 		value: 0n,
 		// A CALL without refund: safeTxGas, baseGas and gasPrice are zero, so execTransaction reverts if the Safe's call fails.
@@ -136,7 +139,8 @@ export async function prepareSafeExecutionSimulationInput(input: SimulationState
 type SafeCallFields = Pick<PreSimulationTransaction, 'website' | 'created' | 'originalRequestParameters' | 'transactionIdentifier'>
 
 /**
- * Estimates a Gnosis Safe's own call the way the simulation runs it: as the executor's execTransaction call on top of the simulation input, so the call sees the executor as tx.origin and the real base fee, and the estimate covers execTransaction's own work and the Safe's guard. The estimate becomes the gas of the Safe's call, which prepareSafeExecutionSimulationInput turns into the executor's gas limit.
+ * Estimates a Gnosis Safe's own call the way the simulation runs it: as the executor's execTransaction call on top of the simulation input, so the call sees the executor as tx.origin and the real base fee, and the estimate covers execTransaction's own work and the Safe's guard. The estimate becomes the gas of the Safe's call, which prepareSafeExecutionSimulationInput turns into the executor's gas limit (getSafeExecutorGasLimit).
+ * With the 'newBlock' placement the call is estimated alone in a new block after the input. With 'appendedToSimulation' it is estimated where a wallet_sendCalls preview and approval run it: after the transactions of the input's last block, in that block's last RPC block or in a new RPC block that preparation starts for it. Which one depends on the executor's gas, and so on the estimate itself, so an estimate is checked against the input prepared with it (getRpcBlockOfSafeCall) and re-estimated once in the block preparation chooses.
  */
 export async function estimateSafeExecutionGas(
 	ethereum: EthereumClientService,
@@ -144,6 +148,7 @@ export async function estimateSafeExecutionGas(
 	simulationInput: SimulationStateInput,
 	safeCallWithoutGas: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
 	safeCallFields: SafeCallFields,
+	placement: GasEstimationPlacement = 'newBlock',
 ): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> {
 	const parentBlock = await ethereum.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
@@ -153,24 +158,57 @@ export async function estimateSafeExecutionGas(
 		signedTransaction: mockSignTransaction({ ...safeCallWithoutGas, gas: blockGasLimit }),
 		simulationOptions: createSafeExecutionSimulationOptions(ethereum.getChainId()),
 	}
-	// appendTransactionsToInput puts the Safe's call alone in a new last block.
-	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+	const lastInputBlockIndex = simulationInput.length - 1
+	const appendToLastInputBlock = placement === 'appendedToSimulation' && lastInputBlockIndex >= 0
+	// appendTransactionsToInput puts the Safe's call alone in a new last block, or after the transactions of the last block.
+	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall], appendToLastInputBlock ? lastInputBlockIndex : undefined), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 	const lastBlock = last(preparedInput)
 	const executedTransaction = last(lastBlock?.transactions ?? [])?.executedTransaction
 	if (lastBlock === undefined || executedTransaction === undefined) throw new Error('The Gnosis Safe execution to estimate was not prepared.')
-	// Recognised from the failed call itself, because the estimate's error keeps only the call's return data.
-	let safeCallReverted = false
-	const simulateWithGasLimit = async (gasLimit: bigint) => {
-		const input = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [{ ...safeCall, executedTransaction: { ...executedTransaction, gas: gasLimit } }] }]
-		const result = last(last(await ethereum.simulate(input, parentBlock.number, requestAbortController))?.calls ?? [])
-		safeCallReverted = result?.status === 'failure' && isSafeCallRevert(result.error, result.returnData)
-		return result
+	// The prepared input without the Safe's call. Preparation keeps every other transaction's executed call, and the approvals and executor funding stay in the first block.
+	const inputBeforeSafeCall = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: lastBlock.transactions.slice(0, -1) }]
+	const withSafeCallGas = (gasLimit: bigint) => ({ ...safeCall, executedTransaction: { ...executedTransaction, gas: gasLimit } })
+	// The call after the last block's transactions, or in a new block like the RPC block that preparation splits off for a call that does not fit (prepareEthSimulateV1Input).
+	const inputWithSafeCallInLastBlock = (gasLimit: bigint): SimulationStateInput => [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [...lastBlock.transactions.slice(0, -1), withSafeCallGas(gasLimit)] }]
+	const inputWithSafeCallInNewBlock = (gasLimit: bigint): SimulationStateInput => [...inputBeforeSafeCall, { transactions: [withSafeCallGas(gasLimit)], stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: lastBlock.simulateWithZeroBaseFee }]
+	const estimateIn = async (inputWithSafeCall: (gasLimit: bigint) => SimulationStateInput, maxGas: bigint) => {
+		// Recognised from the failed call itself, because the estimate's error keeps only the call's return data.
+		let safeCallReverted = false
+		const simulateWithGasLimit = async (gasLimit: bigint) => {
+			const result = last(last(await ethereum.simulate(inputWithSafeCall(gasLimit), parentBlock.number, requestAbortController))?.calls ?? [])
+			safeCallReverted = result?.status === 'failure' && isSafeCallRevert(result.error, result.returnData)
+			return result
+		}
+		const initialResult = await simulateWithGasLimit(maxGas)
+		if (initialResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
+		const estimate = await getGasEstimateFromSimulation(initialResult, maxGas, simulateWithGasLimit)
+		if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
+		return estimate
 	}
-	const initialResult = await simulateWithGasLimit(blockGasLimit)
-	if (initialResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
-	const estimate = await getGasEstimateFromSimulation(initialResult, blockGasLimit, simulateWithGasLimit)
-	if ('error' in estimate && (safeCallReverted || isSafeCallRevert(estimate.error))) return { error: { ...estimate.error, message: SAFE_CALL_REVERTED_MESSAGE } }
-	return estimate
+	if (!appendToLastInputBlock) return await estimateIn(inputWithSafeCallInLastBlock, blockGasLimit)
+	const preparedBeforeSafeCall = await ethereum.prepareEthSimulateV1Input(inputBeforeSafeCall, parentBlock.number, requestAbortController)
+	const lastRpcBlockIndex = preparedBeforeSafeCall.rpcBlocks.length - 1
+	// While its gas is at most what the last RPC block has left, preparation keeps the call in that block (fitsInRpcBlock), so every run of that estimate stays there.
+	const gasLeftInLastRpcBlock = getGasLeftInRpcBlock(getGasUsedInLastRpcBlock(preparedBeforeSafeCall), blockGasLimit)
+	// The RPC block that the preview and approval run the call in with the estimated gas, found by preparing the input as they do instead of by repeating preparation's rules: the executor's call gets the gas prepareSafeExecutionSimulationInput gives it (getSafeExecutorGasLimit), and prepareEthSimulateV1Input clamps it to the block gas limit and places it. This runs locally, without a simulation. The call is the input's last transaction, so it runs in the last RPC block, which is either the one before it or one preparation started for it.
+	const getRpcBlockOfSafeCall = async (safeCallGas: bigint): Promise<AppendedTransactionRpcBlock> => {
+		const runInput = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [...lastBlock.transactions.slice(0, -1), {
+			...safeCall,
+			signedTransaction: { ...safeCall.signedTransaction, gas: safeCallGas },
+			executedTransaction: { ...executedTransaction, gas: getSafeExecutorGasLimit(safeCallGas) },
+		}] }]
+		const prepared = await ethereum.prepareEthSimulateV1Input(runInput, parentBlock.number, requestAbortController)
+		return prepared.rpcBlocks.length - 1 === lastRpcBlockIndex ? 'lastRpcBlock' : 'nextRpcBlock'
+	}
+	// The placement protocol is shared with simulateEstimateGasAppendedToSimulation; only the estimate per block and the way to find the block preparation picks are the executor call's own.
+	return await estimateGasInRpcBlockItRunsIn({
+		lastRpcBlockHasRoom: gasLeftInLastRpcBlock > 0n,
+		estimateIn: async (rpcBlock) => rpcBlock === 'lastRpcBlock'
+			? await estimateIn(inputWithSafeCallInLastBlock, gasLeftInLastRpcBlock)
+			: await estimateIn(inputWithSafeCallInNewBlock, blockGasLimit),
+		getRpcBlockItRunsIn: getRpcBlockOfSafeCall,
+		unplaceableEstimate: { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'The gas of the Gnosis Safe\'s call could not be estimated in the block it runs in.', data: '0x' } },
+	})
 }
 
 // The simulation options that mark a Gnosis Safe's own call to run through the Safe. Forming the call and estimating its gas both take them from here, so the estimate runs the call as the stack will.
@@ -180,16 +218,16 @@ export const createSafeExecutionSimulationOptions = (chainId: bigint): Transacti
 export type ExecutedCallFormation = {
 	readonly simulationOptions: TransactionSimulationOptions
 	readonly getNonce: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, from: bigint) => Promise<bigint>
-	readonly estimateGas: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>, safeCallFields: SafeCallFields) => Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }>
+	readonly estimateGas: (requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, transaction: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>, safeCallFields: SafeCallFields, placement: GasEstimationPlacement) => Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }>
 }
 
 // The formation of a Gnosis Safe's own call in simulation mode: marked by createSafeExecutionSimulationOptions, numbered by getSimulatedSafeCallNonce and estimated as its executor's call on top of the stack. A failed stack simulation fails the estimate, as in simulateEstimateGas.
 export const createSafeExecutionCallFormation = (ethereum: EthereumClientService): ExecutedCallFormation => ({
 	simulationOptions: createSafeExecutionSimulationOptions(ethereum.getChainId()),
 	getNonce: async (requestAbortController, simulationState, from) => await getSimulatedSafeCallNonce(ethereum, requestAbortController, simulationState, from),
-	estimateGas: async (requestAbortController, simulationState, transaction, safeCallFields) => {
+	estimateGas: async (requestAbortController, simulationState, transaction, safeCallFields, placement) => {
 		if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
-		return await estimateSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields)
+		return await estimateSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields, placement)
 	},
 })

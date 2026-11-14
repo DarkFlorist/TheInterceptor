@@ -9,6 +9,7 @@ import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, ty
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { type ActiveAddressSettings, getActiveAddressSettings } from './activeAddressSettings.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
@@ -20,7 +21,7 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: false }
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
-async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[], walletSelectedAddress: bigint | undefined, addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
+async function resolveConfiguredActiveAddress(settings: ActiveAddressSettings, signerAccounts: readonly bigint[], walletSelectedAddress: bigint | undefined, addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
 	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
@@ -47,13 +48,14 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 	}
 }
 
-async function getConfiguredActiveAddressBookEntries(settings: Settings) {
+async function getConfiguredActiveAddressBookEntries(settings: ActiveAddressSettings) {
 	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return undefined
 	return await getUserAddressBookEntries()
 }
 
-export async function getActiveAddress(settings: Settings, tabId: number) {
+export async function getActiveAddress(allSettings: Settings, tabId: number) {
+	const settings = getActiveAddressSettings(allSettings)
 	const tabState = await getTabState(tabId)
 	const addressBookEntries = await getConfiguredActiveAddressBookEntries(settings)
 	const walletSelectedAccount = getWalletSelectedAccount(tabState)
@@ -64,7 +66,8 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	return await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId)
 }
 
-export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
+export async function getActiveOrFirstSignerAddress(allSettings: Settings, tabId: number) {
+	const settings = getActiveAddressSettings(allSettings)
 	const tabState = await getTabState(tabId)
 	const addressBookEntries = await getConfiguredActiveAddressBookEntries(settings)
 	const walletSelectedAccount = getWalletSelectedAccount(tabState)
@@ -75,7 +78,8 @@ export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: n
 	return await getWalletActiveAddressEntryForChain(address, settings.activeRpcNetwork.chainId)
 }
 
-export async function getActiveAddressesForAllTabs(settings: Settings) {
+export async function getActiveAddressesForAllTabs(allSettings: Settings) {
+	const settings = getActiveAddressSettings(allSettings)
 	const tabStates = await getAllTabStates()
 	const addressBookEntries = await getConfiguredActiveAddressBookEntries(settings)
 	if (settings.simulationMode) {

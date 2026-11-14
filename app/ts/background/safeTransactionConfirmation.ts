@@ -7,9 +7,10 @@ import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
-import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getPendingTransactionsAndMessagesExceptBatches, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
-import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { isSimulationModeSafeAccount } from './simulationModeSafeAccount.js'
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
@@ -51,20 +52,7 @@ export type SafeTransactionConfirmationPreparation = {
  */
 async function isSimulationModeSafeExecution(ethereum: EthereumClientService, transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
 	if (!isSafeExecutableRequestFromActiveAddress(transactionParams, activeAddress)) return false
-	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
-	if (!addressBookEntries.some((entry) => entry.type === 'safe' && entry.address === activeAddress)) return false
-	try {
-		await getSafeContractSnapshot(ethereum, activeAddress)
-		return true
-	} catch (error) {
-		if (!isSafeContractValidationFailure(error)) throw error
-		await reportLocalRecovery(error, {
-			code: 'simulated_safe_execution_unavailable',
-			message: 'Simulating the Gnosis Safe\'s transaction as an ordinary transaction.',
-			details: error instanceof Error ? error.stack : undefined,
-		})
-		return false
-	}
+	return await isSimulationModeSafeAccount(ethereum, activeAddress)
 }
 
 export async function prepareSafeTransactionConfirmation(
@@ -283,7 +271,7 @@ async function createSafeSigningRequestForTransaction(
 
 	const { safeState, storedStack } = reconciledStoredSafeState
 	const firstUncommittedNonce = safeState.nonce + BigInt(storedStack?.transactions.length ?? 0)
-	const pendingSafeTransactionNonces = new Set((await getPendingTransactionsAndMessages()).flatMap((pending) => {
+	const pendingSafeTransactionNonces = new Set((await getPendingTransactionsAndMessagesExceptBatches()).flatMap((pending) => {
 		const flow = getSafePendingFlow(pending)
 		if (flow?.kind !== 'proposal') return []
 		const pendingRequest = flow.pending.safeTransaction

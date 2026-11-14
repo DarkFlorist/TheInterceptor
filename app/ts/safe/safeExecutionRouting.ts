@@ -3,9 +3,9 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { EthereumUnsignedTransaction } from '../types/wire-types.js'
-import type { SafeEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntry, SafeEntry } from '../types/addressBookTypes.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { createSafeContractValidationFailure, getSafeContractSnapshot } from './safeCore.js'
+import { createSafeContractValidationFailure, getSafeContractSnapshot, isSafeContractValidationFailure } from './safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from './safeExecution.js'
 
 const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
@@ -37,7 +37,24 @@ export function getSafeUnsupportedFormedTransactionReason(transaction: EthereumU
 	return undefined
 }
 
-// Whether a request is one the Safe at activeAddress can make through execTransaction as the sender: a supported request shape whose `from`, or else the active address, is the active address. Whether activeAddress is a configured, supported Gnosis Safe is the caller's to check.
+// Whether the simulation runs the transactions an account sends through the Gnosis Safe it is: a Gnosis Safe among the address book entries of the client's chain ('safe'), deployed with a version Interceptor supports, or else why not. A Safe that is configured but not deployed or not supported ('unsupportedSafe') carries its validation failure, so the caller can record the fallback; this layer decides only, without writing diagnostics or reading extension storage.
+export type SimulationModeSafeAccount =
+	| { readonly kind: 'safe' }
+	| { readonly kind: 'notConfiguredSafe' }
+	| { readonly kind: 'unsupportedSafe', readonly validationFailure: unknown }
+
+export async function getSimulationModeSafeAccount(ethereum: EthereumClientService, chainAddressBookEntries: readonly AddressBookEntry[], account: bigint): Promise<SimulationModeSafeAccount> {
+	if (!chainAddressBookEntries.some((entry) => entry.type === 'safe' && entry.address === account)) return { kind: 'notConfiguredSafe' }
+	try {
+		await getSafeContractSnapshot(ethereum, account)
+		return { kind: 'safe' }
+	} catch (error) {
+		if (!isSafeContractValidationFailure(error)) throw error
+		return { kind: 'unsupportedSafe', validationFailure: error }
+	}
+}
+
+// Whether a request is one the Safe at activeAddress can make through execTransaction as the sender: a supported request shape whose `from`, or else the active address, is the active address. Whether activeAddress is a configured, supported Gnosis Safe is the caller's to check (isSimulationModeSafeAccount).
 export function isSafeExecutableRequestFromActiveAddress(transactionParams: SendTransactionParams | SendRawTransactionParams, activeAddress: bigint) {
 	if (getSafeUnsupportedRequestReason(transactionParams) !== undefined) return false
 	// Already excluded as 'raw-transaction'; repeated so TypeScript narrows the request to eth_sendTransaction.

@@ -6,7 +6,7 @@ import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addr
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
-import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { PendingAccessRequests, PendingTransactionOrSignableMessage, WalletSendCallsBatchIdRecord } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
@@ -144,8 +144,10 @@ const LocalStorageKey = funtypes.Union(
 
 const LocalStorageItems2Runtype: funtypes.Partial<{
 	pendingTransactionsAndMessages: funtypes.ReadonlyArray<typeof PendingTransactionOrSignableMessage>
+	walletSendCallsBatchIds: funtypes.ReadonlyArray<typeof WalletSendCallsBatchIdRecord>
 }, true> = funtypes.ReadonlyPartial({
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
+	walletSendCallsBatchIds: funtypes.ReadonlyArray(WalletSendCallsBatchIdRecord),
 })
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2Runtype>
 const LocalStorageItems2: typeof LocalStorageItems2Runtype = LocalStorageItems2Runtype
@@ -153,6 +155,7 @@ const LocalStorageItems2: typeof LocalStorageItems2Runtype = LocalStorageItems2R
 type LocalStorageKey2 = funtypes.Static<typeof LocalStorageKey2>
 const LocalStorageKey2 = funtypes.Union(
 	funtypes.Literal('pendingTransactionsAndMessages'),
+	funtypes.Literal('walletSendCallsBatchIds'),
 )
 
 // these methods are split to 1 and 2 to make the funtypes types simpler
@@ -168,6 +171,19 @@ export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | Loc
 		if (!(error instanceof funtypes.ValidationError)) throw error
 		return { success: false as const, error }
 	}
+}
+
+// The wallet_sendCalls batch id records, parsed one by one, so a corrupt record is dropped on its own and every record that still holds an id for a queued or approved batch survives.
+export async function browserStorageLocalGetWalletSendCallsBatchIds(): Promise<{ readonly records: readonly WalletSendCallsBatchIdRecord[], readonly droppedCorruptRecords: number }> {
+	const { walletSendCallsBatchIds: storedRecords } = await browser.storage.local.get('walletSendCallsBatchIds')
+	const stored: unknown = storedRecords
+	if (stored === undefined) return { records: [], droppedCorruptRecords: 0 }
+	if (!Array.isArray(stored)) return { records: [], droppedCorruptRecords: 1 }
+	const records = stored.flatMap((record: unknown) => {
+		const parsed = WalletSendCallsBatchIdRecord.safeParse(record)
+		return parsed.success ? [parsed.value] : []
+	})
+	return { records, droppedCorruptRecords: stored.length - records.length }
 }
 
 export async function browserStorageLocalSet2(items: LocalStorageItems2) {

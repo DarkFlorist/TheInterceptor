@@ -5,7 +5,7 @@ import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, 
 import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, selectAddressToMakeRich, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
@@ -13,21 +13,23 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type InterceptorStackOperation, type InterceptorTransactionStack, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransaction, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
-import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
+import { getSettings, getWethForChainId } from './settings.js'
+import { getSimulationSettingsSnapshot, type SimulationSettingsSnapshot } from './storedSettings.js'
+import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringifyJSONWithBigInts, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
 import { getInterceptorTransactionStack, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
+import { serialize } from '../types/wire-types.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -35,7 +37,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
+import { type ActiveStackContext, getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -47,26 +49,47 @@ const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bi
 	)
 }
 
-export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
+const selectAddressesBeingMadeRich = (settings: Settings, makeCurrentAddressRich: boolean, fixedAddressRichList: SimulationSettingsSnapshot['fixedAddressRichList']) => {
 	if (!settings.simulationMode) return []
-	const currentAddressBeingRich = await getAddressToMakeRich(settings)
-	const makeRichAddressList = await getFixedAddressRichList()
-	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
+	const currentAddressBeingRich = selectAddressToMakeRich(settings, makeCurrentAddressRich)
+	return [...fixedAddressRichList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
-	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? getSettings(),
-		getPreSimulationBlockTimeManipulation()
-	])
-	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const stack = await getInterceptorTransactionStack()
+// Everything getSimulationInputForStack reads: the stack and the values derived from one settings snapshot that decide the input. It holds nothing else, so unrelated settings such as website access stay out of it.
+export type StackSimulationContext = {
+	readonly stack: InterceptorTransactionStack
+	readonly chainId: bigint
+	readonly activeStackContext: ActiveStackContext
+	readonly preSimulationBlockTimeManipulation: BlockTimeManipulation
+	readonly richAddresses: readonly bigint[]
+}
+
+export const toStackSimulationContext = (snapshot: SimulationSettingsSnapshot, stack: InterceptorTransactionStack): StackSimulationContext => ({
+	stack,
+	chainId: snapshot.settings.activeRpcNetwork.chainId,
+	activeStackContext: getActiveStackContext(snapshot.settings),
+	preSimulationBlockTimeManipulation: snapshot.preSimulationBlockTimeManipulation,
+	richAddresses: selectAddressesBeingMadeRich(snapshot.settings, snapshot.makeCurrentAddressRich, snapshot.fixedAddressRichList),
+})
+
+// Every simulation input is built this way: the settings in one storage call, then the stack. The snapshot is returned too, for callers that need more of the settings than the input does.
+export const captureStackSimulationContext = async () => {
+	const snapshot = await getSimulationSettingsSnapshot()
+	return { snapshot, context: toStackSimulationContext(snapshot, await getInterceptorTransactionStack()) }
+}
+
+// Identifies the simulation input built from the context with appendedOperations after the stack: a hash of that input itself, serialized whole. A wallet_sendCalls preview hashes the input it simulated, and approval hashes the input it would commit, so approval sees exactly whether the batch would now run on anything else. It is derived from what is simulated, not from a list of what the input depends on, so any change that changes the input, including through a setting added later, changes it, and one that does not leaves it unchanged. getSimulationInputHash identifies the input for caching and leaves out each transaction's simulation options (such as running it through a Gnosis Safe), which change what an approval commits, so it is not used here.
+export function getStackSimulationInputFingerprint(context: StackSimulationContext, appendedOperations: readonly InterceptorStackOperation[]) {
+	return keccak256(stringToBytes(stringifyJSONWithBigInts(serialize(SimulationStateInput, getSimulationInputForStack(context, appendedOperations)))))
+}
+
+// Converts the stack, followed by appendedOperations, into simulation input: consecutive transactions share a block until a message, a time manipulation or a change of base fee mode starts the next one. Operations previewed as appendedOperations therefore land exactly where approval adds them to the stack. With openBlockForNextTransaction the input ends with the block that a further transaction would join, even while that block is still empty, so the transaction can be estimated where approval would add it.
+export function getSimulationInputForStack(context: StackSimulationContext, appendedOperations: readonly InterceptorStackOperation[] = [], openBlockForNextTransaction = false): SimulationStateInput {
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
-	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
+	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(context.richAddresses)
+	let previousBlockTimeManipulation = context.activeStackContext.simulationMode ? context.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
@@ -84,14 +107,14 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		currentBlockSimulateWithZeroBaseFee = false
 	}
 
-	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
+	const operations = getOperationsForActiveStackContext({ operations: [...context.stack.operations, ...appendedOperations] }, context.activeStackContext)
 	for (const operation of operations) {
 		switch(operation.type) {
 			case 'Transaction': {
 				const simulationOptions = operation.preSimulationTransaction.simulationOptions
 				if (
 					simulationOptions?.requiredChainId !== undefined
-					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
+					&& simulationOptions.requiredChainId !== context.chainId
 				) break
 				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
 				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
@@ -115,8 +138,11 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			default: assertNever(operation)
 		}
 	}
+	// A further transaction without simulation options closes a block of zero base fee transactions, as in the Transaction case above.
+	if (openBlockForNextTransaction && currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee) pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
 	if (
-		currentBlockTransactions.length > 0
+		openBlockForNextTransaction
+		|| currentBlockTransactions.length > 0
 		|| currentBlockSignedMessages.length > 0
 		|| Object.keys(currentBlockStateOverrides).length > 0
 	) {
@@ -131,6 +157,8 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
+export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => getSimulationInputForStack((await captureStackSimulationContext()).context)
+
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
@@ -140,13 +168,12 @@ export type SimulationSnapshot = {
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
 export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
-	const settings = await getSettings()
-	const richAddresses = await getAddressesbeingMadeRich(settings)
+	const { snapshot, context } = await captureStackSimulationContext()
 	return {
-		activeRpcNetwork: settings.activeRpcNetwork,
-		activeStackContext: getActiveStackContext(settings),
-		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
-		numberOfAddressesMadeRich: richAddresses.length,
+		activeRpcNetwork: snapshot.settings.activeRpcNetwork,
+		activeStackContext: context.activeStackContext,
+		simulationStateInput: getSimulationInputForStack(context),
+		numberOfAddressesMadeRich: context.richAddresses.length,
 	}
 }
 
@@ -269,13 +296,26 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	)
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+// A vote awaiting confirmation, sent on its own or as one call of a wallet_sendCalls batch. Its calldata is only known once the vote has been prepared for simulation, and its proposal can only be looked up on the network the vote was prepared for.
+export type PendingGovernanceVote = { readonly status: 'Prepared', readonly voteTransaction: WebsiteCreatedEthereumTransaction } | { readonly status: 'StillSimulating' } | { readonly status: 'PreparedForOtherNetwork' }
+
+// The vote of a prepared transaction, for every kind of confirmation that holds one. The same governance address can hold another contract, or another proposal with the same id, on another network, so a vote prepared for another network than the client's is not simulated with that client. A legacy transaction prepared without a chain id is valid on every network.
+export const getPreparedGovernanceVote = (ethereum: EthereumClientService, voteTransaction: WebsiteCreatedEthereumTransaction): PendingGovernanceVote => {
+	const voteChainId = voteTransaction.transaction.chainId
+	return voteChainId === undefined || voteChainId === ethereum.getChainId() ? { status: 'Prepared', voteTransaction } : { status: 'PreparedForOtherNetwork' }
+}
+
+// The proposal execution is simulated on top of the current simulation stack, without the vote itself, so a vote inside a batch gets the same preview as the same vote sent on its own.
+export const simulateGovernanceContractExecution = async (pendingVote: PendingGovernanceVote, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		// identifies compound governane call and performs simulation if the vote passes
-		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
-		const fourByte = get4Byte(pendingTransaction.transactionToSimulate.transaction.input)
-		const fourByteString = get4ByteString(pendingTransaction.transactionToSimulate.transaction.input)
+		if (pendingVote.status === 'StillSimulating') return returnError('Still simulating the voting transaction')
+		// The same governance address can hold another contract, or another proposal with the same id, on the active network.
+		if (pendingVote.status === 'PreparedForOtherNetwork') return returnError('The vote was prepared for another network. Switch back to that network to simulate the proposal execution.')
+		const { voteTransaction } = pendingVote
+		const fourByte = get4Byte(voteTransaction.transaction.input)
+		const fourByteString = get4ByteString(voteTransaction.transaction.input)
 		if (fourByte === undefined || fourByteString === undefined) return returnError('Could not identify the 4byte signature')
 		const explanation = FourByteExplanations[fourByte]
 		if ((explanation !== 'Cast Vote'
@@ -286,12 +326,12 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			&& explanation !== 'Cast Vote with Reason And Additional Info by Signature')
 		) return returnError('Could not identify the transaction as a vote')
 
-		if (pendingTransaction.transactionToSimulate.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
-		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(pendingTransaction.transactionToSimulate.transaction.input))
+		if (voteTransaction.transaction.to === null) return returnError('The transaction creates a contract instead of casting a vote')
+		const params = decodeCallDataLoose(CompoundGovernanceAbi, dataStringWith0xStart(voteTransaction.transaction.input))
 		if (params === undefined) return returnError('Could not find the voting function')
 		const { proposalId: rawProposalId } = params.namedArgs
 		const proposalId = funtypes.BigInt.parse(rawProposalId)
-		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
+		const addr = await identifyAddress(ethereum, undefined, voteTransaction.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
@@ -302,10 +342,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
-			website: pendingTransaction.transactionToSimulate.website,
+			website: voteTransaction.website,
 			created: new Date(),
-			originalRequestParameters: pendingTransaction.originalRequestParameters,
-			transactionIdentifier: pendingTransaction.transactionIdentifier,
+			originalRequestParameters: voteTransaction.originalRequestParameters,
+			transactionIdentifier: voteTransaction.transactionIdentifier,
 		}
 		const governanceExecutionSimulationInput = getGovernanceExecutionSimulationInput(
 			simulationInput,

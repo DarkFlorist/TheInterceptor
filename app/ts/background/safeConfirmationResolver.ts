@@ -1,12 +1,12 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingTransactionOrSignableMessageExceptBatch } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState } from './storageVariables.js'
+import { getPendingTransactionsAndMessagesExceptBatches, getSafeTransactionStacks, getTabState } from './storageVariables.js'
 import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning } from '../safe/safeCore.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
@@ -53,7 +53,7 @@ export type RefreshedSafeSignerSelection = {
 export type SafeConfirmationResolution =
 	| {
 		readonly status: 'ready'
-		readonly pending: PendingTransactionOrSignableMessage
+		readonly pending: PendingTransactionOrSignableMessageExceptBatch
 		readonly pendingChanged: boolean
 		readonly signerFacingRequest: SignMessageParams | undefined
 	}
@@ -63,7 +63,7 @@ export type SafeConfirmationResolution =
 	}
 	| {
 		readonly status: 'refreshed'
-		readonly pending: PendingTransactionOrSignableMessage
+		readonly pending: PendingTransactionOrSignableMessageExceptBatch
 	}
 
 export async function getSafeSignerMismatchApprovalStatus(
@@ -99,7 +99,7 @@ export async function getSafeSignerMismatchApprovalStatus(
 	)
 }
 
-export function getPendingSafeSignerAddress(pending: PendingTransactionOrSignableMessage) {
+export function getPendingSafeSignerAddress(pending: PendingTransactionOrSignableMessageExceptBatch) {
 	const flow = getSafePendingFlow(pending)
 	return flow === undefined ? undefined : getSafeFlowSignerAddress(flow)
 }
@@ -170,7 +170,7 @@ export async function createSafeMessageCoSignSnapshot(
 
 export async function validateSafeMessageCoSignature(
 	ethereum: EthereumClientService,
-	pending: PendingTransactionOrSignableMessage,
+	pending: PendingTransactionOrSignableMessageExceptBatch,
 	signerReply: unknown,
 ) {
 	const flow = getSafePendingFlow(pending)
@@ -213,7 +213,7 @@ async function assertSafeProposalReviewPrerequisites(
 }
 
 async function getSafeSignerSelectionError(
-	pending: PendingTransactionOrSignableMessage,
+	pending: PendingTransactionOrSignableMessageExceptBatch,
 	refreshedSafeSignerSelection?: RefreshedSafeSignerSelection,
 ) {
 	if (pending.simulationMode) return undefined
@@ -253,7 +253,7 @@ async function refreshSafeProposalNonce(
 		? undefined
 		: reconcileSafeTransactionStack(storedStackBeforeReconciliation, safeState.nonce)
 	const firstUncommittedNonce = safeState.nonce + BigInt(storedStack?.transactions.length ?? 0)
-	const precedingPendingCount = (await getPendingTransactionsAndMessages()).filter((candidate) => {
+	const precedingPendingCount = (await getPendingTransactionsAndMessagesExceptBatches()).filter((candidate) => {
 		const candidateFlow = getSafePendingFlow(candidate)
 		if (candidateFlow?.kind !== 'proposal') return false
 		const candidateRequest = candidateFlow.pending.safeTransaction
@@ -334,7 +334,7 @@ async function resolveSafeCoSignConfirmation(
 	refreshedSafeSignerSelection?: RefreshedSafeSignerSelection,
 ): Promise<SafeConfirmationResolution> {
 	let flow = flowInput
-	let pending: PendingTransactionOrSignableMessage = flow.pending
+	let pending: PendingTransactionOrSignableMessageExceptBatch = flow.pending
 	let pendingChanged = false
 	const selectedSigner = refreshedSafeSignerSelection?.verificationError === undefined
 		? refreshedSafeSignerSelection?.selectedSigner
@@ -374,7 +374,7 @@ async function resolveSafeProposalConfirmation(
 	refreshedSafeSignerSelection?: RefreshedSafeSignerSelection,
 ): Promise<SafeConfirmationResolution> {
 	let flow = flowInput
-	let pending: PendingTransactionOrSignableMessage = flow.pending
+	let pending: PendingTransactionOrSignableMessageExceptBatch = flow.pending
 	let pendingChanged = false
 	const selectedSigner = refreshedSafeSignerSelection?.verificationError === undefined
 		? refreshedSafeSignerSelection?.selectedSigner
@@ -429,7 +429,7 @@ async function resolveSafeProposalConfirmation(
 
 export async function resolveSafeConfirmation(
 	ethereum: EthereumClientService,
-	pending: PendingTransactionOrSignableMessage,
+	pending: PendingTransactionOrSignableMessageExceptBatch,
 	action: TransactionConfirmationAction,
 	refreshedSafeSignerSelection?: RefreshedSafeSignerSelection,
 ): Promise<SafeConfirmationResolution> {

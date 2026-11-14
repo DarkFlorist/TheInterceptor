@@ -142,7 +142,7 @@ const browserMock = createBrowserMock()
 
 async function loadModules() {
 	const popupMessageHandlers = await import('../../app/ts/background/popupMessageHandlers.js')
-	const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const confirmationDialogUpdates = await import('../../app/ts/background/confirmationDialogUpdates.js')
 	const ethereumClientService = await import('../../app/ts/simulation/services/EthereumClientService.js')
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
 	const settings = await import('../../app/ts/background/settings.js')
@@ -153,7 +153,7 @@ async function loadModules() {
 
 	return {
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
-		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
+		updateConfirmTransactionView: confirmationDialogUpdates.updateConfirmTransactionView,
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
@@ -457,7 +457,7 @@ describe('SafeTx confirm transaction metadata', () => {
 		let reportedError: unknown
 		let reportCalls = 0
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, {
 			visualisation: {
 				async update() { throw refreshError },
 				async getStored() { return storedVisualisation },
@@ -520,7 +520,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)],
 		})
 
-		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
 		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)

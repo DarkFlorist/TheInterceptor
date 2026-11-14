@@ -2,19 +2,19 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalGetWalletSendCallsBatchIds, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingAccessRequests, PendingTransactionOrSignableMessage, PendingTransactionOrSignableMessageExceptBatch, WalletSendCallsBatchIdRecord } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
-import { modifyObject } from '../utils/typescript.js'
+import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { getSimulationSettingsSnapshot, type SimulationSettingsSnapshot } from './storedSettings.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -53,10 +54,50 @@ async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonl
 	return []
 }
 
+// Each record is parsed on its own, so a corrupt record is dropped without the others: only the ids that corrupt records held are released, and every batch whose record is intact keeps its id and stays findable by wallet_getCallsStatus.
+export async function getWalletSendCallsBatchIds(): Promise<readonly WalletSendCallsBatchIdRecord[]> {
+	const { records, droppedCorruptRecords } = await browserStorageLocalGetWalletSendCallsBatchIds()
+	if (droppedCorruptRecords > 0) console.warn(`Dropped ${ droppedCorruptRecords.toString() } corrupt wallet_sendCalls batch id record(s).`)
+	return records
+}
+
+type PendingTransactionsAndWalletSendCallsBatchIds = {
+	readonly pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[]
+	readonly walletSendCallsBatchIds: readonly WalletSendCallsBatchIdRecord[]
+}
+
+// The confirmation queue and the wallet_sendCalls batch id records as of one storage read.
+export async function getPendingTransactionsAndWalletSendCallsBatchIds(): Promise<PendingTransactionsAndWalletSendCallsBatchIds> {
+	const result = await browserStorageLocalGet2Result(['pendingTransactionsAndMessages', 'walletSendCallsBatchIds'])
+	if (result.success) return { pendingTransactionsAndMessages: result.value.pendingTransactionsAndMessages ?? [], walletSendCallsBatchIds: result.value.walletSendCallsBatchIds ?? [] }
+	// Either value is corrupt: both are read again while no write can come between, recovering a corrupt queue as getPendingTransactionsAndMessages does.
+	return await pendingTransactionsSemaphore.execute(async () => ({ pendingTransactionsAndMessages: await readPendingTransactionsAndMessagesWithRecovery(), walletSendCallsBatchIds: await getWalletSendCallsBatchIds() }))
+}
+
+// Updates the confirmation queue and the wallet_sendCalls batch id records in one storage write, so a batch and its id record are added and removed together (see walletSendCallsBatchIds.ts).
+export async function updatePendingTransactionsAndWalletSendCallsBatchIds(update: (current: PendingTransactionsAndWalletSendCallsBatchIds) => Promise<PendingTransactionsAndWalletSendCallsBatchIds>) {
+	await pendingTransactionsSemaphore.execute(async () => {
+		const pendingTransactionsAndMessages = await readPendingTransactionsAndMessagesWithRecovery()
+		await browserStorageLocalSet2(await update({ pendingTransactionsAndMessages, walletSendCallsBatchIds: await getWalletSendCallsBatchIds() }))
+	})
+}
+
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	const result = await readPendingTransactionsAndMessages()
 	if (result.success) return result.value
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
+}
+
+// The confirmations of the single-transaction, message and Gnosis Safe flows, without wallet_sendCalls batches. Every kind of confirmation is sorted here, so a new kind does not compile until it is.
+export async function getPendingTransactionsAndMessagesExceptBatches(): Promise<readonly PendingTransactionOrSignableMessageExceptBatch[]> {
+	return (await getPendingTransactionsAndMessages()).flatMap((pending): readonly PendingTransactionOrSignableMessageExceptBatch[] => {
+		switch (pending.type) {
+			case 'Transaction':
+			case 'SignableMessage': return [pending]
+			case 'TransactionBatch': return []
+			default: return assertNever(pending)
+		}
+	})
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
@@ -390,16 +431,42 @@ export async function addEnsLabelHash(label: string) {
 	})
 }
 
+// The simulation stack's write lock. Lock order: code holding the confirmation queue's lock may read the stack, as addPendingTransactionBatch does, but nothing holding this lock takes the queue's lock. Every body run under it is this module's own: decisions passed in are synchronous, so no caller can add a read of the queue, or any other wait, inside it.
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
-export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+// What an update of the simulation stack decides after reading it: the stack to write, or a refusal that leaves the stack as it is.
+type InterceptorTransactionStackUpdate<Refusal> =
+	| { readonly kind: 'write', readonly stack: InterceptorTransactionStack }
+	| { readonly kind: 'refuse', readonly refusal: Refusal }
+
+// The one critical section that writes the simulation stack: it reads the stack, then the inputs the decision needs with this module's own readInputs, lets decide pick what to write, checks the transaction ids and writes, all inside the stack's write lock. decide is synchronous, so no other stack update comes between the reads and the write, nothing is awaited between the last read and the write, and the lock is never held for a caller's I/O.
+async function updateInterceptorTransactionStackOrRefuse<Inputs, Refusal>(readInputs: () => Promise<Inputs>, decide: (prevStack: InterceptorTransactionStack, inputs: Inputs) => InterceptorTransactionStackUpdate<Refusal>): Promise<InterceptorTransactionStackUpdate<Refusal>> {
 	return await transactionStateSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
-		const interceptorTransactionStack = updateFunc(prevStack)
-		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
-		return interceptorTransactionStack
+		const update = decide(prevStack, await readInputs())
+		if (update.kind === 'refuse') return update
+		assertUniqueInterceptorTransactionIds(update.stack)
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, update.stack)
+		return update
 	})
+}
+
+export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
+	const update = await updateInterceptorTransactionStackOrRefuse<undefined, never>(async () => undefined, (prevStack) => ({ kind: 'write', stack: updateFunc(prevStack) }))
+	if (update.kind === 'refuse') return assertNever(update.refusal)
+	return update.stack
+}
+
+// Why a conditional stack write was refused. A refusal is a plain object with a reason, which a promise is not, so a refusal decision cannot be async.
+export type InterceptorTransactionStackRefusal = { readonly reason: string }
+
+// Writes updateFunc's stack unless getRefusal refuses it. getRefusal decides synchronously on the current stack and on a simulation settings snapshot that this module reads under the stack's write lock right before the write, so a settings change saved after that read counts as made after the write. Anything else the decision needs is read by the caller before calling and passed in through the closure as data.
+export async function updateInterceptorTransactionStackUnlessRefused<Refusal extends InterceptorTransactionStackRefusal>(getRefusal: (currentStack: InterceptorTransactionStack, settingsSnapshot: SimulationSettingsSnapshot) => Refusal | undefined, updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<Refusal | undefined> {
+	const update = await updateInterceptorTransactionStackOrRefuse(getSimulationSettingsSnapshot, (prevStack, settingsSnapshot): InterceptorTransactionStackUpdate<Refusal> => {
+		const refusal = getRefusal(prevStack, settingsSnapshot)
+		return refusal === undefined ? { kind: 'write', stack: updateFunc(prevStack) } : { kind: 'refuse', refusal }
+	})
+	return update.kind === 'refuse' ? update.refusal : undefined
 }
 
 export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
