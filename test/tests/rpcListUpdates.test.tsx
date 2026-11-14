@@ -46,7 +46,7 @@ function getMessageMethod(message: unknown) {
 	return message.method
 }
 
-// The background answers popup_requestRpcList by broadcasting popup_update_rpc_list; the mock answers synchronously, so a page that requested before subscribing would miss the answer.
+// The background answers popup_requestRpcList by broadcasting popup_requestRpcListReply; the mock answers synchronously, so a page that requested before subscribing would miss the answer.
 function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequestAnswer }: {
 	replyToMessage?: (message: unknown) => unknown
 	rpcListRequestAnswer: RpcEntries | undefined
@@ -58,7 +58,7 @@ function installPopupBrowserMock({ replyToMessage = () => undefined, rpcListRequ
 		if (getMessageMethod(message) !== 'popup_requestRpcList') return replyToMessage(message)
 		rpcListRequestCount += 1
 		if (rpcListRequestAnswer === undefined) return undefined
-		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_update_rpc_list', data: rpcListRequestAnswer })
+		const answer = MessageToPopup.serialize({ role: 'all', method: 'popup_requestRpcListReply', data: rpcListRequestAnswer })
 		for (const listener of [...listeners]) listener(answer)
 		return undefined
 	}

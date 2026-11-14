@@ -736,6 +736,13 @@ const UpdateRPCList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
+// Answers popup_requestRpcList. It is separate from popup_update_rpc_list, which means the stored list changed, so listeners that react to changes (Home's live data) ignore a page merely reading the list.
+type RpcListRequestReply = funtypes.Static<typeof RpcListRequestReply>
+const RpcListRequestReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestRpcListReply'),
+	data: RpcEntries,
+})
+
 export { ChangeActiveChain } from './popupSettingsRequests.js'
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
@@ -985,6 +992,7 @@ const messageToPopupPayloadCodecs: [
 	typeof ImportSettingsReply,
 	typeof ActiveSigningAddressChanged,
 	typeof UpdateRPCList,
+	typeof RpcListRequestReply,
 	typeof SimulationUpdateStartedOrEnded,
 	typeof PartiallyParsedSimulateExecutionReply,
 	typeof SettingsOpenedReply,
@@ -1012,6 +1020,7 @@ const messageToPopupPayloadCodecs: [
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,
 	UpdateRPCList,
+	RpcListRequestReply,
 	SimulationUpdateStartedOrEnded,
 	PartiallyParsedSimulateExecutionReply,
 	SettingsOpenedReply,

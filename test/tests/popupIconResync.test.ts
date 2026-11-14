@@ -688,6 +688,49 @@ describe('popup icon sync', () => {
 		}
 	})
 
+	test('refetches home data when the RPC list changes but not when another page only reads it', async () => {
+		const dom = installDomMock()
+		const { messageListener, sentMessages } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1),
+				}, undefined, () => undefined)
+			})
+			const isAnyHomeDataRequest = (message: unknown) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'
+			sentMessages.splice(0)
+
+			// Every page that shows RPC connections asks for the list when it opens; the answer is broadcast to all open windows, Home included.
+			await act(() => {
+				listener?.({ role: 'all', method: 'popup_requestRpcListReply', data: [] }, undefined, () => undefined)
+			})
+			assert.equal(sentMessages.some(isAnyHomeDataRequest), false)
+
+			await act(() => {
+				listener?.({ role: 'all', method: 'popup_update_rpc_list', data: [] }, undefined, () => undefined)
+			})
+			assert.equal(sentMessages.some(isAnyHomeDataRequest), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('requests cached export availability without a full refresh after live simulation updates', async () => {
 		const dom = installDomMock()
 		const { messageListener, sentMessages } = installBrowserMock()

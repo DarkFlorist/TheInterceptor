@@ -19,14 +19,14 @@ const rpcListRepository = createStoredValueRepository<RpcEntries>({
 // Writes with their broadcast, and request reads with their broadcast, run one at a time, so pages receive lists in write order and a request reply is never older than an already broadcast write.
 const rpcListBroadcastSemaphore = new Semaphore(1)
 
-const broadcastRpcList = async (rpcEntries: RpcEntries) => await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: rpcEntries })
+const broadcastRpcListChange = async (rpcEntries: RpcEntries) => await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: rpcEntries })
 
 export const getRpcList = rpcListRepository.get
 
 export async function setRpcListAndNotifyPages(rpcEntries: RpcEntries) {
 	await rpcListBroadcastSemaphore.execute(async () => {
 		await rpcListRepository.set(rpcEntries)
-		await broadcastRpcList(rpcEntries)
+		await broadcastRpcListChange(rpcEntries)
 	})
 }
 
@@ -38,13 +38,13 @@ export async function promoteRpcAsPrimaryAndNotifyPages(rpcNetwork: RpcNetwork) 
 			return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
 		})
 		const changed = current.some((rpc, index) => rpc.primary !== previous[index]?.primary)
-		if (changed) await broadcastRpcList(current)
+		if (changed) await broadcastRpcListChange(current)
 	})
 }
 
-// Answers popup_requestRpcList with a broadcast rather than a direct reply, so the requesting page reads the list through the same ordered channel as later writes.
+// Answers popup_requestRpcList with a broadcast rather than a direct reply, so the requesting page reads the list through the same ordered channel as later writes. The answer is popup_requestRpcListReply, not popup_update_rpc_list: the list did not change, so change listeners such as Home's live data must not refetch.
 export async function broadcastCurrentRpcList() {
-	await rpcListBroadcastSemaphore.execute(async () => await broadcastRpcList(await getRpcList()))
+	await rpcListBroadcastSemaphore.execute(async () => await sendPopupMessageToOpenWindows({ method: 'popup_requestRpcListReply', data: await getRpcList() }))
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
