@@ -12,7 +12,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
+import { captureSimulationSnapshotForPreview, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
@@ -583,7 +583,7 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const paidByExecutor = gasPayment !== 'transaction-sender'
 	const simulationState = simulationMode || paidByExecutor
-		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
+		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshotForPreview({ kind: 'transaction-formation', gasPayment }))
 		: PASSTHROUGH_STATE
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')

@@ -11,6 +11,9 @@ import { resetSimulationStateFromConfig } from './activeSettings.js'
 
 const simulationAbortController = new AbortController()
 
+export const isExtensionPageMessageSender = (sender: { url?: string }, extensionBaseUrl: string) =>
+	sender.url?.startsWith(extensionBaseUrl) === true
+
 export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationServicesOwner: SimulationServicesOwner,

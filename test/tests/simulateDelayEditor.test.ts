@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import type { BlockTimeManipulation, SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
+import { type BlockTimeManipulation, createSimulatedExecutionInput, type SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 type StorageState = Record<string, unknown>
@@ -256,7 +256,8 @@ describe('eth_simulateV1 block timestamps', () => {
 	const getCurrentStackBlockTimeSteps = async () => {
 		const parentBlock = await ethereumClientService.getBlock(undefined, 1n)
 		if (parentBlock === null) throw new Error('missing parent block')
-		const prepared = await ethereumClientService.prepareEthSimulateV1Input(await getCurrentSimulationInput(), 1n, undefined)
+		// Only the block times matter here, so the stack's input runs without simulation overrides.
+		const prepared = await ethereumClientService.prepareEthSimulateV1Input(createSimulatedExecutionInput(await getCurrentSimulationInput()), 1n, undefined)
 		let previousTime = dateToBigintSeconds(parentBlock.timestamp)
 		return prepared.blockOverrides.map((blockOverride) => {
 			if (blockOverride.time === undefined) throw new Error('missing block time')

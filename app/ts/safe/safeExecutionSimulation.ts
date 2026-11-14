@@ -4,7 +4,7 @@ import { getGasEstimateFromSimulation } from '../simulation/services/simulationG
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { MutableStateOverrides } from '../types/ethSimulate-types.js'
-import { authorizesExecutedCall, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, getSimulationExecutionInputFromState, type PreSimulationTransaction, type ResolvedSimulationState, type SimulationExecutionInput, type SimulationInputTransaction, type SimulationStateInput, type TransactionSimulationOptions } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
 import { encodeAbiValues, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, generate256BitRandomBigInt, stringToUint8Array } from '../utils/bigint.js'
@@ -141,7 +141,7 @@ type SafeCallFields = Pick<PreSimulationTransaction, 'website' | 'created' | 'or
 export async function estimateSafeExecutionGas(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-	simulationInput: SimulationStateInput,
+	simulationInput: SimulationExecutionInput,
 	safeCallWithoutGas: DistributiveOmit<EthereumUnsignedTransaction, 'gas'>,
 	safeCallFields: SafeCallFields,
 ): Promise<{ error: ErrorWithCodeAndOptionalData } | { gas: bigint }> {
@@ -154,7 +154,7 @@ export async function estimateSafeExecutionGas(
 		simulationOptions: createSafeExecutionSimulationOptions(ethereum.getChainId()),
 	}
 	// appendTransactionsToInput puts the Safe's call alone in a new last block.
-	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+	const preparedInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput.value, [safeCall]), ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 	const lastBlock = last(preparedInput)
 	const executedTransaction = last(lastBlock?.transactions ?? [])?.executedTransaction
 	if (lastBlock === undefined || executedTransaction === undefined) throw new Error('The Gnosis Safe execution to estimate was not prepared.')
@@ -162,7 +162,8 @@ export async function estimateSafeExecutionGas(
 	let safeCallReverted = false
 	const simulateWithGasLimit = async (gasLimit: bigint) => {
 		const input = [...preparedInput.slice(0, -1), { ...lastBlock, transactions: [{ ...safeCall, executedTransaction: { ...executedTransaction, gas: gasLimit } }] }]
-		const result = last(last(await ethereum.simulate(input, parentBlock.number, requestAbortController))?.calls ?? [])
+		// The stack's captured initial account state (simulationOverrides) applies under the estimate too, merged per account with the approvals and executor funding of the first block.
+		const result = last(last(await ethereum.simulate({ ...simulationInput, value: input }, parentBlock.number, requestAbortController))?.calls ?? [])
 		safeCallReverted = result?.status === 'failure' && isSafeCallRevert(result.error, result.returnData)
 		return result
 	}
@@ -190,6 +191,6 @@ export const createSafeExecutionCallFormation = (ethereum: EthereumClientService
 	estimateGas: async (requestAbortController, simulationState, transaction, safeCallFields) => {
 		if (simulationState.kind === 'passthrough') throw new Error('Gnosis Safe transaction gas estimation requires the Interceptor simulator.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
-		return await estimateSafeExecutionGas(ethereum, requestAbortController, simulationState.value.simulationStateInput, transaction, safeCallFields)
+		return await estimateSafeExecutionGas(ethereum, requestAbortController, getSimulationExecutionInputFromState(simulationState.value), transaction, safeCallFields)
 	},
 })

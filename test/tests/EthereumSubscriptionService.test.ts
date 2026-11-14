@@ -316,7 +316,7 @@ const blockNumber = 8443561n
 				blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const simulationState = await createExecutionSimulationState(ethereum, undefined, simulationInput)
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, { kind: 'simulated', value: simulationInput, simulationOverrides: {} })
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			const matchingLog = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.ethSimulateV1CallResult.status === 'success'
 				? simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.ethSimulateV1CallResult.logs[0]
@@ -360,7 +360,7 @@ const blockNumber = 8443561n
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
 			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{ address: null }] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
-			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, { kind: 'simulated', value: createSimulationInput(21_000n, 0n, 1n), simulationOverrides: {} })
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
 			const firstChanges = await getEthFilterChanges(socket, filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
@@ -381,7 +381,7 @@ const blockNumber = 8443561n
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
 			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
-			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, { kind: 'simulated', value: createSimulationInput(21_000n, 0n, 1n), simulationOverrides: {} })
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			const resolvedSimulationState = toResolvedExecutionSimulationState(simulationState)
 
@@ -481,7 +481,7 @@ const blockNumber = 8443561n
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, { kind: 'simulated', value: splitSimulationInput, simulationOverrides: {} })
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState))
@@ -569,7 +569,7 @@ const blockNumber = 8443561n
 			for (const socket of sockets) {
 				await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
 			}
-			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, { kind: 'simulated', value: createSimulationInput(21_000n, 0n, 1n), simulationOverrides: {} })
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			let simulationStateRequests = 0
 

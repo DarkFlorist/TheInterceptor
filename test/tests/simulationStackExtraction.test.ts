@@ -6,6 +6,7 @@ import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messa
 import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
+import { addressString } from '../../app/ts/utils/bigint.js'
 
 const SENDER = 0x1000000000000000000000000000000000000001n
 const RECIPIENT = 0x2000000000000000000000000000000000000002n
@@ -14,6 +15,7 @@ const simulationStateWithBalanceBelowBaseFee: ResolvedSimulationState = {
 	kind: 'simulated',
 	value: {
 		success: true,
+		simulationOverrides: {},
 		simulationStateInput: [],
 		simulatedBlocks: [{
 			stateOverrides: {},
@@ -124,5 +126,31 @@ describe('simulation stack extraction', () => {
 			method: 'interceptor_getSimulationStack',
 			result: { version: '1.0.1', payload },
 		}))
+	})
+
+	test('version 2.0.0 reports captured initial overrides when the stack has no simulated blocks', () => {
+		if (simulationStateWithBalanceBelowBaseFee.kind !== 'simulated' || !simulationStateWithBalanceBelowBaseFee.value.success) throw new Error('Expected a successful simulated state')
+		const delegateClearingOverrides = { [addressString(SENDER)]: { code: new Uint8Array() } }
+		const emptyStackWithDelegateClearing: ResolvedSimulationState = {
+			kind: 'simulated',
+			value: { ...simulationStateWithBalanceBelowBaseFee.value, simulationOverrides: delegateClearingOverrides, simulatedBlocks: [] },
+		}
+		assert.deepEqual(getSimulatedStackV2(emptyStackWithDelegateClearing), { stateOverrides: delegateClearingOverrides, transactions: [] })
+	})
+
+	test('version 2.0.0 reports the first block overrides unchanged when they already include the initial overrides', () => {
+		if (simulationStateWithBalanceBelowBaseFee.kind !== 'simulated' || !simulationStateWithBalanceBelowBaseFee.value.success) throw new Error('Expected a successful simulated state')
+		const firstBlock = simulationStateWithBalanceBelowBaseFee.value.simulatedBlocks[0]
+		if (firstBlock === undefined) throw new Error('Expected a simulated block')
+		const firstBlockOverrides = { [addressString(SENDER)]: { balance: 5n, code: new Uint8Array() } }
+		const stackWithDelegateClearing: ResolvedSimulationState = {
+			kind: 'simulated',
+			value: {
+				...simulationStateWithBalanceBelowBaseFee.value,
+				simulationOverrides: { [addressString(SENDER)]: { code: new Uint8Array() } },
+				simulatedBlocks: [{ ...firstBlock, stateOverrides: firstBlockOverrides }],
+			},
+		}
+		assert.deepEqual(getSimulatedStackV2(stackWithDelegateClearing).stateOverrides, firstBlockOverrides)
 	})
 })

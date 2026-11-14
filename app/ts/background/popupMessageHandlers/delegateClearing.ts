@@ -1,0 +1,41 @@
+import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
+import type { SimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { Settings } from '../../types/interceptor-messages.js'
+import { isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
+import { getRpcNetworkChange, isSignerOnlyNetwork } from '../../utils/rpcNetworkChange.js'
+import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { bumpPopupRefreshGeneration } from '../popupRefreshGeneration.js'
+import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
+import { getSettings, setDelegateClearingEnabled } from '../settings.js'
+
+export async function requestDelegateClearing(settings: Settings, ethereum: EthereumClientService, address: bigint, chainId: bigint) {
+	const network = settings.activeRpcNetwork
+	// Endpoint identity comes from rpcNetworkChange.ts, so the hint is only read from the service that simulates the selected endpoint.
+	if (!settings.simulationMode || settings.activeSimulationAddress !== address || network.chainId !== chainId
+		|| isSignerOnlyNetwork(network) || getRpcNetworkChange(network, ethereum.getRpcEntry()).endpointChanged) {
+		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
+	}
+	try {
+		// The hint is the eth_getCode read the simulation makes, through the service's RPC response cache, so both see one block's code and a new block refreshes both.
+		const delegate = await ethereum.getDelegation(address, 'latest', undefined)
+		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
+	} catch (error) {
+		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })
+		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
+	}
+}
+
+export async function setDelegateClearing(settings: Settings, services: SimulationServices, address: bigint, chainId: bigint, enabled: boolean) {
+	const network = settings.activeRpcNetwork
+	const affectsActiveSimulation = settings.simulationMode && settings.activeSimulationAddress === address && network.chainId === chainId
+	if (enabled && !affectsActiveSimulation) {
+		return { method: 'popup_setDelegateClearing' as const, data: { ok: false as const, message: 'The active simulation account or network changed. Please try again.' } }
+	}
+	// The popup hint gates the option; saving the choice needs no RPC lookup.
+	const changed = await setDelegateClearingEnabled(address, chainId, enabled)
+	if (changed) {
+		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings(), popupRefreshGeneration: bumpPopupRefreshGeneration() })
+		if (affectsActiveSimulation) await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
+	}
+	return { method: 'popup_setDelegateClearing' as const, data: { ok: true as const, address, chainId, enabled } }
+}
