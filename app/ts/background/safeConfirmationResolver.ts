@@ -7,7 +7,7 @@ import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getPendingTransactionsAndMessagesExceptBatches, getSafeTransactionStacks, getTabState } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning } from '../safe/safeCore.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
@@ -203,6 +203,7 @@ async function assertSafeProposalReviewPrerequisites(
 	flow: SafeProposalFlow,
 ) {
 	const pending = flow.pending
+	assertSafeProposalChainMatchesConnectedNetwork(ethereum, pending.safeTransaction.safeTx)
 	if (pending.simulationMode) return undefined
 	if (pending.safeTransaction.reviewedSafeState === undefined) {
 		throw createSafeSignerSelectionFailure('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')

@@ -5,6 +5,7 @@ import './makeRichAddressSelection.suite.js'
 import './safeConfirmationFlows.suite.js'
 import './safeStackFlows.suite.js'
 import './stackSimulationContext.suite.js'
+import './confirmTransactionSimulationAbortOrder.suite.js'
 import './terminalReplyDelivery.suite.js'
 import './walletSendCallsConfirmation.suite.js'
 

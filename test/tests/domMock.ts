@@ -99,6 +99,7 @@ class TestElement extends TestNode {
 	onscroll: unknown = undefined
 	scrollTop = 0
 	attributes: AttributeMap = {}
+	isFocusedByPointer = false
 	readonly eventListeners = new Map<string, Set<(event: Event) => unknown>>()
 	style = {
 		setProperty: (name: string, value: string) => {
@@ -145,8 +146,26 @@ class TestElement extends TestNode {
 		if (event.bubbles && !event.cancelBubble && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
 		return !event.defaultPrevented
 	}
-	focus() { return undefined }
-	blur() { return undefined }
+	// focus stands for keyboard focus, which :focus-visible reports.
+	focus() {
+		this.ownerDocument.activeElement = this
+		this.isFocusedByPointer = false
+	}
+	// The events of a real click. As in a browser, focus only changes when the element did not have it, so an element with keyboard focus keeps :focus-visible through the click.
+	clickWithPointer() {
+		this.dispatchEvent(new Event('mousedown', { bubbles: true }))
+		if (this.ownerDocument.activeElement !== this) {
+			this.ownerDocument.activeElement = this
+			this.isFocusedByPointer = true
+			this.dispatchEvent(new Event('focusin', { bubbles: true }))
+		}
+		this.dispatchEvent(new Event('click', { bubbles: true }))
+	}
+	blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null }
+	matches(selector: string) {
+		if (selector !== ':focus-visible') throw new Error(`The DOM mock does not support matches(${ selector })`)
+		return this.ownerDocument.activeElement === this && !this.isFocusedByPointer
+	}
 	showPopover() { return undefined }
 	hidePopover() { return undefined }
 	togglePopover() { return undefined }
@@ -208,6 +227,9 @@ class TestDialogElement extends TestElement {
 
 class TestDocument {
 	body: TestElement
+	// Set by focus and cleared by blur. Unlike a browser, removing the focused element does not reset it, so code under test must also check that it is still connected.
+	activeElement: TestElement | null = null
+	readonly eventListeners = new Map<string, Set<(event: Event) => unknown>>()
 	readonly elementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
 	readonly dialogElementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
 
@@ -220,8 +242,20 @@ class TestDocument {
 		this.body = new this.elementConstructor(this, 'body')
 	}
 
-	addEventListener() { return undefined }
-	removeEventListener() { return undefined }
+	addEventListener(type: string, listener: (event: Event) => unknown) {
+		const listeners = this.eventListeners.get(type) ?? new Set()
+		listeners.add(listener)
+		this.eventListeners.set(type, listeners)
+	}
+
+	removeEventListener(type: string, listener: (event: Event) => unknown) {
+		this.eventListeners.get(type)?.delete(listener)
+	}
+
+	dispatchEvent(event: Event) {
+		for (const listener of this.eventListeners.get(event.type) ?? []) listener(event)
+		return !event.defaultPrevented
+	}
 
 	createElement(tagName: string) {
 		if (tagName.toLowerCase() === 'dialog') return new this.dialogElementConstructor(this, tagName)
