@@ -879,7 +879,7 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus,
-		safeTransaction: {
+		safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: safeTestOwnerAddress,
 			safeVersion: '1.4.1',
@@ -887,7 +887,7 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
 			safeTxHash,
 			safeTx,
-		},
+		} },
 	}] })
 	return { safeTx, safeTxHash }
 }

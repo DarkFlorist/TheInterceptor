@@ -30,7 +30,7 @@ export async function resolveSafeSignerReply(
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind === 'proposal' && flow.pending.transactionOrMessageCreationStatus === 'Simulated') {
-		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeTransaction, signerReply)
+		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, signerReply)
 	}
 
 	if (
@@ -193,8 +193,8 @@ export async function persistUnsignedSafeTransaction(
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind !== 'proposal' || flow.pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'not-safe' }
 	try {
-		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, flow.pending.safeTransaction)
-		return await persistSafeTransaction(ethereum, flow.pending, flow.pending.safeTransaction, safeSnapshot.state.nonce, [])
+		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, flow.pending.safeFlow.safeTransaction)
+		return await persistSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, safeSnapshot.state.nonce, [])
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be added to the stack: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)

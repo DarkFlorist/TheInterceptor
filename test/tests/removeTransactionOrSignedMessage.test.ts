@@ -134,7 +134,7 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 			? { method: 'eth_sendTransaction' as const, params: [{}] }
 			: { method: 'eth_sendRawTransaction' as const, params: [new Uint8Array([Number(params.transactionIdentifier)])] },
 		transactionIdentifier: params.transactionIdentifier,
-		...(params.executeThroughSafe === undefined ? {} : { simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: params.executeThroughSafe } }),
+		...(params.executeThroughSafe === undefined ? {} : { simulationOptions: { requiredChainId: 1n, executeThroughSafe: params.executeThroughSafe } }),
 	}
 }
 

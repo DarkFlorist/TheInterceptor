@@ -54,7 +54,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const input = [ {
 		stateOverrides: {},
-		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
+		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call), executedCallAuthorized: false })),
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 		simulateWithZeroBaseFee: true,

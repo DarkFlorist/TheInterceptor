@@ -80,7 +80,7 @@ const simulationStateWithSafeExecution: ResolvedSimulationState = {
 			...simulatedBlock,
 			simulatedTransactions: [{
 				...simulatedTransaction,
-				preSimulationTransaction: { ...simulatedTransaction.preSimulationTransaction, simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true } },
+				preSimulationTransaction: { ...simulatedTransaction.preSimulationTransaction, simulationOptions: { requiredChainId: 1n, executeThroughSafe: true } },
 				tokenBalancesAfter: [{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: SENDER, balance: SAFE_BALANCE }],
 			}],
 		}],

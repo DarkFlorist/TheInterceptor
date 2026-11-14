@@ -10,7 +10,7 @@ import { createExecutionSimulationState, createSimulationCallParams, createSimul
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, toSimulationStateInputMinimalData } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -447,7 +447,7 @@ describe('SimulationModeEthereumClientService', () => {
 	})
 
 		test('prepareEthSimulateV1Input strips the local transaction hash from RPC calls', async () => {
-			const prepared = await ethereum.prepareEthSimulateV1Input(createSimulationStateInput(), blockNumber, undefined)
+			const prepared = await ethereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(createSimulationStateInput()), blockNumber, undefined)
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call === undefined) throw new Error('missing prepared eth_simulateV1 call')
 			assert.equal('hash' in call, false)
@@ -479,7 +479,7 @@ describe('SimulationModeEthereumClientService', () => {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined)
+			const prepared = await ethereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(input), blockNumber, undefined)
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call?.type !== '7702') throw new Error('missing prepared type-7702 call')
 			const [authorization] = call.authorizationList
@@ -995,7 +995,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			}] as const
 
-			const { prepared, result } = await ethereum.simulatePrepared(splitSimulationStateInput, blockNumber, undefined)
+			const { prepared, result } = await ethereum.simulatePrepared(toSimulationStateInputMinimalData(splitSimulationStateInput), blockNumber, undefined)
 			assert.equal(result.length, 2)
 			const grouped = groupEthSimulateV1ResultByInputBlocks(prepared, result)
 			assert.equal(grouped.length, 1)
