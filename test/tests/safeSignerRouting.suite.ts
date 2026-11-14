@@ -580,7 +580,7 @@ test('shows Safe transaction context failures in the co-signing dialog without r
 	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(pendingMessage?.approvalStatus.status, 'SignerError')
 	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe context validation error')
-	assert.match(pendingMessage.approvalStatus.message, /chain ID does not match/u)
+	assert.match(pendingMessage.approvalStatus.message, /prepared for chain 1338, but the connected network is chain 1337\./u)
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
