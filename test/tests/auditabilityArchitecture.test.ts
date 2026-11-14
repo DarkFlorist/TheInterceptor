@@ -1,5 +1,6 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
+import ts from 'typescript'
 import * as simulationFacade from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import * as simulationTransactionSigning from '../../app/ts/simulation/services/simulationTransactionSigning.js'
@@ -126,7 +127,7 @@ test('popup method guards reject inherited object keys', () => {
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
-	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessageInstance\(/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
@@ -134,6 +135,63 @@ test('Safe signer refresh persistence is isolated from confirmation resolution',
 	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(confirmTransactionSource, /function mergeSafeSignerSelectionRefresh/u)
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
+})
+
+const SIGNER_REPLY_UPDATE = 'updatePendingRequestWaitingForSigner'
+type SignerReplyUpdateUse = { readonly enclosingFunction: string | undefined, readonly isCall: boolean }
+
+const getEnclosingFunctionDeclarationName = (node: ts.Node) => {
+	for (let current: ts.Node | undefined = node.parent; current !== undefined; current = current.parent) {
+		if (ts.isFunctionDeclaration(current)) return current.name?.text
+	}
+	return undefined
+}
+
+// Every reference to the signer-reply pending update in one source, under its own name, an aliased import or a namespace property, with the function declaration around it and whether it is called there.
+function findSignerReplyUpdateUses(fileName: string, sourceText: string) {
+	const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true)
+	const localNames = new Set([SIGNER_REPLY_UPDATE])
+	for (const statement of sourceFile.statements) {
+		const namedBindings = ts.isImportDeclaration(statement) ? statement.importClause?.namedBindings : undefined
+		if (namedBindings === undefined || !ts.isNamedImports(namedBindings)) continue
+		for (const element of namedBindings.elements) {
+			if ((element.propertyName ?? element.name).text === SIGNER_REPLY_UPDATE) localNames.add(element.name.text)
+		}
+	}
+	const uses: SignerReplyUpdateUse[] = []
+	const visit = (node: ts.Node) => {
+		const isReference = ts.isIdentifier(node) && localNames.has(node.text) && !ts.isImportSpecifier(node.parent) && !(ts.isFunctionDeclaration(node.parent) && node.parent.name === node)
+		if (isReference) {
+			const callee = ts.isPropertyAccessExpression(node.parent) && node.parent.name === node ? node.parent : node
+			uses.push({ enclosingFunction: getEnclosingFunctionDeclarationName(node), isCall: ts.isCallExpression(callee.parent) && callee.parent.expression === callee })
+		}
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	return uses
+}
+
+const signerReplyCall: SignerReplyUpdateUse = { enclosingFunction: 'signerReply', isCall: true }
+
+// The signer-reply update finds a pending request by request id alone, which a page can reuse, so each caller is a visible decision.
+test('only signer replies update a pending request found by its request id alone', async () => {
+	const repositoryRoot = new URL('../../', import.meta.url).pathname
+	const usesByFile: [string, SignerReplyUpdateUse][] = []
+	for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan({ cwd: repositoryRoot })) {
+		for (const use of findSignerReplyUpdateUses(file, await Bun.file(`${ repositoryRoot }${ file }`).text())) usesByFile.push([file, use])
+	}
+	const signerReplyFile = 'app/ts/background/providerMessageHandlers.ts'
+	assert.deepEqual(usesByFile, [[signerReplyFile, signerReplyCall], [signerReplyFile, signerReplyCall], [signerReplyFile, signerReplyCall]])
+})
+
+test('the signer-reply update check finds calls by syntax, not by text position', () => {
+	const signerReply = `export async function signerReply() { await ${ SIGNER_REPLY_UPDATE }(id, update) }`
+	const callAfterSignerReply = `${ signerReply }\nexport async function afterSignerReply() { await ${ SIGNER_REPLY_UPDATE }(id, update) }`
+	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', callAfterSignerReply), [signerReplyCall, { enclosingFunction: 'afterSignerReply', isCall: true }])
+	const extraCallWithSpaceBeforeArguments = `export async function signerReply() { await ${ SIGNER_REPLY_UPDATE }(id, update); await ${ SIGNER_REPLY_UPDATE } (id, update) }`
+	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', extraCallWithSpaceBeforeArguments), [signerReplyCall, signerReplyCall])
+	const aliasedImport = `import { ${ SIGNER_REPLY_UPDATE } as updateById } from './storageVariables.js'\nexport async function elsewhere() { await updateById(id, update) }`
+	assert.deepEqual(findSignerReplyUpdateUses('mutation.ts', aliasedImport), [{ enclosingFunction: 'elsewhere', isCall: true }])
 })
 
 test('Safe pending flow discrimination has one owner', () => {
