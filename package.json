@@ -4,7 +4,7 @@
 	"type": "module",
 	"packageManager": "bun@1.4.2",
 	"scripts": {
-		"test": "bun run compile-contracts && bun test --timeout 60000",
+		"test": "bun run compile-contracts && bun test --isolate --timeout 60000",
 		"typecheck": "bun run compile-contracts && bun --bun tsc --noEmit --project tsconfig.json && bun ./node_modules/typescript/lib/tsc.js --noEmit --project tsconfig-inpage.json",
 		"compile-contracts": "bun ./build/compileSolidityContracts.mts",
 		"install-chrome": "bash ./scripts/install-chrome.sh",
@@ -32,11 +32,11 @@
 		"clean-inpage-output": "bun ./build/cleanOutput.mts app/inpage/js",
 		"generate-extension-pages": "bun ./scripts/generate-extension-pages.mts",
 		"check-extension-pages": "bun ./scripts/generate-extension-pages.mts --check",
-		"knip": "bunx --bun knip@6.29.0",
-		"knip:exports": "bunx --bun knip@6.29.0 --include exports",
-		"knip:fix": "bunx --bun knip@6.29.0 --fix",
+		"knip": "knip-bun",
+		"knip:exports": "knip-bun --include exports",
+		"knip:fix": "knip-bun --fix",
 		"cleanup:dryrun": "bun run knip",
-		"biome": "bunx --bun @biomejs/biome@2.3.11",
+		"biome": "biome",
 		"biome:check": "bun run biome lint .",
 		"biome:fix": "bun run biome lint --write --unsafe .",
 		"lint:catches": "bun ./scripts/check-comment-only-catches.mts",
@@ -64,7 +64,10 @@
 		"webextension-polyfill": "0.10.0"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "2.3.11",
+		"@types/bun": "1.4.2",
 		"@types/firefox-webext-browser": "120.0.3",
+		"knip": "6.29.0",
 		"solc": "0.8.18",
 		"typescript": "5.9.3"
 	}
