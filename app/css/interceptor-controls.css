@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /* Bulma Form */
 .input[disabled],
 fieldset[disabled] .input {
@@ -342,3 +346,5 @@ a.navbar-item {
 }
 
 /* Bulma Layout */
+
+}

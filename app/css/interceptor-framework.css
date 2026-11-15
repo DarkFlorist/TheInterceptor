@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /*! bulma.io v0.9.4 | MIT License | github.com/jgthms/bulma */
 /* Bulma Utilities */
 .button, .input {
@@ -738,4 +742,6 @@ a.tag:hover {
 
 .subtitle.is-7 {
   font-size: 0.75rem;
+}
+
 }

@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /* Scrollbar */
 
 :root {
@@ -1095,4 +1099,6 @@ fieldset label:has([type=radio]:checked):before {
 		overflow-wrap: anywhere;
 		padding-bottom: 0.25rem;
 	}
+}
+
 }

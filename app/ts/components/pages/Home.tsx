@@ -250,8 +250,9 @@ function SignerExplanation(param: SignerExplanationParams) {
 	return <ErrorComponent text = { `No account connected (or wallet is locked) in ${ param.tabState.value.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.value.signerName) }.` }/>
 }
 
+// Uses the same missing-signer rule as the protection state (isSignerMissing), so a notice never names a wallet that the routing considers absent.
 function getSignerDisplayName(signerName: SignerName) {
-	return signerName === 'NoSigner' || signerName === 'NoSignerDetected' ? 'your wallet' : getPrettySignerName(signerName)
+	return isSignerMissing(signerName) ? 'your wallet' : getPrettySignerName(signerName)
 }
 
 // Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it follows the background's routing (utils/requestRouting.ts): requests skip the Interceptor only when they are forwarded to a wallet, which the popup knows from the tab's detected signer.

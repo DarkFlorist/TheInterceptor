@@ -1,4 +1,8 @@
 @charset "utf-8";
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 
 @font-face {
 	font-family: "Atkinson";
@@ -2590,4 +2594,6 @@ img:is([src$='/address-book.svg'], [src$='/internet.svg'], [src$='/settings.svg'
 /* Request dialogs outside the confirmation page share its rule: the confirming action is the wider one. */
 .dialog-action-button--confirm.is-primary {
 	flex-grow: 1.5;
+}
+
 }

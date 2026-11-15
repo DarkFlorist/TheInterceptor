@@ -82,18 +82,17 @@ function getOverwrittenDeclarations(lines: readonly CssLine[]) {
 	return overwritten
 }
 
-const layoutScopeSelector = ':is(:root, #layout-precedence)'
-const layoutScopeOpening = `${ layoutScopeSelector } {`
+const cascadeLayerOrder = '@layer shared, layout;'
+// Every stylesheet is in the `shared` layer except the component layout, which is in `layout`.
+const getCascadeLayer = (stylesheetPath: string) => stylesheetPath.endsWith('interceptor-layout.css') ? 'layout' : 'shared'
 
-// Whether a selector contains an ID selector: a `#` outside attribute selectors (which hold any quoted values).
-const selectorUsesIdSelector = (selector: string) => selector.replace(/\[[^\]]*\]/g, '').includes('#')
-
-// The layout stylesheet nests all of its rules in one ID-weight scope; this returns the rules inside it.
-function getLayoutScopeContent(layoutCss: string) {
-	const start = layoutCss.indexOf(layoutScopeOpening)
-	const end = layoutCss.lastIndexOf('}')
-	if (start === -1 || end === -1) throw new Error('the layout stylesheet is not wrapped in its precedence scope')
-	return layoutCss.slice(start + layoutScopeOpening.length, end)
+// Each stylesheet wraps all of its rules in one cascade layer block; this returns the rules inside it.
+function getCascadeLayerContent(css: string, layer: string) {
+	const opening = `@layer ${ layer } {`
+	const start = css.indexOf(opening)
+	const end = css.lastIndexOf('}')
+	if (start === -1 || end === -1) throw new Error(`the stylesheet is not wrapped in its ${ layer } cascade layer`)
+	return css.slice(start + opening.length, end)
 }
 
 // Selector lists of the rules outside any at-rule, with whitespace normalised.
@@ -296,7 +295,7 @@ describe('UI audit fixes', () => {
 			assert.deepEqual(getOverwrittenDeclarations(cssLines), [], stylesheetPath)
 			assert.doesNotMatch(css, /\{\s*\}/, `${ stylesheetPath } has an empty rule set`)
 			// Two top-level rules with the same selector list in one stylesheet hide which declaration wins; a shared group followed by a narrower rule is fine.
-			const topLevelSelectors = getTopLevelSelectors(stylesheetPath.endsWith('interceptor-layout.css') ? getLayoutScopeContent(css) : css)
+			const topLevelSelectors = getTopLevelSelectors(getCascadeLayerContent(css, getCascadeLayer(stylesheetPath)))
 			const repeatedSelectors = topLevelSelectors.filter((selector, index) => topLevelSelectors.indexOf(selector) !== index)
 			assert.deepEqual(repeatedSelectors, [], stylesheetPath)
 		}
@@ -344,10 +343,10 @@ describe('UI audit fixes', () => {
 
 	test('passes static tones to coin and card components as classes', async () => {
 		const css = await readInterceptorAppCss()
-		// The inline card colours its own label; a tone is in the scoped layout stylesheet, which gives it the weight to apply to the label as well.
+		// The inline card colours its own label; a tone is in the layout cascade layer, which makes it apply to the label as well.
 		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
 		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(layoutCss, new RegExp(`\\n\\.coin-text--${ tone } \\{`))
-		// The scope's ID weight outranks the heavier themed paragraph spacing and card corner rules, so these layout rules need no extra selectors.
+		// The layout layer outranks the heavier themed paragraph spacing and card corner rules, so these layout rules need no extra selectors.
 		assert.match(layoutCss, /\n\.summary-transaction-input-label \{/)
 		assert.match(layoutCss, /\n\.collapsible-card-content \{/)
 		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
@@ -401,26 +400,20 @@ describe('UI audit fixes', () => {
 		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), settings\.simulationMode,/)
 	})
 
-	test('gives component layout its precedence through its ID-weight scope instead of load order or per-rule selectors', async () => {
-		// Every layout rule is nested in a scope with one ID's weight that matches only the root, so a layout rule outranks every shared rule whichever stylesheet loads last, as long as the shared stylesheets use no ID selectors.
-		const layoutCss = stripCssComments(await Bun.file('app/css/interceptor-layout.css').text())
-		assert.equal(layoutCss.trimStart().startsWith(layoutScopeOpening), true)
-		assert.equal(layoutCss.trimEnd().endsWith('}'), true)
-		const scopedSelectors = getTopLevelSelectors(getLayoutScopeContent(layoutCss))
-		assert.equal(scopedSelectors.length > 300, true)
-		assert.deepEqual(getTopLevelSelectors(layoutCss), [layoutScopeSelector])
-		// Any `#` outside an attribute selector or string starts an ID selector, whether its name is ASCII, non-ASCII or escaped.
-		for (const idSelector of ['#main', '#_x', '#-x', '#\\31 23', '#ünïcode', 'p #x']) assert.equal(selectorUsesIdSelector(idSelector), true, idSelector)
-		for (const otherSelector of ['.card', 'a[href="#top"]', "a[href^='#']", ':root']) assert.equal(selectorUsesIdSelector(otherSelector), false, otherSelector)
-		for (const stylesheetFilename of stylesheetFilenames.filter((filename) => filename !== 'interceptor-layout.css')) {
-			// Every selector, including those nested in at-rules: the text before each `{` that is not an at-rule prelude.
-			const sharedSelectors = (stripCssComments(await Bun.file(`app/css/${ stylesheetFilename }`).text()).match(/[^;{}]+(?=\{)/g) ?? []).map((selector) => selector.trim()).filter((selector) => !selector.startsWith('@'))
-			assert.deepEqual(sharedSelectors.filter(selectorUsesIdSelector), [], stylesheetFilename)
+	test('gives component layout its precedence through cascade layer order instead of load order or selector weight', async () => {
+		// Every stylesheet states the layer order first and wraps all of its rules in its layer, so `layout` outranks `shared` whatever the selectors' weight and whichever stylesheet loads first.
+		for (const stylesheetPath of interceptorAppStylesheetPaths) {
+			const css = stripCssComments(await Bun.file(stylesheetPath).text()).replace(/^@charset "utf-8";/, '').trim()
+			const layer = getCascadeLayer(stylesheetPath)
+			assert.equal(css.startsWith(`${ cascadeLayerOrder }\n@layer ${ layer } {`), true, stylesheetPath)
+			assert.equal(css.endsWith('}'), true, stylesheetPath)
+			// Nothing outside the layer block: an unlayered rule would outrank both layers.
+			assert.deepEqual(getTopLevelSelectors(css), [], stylesheetPath)
 		}
-		// No element may carry the scope's id, or the scope would stop being a pure weight.
-		for await (const file of new Bun.Glob('app/{ts,html,html3}/**/*.{ts,tsx,html}').scan('.')) assert.doesNotMatch(await Bun.file(file).text(), /layout-precedence/, file)
-		// Cascade layers are not used for this: browsers add their own extension-page defaults, which outrank every layered rule.
-		assert.doesNotMatch(await readInterceptorAppCss(), /@layer/)
+		const layoutCss = stripCssComments(await Bun.file('app/css/interceptor-layout.css').text())
+		assert.equal(getTopLevelSelectors(getCascadeLayerContent(layoutCss, 'layout')).length > 300, true)
+		// Firefox injects its own unlayered extension stylesheet, which would outrank both layers, only into pages with `browser_style`.
+		for (const manifest of ['app/manifestV2.json', 'app/manifestV3.json']) assert.doesNotMatch(await Bun.file(manifest).text(), /"browser_style"\s*:\s*true/, manifest)
 		// Every generated page links the whole stylesheet list, so no page is missing the layout rules.
 		for (const page of pageDefinitions) {
 			for (const file of [`app/html/${ page.name }.html`, `app/html3/${ page.name }V3.html`]) {

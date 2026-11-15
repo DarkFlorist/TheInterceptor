@@ -1,5 +1,6 @@
-/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. An inline style outranked every stylesheet rule. To keep that without depending on load order or on each selector's weight, every rule here is nested in `:is(:root, #layout-precedence)`, which matches only the root but takes the weight of its heaviest argument, one ID: a layout rule therefore outranks every shared rule, because the shared stylesheets use no ID selectors (uiAuditFixes.test.tsx checks both). No element has the id. Cascade layers are not used: browsers add their own extension-page defaults, which outrank every layered rule. The block is left unindented so the rules read like the other stylesheets. */
-:is(:root, #layout-precedence) {
+/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. An inline style outranked every stylesheet rule; to keep that, these rules are in the `layout` cascade layer, which every stylesheet orders after `shared`, so a layout rule outranks every shared rule whatever its specificity or load order (an `!important` shared declaration still wins, as it did over inline styles). Browsers add no stylesheet of their own to these extension pages: Chromium injects none, and Firefox only with `browser_style`, which no page of this extension enables. The block is left unindented so the rules read like the other stylesheets. */
+@layer shared, layout;
+@layer layout {
 
 /* Website access page */
 .website-setting-card {

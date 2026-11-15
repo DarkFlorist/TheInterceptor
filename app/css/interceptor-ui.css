@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /* Flexy Component */
 [class*=flexy] {
 	--gx: var(--gap-x, 0);
@@ -184,3 +188,5 @@ input[role=switch]:checked:before {
 
 .status-outline { --outline: 1px solid var(--status-danger-outline-color) }
 .status-lg { font-size: 1.5rem }
+
+}

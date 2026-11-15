@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /* Customizations */
 
 header:has(form[role='search']) {
@@ -762,4 +766,6 @@ fieldset[disabled] .button.is-primary.is-danger {
 		color: var(--text-color);
 		margin-top: 0.5rem;
 	}
+}
+
 }
