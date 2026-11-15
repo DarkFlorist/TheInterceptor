@@ -1,4 +1,4 @@
-import { finishWebsiteAccessUpdate, reconcileCommittedAccessChangeCollectingFailures, reconcileWebsiteApprovalAccessesCollectingFailures, updateDeclarativeNetRequestBlocks } from '../accessManagement.js'
+import { finishWebsiteAccessUpdate, reconcileCommittedAccessChangeCollectingFailures, reconcileWebsiteApprovalAccessesCollectingFailures } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { reconcileAfterIndependentSteps } from '../committedWriteReconciliation.js'
 import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
@@ -11,7 +11,7 @@ export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupRecoveryMessageHandler('popup_requestSettings', async (context) => await settingsOpened(context.simulationServicesOwner)),
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupRecoveryMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
-	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
+	popup_import_settings: popupRecoveryMessageHandler('popup_import_settings', async (context, request) => {
 		const importSettingsReply = await importSettings(request)
 		if (!importSettingsReply.data.success) {
 			await sendPopupMessageToOpenWindows(importSettingsReply)
@@ -35,10 +35,7 @@ export const settingsPopupMessageHandlers = {
 		}))
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
-	popup_retryRpcConfiguration: popupRecoveryMessageHandler('popup_retryRpcConfiguration', async (context) => await retryRpcConfiguration(
-		context.simulationServicesOwner,
-		async () => await updateDeclarativeNetRequestBlocks(context.websiteTabConnections),
-	)),
+	popup_retryRpcConfiguration: popupRecoveryMessageHandler('popup_retryRpcConfiguration', async (context) => await retryRpcConfiguration(context.simulationServicesOwner, context.websiteTabConnections, context.settings, publishRpcConfigurationRecovery)),
 	popup_restoreDefaultRpcConfiguration: popupRecoveryMessageHandler('popup_restoreDefaultRpcConfiguration', async (context) => await restoreDefaultRpcConfiguration(context.simulationServicesOwner, context.websiteTabConnections, context.settings, publishRpcConfigurationRecovery)),
 	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.simulationServicesOwner, context.websiteTabConnections, request, context.settings, publishRpcConfigurationRecovery)),
 } satisfies Partial<PopupMessageHandlerMap>

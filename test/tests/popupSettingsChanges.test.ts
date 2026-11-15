@@ -177,7 +177,7 @@ describe('popup settings changes', () => {
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Should not reset services') })
 		const count = runtimeMessages.length
-		await enableSimulationMode(reset, new Map(), { method: 'popup_enableSimulationMode', data: true })
+		await enableSimulationMode(reset, new Map(), { method: 'popup_enableSimulationMode', data: true }, {}, undefined)
 		await changeActiveRpc(reset, new Map(), (await getRequiredSettings()).activeRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 		assert.equal(runtimeMessages.length, count)
 	})

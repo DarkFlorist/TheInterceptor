@@ -28,7 +28,7 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { approvalsOrNone, captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireAvailableSettings, requireReadableApprovals, settingsForPublication, settingsIfAvailable, settingsOnAdmittedRpcNetwork } = await import('../../app/ts/background/settings.js')
+const { approvalsOrNoneIfUnreadable, captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireAvailableSettings, requireReadableApprovals, settingsForPublication, settingsEvenIfRpcConfigurationUnusable, settingsOnAdmittedRpcNetwork } = await import('../../app/ts/background/settings.js')
 
 const approvals: WebsiteAccessArray = [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }]
 const settings: Settings = {
@@ -52,18 +52,18 @@ describe('settings snapshot projections', () => {
 		assert.throws(() => requireAvailableSettings(unavailableUnreadable), isRpcConfigurationUnavailableError)
 	})
 
-	test('settingsIfAvailable returns available settings and otherwise undefined', () => {
-		assert.equal(settingsIfAvailable(available), settings)
-		assert.equal(settingsIfAvailable(unavailableWithApprovals), undefined)
-		assert.equal(settingsIfAvailable(unavailableUnreadable), undefined)
+	test('settingsEvenIfRpcConfigurationUnusable returns available settings and otherwise undefined', () => {
+		assert.equal(settingsEvenIfRpcConfigurationUnusable(available), settings)
+		assert.equal(settingsEvenIfRpcConfigurationUnusable(unavailableWithApprovals), undefined)
+		assert.equal(settingsEvenIfRpcConfigurationUnusable(unavailableUnreadable), undefined)
 	})
 
-	test('approvalsOrNone keeps readable approvals and fails closed to none when they are unreadable', () => {
-		assert.equal(approvalsOrNone(available), approvals)
-		assert.equal(approvalsOrNone(unavailableWithApprovals), approvals)
-		assert.deepEqual(approvalsOrNone(unavailableUnreadable), [])
-		assert.equal(approvalsOrNone({ status: 'readable', websiteAccess: approvals }), approvals)
-		assert.deepEqual(approvalsOrNone({ status: 'unreadable', error: storageError }), [])
+	test('approvalsOrNoneIfUnreadable keeps readable approvals and fails closed to none when they are unreadable', () => {
+		assert.equal(approvalsOrNoneIfUnreadable(available), approvals)
+		assert.equal(approvalsOrNoneIfUnreadable(unavailableWithApprovals), approvals)
+		assert.deepEqual(approvalsOrNoneIfUnreadable(unavailableUnreadable), [])
+		assert.equal(approvalsOrNoneIfUnreadable({ status: 'readable', websiteAccess: approvals }), approvals)
+		assert.deepEqual(approvalsOrNoneIfUnreadable({ status: 'unreadable', error: storageError }), [])
 	})
 
 	test('requireReadableApprovals returns readable approvals and rethrows the storage error', () => {

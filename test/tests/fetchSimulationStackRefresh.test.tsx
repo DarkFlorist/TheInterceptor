@@ -113,7 +113,7 @@ const [
 	{ popupMessageHandler },
 	{ updatePopupVisualisationIfNeeded },
 	{ browserStorageLocalSet },
-	{ getSettingsSnapshot, settingsIfAvailable },
+	{ getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise },
 	{ EthereumClientService },
 	{ TokenPriceService },
@@ -193,7 +193,7 @@ async function dispatchToBackground(message: unknown) {
 	const method = getMessageMethod(message)
 	if (method === undefined || !BACKGROUND_SIMULATION_REQUESTS.has(method)) return undefined
 	const settingsSnapshot = await getSettingsSnapshot()
-	return await popupMessageHandler(new Map(), simulationServicesOwner, message, settingsIfAvailable(settingsSnapshot), settingsSnapshot.rpcConfiguration, async () => undefined)
+	return await popupMessageHandler(new Map(), simulationServicesOwner, message, settingsEvenIfRpcConfigurationUnusable(settingsSnapshot), settingsSnapshot.rpcConfiguration, async () => undefined)
 }
 
 // Stands in for the home popup or simulation stack page: it answers the open-consumer probe and keeps each published state.

@@ -102,7 +102,8 @@ const POPUP_ADMISSION_MODE = {
 	popup_get_export_settings: 'settings',
 	popup_importSafeStack: 'rpc-snapshot',
 	popup_importSimulationStack: 'rpc-snapshot',
-	popup_import_settings: 'settings',
+	// Importing replaces the settings and the RPC configuration without reading the current settings, so it is the repair path while they are unreadable and must not need them.
+	popup_import_settings: 'recovery',
 	popup_interceptorAccess: 'optional-rpc-snapshot',
 	popup_interceptorAccessChangeAddress: 'settings',
 	popup_interceptorAccessRefresh: 'settings',

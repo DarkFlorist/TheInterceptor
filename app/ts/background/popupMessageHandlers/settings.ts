@@ -4,7 +4,7 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsIfAvailable, type SettingsSnapshot } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsEvenIfRpcConfigurationUnusable, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -19,7 +19,7 @@ const UNREADABLE_RPC_STATUS: PopupRpcStatus = { available: false, readableActive
 
 function getPopupRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): PopupRpcStatus {
 	const { rpcConfiguration } = settingsSnapshot
-	if (!rpcConfigurationIsReady(rpcConfiguration) || !rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return { available: false, readableActiveRpcNetwork: settingsIfAvailable(settingsSnapshot)?.activeRpcNetwork }
+	if (!rpcConfigurationIsReady(rpcConfiguration) || !rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return { available: false, readableActiveRpcNetwork: settingsEvenIfRpcConfigurationUnusable(settingsSnapshot)?.activeRpcNetwork }
 	return { available: true, rpcEntries: rpcConfiguration.rpcEntries, activeRpcNetwork: rpcConfiguration.activeRpcNetwork }
 }
 
@@ -91,14 +91,11 @@ export async function restoreDefaultRpcConfiguration(simulationServicesOwner: Si
 	await completeRpcListTransition(simulationServicesOwner, websiteTabConnections, await transitionRpcList(simulationServicesOwner, DEFAULT_RPCS, 'restore-defaults'), settings, publishRecovery)
 }
 
-// Retry writes nothing, but follows the same rule: the services change and the RPC status publication are independent steps, and a ready configuration's access rules are reconciled after them even if either failed.
-export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, reconcileAccessRules: () => Promise<void>) {
+// Retry writes nothing, but follows the same rule: the services change and the RPC status publication are independent steps, and a ready configuration is then published as recovered even if either failed. Like Restore and saving the list, it publishes through publishRecovery, which reconciles website approvals as well as request blocks, so access changes saved during the outage (a denial, for example) are applied to open connections once the configuration is readable again.
+export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
 	const { retriedConfiguration, servicesChange } = await readRpcConfigurationRetry()
 	await reconcileAfterIndependentSteps([
 		async () => applyRpcServicesChange(simulationServicesOwner, servicesChange),
 		async () => await publishCurrentRpcStatus(simulationServicesOwner),
-	], async () => {
-		if (retriedConfiguration !== undefined) await reconcileAccessRules()
-		return []
-	})
+	], async () => retriedConfiguration === undefined ? [] : await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, retriedConfiguration.activeRpcNetwork))
 }

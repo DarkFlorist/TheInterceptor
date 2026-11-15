@@ -153,11 +153,12 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const shouldActivateAddressSelection = transition.shouldActivate && canActivateAddressSelection
 		if (shouldActivateAddressSelection) {
 			const changeActiveAddress = async () => {
+				// No admitted snapshot: the settings above were just read live, and the change reads them again under its lock.
 				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, transition.selection, {
 					simulationMode: settings.simulationMode,
 					signerAddress: transition.signerAddress,
 					promptForAccessesIfNeeded: !signerAccountsReply.requestAccounts,
-				})
+				}, undefined)
 			}
 			if (signerAccountsReply.requestAccounts) {
 				await withSuppressedUnscopedConnectionEventsForSocketAsync(signerStateToken.socket, changeActiveAddress)
@@ -205,12 +206,13 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
 		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).selectionChanged) {
 			const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
+			// No admitted snapshot: the settings above were just read live, and the change reads them again under its lock.
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				rpcNetwork,
 				activeAddress: signerAddress,
 				...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
-			})
+			}, undefined)
 			return
 		}
 	}

@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsIfAvailable, approvalsOrNone, requireAvailableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive } from './settings.js'
+import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsEvenIfRpcConfigurationUnusable, approvalsOrNoneIfUnreadable, requireAvailableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion, syncing } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -435,14 +435,14 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	const initialSnapshot = await getSettingsSnapshot()
 	const admittedSimulationServices = simulationServicesOwner.getCurrent()
-	const initialSettings = settingsIfAvailable(initialSnapshot)
+	const initialSettings = settingsEvenIfRpcConfigurationUnusable(initialSnapshot)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
 		// Website approval is read from the same snapshot whether or not the RPC configuration is readable, so an unapproved site stays unapproved while settings are unavailable.
-		const websiteAccess = approvalsOrNone(initialSnapshot)
+		const websiteAccess = approvalsOrNoneIfUnreadable(initialSnapshot)
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
 			: getWebsiteAccessApprovalState(websiteAccess, websiteOrigin)
@@ -574,7 +574,7 @@ export const replyAdmittedRpcNetworkNoLongerLive = (websiteTabConnections: Websi
 // Storage reads, Safe preparation and wake-status publishing all await after routing is decided, so a signer forward is rechecked against the live simulation mode at the last await before it is posted.
 async function recheckSignerForwardBeforePosting(resolved: RPCReply): Promise<'post' | 'reroute' | 'unavailable'> {
 	if (resolved.type !== 'forwardToSigner') return 'post'
-	const liveSettings = settingsIfAvailable(await getSettingsSnapshot())
+	const liveSettings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
 	if (liveSettings === undefined) return 'unavailable'
 	return liveSettings.simulationMode ? 'reroute' : 'post'
 }

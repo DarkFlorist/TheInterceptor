@@ -565,7 +565,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ popupVisualisation: matchingPopupVisualisation })
 
 		const { refreshHomeData } = modules
-		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, async () => undefined, false)
+		await refreshHomeData(fakeEthereum, fakeTokenPriceService, new Map(), true, 1, async () => undefined, false, undefined, undefined)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -750,7 +750,7 @@ describe('popup clear reset', () => {
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }),
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			modules.settingsIfAvailable(settingsSnapshot),
+			modules.settingsEvenIfRpcConfigurationUnusable(settingsSnapshot),
 			settingsSnapshot.rpcConfiguration,
 			async () => undefined,
 		)

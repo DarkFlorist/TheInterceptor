@@ -100,9 +100,9 @@ export async function installRpcServicesForStoredConfiguration(simulationService
 }
 
 // Retry re-reads the stored configuration without writing it. Services pause unless it is ready; a ready configuration resumes them only when it has an RPC endpoint to serve. The services change is returned for the caller to apply (applyRpcServicesChange).
-export async function readRpcConfigurationRetry(): Promise<{ readonly retriedConfiguration: { readonly rpcEntries: RpcEntries } | undefined, readonly servicesChange: RpcServicesChange }> {
+export async function readRpcConfigurationRetry(): Promise<{ readonly retriedConfiguration: { readonly rpcEntries: RpcEntries, readonly activeRpcNetwork: RpcNetwork } | undefined, readonly servicesChange: RpcServicesChange }> {
 	const configuration = await getRpcConfigurationState()
 	if (configuration.status !== 'ready') return { retriedConfiguration: undefined, servicesChange: { kind: 'clear' } }
 	const rpcNetwork = resolveRpcServicesTarget(configuration)
-	return { retriedConfiguration: { rpcEntries: configuration.rpcEntries }, servicesChange: rpcNetwork === undefined ? { kind: 'clear' } : { kind: 'recover', rpcNetwork } }
+	return { retriedConfiguration: { rpcEntries: configuration.rpcEntries, activeRpcNetwork: configuration.activeRpcNetwork }, servicesChange: rpcNetwork === undefined ? { kind: 'clear' } : { kind: 'recover', rpcNetwork } }
 }

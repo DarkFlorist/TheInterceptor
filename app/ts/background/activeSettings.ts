@@ -12,7 +12,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { reconcileAfterIndependentSteps } from './committedWriteReconciliation.js'
 import { runEachIndependently } from '../utils/array.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, settingsWithoutApprovals, captureRpcNetwork, settingsIfAvailable } from './settings.js'
+import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, settingsWithoutApprovals, captureRpcNetwork, settingsEvenIfRpcConfigurationUnusable } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -169,7 +169,7 @@ async function runActiveSettingsChange(
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
 			// The baseline is the settings committed when the semaphore is acquired, so a network change made after admission is never overwritten; the admitted settings stand in only when the live settings cannot be read.
 			const liveSnapshot = await getSettingsSnapshot()
-			const previousSettings = settingsIfAvailable(liveSnapshot) ?? transition.admittedSnapshot?.settings ?? requireAvailableSettings(liveSnapshot)
+			const previousSettings = settingsEvenIfRpcConfigurationUnusable(liveSnapshot) ?? transition.admittedSnapshot?.settings ?? requireAvailableSettings(liveSnapshot)
 			// Authorization is separate from the baseline: an admitted transition may still complete after the RPC configuration became unreadable since admission, so the admitted configuration authorizes it when the live one is not ready.
 			const authorizingRpcConfiguration = transition.admittedSnapshot === undefined || rpcConfigurationIsReady(liveSnapshot.rpcConfiguration) ? liveSnapshot.rpcConfiguration : transition.admittedSnapshot.rpcConfiguration
 			const rpcServicesOptional = rpcServicesAreOptional(authorizingRpcConfiguration)
@@ -220,7 +220,7 @@ export async function changeActiveAddressAndChain(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
-	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
+	admittedSnapshot: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState } | undefined,
 ): Promise<void> {
 	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, { change, ...(admittedSnapshot === undefined ? {} : { admittedSnapshot }) })
 }
@@ -235,7 +235,7 @@ export async function activateAddressSelection(
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
 	},
-	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
+	admittedSnapshot: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState } | undefined,
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
 	if (!options.simulationMode && selection?.type === 'addressBookEntry' && selectedSafe === undefined) throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')

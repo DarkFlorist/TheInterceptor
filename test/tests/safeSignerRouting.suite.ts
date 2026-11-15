@@ -201,7 +201,7 @@ test('replays a Safe signature deferred while only the RPC configuration was unr
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 
 	rpcConfigurationReadable = true
-	await retryRpcConfiguration(simulationServicesOwner, async () => undefined)
+	await retryRpcConfiguration(simulationServicesOwner, new Map(), undefined, async () => [])
 	await deferredReplay
 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])

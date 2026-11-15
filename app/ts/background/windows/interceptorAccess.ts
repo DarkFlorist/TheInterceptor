@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLonger
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { type AdmittedRpcNetworkNoLongerLive, getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, settingsIfAvailable, requireAvailableSettings } from '../settings.js'
+import { type AdmittedRpcNetworkNoLongerLive, getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, settingsEvenIfRpcConfigurationUnusable, requireAvailableSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -128,7 +128,7 @@ export async function resolveInterceptorAccess(simulationServicesOwner: Simulati
 	})
 	const updateFollowUpAccesses = async () => {
 		if (!resolution.promptForFollowUpAccesses) return
-		const settings = settingsIfAvailable(await getSettingsSnapshot())
+		const settings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
 		if (settings !== undefined) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settings, true)
 	}
 	if (resolution.kind === 'rejected') return await surfaceFailures([...resolution.failures, ...await runEachIndependently([updateFollowUpAccesses], async (step) => await step())], reportAsUnexpectedError)
@@ -162,7 +162,7 @@ export function filterAccessDialogAddressesForChain(activeAddresses: AddressBook
 
 // The address selection is chain dependent, so it is empty while the active RPC network is unavailable; pending requests are still published so the dialog can show and refuse them.
 async function getAccessDialogActiveAddresses() {
-	const settings = settingsIfAvailable(await getSettingsSnapshot())
+	const settings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
 	if (settings === undefined) return []
 	return filterAccessDialogAddressesForChain(await getActiveAddresses(), settings.activeRpcNetwork.chainId)
 }
@@ -491,11 +491,12 @@ async function activateRequestedAddress(simulationServicesOwner: SimulationServi
 	const settings = requireAvailableSettings(await getSettingsSnapshot())
 	const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
 	const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, requestAccessToAddress, 'pendingEntry')
+	// No admitted snapshot: the settings above were just read live, and the change reads them again under its lock.
 	await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
 		simulationMode: settings.simulationMode,
 		signerAddress,
 		promptForAccessesIfNeeded: false,
-	})
+	}, undefined)
 }
 
 const isAffectedPendingRequest = (accessReply: InterceptorAccessReply, website: Website) => (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)

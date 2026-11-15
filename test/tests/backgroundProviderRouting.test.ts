@@ -611,6 +611,31 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await sendEthChainIdRequests(owner, [73, 74])).map((reply) => reply?.result), ['0x2', '0x2'])
 	})
 
+	test('importing a valid settings file repairs a corrupt RPC configuration instead of being refused', async () => {
+		installBrowserMock()
+		const { exportSettingsAndAddressBook, getRequiredSettings } = await loadModules()
+		const { handlePopupRuntimeMessage } = await import('../../app/ts/background/popupMessageRouting.js')
+		const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+		const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const owner = createInstallingServicesOwner()
+		const exported = await exportSettingsAndAddressBook()
+		const importedRpc = otherChainRpcOf((await getRequiredSettings()).activeRpcNetwork)
+		const fileContents = JSON.stringify(serialize(ExportedSettings, { ...exported, settings: { ...exported.settings, rpcNetwork: importedRpc } }))
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handlePopupRuntimeMessage(new Map(), owner, serialize(PopupMessage, { method: 'popup_import_settings', data: { fileContents } }), noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal((await getRequiredSettings()).activeRpcNetwork.httpsRpc, importedRpc.httpsRpc)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, importedRpc.httpsRpc)
+	})
+
 	test('does not re-approve a connection that a chain switch unapproved while the request was parked', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain } = await loadModules()

@@ -2365,6 +2365,21 @@ describe('background eth_accounts', () => {
 		assert.equal(storedEntry?.declarativeNetRequestBlockMode, 'block-all')
 	})
 
+	test('a denial saved during an outage is applied to an open connection when Retry recovers the RPC configuration', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, setRpcConfiguration } = await loadModules()
+		const activeRpcNetwork = (await getRequiredSettings()).activeRpcNetwork
+		// The connection acts for the stored address, so denying that address must stop it.
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: 0x6262626262626262626262626262626262626262n })
+		const { address, connection, simulationServicesOwner, website, websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_allowOrPreventAddressAccessForWebsite', data: { website, address, allowAccess: false } })
+
+		await setRpcConfiguration([activeRpcNetwork], activeRpcNetwork)
+		await sendPopupMessage(websiteTabConnections, simulationServicesOwner, { method: 'popup_retryRpcConfiguration' })
+
+		assert.equal(connection.approved, false, 'Retry reconciles website approvals, so the denial stops the connection')
+	})
+
 	test('whatever can grant or lift a block still needs readable settings', async () => {
 		installBrowserMock()
 		const { updateWebsiteAccess } = await loadModules()
@@ -3965,7 +3980,7 @@ describe('background eth_accounts', () => {
 		await enableSimulationMode(simulationServicesOwner, new Map(), {
 			method: 'popup_enableSimulationMode',
 			data: false,
-		})
+		}, {}, undefined)
 		const signingSettings = await getRequiredSettings()
 		assert.equal(signingSettings.simulationMode, false)
 		assert.equal(signingSettings.activeSimulationAddress, simulationAddress)
@@ -3974,7 +3989,7 @@ describe('background eth_accounts', () => {
 		await enableSimulationMode(simulationServicesOwner, new Map(), {
 			method: 'popup_enableSimulationMode',
 			data: true,
-		})
+		}, {}, undefined)
 
 		const settings = await getRequiredSettings()
 		assert.equal(settings.simulationMode, true)
@@ -4021,7 +4036,7 @@ describe('background eth_accounts', () => {
 		await enableSimulationMode(simulationServicesOwner, new Map(), {
 			method: 'popup_enableSimulationMode',
 			data: false,
-		})
+		}, {}, undefined)
 
 		const settings = await getRequiredSettings()
 		assert.equal(settings.simulationMode, false)
@@ -4161,14 +4176,14 @@ describe('background eth_accounts', () => {
 		await enableSimulationMode(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_enableSimulationMode',
 			data: true,
-		})
+		}, {}, undefined)
 		const restoredSimulationSettings = await getRequiredSettings()
 		assert.equal(restoredSimulationSettings.activeSimulationAddress, simulationAddress)
 		assert.equal(restoredSimulationSettings.activeSigningSafeAddress, safeAddress)
 		await enableSimulationMode(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_enableSimulationMode',
 			data: false,
-		})
+		}, {}, undefined)
 		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeAddress)
 
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
@@ -4177,7 +4192,7 @@ describe('background eth_accounts', () => {
 		await enableSimulationMode(simulationServicesOwner, new Map(), {
 			method: 'popup_enableSimulationMode',
 			data: false,
-		})
+		}, {}, undefined)
 
 		const noSignerSettings = await getRequiredSettings()
 		assert.equal(noSignerSettings.simulationMode, false)
@@ -4305,7 +4320,7 @@ describe('background eth_accounts', () => {
 		await enableSimulationMode(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_enableSimulationMode',
 			data: false,
-		})
+		}, {}, undefined)
 		await accountReply
 
 		const signingSettings = await getRequiredSettings()

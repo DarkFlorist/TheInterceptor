@@ -383,7 +383,7 @@ describe('RPC storage recovery', () => {
 
 	test('background retry resumes stored RPC services and pauses them again if validation fails', async () => {
 		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
-		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+		await retryRpcConfiguration(owner, new Map(), undefined, ignoreRecoveryPublication)
 		assert.equal(owner.getCurrent() !== undefined, true)
 		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customPrimaryRpc.httpsRpc)
 
@@ -391,7 +391,7 @@ describe('RPC storage recovery', () => {
 		const originalWarn = console.warn
 		console.warn = () => undefined
 		try {
-			await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+			await retryRpcConfiguration(owner, new Map(), undefined, ignoreRecoveryPublication)
 			assert.equal(owner.getCurrent() !== undefined, false)
 			assert.equal(runtimeMessages.length, 2)
 		} finally {
@@ -411,7 +411,7 @@ describe('RPC storage recovery', () => {
 		if (!settingsReply.data.rpcStatus.available) assert.equal(settingsReply.data.rpcStatus.readableActiveRpcNetwork?.name, customPrimaryRpc.name)
 		assert.equal(owner.getCurrent() !== undefined, false)
 
-		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+		await retryRpcConfiguration(owner, new Map(), undefined, ignoreRecoveryPublication)
 		assert.equal(owner.getCurrent() !== undefined, true)
 		owner.clear()
 	})
@@ -709,7 +709,7 @@ describe('RPC storage recovery', () => {
 			if (emptyListUpdate.data.available) assert.deepEqual(emptyListUpdate.data.rpcEntries, [])
 		}
 
-		await retryRpcConfiguration(owner, ignoreRecoveryPublication)
+		await retryRpcConfiguration(owner, new Map(), undefined, ignoreRecoveryPublication)
 		assert.equal(owner.getCurrent() !== undefined, false)
 		const retryListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(retryListUpdate.method, 'popup_update_rpc_list')

@@ -203,18 +203,18 @@ export function requireAvailableSettings(snapshot: SettingsSnapshot): Settings {
 	return snapshot.settings
 }
 
-// Projection for callers that branch on availability themselves and only need the settings fields. An unavailable RPC configuration that kept a readable active network (corrupt, emptied or unwritable entries) still has settings, so this says nothing about whether the configuration is usable.
-export function settingsIfAvailable(snapshot: SettingsSnapshot): Settings | undefined {
+// The weaker of the two settings projections, named so every call site shows it: settings whenever they are readable, even while the RPC configuration is unusable (corrupt, emptied or unwritable entries with a readable active network). Only for callers that branch on availability themselves and only need the settings fields; a decision that must fail closed on any unusable RPC configuration (granting access, choosing how tabs are blocked) uses settingsIfRpcConfigurationReady.
+export function settingsEvenIfRpcConfigurationUnusable(snapshot: SettingsSnapshot): Settings | undefined {
 	return snapshot.status === 'available' ? snapshot.settings : undefined
 }
 
 // Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
 export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): Settings | undefined {
-	return rpcConfigurationIsReady(snapshot.rpcConfiguration) ? settingsIfAvailable(snapshot) : undefined
+	return rpcConfigurationIsReady(snapshot.rpcConfiguration) ? settingsEvenIfRpcConfigurationUnusable(snapshot) : undefined
 }
 
-// Projection for granting access: unreadable approvals fail closed to none.
-export function approvalsOrNone(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
+// Projection for granting access: unreadable approvals fail closed to none, which the name states. A path where a failed read must stop the caller instead uses requireReadableApprovals.
+export function approvalsOrNoneIfUnreadable(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
 	if (snapshot.status === 'available') return snapshot.settings.websiteAccess
 	const websiteApprovals = snapshot.status === 'unavailable' ? snapshot.websiteApprovals : snapshot
 	return websiteApprovals.status === 'readable' ? websiteApprovals.websiteAccess : []

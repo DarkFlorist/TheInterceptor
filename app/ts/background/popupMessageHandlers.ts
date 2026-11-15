@@ -243,7 +243,7 @@ export async function changeActiveAddress(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	addressChange: ChangeActiveAddress,
-	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
+	admittedSnapshot: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState } | undefined,
 ) {
 	if (addressChange.data.activeAddress === 'signer') {
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
@@ -714,8 +714,8 @@ export async function enableSimulationMode(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	params: EnableSimulationMode,
-	signerAccountRefreshOptions: SignerAccountRefreshOptions = {},
-	admitted?: { readonly settings: Settings, readonly rpcConfiguration: Extract<RpcConfigurationState, { readonly status: 'ready' }> },
+	signerAccountRefreshOptions: SignerAccountRefreshOptions,
+	admitted: { readonly settings: Settings, readonly rpcConfiguration: Extract<RpcConfigurationState, { readonly status: 'ready' }> } | undefined,
 ) {
 	const settings = admitted?.settings ?? requireAvailableSettings(await getSettingsSnapshot())
 	if (settings.simulationMode === params.data) return
@@ -831,7 +831,7 @@ export async function requestNewHomeData(
 	includeWebsiteAccessAddressMetadata: boolean,
 	requestAbortController: AbortController | undefined,
 	popupRefreshGeneration: number,
-	admittedSettings?: Settings,
+	admittedSettings: Settings | undefined,
 ) {
 	const newPopupRefreshGeneration = popupRefreshGeneration
 	const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
@@ -884,9 +884,9 @@ export async function refreshHomeData(
 	shouldRefreshSignerAccounts: boolean,
 	popupRefreshGeneration: number,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
-	refreshSimulation = true,
-	requestAbortController: AbortController | undefined = undefined,
-	admittedSettings?: Settings,
+	refreshSimulation: boolean,
+	requestAbortController: AbortController | undefined,
+	admittedSettings: Settings | undefined,
 ) {
 	const newPopupRefreshGeneration = popupRefreshGeneration
 	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
@@ -1140,7 +1140,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 
 export const requestActiveAddresses = async () => ({ method: 'popup_requestActiveAddresses' as const, activeAddresses: await getActiveAddresses() })
 
-export const requestSimulationMode = async (admittedSettings?: Settings) => {
+export const requestSimulationMode = async (admittedSettings: Settings | undefined) => {
 	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	return { method: 'popup_requestSimulationMode' as const, simulationMode: settings.simulationMode }
 }
@@ -1181,7 +1181,7 @@ async function buildHomePageUpdate(
 		shouldRefreshSignerAccounts: boolean
 		includeWebsiteAccessAddressMetadata: boolean
 		popupRefreshGeneration: number
-		admittedSettings?: Settings
+		admittedSettings: Settings | undefined
 	}
 ): Promise<UpdateHomePage> {
 	const settingsPromise = silenceChromeUnCaughtPromise(admittedSettings === undefined ? getSettingsSnapshot().then(requireAvailableSettings) : Promise.resolve(admittedSettings))
@@ -1255,7 +1255,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 	})
 }
 
-export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService, admittedSettings?: Settings) {
+export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService, admittedSettings: Settings | undefined) {
 	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const stack = await getInterceptorTransactionStack()
 	if (!settings.simulationMode) {
@@ -1343,7 +1343,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
 
-export async function requestSimulationMetadata(ethereumClientService: EthereumClientService, admittedSettings?: Settings) {
+export async function requestSimulationMetadata(ethereumClientService: EthereumClientService, admittedSettings: Settings | undefined) {
 	const settings = admittedSettings ?? requireAvailableSettings(await getSettingsSnapshot())
 	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {

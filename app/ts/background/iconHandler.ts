@@ -5,7 +5,7 @@ import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackg
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
 import type { TabIcon, TabState } from '../types/user-interface-types.js'
-import { getSettingsSnapshot, settingsIfRpcConfigurationReady, approvalsOrNone, requireReadableApprovals, getWebsiteApprovalsSnapshot } from './settings.js'
+import { getSettingsSnapshot, settingsIfRpcConfigurationReady, approvalsOrNoneIfUnreadable, requireReadableApprovals, getWebsiteApprovalsSnapshot } from './settings.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
@@ -125,7 +125,7 @@ export async function updateExtensionIcon(tabId: number, websiteOrigin: string, 
 
 		const snapshot = await getSettingsSnapshot()
 		const settings = settingsIfRpcConfigurationReady(snapshot)
-		const websiteAccess = approvalsOrNone(snapshot)
+		const websiteAccess = approvalsOrNoneIfUnreadable(snapshot)
 		if (hasAccess(websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 		// The active address is resolved on the active RPC network's chain and requests are refused until the RPC configuration is ready, so until then the icon shows the paused state (with the blocking shield when blocking is applied).
 		if (settings === undefined) return setIcon(ICON_NOT_ACTIVE, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE)

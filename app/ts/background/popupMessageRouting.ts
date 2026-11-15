@@ -8,7 +8,7 @@ import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
 import { readFailedRpcConfiguration, type RpcConfigurationState } from './rpcConfigurationStorage.js'
-import { getSettingsSnapshot, settingsIfAvailable, type SettingsSnapshot } from './settings.js'
+import { getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable, type SettingsSnapshot } from './settings.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 
 const simulationAbortController = new AbortController()
@@ -69,5 +69,5 @@ export async function handlePopupRuntimeMessage(
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ) {
 	const settingsSnapshot = await getSettingsSnapshotForAdmission()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsIfAvailable(settingsSnapshot), settingsSnapshot.rpcConfiguration, publishRpcConnectionStatus)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsEvenIfRpcConfigurationUnusable(settingsSnapshot), settingsSnapshot.rpcConfiguration, publishRpcConnectionStatus)
 }

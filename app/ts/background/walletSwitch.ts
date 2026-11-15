@@ -104,7 +104,8 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 	const route = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
 	if (route !== 'wallet') {
 		if (route === 'local') {
-			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
+			// No admitted snapshot: the settings above were just read live, and the change reads them again under its lock.
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork }, undefined)
 		}
 		await promoteRpcAsPrimary(rpcNetwork)
 		return { result: null }
