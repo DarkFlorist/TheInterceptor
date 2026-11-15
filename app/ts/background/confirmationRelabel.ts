@@ -32,7 +32,6 @@ async function relabelStoredConfirmation(rpcNetwork: RpcNetwork, stored: Pending
 		stored,
 		getRunToRelabel: (pending) => isRunToRelabel(pending) ? getConfirmationRunToRelabel(pending, rpcNetwork.chainId) : undefined,
 		updateStored: async (relabel) => await updatePendingTransactionOrMessage(stored.uniqueRequestIdentifier, async (current) => relabel(current)),
-		abortController: undefined,
 	})
 }
 

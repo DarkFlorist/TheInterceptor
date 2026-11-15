@@ -24,12 +24,10 @@ type StoredSimulationRelabel<Stored> = {
 	readonly getRunToRelabel: (stored: Stored) => SimulationRunToRelabel<Stored> | undefined
 	// Atomically replaces the stored result with relabel(current), or keeps it when relabel returns undefined.
 	readonly updateStored: (relabel: (current: Stored) => Stored | undefined) => Promise<unknown>
-	// Aborted by newer work that replaces the stored result and stores its own. Undefined for a re-label that nothing cancels, which relies on the write guard alone.
-	readonly abortController: AbortController | undefined
 }
 
 // Re-runs only the visualisation step (address-book names, ABI-parsed input, token metadata, and protector warnings such as send-to-non-contact) for a stored run, without any RPC request (see visualizeStoredRunWithoutNode), then writes the new metadata only onto that same run.
-export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { stored, getRunToRelabel, updateStored, abortController }: StoredSimulationRelabel<Stored>) {
+export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { stored, getRunToRelabel, updateStored }: StoredSimulationRelabel<Stored>) {
 	const runToRelabel = getRunToRelabel(stored)
 	if (runToRelabel === undefined) return
 	// A run stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved could only be visualised again by simulating, so it keeps its names until it is simulated again.
@@ -37,8 +35,7 @@ export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { 
 	if (recorded === undefined) return
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
 	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, recorded, rpcNetwork)
-	// Newer work that aborted this re-label while it visualised stores its own result instead.
-	if (abortController?.signal.aborted) return
+	// Nothing cancels a re-label: newer work may store no fresh names, so the write guard below alone keeps it from replacing a result stored meanwhile.
 	await updateStored((current) => {
 		// The stale-write guard: a newer run stored meanwhile has another id, and a result stored under the same id that can no longer be re-labelled (a stack invalidation keeps the id of the run it raced with) is left alone.
 		const currentRun = getRunToRelabel(current)

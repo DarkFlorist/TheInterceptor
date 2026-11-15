@@ -104,7 +104,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
 
-// Counts only real simulations running under the semaphore. Metadata re-labels and the failure write in publishFailedPopupVisualisation hold the semaphore too but are not counted, so onlyIfNotAlreadyUpdating callers still refresh while only those run, queueing behind them (and aborting a re-label).
+// Counts only real simulations running under the semaphore. Metadata re-labels and the failure write in publishFailedPopupVisualisation hold the semaphore too but are not counted, so onlyIfNotAlreadyUpdating callers still refresh while only those run, queueing behind them; a queued refresh leaves a re-label running, as re-labels are not cancellable.
 let runningSimulations = 0
 async function countAsRunningSimulation(simulate: () => Promise<void>) {
 	runningSimulations += 1
@@ -123,9 +123,9 @@ async function executeVisualisationUpdate(capturedAbortController: AbortControll
 	})
 }
 
-// Only a finished simulation with operations on the services' chain can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and pending, invalidated or failed states are about to be replaced by a simulation that resolves the current metadata itself.
+// A stored simulation result that is still valid, with operations on the services' chain, can be re-labelled: empty states show no operations, another chain's simulation must not get this chain's metadata, and an invalidated result is about to be replaced by a simulation that resolves the current metadata itself. That includes a previous result a refresh kept ('updating' while the node cannot be reached, or 'failed'): it stays shown until a refresh succeeds, so it must show the current names too. Re-labels run under the simulation semaphore, so no refresh is in progress when one reads the stored state.
 function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation, chainId: bigint): SimulationRunToRelabel<StoredCompleteVisualizedSimulation> | undefined {
-	if (visualisation.simulationUpdatingState !== 'done' || visualisation.simulationResultState !== 'done') return undefined
+	if (visualisation.simulationResultState !== 'done') return undefined
 	if (visualisation.simulationState.kind !== 'simulated') return undefined
 	const simulationState = visualisation.simulationState.value
 	if (simulationState.rpcNetwork.chainId !== chainId || !hasSimulationInputOperations(simulationState)) return undefined
@@ -133,17 +133,10 @@ function getStackRunToRelabel(visualisation: StoredCompleteVisualizedSimulation,
 	return { runId: visualisation.simulationId, simulationState, storedMetadata: visualisation, withMetadata: (metadata) => ({ ...visualisation, ...metadata, metadataRevision: (visualisation.metadataRevision ?? 0) + 1 }) }
 }
 
-// publishFailedPopupVisualisation aborts the shared controller without replacing it, and direct refreshes such as imports do not replace it either. A re-label requested afterwards must not inherit that stale cancellation, while any later refresh still aborts the controller returned here.
-function getUncancelledAbortController() {
-	if (abortController.signal.aborted) abortController = new AbortController()
-	return abortController
-}
-
 // Re-labels the stored stack simulation without simulating, and publishes the re-labelled state; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
-	// Captured at request time, so a newer block, stack or failure refresh also cancels a re-label still waiting for the semaphore.
-	const thisAbortController = getUncancelledAbortController()
-	await executeVisualisationUpdate(thisAbortController, async () => {
+	// Not cancellable: a newer refresh may store no fresh names (it keeps the previous result while the node cannot be reached), so the re-label runs in semaphore order instead. Running before a refresh, its names are what the refresh keeps or replaces; running after one, it re-labels the stored result, which costs no RPC request.
+	await executeVisualisationUpdate(undefined, async () => {
 		let relabelledState: StoredCompleteVisualizedSimulation | undefined
 		await relabelStoredSimulation(rpcNetwork, {
 			stored: await getPopupVisualisationState(),
@@ -152,7 +145,6 @@ export async function relabelPopupVisualisation(rpcNetwork: RpcNetwork) {
 				relabelledState = relabel(current)
 				return relabelledState
 			}),
-			abortController: thisAbortController,
 		})
 		// Views that render publications, such as the FetchSimulationStack sharing dialog, get the new names this way. Published under the semaphore, as every refresh's result is, so it reaches views in order with them; views render a publication without requesting a simulation (components/simulationStatePublications.ts).
 		if (relabelledState !== undefined) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: relabelledState } })

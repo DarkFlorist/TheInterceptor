@@ -20,7 +20,6 @@ import { permit2Message } from './data/eip712Data.js'
 import { last } from '../../app/ts/utils/array.js'
 import type { UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 import { NEW_BLOCK_ABORT, TRANSFER_LOG } from '../../app/ts/utils/constants.js'
-import { isNewBlockAbort } from '../../app/ts/utils/errors.js'
 import { keccak256, stringToBytes } from '../../app/ts/utils/ethereumPrimitives.js'
 import { activeAddress, addressString, browserMock, hexToBytes, created, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, oldTimestamp, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier, withSilencedConsole, type RuntimeMessage, type StorageKeys } from './confirmTransactionTestHarness.js'
 
@@ -280,13 +279,9 @@ async function changeAddressBookWhileRelabelIsStalled(change: () => Promise<unkn
 
 const hasNotInAddressBookWarning = (transaction: SimulatedAndVisualizedTransaction) => transaction.quarantineReasons.some((reason) => reason.includes(NOT_IN_ADDRESS_BOOK_WARNING))
 
-// The stack re-label as publishAddressBookChangeAndRelabelSimulations runs it, where cancellation by a newer refresh is expected.
+// The stack re-label as publishAddressBookChangeAndRelabelSimulations runs it.
 async function relabelStoredStack() {
-	try {
-		await relabelPopupVisualisation(fakeRpcNetwork)
-	} catch (error: unknown) {
-		if (!isNewBlockAbort(error)) throw error
-	}
+	await relabelPopupVisualisation(fakeRpcNetwork)
 }
 
 // The stack states the background published with popup_simulation_state_changed since the observed messages were last cleared.
@@ -1813,37 +1808,30 @@ test('a Safe signer refresh blocked while a newer run is stored and an address-b
 type StoredRunStandIn = { readonly runId: number, readonly canBeRelabelled: boolean, readonly recipientName: string | undefined }
 const storedRunStandIn: StoredRunStandIn = { runId: 1, canBeRelabelled: true, recipientName: undefined }
 
-// Re-labels storedRunStandIn through the shared re-label with the stored stack's simulation. While the re-label looks up names, duringLookups returns the stand-in stored from then on and may abort the re-label. Returns the stand-in stored at the end.
-async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn) {
+// Re-labels storedRunStandIn through the shared re-label with the stored stack's simulation. While the re-label looks up names, duringLookups returns the stand-in stored from then on. Returns the stand-in stored at the end.
+async function relabelStoredRunStandIn(duringLookups: (stored: StoredRunStandIn) => StoredRunStandIn) {
 	const { stored: storedStack, simulationState } = await getStoredStackVisualisation()
 	const getRunToRelabel = (stored: StoredRunStandIn): SimulationRunToRelabel<StoredRunStandIn> | undefined => stored.canBeRelabelled
 		? { runId: stored.runId, simulationState, storedMetadata: storedStack, withMetadata: (metadata) => ({ ...stored, recipientName: getRecipientName(metadata.visualizedSimulationState) }) }
 		: undefined
-	const abortController = new AbortController()
 	let stored = storedRunStandIn
 	runOnceDuringAddressBookLookup(async () => {
-		stored = duringLookups(stored, abortController)
+		stored = duringLookups(stored)
 	})
-	try {
-		await relabelStoredSimulation(fakeRpcNetwork, {
-			stored,
-			getRunToRelabel,
-			updateStored: async (relabel) => { stored = relabel(stored) ?? stored },
-			abortController,
-		})
-	} catch (error: unknown) {
-		if (!isNewBlockAbort(error)) throw error
-	}
+	await relabelStoredSimulation(fakeRpcNetwork, {
+		stored,
+		getRunToRelabel,
+		updateStored: async (relabel) => { stored = relabel(stored) ?? stored },
+	})
 	browserMock.setStorageGetHandler(undefined)
 	return stored
 }
 
 test('the shared re-label writes the new metadata only onto the same run while it can still be re-labelled', async () => {
-	const relabelOutcomes: readonly { description: string, duringLookups: (stored: StoredRunStandIn, abortController: AbortController) => StoredRunStandIn, expected: StoredRunStandIn }[] = [
+	const relabelOutcomes: readonly { description: string, duringLookups: (stored: StoredRunStandIn) => StoredRunStandIn, expected: StoredRunStandIn }[] = [
 		{ description: 'the same run is still stored', duringLookups: (stored) => stored, expected: { ...storedRunStandIn, recipientName: recipientContact.name } },
 		{ description: 'a newer run is stored', duringLookups: (stored) => ({ ...stored, runId: stored.runId + 1 }), expected: { ...storedRunStandIn, runId: storedRunStandIn.runId + 1 } },
 		{ description: 'the same run can no longer be re-labelled', duringLookups: (stored) => ({ ...stored, canBeRelabelled: false }), expected: { ...storedRunStandIn, canBeRelabelled: false } },
-		{ description: 'newer work aborts the re-label', duringLookups: (stored, abortController) => { abortController.abort(NEW_BLOCK_ABORT); return stored }, expected: storedRunStandIn },
 	]
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
@@ -1924,21 +1912,30 @@ test('a stack simulation stored without recorded lookups is not re-labelled', as
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), false)
 })
 
-test('pending, failed and invalidated stack visualisations are not re-labelled', async () => {
-	const unsettledStates: readonly Pick<CompleteVisualizedSimulation, 'simulationUpdatingState' | 'simulationResultState'>[] = [
-		{ simulationUpdatingState: 'updating', simulationResultState: 'done' },
-		{ simulationUpdatingState: 'failed', simulationResultState: 'done' },
-		{ simulationUpdatingState: 'done', simulationResultState: 'invalid' },
-	]
-	for (const unsettledState of unsettledStates) {
+// A refresh that cannot reach the node, or fails, keeps the previous result under a new simulation id; it stays shown until a refresh succeeds, so an address-book change must re-label it too.
+test('a previous stack result kept by an unreachable or failed refresh is re-labelled', async () => {
+	for (const simulationUpdatingState of ['updating', 'failed'] as const) {
 		await openSimulationModeConfirmationSendingEther()
-		const unsettledVisualisation = await updateStoredStackVisualisation((stored) => ({ ...stored, ...unsettledState }))
+		const kept = await updateStoredStackVisualisation((stored) => ({ ...stored, simulationId: stored.simulationId + 1, simulationUpdatingState, simulationResultState: 'done' }))
 		await addRecipientContactWithoutBroadcast()
 
 		await relabelStoredStack()
 
-		assert.deepEqual(await getPopupVisualisationState(), unsettledVisualisation)
+		const relabelled = await getPopupVisualisationState()
+		assert.equal(getRecipientName(relabelled.visualizedSimulationState), recipientContact.name, simulationUpdatingState)
+		assert.equal(relabelled.simulationUpdatingState, simulationUpdatingState)
+		assert.equal(relabelled.simulationId, kept.simulationId)
 	}
+})
+
+test('an invalidated stack visualisation is not re-labelled', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const invalidated = await updateStoredStackVisualisation((stored) => ({ ...stored, simulationResultState: 'invalid' }))
+	await addRecipientContactWithoutBroadcast()
+
+	await relabelStoredStack()
+
+	assert.deepEqual(await getPopupVisualisationState(), invalidated)
 })
 
 function recordStoredVisualisationWrites() {
@@ -1951,23 +1948,27 @@ function recordStoredVisualisationWrites() {
 	return storedVisualisationWrites
 }
 
-test('a stack re-label aborted by a newer refresh during its metadata lookups stores nothing', async () => {
+// A newer refresh may store no fresh names (it keeps the previous result while the node cannot be reached), so it does not cancel a running re-label: the re-label stores its names first and the refresh's result follows.
+test('a refresh requested during a stack re-label\'s metadata lookups does not cancel it', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
 	const storedVisualisationWrites = recordStoredVisualisationWrites()
-	let abortingRefresh: Promise<void> | undefined
+	let failureRefresh: Promise<void> | undefined
 	// publishFailedPopupVisualisation aborts the shared controller at once and then waits for the re-label to release the simulation semaphore.
 	runOnceDuringAddressBookLookup(async () => {
-		abortingRefresh = publishFailedPopupVisualisation()
+		failureRefresh = publishFailedPopupVisualisation()
 	})
 
 	await relabelStoredStack()
-	await abortingRefresh
+	await failureRefresh
 	browserMock.setStorageGetHandler(undefined)
 	browserMock.setStorageSetHandler(undefined)
 
-	assert.equal(storedVisualisationWrites.length, 1)
-	assert.equal(CompleteVisualizedSimulation.parse(storedVisualisationWrites[0]).simulationUpdatingState, 'failed')
+	const writes = storedVisualisationWrites.map((write) => CompleteVisualizedSimulation.parse(write))
+	assert.deepEqual(writes.map((write) => write.simulationUpdatingState), ['done', 'failed'])
+	const [relabelled] = writes
+	if (relabelled === undefined) throw new Error('Expected the re-labelled stack to be stored')
+	assert.equal(getRecipientName(relabelled.visualizedSimulationState), recipientContact.name)
 })
 
 test('a stack re-label after a failed refresh aborted the shared controller still stores its names', async () => {
@@ -1982,7 +1983,7 @@ test('a stack re-label after a failed refresh aborted the shared controller stil
 	assert.equal(getRecipientName((await getStoredStackVisualisation()).stored.visualizedSimulationState), recipientContact.name)
 })
 
-test('a stack re-label waiting for the simulation semaphore is cancelled by a failure refresh requested meanwhile', async () => {
+test('stack re-labels waiting for the simulation semaphore run in order before a failure refresh requested after them', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	await addRecipientContactWithoutBroadcast()
 	const storedVisualisationWrites = recordStoredVisualisationWrites()
@@ -2003,7 +2004,7 @@ test('a stack re-label waiting for the simulation semaphore is cancelled by a fa
 	browserMock.setStorageGetHandler(undefined)
 	browserMock.setStorageSetHandler(undefined)
 
-	assert.deepEqual(storedVisualisationWrites.map((write) => CompleteVisualizedSimulation.parse(write).simulationUpdatingState), ['failed'])
+	assert.deepEqual(storedVisualisationWrites.map((write) => CompleteVisualizedSimulation.parse(write).simulationUpdatingState), ['done', 'done', 'failed'])
 })
 
 test('a block-time manipulation change during a stack re-label still simulates the stack again', async () => {
