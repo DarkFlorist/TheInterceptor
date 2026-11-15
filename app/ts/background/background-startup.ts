@@ -1,6 +1,6 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettingsSnapshot, updateKnownWebsiteMetadata, requireAvailableSettings } from './settings.js'
+import { getSettingsSnapshot, updateKnownWebsiteMetadata, requireReadableSettings } from './settings.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { handlePopupRuntimeMessage } from './popupMessageRouting.js'
@@ -238,7 +238,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			if (owner === undefined) return
 			const settingsSnapshot = await getSettingsSnapshot()
 			if (!rpcConfigurationIsReady(settingsSnapshot.rpcConfiguration)) return
-			const settings = requireAvailableSettings(settingsSnapshot)
+			const settings = requireReadableSettings(settingsSnapshot)
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()

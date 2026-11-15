@@ -2365,6 +2365,22 @@ describe('background eth_accounts', () => {
 		assert.equal(storedEntry?.declarativeNetRequestBlockMode, 'block-all')
 	})
 
+	test('a Safe Apps compatibility refresh during an outage waits for recovery instead of failing', async () => {
+		installBrowserMock()
+		const { createSafeAppsCompatibilityFeature } = await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js')
+		const { getLatestUnexpectedError, setLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const { websiteTabConnections } = await setUpStoredAccessThenCorruptActiveNetwork()
+		await setLatestUnexpectedError(undefined)
+		const feature = createSafeAppsCompatibilityFeature(websiteTabConnections)
+
+		// Enabling refreshes every port, as approval changes and reconciliations do; an unusable RPC configuration is an expected state, not an unexpected error.
+		feature.setEnabled(true)
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		feature.dispose()
+
+		assert.equal(await getLatestUnexpectedError(), undefined)
+	})
+
 	test('a denial saved during an outage is applied to an open connection when Retry recovers the RPC configuration', async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings, setRpcConfiguration } = await loadModules()

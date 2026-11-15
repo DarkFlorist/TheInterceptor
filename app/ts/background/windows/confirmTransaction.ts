@@ -33,7 +33,7 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettingsSnapshot, requireAvailableSettings } from '../settings.js'
+import { getSettingsSnapshot, requireReadableSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
@@ -233,7 +233,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const pendingTransactionAndSignableMessages = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		// Read only once there is a queue to show, so unavailable settings never fail an update that returns early.
-		const settings = requireAvailableSettings(await getSettingsSnapshot())
+		const settings = requireReadableSettings(await getSettingsSnapshot())
 		const visualizedSimulatorState = settings.simulationMode
 			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
 			: createPassthroughCompleteVisualizedSimulation()
@@ -476,7 +476,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (confirmation.data.action === 'noResponse') return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, createSafeSignerReplyContext(services, websiteTabConnections))
 	const pending = await getPendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 	if (pending === undefined) return // no need to resolve as it doesn't exist anymore
-	// Reject follows the popup-close rules, so a signature the signer already returned is settled as signed rather than rejected, and an answered request only finishes its own answer.
+	// Reject follows the popup-close rules: an answered request only finishes its own answer, and a signature the signer already returned is settled as signed. Claiming a signature moves the confirmation window past its request, so a Reject reaches a claimed request only when it raced the signature, and as with every confirmation decision the one that arrived first wins; the user approved the signature in their wallet before the Reject was handled.
 	if (confirmation.data.action === 'reject' && (isOwnedBySafeSignerReplyLifecycle(pending) || pending.websiteReplyQueued === true)) {
 		return await resolvePendingRequestAsNoResponse(confirmation.data.uniqueRequestIdentifier, createSafeSignerReplyContext(services, websiteTabConnections))
 	}

@@ -138,7 +138,7 @@ export type WebsiteApprovalsSnapshot =
 	| { readonly status: 'readable', readonly websiteAccess: WebsiteAccessArray }
 	| { readonly status: 'unreadable', readonly error: unknown }
 
-// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. Settings need an active RPC network, so `unavailable` carries only the approvals' own availability.
+// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. Settings need an active RPC network, so `unavailable` carries only the approvals' own availability. `available` means the settings fields are readable (the active network could be read), not that the RPC configuration is usable: `rpcConfiguration` says that separately (see settingsIfRpcConfigurationReady).
 export type SettingsSnapshot =
 	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
 	| { readonly status: 'unavailable', readonly rpcConfiguration: RpcConfigurationState, readonly websiteApprovals: WebsiteApprovalsSnapshot }
@@ -197,8 +197,8 @@ export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorr
 	}
 }
 
-// Projection for operations that cannot continue without settings: throws the RPC-configuration-unavailable error.
-export function requireAvailableSettings(snapshot: SettingsSnapshot): Settings {
+// The settings fields, required to be readable: throws the RPC-configuration-unavailable error when the active network itself cannot be read. Readable is all it proves; the RPC entries may still be corrupt, emptied or unwritable. A decision that needs a usable RPC configuration (granting, tab blocking, anything trusting the active chain) uses settingsIfRpcConfigurationReady instead.
+export function requireReadableSettings(snapshot: SettingsSnapshot): Settings {
 	if (snapshot.status === 'unavailable') throw createRpcConfigurationUnavailableError()
 	return snapshot.settings
 }
@@ -454,7 +454,7 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettingsSnapshot().then(requireAvailableSettings), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences] = await Promise.all([getSettingsSnapshot().then(requireReadableSettings), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.6' as const,

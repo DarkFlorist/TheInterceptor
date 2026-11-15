@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { assertLiveSettingsInGrantWindow, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, requireAvailableSettings, grantWithLiveSettings } from './settings.js'
+import { assertLiveSettingsInGrantWindow, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, requireReadableSettings, grantWithLiveSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -348,7 +348,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 			if (!connection.wantsToConnect) continue
 			try {
 				// Reconciliation uses the committed snapshot; deferred prompts must recheck the latest settings.
-				const settings = requireAvailableSettings(await getSettingsSnapshot())
+				const settings = requireReadableSettings(await getSettingsSnapshot())
 				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)

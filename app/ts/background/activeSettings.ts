@@ -12,7 +12,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { reconcileAfterIndependentSteps } from './committedWriteReconciliation.js'
 import { runEachIndependently } from '../utils/array.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireAvailableSettings, settingsForPublication, settingsWithoutApprovals, captureRpcNetwork, settingsEvenIfRpcConfigurationUnusable } from './settings.js'
+import { changeSimulationMode, getSettingsAfterStorageUpdates, getSettingsSnapshot, getAdmittedRpcNetworkSnapshot, setUseSignersAddressAsActiveAddress, type SimulationModeChanges, trackPreviousActiveAddressForMakeMeRichList, requireReadableSettings, settingsForPublication, settingsWithoutApprovals, captureRpcNetwork, settingsEvenIfRpcConfigurationUnusable } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -24,7 +24,7 @@ import { rpcConfigurationIsReady, rpcConfigurationIsUsable, rpcServicesAreOption
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 async function clearSimulationStateFromConfig(settingsSnapshot?: Settings) {
-	const settings = settingsSnapshot ?? requireAvailableSettings(await getSettingsSnapshot())
+	const settings = settingsSnapshot ?? requireReadableSettings(await getSettingsSnapshot())
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
@@ -169,7 +169,7 @@ async function runActiveSettingsChange(
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
 			// The baseline is the settings committed when the semaphore is acquired, so a network change made after admission is never overwritten; the admitted settings stand in only when the live settings cannot be read.
 			const liveSnapshot = await getSettingsSnapshot()
-			const previousSettings = settingsEvenIfRpcConfigurationUnusable(liveSnapshot) ?? transition.admittedSnapshot?.settings ?? requireAvailableSettings(liveSnapshot)
+			const previousSettings = settingsEvenIfRpcConfigurationUnusable(liveSnapshot) ?? transition.admittedSnapshot?.settings ?? requireReadableSettings(liveSnapshot)
 			// Authorization is separate from the baseline: an admitted transition may still complete after the RPC configuration became unreadable since admission, so the admitted configuration authorizes it when the live one is not ready.
 			const authorizingRpcConfiguration = transition.admittedSnapshot === undefined || rpcConfigurationIsReady(liveSnapshot.rpcConfiguration) ? liveSnapshot.rpcConfiguration : transition.admittedSnapshot.rpcConfiguration
 			const rpcServicesOptional = rpcServicesAreOptional(authorizingRpcConfiguration)

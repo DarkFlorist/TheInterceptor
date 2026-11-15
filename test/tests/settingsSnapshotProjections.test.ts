@@ -28,7 +28,7 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { approvalsOrNoneIfUnreadable, captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireAvailableSettings, requireReadableApprovals, settingsForPublication, settingsEvenIfRpcConfigurationUnusable, settingsOnAdmittedRpcNetwork } = await import('../../app/ts/background/settings.js')
+const { approvalsOrNoneIfUnreadable, captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireReadableSettings, requireReadableApprovals, settingsForPublication, settingsEvenIfRpcConfigurationUnusable, settingsOnAdmittedRpcNetwork } = await import('../../app/ts/background/settings.js')
 
 const approvals: WebsiteAccessArray = [{ website: { websiteOrigin: 'approved.example', icon: undefined, title: undefined }, access: true }]
 const settings: Settings = {
@@ -46,10 +46,10 @@ const unavailableWithApprovals = { status: 'unavailable', rpcConfiguration: { st
 const unavailableUnreadable = { status: 'unavailable', rpcConfiguration: { status: 'unavailable', reason: 'read-failed', error: storageError }, websiteApprovals: { status: 'unreadable', error: storageError } } as const
 
 describe('settings snapshot projections', () => {
-	test('requireAvailableSettings returns available settings and otherwise throws the unavailable error', () => {
-		assert.equal(requireAvailableSettings(available), settings)
-		assert.throws(() => requireAvailableSettings(unavailableWithApprovals), isRpcConfigurationUnavailableError)
-		assert.throws(() => requireAvailableSettings(unavailableUnreadable), isRpcConfigurationUnavailableError)
+	test('requireReadableSettings returns available settings and otherwise throws the unavailable error', () => {
+		assert.equal(requireReadableSettings(available), settings)
+		assert.throws(() => requireReadableSettings(unavailableWithApprovals), isRpcConfigurationUnavailableError)
+		assert.throws(() => requireReadableSettings(unavailableUnreadable), isRpcConfigurationUnavailableError)
 	})
 
 	test('settingsEvenIfRpcConfigurationUnusable returns available settings and otherwise undefined', () => {
@@ -130,7 +130,7 @@ describe('admitted RPC network snapshot', () => {
 			assert.equal(settingsOnAdmittedRpcNetwork(pinned)?.activeRpcNetwork.chainId, 10n)
 			assert.equal(settingsOnAdmittedRpcNetwork(pinned)?.simulationMode, false)
 			// getSettingsSnapshot still reports the persisted network.
-			assert.equal(requireAvailableSettings(await getSettingsSnapshot()).activeRpcNetwork.chainId, 1n)
+			assert.equal(requireReadableSettings(await getSettingsSnapshot()).activeRpcNetwork.chainId, 1n)
 		} finally {
 			for (const key of ['activeRpcNetwork', 'rpcEntries', 'simulationMode']) delete storageState[key]
 		}

@@ -9,7 +9,7 @@ import { isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { getSafeAppsCompatibilityMode, getSettingsSnapshot, requireAvailableSettings, grantWithLiveSettings } from './settings.js'
+import { getSafeAppsCompatibilityMode, getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable, grantWithLiveSettings } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
@@ -63,7 +63,9 @@ function createSafeAppsCompatibilityCoordinator() {
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)
 		if (!active) return
-		const settings = requireAvailableSettings(await getSettingsSnapshot())
+		// Unreadable settings are an expected outage state, not an error: the refresh waits for the reconciliation that follows recovery. With readable settings but an unusable RPC configuration the flag is still published, and the consent restore fails closed inside grantWithLiveSettings.
+		const settings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
+		if (settings === undefined) return
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
 		const safe = await getConfiguredSigningSafe(settings, tabState.signerAccounts)
@@ -81,7 +83,8 @@ function createSafeAppsCompatibilityCoordinator() {
 		const eligible = await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		// Re-read persisted state after async eligibility work; a newer publication invalidates this token while state transitions are being applied.
-		const latestSettings = requireAvailableSettings(await getSettingsSnapshot())
+		const latestSettings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
+		if (latestSettings === undefined) return
 		const latestEnabled = active
 		const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 		if (!isCurrentPublication(socketIdentifier, token)) return

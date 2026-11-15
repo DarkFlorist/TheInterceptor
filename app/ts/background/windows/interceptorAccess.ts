@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLonger
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { type AdmittedRpcNetworkNoLongerLive, getSettingsSnapshot, type LiveSettings, settingsEvenIfRpcConfigurationUnusable, requireAvailableSettings, grantWithLiveSettings } from '../settings.js'
+import { type AdmittedRpcNetworkNoLongerLive, getSettingsSnapshot, type LiveSettings, settingsEvenIfRpcConfigurationUnusable, requireReadableSettings, grantWithLiveSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -488,7 +488,7 @@ function hasUserRequestedAddressChange(accessReply: InterceptorAccessReply, pend
 }
 
 async function activateRequestedAddress(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, requestAccessToAddress: bigint, pendingAccessRequest: PendingAccessRequest, approvedAddressSelection: Awaited<ReturnType<typeof getAllowedAddressSelectionForAccessRequest>> | undefined) {
-	const settings = requireAvailableSettings(await getSettingsSnapshot())
+	const settings = requireReadableSettings(await getSettingsSnapshot())
 	const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
 	const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, requestAccessToAddress, 'pendingEntry')
 	// No admitted snapshot: the settings above were just read live, and the change reads them again under its lock.
@@ -605,7 +605,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		}
 
 		const proposedSelection = await getProposedSelection()
-		const settings = requireAvailableSettings(await getSettingsSnapshot())
+		const settings = requireReadableSettings(await getSettingsSnapshot())
 		const requestAccessToAddress = proposedSelection === undefined
 			? pendingAccessRequest.requestAccessToAddress
 			: proposedSelection.type === 'addressBookEntry' && proposedSelection.entry.type === 'safe'
@@ -626,7 +626,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 }
 
 async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
-	const settings = requireAvailableSettings(await getSettingsSnapshot())
+	const settings = requireReadableSettings(await getSettingsSnapshot())
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
 	const activeAddresses = await getActiveAddresses()
@@ -646,7 +646,7 @@ async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: 
 }
 
 export async function interceptorAccessMetadataRefresh() {
-	const settings = requireAvailableSettings(await getSettingsSnapshot())
+	const settings = requireReadableSettings(await getSettingsSnapshot())
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
 		data: {
