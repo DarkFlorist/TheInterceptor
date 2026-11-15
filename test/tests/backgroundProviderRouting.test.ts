@@ -697,7 +697,7 @@ describe('background eth_accounts', () => {
 		{ description: 'the endpoint changes', storedChange: 'endpoint' },
 	])('access reconciliation does not grant a connection when $description during its active-address lookup', async ({ storedChange }) => {
 		installBrowserMock()
-		const { getRequiredSettings, reconcileWebsiteApprovalAccesses, setRpcConfiguration } = await loadModules()
+		const { getRequiredSettings, updateWebsiteApprovalAccesses, setRpcConfiguration } = await loadModules()
 		const { admittedRpc, connection, messages, websiteTabConnections } = await createConsentFreeOnAdmittedChainConnection({ approved: false, simulationMode: true })
 		const committedSettings = await getRequiredSettings()
 		// Read 1 is the request-block update and read 2 the reconciliation's own settings read; the tab state read after it belongs to the connection's address lookup.
@@ -707,7 +707,7 @@ describe('background eth_accounts', () => {
 			await setRpcConfiguration([admittedRpc, changedRpc], changedRpc)
 		})
 
-		await reconcileWebsiteApprovalAccesses(websiteTabConnections, committedSettings)
+		await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, committedSettings, false)
 
 		assert.equal(connection.approved, false)
 		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'chainChanged'), false)
@@ -817,6 +817,30 @@ describe('background eth_accounts', () => {
 		assert.equal(publishCalls > 0, true)
 		assert.equal(wasForwardedToSigner(), false)
 		assert.equal(getReply()?.error?.code, 10000)
+	})
+
+	test.each([
+		{ change: 'chain', expectedErrorCode: 4901 },
+		{ change: 'endpoint', expectedErrorCode: -32603 },
+	])('does not forward to the signer when the active $change changes while wake status is being published', async ({ change, expectedErrorCode }) => {
+		installBrowserMock()
+		const { getRequiredSettings, setRpcConfiguration } = await loadModules()
+		const networkSwitch = createDeferredValue<() => Promise<void>>()
+		let publishCalls = 0
+		const publishRpcConnectionStatus: PublishRpcConnectionStatus = async () => {
+			publishCalls += 1
+			if (publishCalls === 1) await (await networkSwitch.promise)()
+		}
+		const { requestPromise, getReply, wasForwardedToSigner } = await startSigningModeAddEthereumChainRequest({ publishRpcConnectionStatus, servicesAreSleeping: true })
+		const admittedRpc = (await getRequiredSettings()).activeRpcNetwork
+		const switchedRpc = change === 'chain' ? otherChainRpcOf(admittedRpc) : otherEndpointRpcOf(admittedRpc)
+		networkSwitch.resolve(async () => await setRpcConfiguration([admittedRpc, switchedRpc], switchedRpc))
+		await requestPromise
+
+		// The request was reviewed on the admitted network, so it is refused instead of reaching the signer on another one.
+		assert.equal(publishCalls > 0, true)
+		assert.equal(wasForwardedToSigner(), false)
+		assert.equal(getReply()?.error?.code, expectedErrorCode)
 	})
 
 	test('does not forward to the signer when the settings read before posting the forward fails', async () => {

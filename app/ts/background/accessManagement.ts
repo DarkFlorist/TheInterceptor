@@ -4,7 +4,8 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { assertLiveSettingsInGrantWindow, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, requireReadableSettings, grantWithLiveSettings } from './settings.js'
+import { getSettingsSnapshot, updateWebsiteAccess, requireReadableSettings } from './settings.js'
+import { assertLiveSettingsInGrantWindow, type LiveSettings, grantWithLiveSettings } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -29,10 +30,9 @@ import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteA
 
 /**
  * Connection approval and its reconciliation. Which entry point to call:
- * - A handler that committed an access-affecting write calls reconcileCommittedAccessChange (or reconcileCommittedAccessChangeCollectingFailures inside a larger operation) with the write's CommittedAccessChange. It alone fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. accessReconciliationArchitecture.test.ts checks that handlers reconcile only inside its callbacks, so a weaker entry point cannot be picked by mistake there.
- * - Inside that callback: updateWebsiteApprovalAccesses (reconcile, then prompts and icons), finalizeWebsiteAccessChange (the same, then tells the popup), or reconcileWebsiteApprovalAccessesCollectingFailures (returns failures to the operation's collector).
- * - persistWebsiteAccessChange and reconcilePersistedWebsiteAccess are setAccess followed by, or only, reconcileCommittedAccessChange for one website.
- * - reconcileWebsiteApprovalAccesses is the reconciliation rule itself, which updateWebsiteApprovalAccesses runs; it is exported for tests that exercise the rule directly.
+ * - A handler that committed an access-affecting write calls reconcileCommittedAccessChange with the write's CommittedAccessChange and an AccessReconciliationFollowUp that says what follows the reconciliation (prompts, error handling, popup notification). It fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. persistWebsiteAccessChange is setAccess followed by it.
+ * - An operation that surfaces every failure of several committed steps through one collector calls reconcileCommittedAccessChangeCollectingFailures instead, whose callback runs reconcileWebsiteApprovalAccessesCollectingFailures. accessReconciliationArchitecture.test.ts checks that handlers call the inner reconciliation functions only inside that callback.
+ * - updateWebsiteApprovalAccesses reconciles without a committed write (follow-up prompts after an access dialog); the entry points above run it.
  * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. Keeping the scope private here means no caller can revoke a narrower scope than its change implies; the architecture test checks that it stays private.
  */
 
@@ -365,7 +365,7 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
-// One lock per connections map serializes every access reconciliation (see reconcileWebsiteApprovalAccesses). It is innermost apart from storage, request-block and RPC configuration reads, which never wait for it: its holder never prompts, reports errors, publishes popup state or takes the active-settings, access-request or RPC status publication locks, and callers may hold those while waiting for it.
+// One lock per connections map serializes every access reconciliation (see reconcileWebsiteApprovalAccessesCollectingFailures). It is innermost apart from storage, request-block and RPC configuration reads, which never wait for it: its holder never prompts, reports errors, publishes popup state or takes the active-settings, access-request or RPC status publication locks, and callers may hold those while waiting for it.
 const accessReconciliationLocks = new WeakMap<WebsiteTabConnections, Semaphore>()
 
 async function withAccessReconciliationLock<Result>(websiteTabConnections: WebsiteTabConnections, run: () => Promise<Result>): Promise<Result> {
@@ -377,8 +377,8 @@ async function withAccessReconciliationLock<Result>(websiteTabConnections: Websi
 	return await lock.execute(run)
 }
 
-// The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, a rejected settings read, active-address lookup, disconnect or connect notification) is collected independently, in order: reconcileWebsiteApprovalAccesses surfaces them itself, and the collecting variant returns them to the committed-write operation's single collector.
-export async function reconcileWebsiteApprovalAccesses(
+// The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, a rejected settings read, active-address lookup, disconnect or connect notification) is collected independently, in order: this function surfaces them itself, and the collecting variant returns them to the committed-write operation's single collector.
+async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	committedSettings: Settings,
 	throwOnError = false,
@@ -458,6 +458,7 @@ export async function finishWebsiteAccessUpdate(
 	}
 }
 
+// Reconciles every connection with `settings`, then runs the access prompts and icon updates. Handlers reach it through reconcileCommittedAccessChange; it is called directly only where no access write was committed (follow-up prompts after an access dialog).
 export async function updateWebsiteApprovalAccesses(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
@@ -470,23 +471,6 @@ export async function updateWebsiteApprovalAccesses(
 	return update.popupRefreshGeneration
 }
 
-export async function finalizeWebsiteAccessChange(
-	simulationServicesOwner: SimulationServicesOwner | undefined,
-	websiteTabConnections: WebsiteTabConnections,
-	settings: Settings,
-	promptForAccessesIfNeeded: boolean,
-): Promise<Settings> {
-	// Report-and-resolve is right here: the revocation is applied before any notification can fail, so a failed notification is reported, not lost.
-	await updateWebsiteApprovalAccesses(
-		simulationServicesOwner,
-		websiteTabConnections,
-		settings,
-		promptForAccessesIfNeeded,
-	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return settings
-}
-
 export async function persistWebsiteAccessChange(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
@@ -496,12 +480,7 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
-	return await reconcilePersistedWebsiteAccess(simulationServicesOwner, websiteTabConnections, website, promptForAccessesIfNeeded)
-}
-
-// The reconciliation of a website access change already stored with setAccess.
-export async function reconcilePersistedWebsiteAccess(simulationServicesOwner: SimulationServicesOwner | undefined, websiteTabConnections: WebsiteTabConnections, website: Website, promptForAccessesIfNeeded: boolean): Promise<Settings> {
-	return await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, async (committedSettings) => await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, promptForAccessesIfNeeded))
+	return await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, { simulationServicesOwner, promptForAccesses: promptForAccessesIfNeeded, throwOnError: false, notifyWebsiteAccessChanged: true })
 }
 
 // A committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Its kind, not the call site, decides which websites' runtime approvals fail closed when settings are unreadable (see getAffectedWebsites).
@@ -557,11 +536,25 @@ async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabCon
 	})
 }
 
-// The only entry point for reconciling a committed access-affecting write: `reconcile` runs with the committed settings. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown, and any failure of the revocation reported, without running `reconcile`.
-export async function reconcileCommittedAccessChange<Result>(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<Result>): Promise<Result> {
+// What follows the reconciliation of a committed access change, chosen by the handler instead of a reconciliation variant.
+export type AccessReconciliationFollowUp = {
+	readonly simulationServicesOwner: SimulationServicesOwner | undefined
+	// Opens access prompts for websites that now need a decision.
+	readonly promptForAccesses: boolean
+	// Throws the first failure to the caller instead of reporting every failure.
+	readonly throwOnError: boolean
+	// Tells open popups that website access changed, after the reconciliation is applied.
+	readonly notifyWebsiteAccessChanged: boolean
+}
+
+// The entry point for reconciling a committed access-affecting write: the reconciliation runs with the committed settings, read now, and then `followUp`. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown, and any failure of the revocation reported.
+export async function reconcileCommittedAccessChange(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, followUp: AccessReconciliationFollowUp): Promise<Settings> {
 	const committedSettings = await readSettingsForAccessReconciliation()
 	if (committedSettings.status !== 'available') return await surfaceFailures([committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))], reportAsUnexpectedError)
-	return await reconcile(committedSettings.settings)
+	await updateWebsiteApprovalAccesses(followUp.simulationServicesOwner, websiteTabConnections, committedSettings.settings, followUp.promptForAccesses, followUp.throwOnError)
+	// Sent after the revocation is applied, so a failed notification is reported, not lost.
+	if (followUp.notifyWebsiteAccessChanged) await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return committedSettings.settings
 }
 
 // The same entry point for a step of a larger committed-write operation: it never throws, and returns every failure in order (the unavailable read and the revocation's, or the failures `reconcile` returns or throws) for that operation's single collector to surface.

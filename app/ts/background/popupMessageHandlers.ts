@@ -11,7 +11,7 @@ import { formEthSendTransaction, formSendRawTransaction, resolveConfirmationWith
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
-import { type CommittedAccessChange, reconcileCommittedAccessChange, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { type CommittedAccessChange, reconcileCommittedAccessChange } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -310,7 +310,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		// Reconciled against approvals read after the write; the admitted snapshot may predate a website access revocation.
-		await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
+		await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -359,7 +359,7 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 			return previousContacts.concat([entryToStore])
 		})
 		// Reconciled against approvals read after the write; the admitted snapshot may predate a website access revocation and Safe validation can take a long time.
-		if (entryToStore.useAsActiveAddress) await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true, true))
+		if (entryToStore.useAsActiveAddress) await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, { simulationServicesOwner, promptForAccesses: true, throwOnError: true, notifyWebsiteAccessChanged: false })
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -438,7 +438,7 @@ export async function setSafeSimulationSigner(
 	}
 	if (updatedEntry.useAsActiveAddress) {
 		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Settings are read after the write because the active address may have changed while Safe validation and the write awaited.
-		await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, async (committedSettings) => await updateWebsiteApprovalAccesses(accessPromptSimulationServicesOwner, websiteTabConnections, committedSettings, true))
+		await reconcileCommittedAccessChange(websiteTabConnections, ADDRESS_BOOK_CHANGE, { simulationServicesOwner: accessPromptSimulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -458,7 +458,7 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 
 	// Settings are read after the write and the content-script reload, so active addresses changed meanwhile are the ones reconciled.
 	const editedWebsiteAccess: CommittedAccessChange = { kind: 'website-access', websiteOrigins: accessChange.data.map((change) => change.newEntry.website.websiteOrigin) }
-	await reconcileCommittedAccessChange(websiteTabConnections, editedWebsiteAccess, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
+	await reconcileCommittedAccessChange(websiteTabConnections, editedWebsiteAccess, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 

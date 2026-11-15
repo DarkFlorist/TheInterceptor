@@ -3,13 +3,14 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsEvenIfRpcConfigurationUnusable, approvalsOrNoneIfUnreadable, requireReadableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive, grantWithLiveSettings } from './settings.js'
+import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsEvenIfRpcConfigurationUnusable, approvalsOrNoneIfUnreadable, requireReadableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive } from './settings.js'
+import { grantWithLiveSettings } from './connectionGrant.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion, syncing } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_ACTIVE_RPC_ENDPOINT_CHANGED, ERROR_ACTIVE_RPC_NETWORK_CHANGED, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, reconcileCommittedAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, persistWebsiteAccessChange, reconcileCommittedAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -360,7 +361,7 @@ async function revokeWebsitePermissions(
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
 	try {
-		await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [websiteOrigin] }, async (committedSettings) => await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, committedSettings, false))
+		await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [websiteOrigin] }, { simulationServicesOwner, promptForAccesses: false, throwOnError: false, notifyWebsiteAccessChanged: true })
 	} catch (error: unknown) {
 		// With unreadable settings the revocation is still committed and the website's connections are already unapproved, so it is answered as successful (EIP-2255, as on main).
 		if (!isRpcConfigurationUnavailableError(error)) throw error
@@ -572,12 +573,12 @@ export const replyAdmittedRpcNetworkNoLongerLive = (websiteTabConnections: Websi
 	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), error: ADMITTED_RPC_NETWORK_NO_LONGER_LIVE_ERRORS[reason] })
 }
 
-// Storage reads, Safe preparation and wake-status publishing all await after routing is decided, so a signer forward is rechecked against the live simulation mode at the last await before it is posted.
-async function recheckSignerForwardBeforePosting(resolved: RPCReply): Promise<'post' | 'reroute' | 'unavailable'> {
+// Storage reads, Safe preparation, account persistence and wake-status publishing all await after routing is decided, so a signer forward is rechecked at the last await before it is posted: against the network the request was routed on (the user reviewed it on that chain and endpoint, so a change refuses it like any other admitted request) and against the live simulation mode.
+async function recheckSignerForwardBeforePosting(resolved: RPCReply, routedSettings: Settings): Promise<'post' | 'reroute' | AdmittedRpcNetworkNoLongerLive> {
 	if (resolved.type !== 'forwardToSigner') return 'post'
-	const liveSettings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
-	if (liveSettings === undefined) return 'unavailable'
-	return liveSettings.simulationMode ? 'reroute' : 'post'
+	const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(routedSettings)
+	if (liveSettings.kind !== 'ready') return liveSettings.kind
+	return liveSettings.settings.simulationMode ? 'reroute' : 'post'
 }
 
 // A request can capture its services between a transition's settings write and its services installation. Those services belong to the previous network, so the request moves on to the installed services once they serve its network; while they do not, it is refused so that the website sends it again.
@@ -639,10 +640,10 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 			resolved,
 			activeAddress.address,
 		)
-		const signerForwardRecheck = await recheckSignerForwardBeforePosting(resolved)
-		if (signerForwardRecheck === 'unavailable') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }))
+		const signerForwardRecheck = await recheckSignerForwardBeforePosting(resolved, settings)
 		// Simulation mode was enabled after routing was decided, so the request is routed again under the live mode instead of reaching the real signer.
 		if (signerForwardRecheck === 'reroute') return await replyToContentScriptMessage(simulationServicesOwner, admittedSimulationServices, websiteTabConnections, request, website, activeAddress, admittedSettings, publishRpcConnectionStatus)
+		if (signerForwardRecheck !== 'post') return replyDeliveredWithoutFollowUp(replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, signerForwardRecheck))
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
 	} catch (error: unknown) {

@@ -184,10 +184,10 @@ describe('background eth_accounts', () => {
 		{ description: 'the active address', revokedAddress: 0x1010101010101010101010101010101010101010n, tabId: 9909 },
 	])('revoking $description after recovery and approval lifts the retained block by the time the revocation completes', async ({ revokedAddress, tabId }) => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { persistWebsiteAccessChange, reconcileWebsiteApprovalAccesses } = await loadModules()
+		const { persistWebsiteAccessChange, updateWebsiteApprovalAccesses } = await loadModules()
 		const { connection, endOutage, getRequiredSettings, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId)
 		await endOutage()
-		await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getRequiredSettings(), true)
+		await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
 		assert.equal(connection.approved, true)
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 
@@ -199,11 +199,11 @@ describe('background eth_accounts', () => {
 
 	test('a denial written without reconciling keeps the block of a tab whose connection is still approved', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
-		const { reconcileWebsiteApprovalAccesses, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const { updateWebsiteApprovalAccesses, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
 		const tabId = 9920
 		const { connection, endOutage, getRequiredSettings, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId)
 		await endOutage()
-		await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getRequiredSettings(), true)
+		await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false, true)
 		assert.equal(connection.approved, true)
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
 
@@ -256,10 +256,10 @@ describe('background eth_accounts', () => {
 
 	test('a connection event that cannot be delivered during reconciliation does not skip the block rule, and is thrown', async () => {
 		const { requestBlockingCalls } = installBrowserMock({ manifestVersion: 3 })
-		const { reconcileWebsiteApprovalAccesses } = await loadModules()
+		const { updateWebsiteApprovalAccesses } = await loadModules()
 		const { connection, settings, socket, websiteTabConnections } = await createConsentedBlockAllConnectionWithFailingConnectEvent(9911)
 
-		await assert.rejects(reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, true), /Connect event delivery failed/)
+		await assert.rejects(updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false, true), /Connect event delivery failed/)
 
 		assert.equal(connection.approved, true)
 		assert.deepEqual(requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
@@ -281,7 +281,7 @@ describe('background eth_accounts', () => {
 
 	test.each(unusableRpcEntriesWithReadableActiveNetwork)('does not approve a connection from a signer handshake or access reconciliation while the RPC entries are $description', async ({ storedRpcEntries }) => {
 		installBrowserMock({ manifestVersion: 3 })
-		const { handleInterceptedRequest, reconcileWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const { handleInterceptedRequest, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
 		const websiteOrigin = 'consented-no-grant.example'
 		const settings = await setUpBlockAllWithPersistedConsent(websiteOrigin)
 		await browser.storage.local.set({ rpcEntries: storedRpcEntries })
@@ -301,7 +301,7 @@ describe('background eth_accounts', () => {
 		}, websiteTabConnections, noopPublishRpcConnectionStatus))
 		assert.equal(connection.approved, false)
 
-		await withSilencedWarnings(async () => await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings))
+		await withSilencedWarnings(async () => await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, settings, false))
 		assert.equal(connection.approved, false)
 	})
 
@@ -755,23 +755,31 @@ describe('background eth_accounts', () => {
 		const { isRpcConfigurationUnavailableError } = await import('../../app/ts/utils/rpcConfigurationError.js')
 		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
 		const { websiteTabConnections, isApproved } = await createTwoApprovedTabs()
-		let reconciled = false
+		// The follow-up's popup notification is the last step of a reconciliation that ran, so its absence shows the reconciliation was skipped.
+		const popupMethods: unknown[] = []
+		const sendRuntimeMessage = browser.runtime.sendMessage
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (...args: Parameters<typeof sendRuntimeMessage>) => {
+			const [message] = args
+			if (typeof message === 'object' && message !== null && 'method' in message) popupMethods.push(message.method)
+			return await sendRuntimeMessage(...args)
+		} })
 
-		await assert.rejects(withSilencedWarnings(async () => await reconcileCommittedAccessChange(websiteTabConnections, change, async () => { reconciled = true })), isRpcConfigurationUnavailableError)
-		assert.equal(reconciled, false)
+		await assert.rejects(withSilencedWarnings(async () => await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner: undefined, promptForAccesses: false, throwOnError: false, notifyWebsiteAccessChanged: true })), isRpcConfigurationUnavailableError)
+		assert.equal(popupMethods.includes('popup_websiteAccess_changed'), false)
 		assert.equal(isApproved(9887), !revokesAffected)
 		assert.equal(isApproved(9888), !revokesUnaffected)
 	})
 
-	test('reconciling a committed change with readable settings only runs the reconciliation', async () => {
+	test('reconciling a committed change with readable settings reconciles every connection with the committed settings', async () => {
 		installBrowserMock({ manifestVersion: 3 })
 		const { reconcileCommittedAccessChange, getRequiredSettings } = await loadModules()
 		const { websiteTabConnections, isApproved } = await createTwoApprovedTabs()
 		const expectedSettings = await getRequiredSettings()
 
-		const result = await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'address-book' }, async (committedSettings) => committedSettings)
+		const result = await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'address-book' }, { simulationServicesOwner: undefined, promptForAccesses: false, throwOnError: true, notifyWebsiteAccessChanged: false })
 		assert.deepEqual(result, expectedSettings)
-		assert.equal(isApproved(9887) && isApproved(9888), true)
+		// Neither website has a stored approval in the committed settings, so the reconciliation that ran disconnects both.
+		assert.equal(isApproved(9887) || isApproved(9888), false)
 	})
 
 	test('shows the blocking shield only after persisted-consent tab blocking is applied while the active RPC network is unreadable', async () => {

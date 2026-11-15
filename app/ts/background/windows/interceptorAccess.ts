@@ -3,12 +3,13 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, reconcilePersistedWebsiteAccess, setAccess, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, reconcileCommittedAccessChange, setAccess, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLongerLive } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { type AdmittedRpcNetworkNoLongerLive, getSettingsSnapshot, type LiveSettings, settingsEvenIfRpcConfigurationUnusable, requireReadableSettings, grantWithLiveSettings } from '../settings.js'
+import { type AdmittedRpcNetworkNoLongerLive, getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable, requireReadableSettings } from '../settings.js'
+import { type LiveSettings, grantWithLiveSettings } from '../connectionGrant.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -531,7 +532,7 @@ async function resolveRejection(simulationServicesOwner: SimulationServicesOwner
 	let remainingRequests = pendingRequests.filter((pending) => !isAffected(pending))
 	const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 	const reconcile = async () => {
-		await reconcilePersistedWebsiteAccess(simulationServicesOwner, websiteTabConnections, website, false)
+		await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, { simulationServicesOwner, promptForAccesses: false, throwOnError: false, notifyWebsiteAccessChanged: true })
 		if (!hasUserRequestedAddressChange(accessReply, pendingAccessRequest)) return
 		if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 		await activateRequestedAddress(simulationServicesOwner, websiteTabConnections, accessReply.requestAccessToAddress, pendingAccessRequest, undefined)

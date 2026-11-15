@@ -1,14 +1,15 @@
-// Valid fixture: both reconciliation functions (one renamed) run inside a multiline callback of a renamed command import.
-import { finalizeWebsiteAccessChange as finalize, reconcileCommittedAccessChange as reconcile, updateWebsiteApprovalAccesses } from '../../../app/ts/background/accessManagement.js'
+// Valid fixture: both inner reconciliation functions (one renamed) run inside a multiline callback of a renamed collecting entry point import.
+import { reconcileCommittedAccessChangeCollectingFailures as reconcile, reconcileWebsiteApprovalAccessesCollectingFailures as reconcileCollecting, updateWebsiteApprovalAccesses } from '../../../app/ts/background/accessManagement.js'
 import type { WebsiteTabConnections } from '../../../app/ts/types/user-interface-types.js'
 
 export async function handler(websiteTabConnections: WebsiteTabConnections) {
-	await reconcile(
+	return await reconcile(
 		websiteTabConnections,
 		{ kind: 'settings-import' },
 		async (committedSettings) => {
-			const generation = await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, committedSettings, true)
-			await finalize(undefined, websiteTabConnections, committedSettings, generation === 0)
+			const { failures } = await reconcileCollecting(websiteTabConnections, committedSettings)
+			await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, committedSettings, failures.length === 0)
+			return failures
 		},
 	)
 }

@@ -915,7 +915,7 @@ describe('active settings concurrency', () => {
 
 	test.each(['immediate', 'staged'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
 		installBrowserMock()
-		const { changeSimulationMode, getRequiredSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccessesCollectingFailures, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
@@ -928,7 +928,7 @@ describe('active settings concurrency', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		if (completion === 'staged') {
-			const update = await reconcileWebsiteApprovalAccesses(connections, snapshot)
+			const { update } = await reconcileWebsiteApprovalAccessesCollectingFailures(connections, snapshot)
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
 			await finishWebsiteAccessUpdate(simulationServicesOwner, connections, update, true)
 		} else {

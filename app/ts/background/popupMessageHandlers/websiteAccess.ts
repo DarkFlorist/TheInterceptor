@@ -5,7 +5,7 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { type CommittedAccessChange, reconcileCommittedAccessChange, setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { type CommittedAccessChange, reconcileCommittedAccessChange, setInterceptorDisabledForWebsite } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { updateWebsiteAccess, getSettingsSnapshot, requireReadableSettings } from '../settings.js'
@@ -45,7 +45,7 @@ export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTa
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
 	const change = await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
+	await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -67,7 +67,7 @@ const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: Websit
 
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
 	const change = await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
+	await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -83,7 +83,7 @@ const removeAddressAccessByAddress = async (websiteOrigin: string, address: Ethe
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess, settingsUnavailable: boolean) {
 	const change = await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address, settingsUnavailable)
 	await reloadConnectedTabs(websiteTabConnections)
-	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
+	await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
@@ -109,6 +109,6 @@ const removeWebsiteAccessEntry = async (websiteOrigin: string) => {
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
 	const change = await removeWebsiteAccessEntry(parsedRequest.data.websiteOrigin)
-	await reconcileCommittedAccessChange(websiteTabConnections, change, async (committedSettings) => await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, committedSettings, true))
+	await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

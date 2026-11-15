@@ -44,7 +44,8 @@ const exportedSymbol = (modulePath: string, name: string) => {
 }
 // Both entry points for a committed access-affecting write: the collecting variant serves a write whose operation surfaces every failure through one collector.
 const reconcileCommands = [exportedSymbol(accessManagementPath, 'reconcileCommittedAccessChange'), exportedSymbol(accessManagementPath, 'reconcileCommittedAccessChangeCollectingFailures')]
-const reconciliationFunctions = [exportedSymbol(accessManagementPath, 'updateWebsiteApprovalAccesses'), exportedSymbol(accessManagementPath, 'finalizeWebsiteAccessChange'), exportedSymbol(accessManagementPath, 'reconcileWebsiteApprovalAccessesCollectingFailures')]
+// The inner reconciliation functions: reconcileCommittedAccessChange runs them itself (its follow-up says which), so a handler calls them only inside the collecting entry point's callback.
+const reconciliationFunctions = [exportedSymbol(accessManagementPath, 'updateWebsiteApprovalAccesses'), exportedSymbol(accessManagementPath, 'reconcileWebsiteApprovalAccessesCollectingFailures')]
 const committedAccessChangeType = checker.getDeclaredTypeOfSymbol(exportedSymbol(accessManagementPath, 'CommittedAccessChange'))
 // The primitives that write website approvals, address consent or interceptor-disabled state. Settings imports and address-book writes are reconciled by their handlers and covered by the containment check above.
 const websiteAccessWriters = [
@@ -70,7 +71,7 @@ function isInsideReconcileCallback(node: ts.Node) {
 	return false
 }
 
-// Lists `file:line` for every reconciliation call and for those not lexically inside a reconcileCommittedAccessChange callback.
+// Lists `file:line` for every inner reconciliation call and for those not lexically inside an entry point's callback.
 function findReconciliationCalls(fileName: string) {
 	const sourceFile = program.getSourceFile(fileName)
 	if (sourceFile === undefined) throw new Error(`Missing source file ${ fileName }`)
@@ -194,11 +195,11 @@ test('the fail-closed access reconciliation primitives are private to accessMana
 	}
 })
 
-test('handlers reconcile committed access changes only inside reconcileCommittedAccessChange callbacks', () => {
+test('handlers call the inner reconciliation functions only inside a collecting entry point callback', () => {
 	assert.notEqual(handlerPaths.length, 0)
 	const calls = handlerPaths.map(findReconciliationCalls)
-	// Ten handler-side committed-change sites (the eleventh, persistWebsiteAccessChange, is inside accessManagement); an exact count makes a new or removed site an explicit test update.
-	assert.equal(calls.flatMap(({ found }) => found).length, 10)
+	// Only the settings import composes the reconciliation itself; every other handler passes a follow-up to reconcileCommittedAccessChange. An exact count makes a new site an explicit test update.
+	assert.equal(calls.flatMap(({ found }) => found).length, 1)
 	assert.deepEqual(calls.flatMap(({ uncontained }) => uncontained), [])
 })
 
