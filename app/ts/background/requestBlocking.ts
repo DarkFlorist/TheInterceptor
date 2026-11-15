@@ -168,13 +168,6 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 	})
 }
 
-// Connections register unapproved, so a new connection can only change tab blocking while it is derived from persisted consent. The RPC configuration can become unavailable after the last reconciliation, so the current snapshot decides instead of an earlier mode. Resolves true when it reconciled, i.e. when this registration may have changed its tab's blocking.
-export async function updateDeclarativeNetRequestBlocksForRegisteredConnection(websiteTabConnections: WebsiteTabConnections) {
-	if (await getSettingsForTabBlocking() !== undefined) return false
-	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	return true
-}
-
 // A pure query of the blocking that is in force: only rules that were successfully applied count, and enforcement belongs to updateDeclarativeNetRequestBlocks.
 export const areWeBlocking = async (tabId: number, websiteOrigin: string) => {
 	const [appliedSiteBlocks, appliedTabBlocks] = await Promise.all([getAppliedSiteBlocks(), getAppliedTabBlocks()])

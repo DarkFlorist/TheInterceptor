@@ -80,6 +80,22 @@ describe('background eth_accounts', () => {
 		return await getRequiredSettings()
 	}
 
+	// With a ready RPC configuration persisted consent counts too (tabHasApprovedOrConsentedConnection), so the registration of a still-unapproved connection reconciles blocking itself instead of waiting for an unrelated reconciliation.
+	test('blocks a consented tab as soon as its unapproved connection registers while the RPC configuration is ready', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { areWeBlocking, updateDeclarativeNetRequestBlocks } = await loadModules()
+		const websiteOrigin = 'consented-ready.example'
+		await setUpBlockAllWithPersistedConsent(websiteOrigin)
+		const socket = { tabId: 9921, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await withSilencedWarnings(async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
+
+		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
+
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
+		assert.equal(await withSilencedWarnings(async () => await areWeBlocking(socket.tabId, websiteOrigin)), true)
+	})
+
 	test.each(unusableRpcEntriesWithReadableActiveNetwork)('blocks a consented tab after a restart while the RPC entries are $description and the active network is readable', async ({ storedRpcEntries }) => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { areWeBlocking, getTabState, updateDeclarativeNetRequestBlocks } = await loadModules()
@@ -265,7 +281,8 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
 	})
 
-	test('derives tab blocking from approved connections on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
+	// A signer-only network's empty RPC entries are a ready configuration, so blocking takes the ready path, where the website's persisted consent counts like a runtime approval.
+	test('blocks a consented tab on a signer-only network, whose empty RPC entries are a ready configuration', async () => {
 		const browserMock = installBrowserMock({ manifestVersion: 3 })
 		const { setRpcConfiguration } = await loadModules()
 		const websiteOrigin = 'consented-signer-only.example'
@@ -276,7 +293,7 @@ describe('background eth_accounts', () => {
 
 		await registerConnectionAndSettle(websiteTabConnections, socket, { port: createPort(socket.tabId).port, socket, websiteOrigin, approved: false, wantsToConnect: false }, true)
 
-		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [socket.tabId])
 	})
 
 	test.each(unusableRpcEntriesWithReadableActiveNetwork)('does not approve a connection from a signer handshake or access reconciliation while the RPC entries are $description', async ({ storedRpcEntries }) => {
@@ -627,7 +644,8 @@ describe('background eth_accounts', () => {
 		assert.equal(reportedFailures.includes('Request-block reconciliation failed'), false)
 	})
 
-	for (const rpcNetwork of ['unreadable', 'readable'] as const) test(`${ rpcNetwork === 'unreadable' ? 'refreshes' : 'keeps' } an existing tab's icon after a consented child frame registers while the active RPC network is ${ rpcNetwork }`, async () => {
+	// Persisted consent counts for blocking whether or not the active network is readable, so a consented child frame blocks its tab and the existing tab's icon gains the shield in both cases.
+	for (const rpcNetwork of ['unreadable', 'readable'] as const) test(`refreshes an existing tab's icon after a consented child frame registers while the active RPC network is ${ rpcNetwork }`, async () => {
 		installBrowserMock({ manifestVersion: 3 })
 		const { getTabState, updateTabState } = await loadModules()
 		const consentedFrameOrigin = 'consented-icon-frame.example'
@@ -648,12 +666,8 @@ describe('background eth_accounts', () => {
 		await withSilencedWarnings(childFrameRegistration)
 
 		const { tabIconDetails } = await getTabState(tabId)
-		if (rpcNetwork === 'readable') {
-			// A readable active network derives blocking from runtime approvals, which a fresh unapproved frame cannot change, so the icon is left as it was.
-			assert.deepEqual(tabIconDetails, topFrameIcon)
-			return
-		}
-		assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
+		assert.match(tabIconDetails.iconReason, /blocking external requests/)
+		if (rpcNetwork === 'unreadable') assert.equal(tabIconDetails.icon, ICON_NOT_ACTIVE_WITH_SHIELD)
 		assert.match(tabIconDetails.iconReason, /blocking external requests/)
 		assert.doesNotMatch(tabIconDetails.iconReason, new RegExp(consentedFrameOrigin.replaceAll('.', '\\.')))
 	})
