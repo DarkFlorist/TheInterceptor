@@ -72,8 +72,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			return false
 		}
 
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}
 
 	const listenForWindowHashChanges = () => {
@@ -288,8 +287,7 @@ const WebsiteSettingsDetail = () => {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	})
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])

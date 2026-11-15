@@ -15,6 +15,7 @@ import { InlineCard } from './InlineCard.js'
 import { withModifierClass } from '../ui-utils.js'
 import { getNativeTokenErc20 } from '../../background/metadataUtils.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import { getOnChainTokenWarning } from './onChainTokenWarnings.js'
 
 type EtherParams = {
 	amount: SignalOrValue<bigint>
@@ -145,7 +146,7 @@ export function TokenSymbol(param: TokenSymbolParams) {
 	const address = useSignal<bigint>(param.tokenEntry.address)
 	useEffect(() => { address.value = param.tokenEntry.address }, [param.tokenEntry.address])
 
-	const warningMessage = param.tokenEntry.entrySource === 'OnChain' ? 'Untrusted address' : undefined
+	const warningMessage = getOnChainTokenWarning(param.tokenEntry)
 	const tokenName = param.useFullTokenName ? param.tokenEntry.name : param.tokenEntry.symbol
 	const tokenAddressString = checksummedAddress(param.tokenEntry.address)
 	const defaultCardStyles: JSX.CSSProperties = {

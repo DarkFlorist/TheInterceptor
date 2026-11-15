@@ -130,8 +130,7 @@ export function WatchAsset() {
 			submitting.value = false
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => { void sendPopupReadyAndListening('watchAsset') }, [])
