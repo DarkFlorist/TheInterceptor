@@ -1,5 +1,5 @@
-/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. An inline style outranked every stylesheet rule. To keep that without depending on which stylesheet loads last, every rule here is nested in `:root`, which adds one class worth of specificity: a layout class always wins over a shared rule of the same weight, in any load order. The block is left unindented so the rules read like the other stylesheets. */
-:root {
+/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. An inline style outranked every stylesheet rule. To keep that without depending on load order or on each selector's weight, every rule here is nested in `:is(:root, #layout-precedence)`, which matches only the root but takes the weight of its heaviest argument, one ID: a layout rule therefore outranks every shared rule, because the shared stylesheets use no ID selectors (uiAuditFixes.test.tsx checks both). No element has the id. Cascade layers are not used: browsers add their own extension-page defaults, which outrank every layered rule. The block is left unindented so the rules read like the other stylesheets. */
+:is(:root, #layout-precedence) {
 
 /* Website access page */
 .website-setting-card {
@@ -462,8 +462,7 @@
 	justify-content: center;
 }
 
-/* Carries the element and both classes so its spacing also wins over the themed `.content p:not(:last-child)` rule, which the scope alone does not outrank. */
-p.paragraph.summary-transaction-input-label {
+.summary-transaction-input-label {
 	color: var(--subtitle-text-color);
 	margin-bottom: 0.25rem;
 }
@@ -1440,8 +1439,7 @@ p.paragraph.summary-transaction-input-label {
 	font-size: 0.8em;
 }
 
-/* Carries the card selectors so its bottom corners also win over the themed last-child rule, which has three classes. */
-.card > .card-content.collapsible-card-content {
+.collapsible-card-content {
 	border-bottom-left-radius: var(--radius-tiny);
 	border-bottom-right-radius: var(--radius-tiny);
 	border-left: 2px solid var(--card-bg-color);
