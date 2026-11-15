@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getRpcConfigurationState, getRpcNetworkForChain } from './rpcConfigurationStorage.js'
-import { type CapturedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings } from './settings.js'
+import { type CapturedRpcNetwork, getMetamaskCompatibilityMode, getSettingsSnapshot, settingsIfRpcConfigurationReady, requireAvailableSettings, grantWithLiveSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -294,12 +294,11 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
 		if (settings !== undefined && isTopFrame && approval === 'hasAccess' && activeAddress !== undefined && addressRpcNetwork !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, addressRpcNetwork.activeRpcNetwork.chainId)
-			// The lookup above awaited, so the restore is decided on a fresh read, with no await after it.
-			const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(addressRpcNetwork)
-			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
-			if (liveSettings.kind === 'ready' && connection !== undefined) {
-				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, liveSettings.settings)
-			}
+			// The lookup above awaited, so the restore is the grant of a fresh read.
+			await grantWithLiveSettings(addressRpcNetwork, (liveSettings) => {
+				const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
+				if (connection !== undefined) verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, liveSettings)
+			})
 		}
 		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.
 		shouldRefreshSignerAccounts = settings !== undefined && isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode

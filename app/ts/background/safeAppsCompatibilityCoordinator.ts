@@ -9,7 +9,7 @@ import { isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { getLiveSettingsOnAdmittedRpcNetwork, getSafeAppsCompatibilityMode, getSettingsSnapshot, requireAvailableSettings } from './settings.js'
+import { getSafeAppsCompatibilityMode, getSettingsSnapshot, requireAvailableSettings, grantWithLiveSettings } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
@@ -50,15 +50,15 @@ function createSafeAppsCompatibilityCoordinator() {
 		if (!sent) signerAccountDiscoveryTabs.delete(socket.tabId)
 		return sent
 	}
-	// Reconciles cached Safe consent within the publication generation so any newer refresh also retries it. `safe` was resolved on `settings`, so the restore is decided on a fresh read of the same network and Safe, with no await after it.
+	// Reconciles cached Safe consent within the publication generation so any newer refresh also retries it. `safe` was resolved on `settings`, so the restore is the grant of a fresh read of the same network and Safe (grantWithLiveSettings).
 	const restoreCachedSafeConsent = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, safe: AddressBookEntry, settings: Settings, isCurrent: () => boolean) => {
-		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(settings)
-		if (liveSettings.kind !== 'ready' || !isCurrent()) return
-		if (liveSettings.settings.simulationMode || liveSettings.settings.activeSigningSafeAddress !== safe.address) return
-		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
-		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (connection === undefined || connection.approved || !isTopFramePort(connection.port) || signer?.socket.connectionName !== socket.connectionName) return
-		verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, liveSettings.settings, { ignoreConnectionApproval: true })
+		await grantWithLiveSettings(settings, (liveSettings) => {
+			if (!isCurrent() || liveSettings.simulationMode || liveSettings.activeSigningSafeAddress !== safe.address) return
+			const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
+			const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+			if (connection === undefined || connection.approved || !isTopFramePort(connection.port) || signer?.socket.connectionName !== socket.connectionName) return
+			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, liveSettings, { ignoreConnectionApproval: true })
+		})
 	}
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)

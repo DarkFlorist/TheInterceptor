@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLonger
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { type AdmittedRpcNetworkNoLongerLive, getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, settingsEvenIfRpcConfigurationUnusable, requireAvailableSettings } from '../settings.js'
+import { type AdmittedRpcNetworkNoLongerLive, getSettingsSnapshot, type LiveSettings, settingsEvenIfRpcConfigurationUnusable, requireAvailableSettings, grantWithLiveSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -352,13 +352,13 @@ export async function requestAccessFromUser(
 
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
-		// verifyAccess can approve the connection, so website approvals are re-read together with a check that the settings' network is still live, with no await between that check and verifyAccess. A failed read refuses the request rather than evaluating approvals that may have been revoked.
-		const currentSettings = await getLiveSettingsOnAdmittedRpcNetwork(settings)
-		if (currentSettings.kind !== 'ready') {
-			if (request !== undefined) replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, currentSettings.kind)
+		// verifyAccess can approve the connection, so website approvals are re-read together with a check that the settings' network is still live, and verifyAccess runs as the grant of that read (grantWithLiveSettings). A failed read refuses the request rather than evaluating approvals that may have been revoked.
+		const currentAccess = await grantWithLiveSettings(settings, verifyAccessForCurrentRequest)
+		if (currentAccess.kind !== 'granted') {
+			if (request !== undefined) replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, currentAccess.kind)
 			return undefined
 		}
-		const hasAccess = verifyAccessForCurrentRequest(currentSettings.settings)
+		const hasAccess = currentAccess.result
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
@@ -416,10 +416,10 @@ export async function requestAccessFromUser(
 
 		let admittedRpcNetworkNoLongerLive: AdmittedRpcNetworkNoLongerLive | undefined
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
-			const latestSettings = await getLiveSettingsOnAdmittedRpcNetwork(settings)
-			admittedRpcNetworkNoLongerLive = latestSettings.kind === 'ready' ? undefined : latestSettings.kind
+			const latestAccess = await grantWithLiveSettings(settings, verifyAccessForCurrentRequest)
+			admittedRpcNetworkNoLongerLive = latestAccess.kind === 'granted' ? undefined : latestAccess.kind
 			// check that it doesn't have access already
-			if (latestSettings.kind !== 'ready' || verifyAccessForCurrentRequest(latestSettings.settings) !== 'askAccess') return previousPendingAccessRequests
+			if (latestAccess.kind !== 'granted' || latestAccess.result !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {

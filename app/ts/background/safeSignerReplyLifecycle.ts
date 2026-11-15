@@ -74,8 +74,23 @@ type SafeSignerReplyStep<Result> = {
 
 // Transitions whose run after spent retries failed as well; the advance on every new block runs them again.
 const pendingRetriesSpentTransitions = new Map<string, () => Promise<void>>()
-// Spent retries are reported visibly once per request and step, not on every later advance that fails again.
+// Spent retries are reported visibly once per request and step, not on every later advance that fails again. Like the other bookkeeping here it lives as long as the background worker; after a restart the recovery advance may report a request's spent retries once more, which is intended, since the earlier report is no longer on screen.
 const reportedSpentSafeSignerReplyRetries = new Set<string>()
+
+const SAFE_SIGNER_REPLY_STEP_NAMES = ['claim', 'advance'] as const satisfies readonly SafeSignerReplyStep<unknown>['name'][]
+const getSafeSignerReplyRetryIdentifier = (uniqueRequestIdentifier: UniqueRequestIdentifier, stepName: SafeSignerReplyStep<unknown>['name']) => `${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) } ${ stepName }`
+
+// Drops the retry bookkeeping of a request that left the lifecycle (settled, or gone because something else answered it), so the bookkeeping holds only requests still in flight and a later request never inherits a spent-retries report.
+function forgetSafeSignerReplyRetries(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	for (const stepName of SAFE_SIGNER_REPLY_STEP_NAMES) {
+		const retryIdentifier = getSafeSignerReplyRetryIdentifier(uniqueRequestIdentifier, stepName)
+		reportedSpentSafeSignerReplyRetries.delete(retryIdentifier)
+		pendingRetriesSpentTransitions.delete(retryIdentifier)
+		const timer = safeSignerReplyRetryTimers.get(retryIdentifier)
+		if (timer !== undefined) clearTimeout(timer)
+		safeSignerReplyRetryTimers.delete(retryIdentifier)
+	}
+}
 
 function removeDeferredSafeSignerReply(pending: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage {
 	const { deferredSafeSignerReply: _deferredSafeSignerReply, ...remaining } = pending
@@ -121,12 +136,15 @@ async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequ
 
 async function removeSettledPendingRequest(pending: PendingTransactionOrSignableMessage, context: SafeSignerReplyContext) {
 	await removePendingTransactionOrMessage(pending.uniqueRequestIdentifier)
+	forgetSafeSignerReplyRetries(pending.uniqueRequestIdentifier)
 	await context.confirmationWindow.updateAfterRequestLeftQueue(pending, context.services)
 }
 
 async function runSafeSignerReplyLifecycle<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, step: SafeSignerReplyStep<Result>, retryAttempt = 0): Promise<Result> {
 	try {
-		return await safeSignerReplyLifecycleSemaphore.execute(step.run)
+		const result = await safeSignerReplyLifecycleSemaphore.execute(step.run)
+		if (result === 'gone' || result === 'settled') forgetSafeSignerReplyRetries(uniqueRequestIdentifier)
+		return result
 	} catch (error: unknown) {
 		scheduleSafeSignerReplyRetry(uniqueRequestIdentifier, step, retryAttempt)
 		throw error
@@ -136,7 +154,7 @@ async function runSafeSignerReplyLifecycle<Result>(uniqueRequestIdentifier: Uniq
 // The retry has no caller to report to, so its failures are reported here: as a local recovery while retries remain, and visibly once they are spent.
 function scheduleSafeSignerReplyRetry<Result>(uniqueRequestIdentifier: UniqueRequestIdentifier, step: SafeSignerReplyStep<Result>, attempt: number) {
 	const delay = SAFE_SIGNER_REPLY_RETRY_DELAYS_MS[attempt]
-	const retryIdentifier = `${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) } ${ step.name }`
+	const retryIdentifier = getSafeSignerReplyRetryIdentifier(uniqueRequestIdentifier, step.name)
 	if (delay === undefined || safeSignerReplyRetryTimers.has(retryIdentifier)) return
 	const retriedStep = { ...step, run: step.retry ?? step.run, retry: undefined }
 	safeSignerReplyRetryTimers.set(retryIdentifier, setTimeout(() => {

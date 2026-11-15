@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsEvenIfRpcConfigurationUnusable, approvalsOrNoneIfUnreadable, requireAvailableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive } from './settings.js'
+import { captureRpcNetwork, getAdmittedRpcNetworkSnapshot, getSettingsSnapshot, updateWebsiteAccess, settingsEvenIfRpcConfigurationUnusable, approvalsOrNoneIfUnreadable, requireAvailableSettings, settingsOnAdmittedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type AdmittedRpcNetworkNoLongerLive, grantWithLiveSettings } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion, syncing } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -479,21 +479,23 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
 	const accountIdentityRequest = isAccountOnlyMethod(request.method)
-	// verifyAccess can approve the connection and announce the settings' chain to the page, so it runs only while the admitted network is still live, with no await after this check.
-	const liveSettingsForAccess = await getLiveSettingsOnAdmittedRpcNetwork(settings)
-	if (liveSettingsForAccess.kind !== 'ready') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, liveSettingsForAccess.kind)
-	const verifyRequestAccess = () => verifyAccess(
-		websiteTabConnections,
-		socket,
-		accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1',
-		websiteOrigin,
-		activeAddress,
-		liveSettingsForAccess.settings,
-		{
-			ignoreConnectionApproval: accountIdentityRequest,
-		},
-	)
-	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
+	// verifyAccess can approve the connection and announce the settings' chain to the page, so it runs as the grant of a fresh live read, only while the admitted network is still live.
+	const accessGrant = await grantWithLiveSettings(settings, (liveSettings) => {
+		const verifyRequestAccess = () => verifyAccess(
+			websiteTabConnections,
+			socket,
+			accountConnectionRequest || request.method === 'eth_call' || request.method === 'eth_simulateV1',
+			websiteOrigin,
+			activeAddress,
+			liveSettings,
+			{
+				ignoreConnectionApproval: accountIdentityRequest,
+			},
+		)
+		return accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
+	})
+	if (accessGrant.kind !== 'granted') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, accessGrant.kind)
+	const access = accessGrant.result
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
@@ -526,10 +528,9 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		// The signer prompt above can outlast the admitted network, and this verifyAccess can approve the connection just like the first one.
-		const liveSettingsForRefreshedAccess = await getLiveSettingsOnAdmittedRpcNetwork(refreshedSettings)
-		if (liveSettingsForRefreshedAccess.kind !== 'ready') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, liveSettingsForRefreshedAccess.kind)
-		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, liveSettingsForRefreshedAccess.settings, { ignoreConnectionApproval: true })
-		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
+		const refreshedAccess = await grantWithLiveSettings(refreshedSettings, (liveSettings) => verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, liveSettings, { ignoreConnectionApproval: true }))
+		if (refreshedAccess.kind !== 'granted') return replyAdmittedRpcNetworkNoLongerLive(websiteTabConnections, request, refreshedAccess.kind)
+		if (refreshedAccess.result !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
 		return await handleContentScriptMessage(simulationServicesOwner, admittedSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, refreshedSettings, publishRpcConnectionStatus)
 	}
 

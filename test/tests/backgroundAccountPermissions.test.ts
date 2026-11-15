@@ -4338,11 +4338,12 @@ describe('background eth_accounts', () => {
 
 	test('verifyAccess requires an address decision despite website approval', async () => {
 		installBrowserMock()
-		const { getLiveSettingsOnAdmittedRpcNetwork, getRequiredSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
-		const getGrantSettings = async () => {
-			const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(await getRequiredSettings())
-			if (liveSettings.kind !== 'ready') throw new Error('Expected a ready RPC configuration')
-			return liveSettings.settings
+		const { getRequiredSettings, grantWithLiveSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
+		// verifyAccess grants only with live settings inside their grant.
+		const verifyAccessWithLiveSettings = async (...args: [Parameters<typeof verifyAccess>[0], Parameters<typeof verifyAccess>[1], boolean, string, Parameters<typeof verifyAccess>[4]]) => {
+			const grant = await grantWithLiveSettings(await getRequiredSettings(), (liveSettings) => verifyAccess(...args, liveSettings))
+			if (grant.kind !== 'granted') throw new Error('Expected a ready RPC configuration')
+			return grant.result
 		}
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -4351,9 +4352,9 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
 
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getGrantSettings()), 'askAccess')
+		assert.equal(await verifyAccessWithLiveSettings(websiteTabConnections, socket, true, websiteOrigin, address), 'askAccess')
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getGrantSettings()), 'noAccess')
+		assert.equal(await verifyAccessWithLiveSettings(websiteTabConnections, socket, true, websiteOrigin, address), 'noAccess')
 	})
 })

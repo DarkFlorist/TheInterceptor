@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getLiveSettingsOnAdmittedRpcNetwork, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, requireAvailableSettings } from './settings.js'
+import { assertLiveSettingsInGrantWindow, getSettingsSnapshot, type LiveSettings, updateWebsiteAccess, requireAvailableSettings, grantWithLiveSettings } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -26,6 +26,15 @@ import { getWebsiteAccessForAddress, hasAccess, hasAddressAccess, type ApprovalS
 import { updateDeclarativeNetRequestBlocks } from './requestBlocking.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+
+/**
+ * Connection approval and its reconciliation. Which entry point to call:
+ * - A handler that committed an access-affecting write calls reconcileCommittedAccessChange (or reconcileCommittedAccessChangeCollectingFailures inside a larger operation) with the write's CommittedAccessChange. It alone fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. accessReconciliationArchitecture.test.ts checks that handlers reconcile only inside its callbacks, so a weaker entry point cannot be picked by mistake there.
+ * - Inside that callback: updateWebsiteApprovalAccesses (reconcile, then prompts and icons), finalizeWebsiteAccessChange (the same, then tells the popup), or reconcileWebsiteApprovalAccessesCollectingFailures (returns failures to the operation's collector).
+ * - persistWebsiteAccessChange and reconcilePersistedWebsiteAccess are setAccess followed by, or only, reconcileCommittedAccessChange for one website.
+ * - reconcileWebsiteApprovalAccesses is the reconciliation rule itself, which updateWebsiteApprovalAccesses runs; it is exported for tests that exercise the rule directly.
+ * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. Keeping the scope private here means no caller can revoke a narrower scope than its change implies; the architecture test checks that it stays private.
+ */
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -88,8 +97,9 @@ type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
-// Can approve the connection and announce the settings' chain to the page, so it takes LiveSettings: call it with no await after getLiveSettingsOnAdmittedRpcNetwork.
+// Can approve the connection and announce the settings' chain to the page, so it takes LiveSettings, which only grantWithLiveSettings's synchronous grant receives.
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: LiveSettings, options: VerifyAccessOptions = {}): ApprovalState {
+	assertLiveSettingsInGrantWindow(settings)
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
@@ -199,6 +209,7 @@ function connectToPort(
 	settings: LiveSettings,
 	connectWithActiveAddress: bigint | undefined,
 ): Promise<void> {
+	assertLiveSettingsInGrantWindow(settings)
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
@@ -319,11 +330,12 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 	if (access !== 'hasAccess') return disconnectIfApproved(websiteTabConnections, connection)
 	if (connection.approved || !inputs.grantsAllowed) return []
 	try {
-		// The active-address lookup and the connections before this one awaited, so the grant is decided on a fresh read, with no await after it.
-		const liveSettings = await getLiveSettingsOnAdmittedRpcNetwork(inputs.settings)
-		if (liveSettings.kind !== 'ready' || connection.approved) return []
-		if (getConnectionAccessForAddress(liveSettings.settings.websiteAccess, connection, activeAddress) !== 'hasAccess') return []
-		await connectToPort(websiteTabConnections, connection.socket, liveSettings.settings, activeAddress?.address)
+		// The active-address lookup and the connections before this one awaited, so the grant is decided on a fresh read. connectToPort approves synchronously; its request-block update is returned and awaited after the grant.
+		const grant = await grantWithLiveSettings(inputs.settings, (liveSettings) => {
+			if (connection.approved || getConnectionAccessForAddress(liveSettings.websiteAccess, connection, activeAddress) !== 'hasAccess') return undefined
+			return { blocksUpdated: connectToPort(websiteTabConnections, connection.socket, liveSettings, activeAddress?.address) }
+		})
+		if (grant.kind === 'granted' && grant.result !== undefined) await grant.result.blocksUpdated
 		return []
 	} catch (error: unknown) {
 		return [error]

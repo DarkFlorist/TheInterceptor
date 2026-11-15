@@ -755,6 +755,34 @@ test('settles a claimed Safe signature once on a new block after its retries wer
 	await assertStoredOnceWithOneSuccess(proposal)
 })
 
+// The report-once bookkeeping of spent retries is dropped when its request settles, so a later request that reuses the request identifier gets its own report instead of inheriting the settled one's.
+test('reports spent retries again for a later request that reuses the identifier of a settled one', async () => {
+	const { spyOn } = await import('bun:test')
+	const readCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+	let validationAvailable = false
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (...args: Parameters<typeof readCode>) => {
+		if (!validationAvailable) throw new TypeError('Failed to fetch')
+		return await readCode(...args)
+	})
+	const spendRetries = async (proposal: Awaited<ReturnType<typeof storeSafeProposalAwaitingSignerOnChainA>>) => {
+		validationAvailable = false
+		await setLatestUnexpectedError(undefined)
+		await withSilencedConsole(async () => {
+			await proposal.deliverSignature(createTestSimulationServicesOwner(simulator))
+			await waitUntil(async () => (await getLatestUnexpectedError())?.data.code === 'safe_signer_reply_retries_exhausted', 'the spent retries are reported')
+		})
+		validationAvailable = true
+		await withSilencedConsole(async () => await modules.advanceOutstandingSafeSignerReplies(simulator, proposal.websiteTabConnections))
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], 'the request settled')
+	}
+	try {
+		await spendRetries(await storeSafeProposalAwaitingSignerOnChainA(150, 77n))
+		await spendRetries(await storeSafeProposalAwaitingSignerOnChainA(150, 77n))
+	} finally {
+		getCode.mockRestore()
+	}
+})
+
 // Every claim write fails for longer than the bounded retries, so the signature is never saved: the request leaves waiting-for-signer for a retryable signer error, so signing is available again, and a signature delivered once storage works is settled once.
 test('makes signing available again after the claim of a Safe signature could never be saved', async () => {
 	const { shouldDisableConfirmForApprovalStatus } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
