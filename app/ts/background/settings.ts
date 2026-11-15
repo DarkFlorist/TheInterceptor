@@ -208,9 +208,14 @@ export function settingsEvenIfRpcConfigurationUnusable(snapshot: SettingsSnapsho
 	return snapshot.status === 'available' ? snapshot.settings : undefined
 }
 
+const readyRpcConfigurationMarker = Symbol('readyRpcConfiguration')
+// Settings read while the RPC configuration was ready. Only settingsIfRpcConfigurationReady creates it, and the fail-closed decisions (granting through LiveSettings, choosing how tabs are blocked) take this type, so handing them settings from a weaker projection (requireReadableSettings, settingsEvenIfRpcConfigurationUnusable) does not type-check.
+export type ReadyRpcSettings = Settings & { readonly [readyRpcConfigurationMarker]: true }
+
 // Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
-export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): Settings | undefined {
-	return rpcConfigurationIsReady(snapshot.rpcConfiguration) ? settingsEvenIfRpcConfigurationUnusable(snapshot) : undefined
+export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): ReadyRpcSettings | undefined {
+	if (!rpcConfigurationIsReady(snapshot.rpcConfiguration) || snapshot.status !== 'available') return undefined
+	return { ...snapshot.settings, [readyRpcConfigurationMarker]: true }
 }
 
 // Projection for granting access: unreadable approvals fail closed to none, which the name states. A path where a failed read must stop the caller instead uses requireReadableApprovals.
@@ -229,7 +234,7 @@ export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnaps
 export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
 
 export type LiveSettingsOnAdmittedRpcNetwork =
-	| { readonly kind: 'ready', readonly settings: Settings }
+	| { readonly kind: 'ready', readonly settings: ReadyRpcSettings }
 	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
 
 // The single check behind every connection grant, and behind routing a request: work can be parked on the website lookup, signer prompts or address lookups after it read its settings, so one live snapshot is read and used unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.

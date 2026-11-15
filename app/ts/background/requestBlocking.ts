@@ -1,7 +1,7 @@
 import { getActiveAddressesForAllTabs } from './backgroundUtils.js'
 import { getActiveAddresses } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireReadableApprovals, settingsIfRpcConfigurationReady } from './settings.js'
+import { getSettingsSnapshot, getWebsiteApprovalsSnapshot, requireReadableApprovals, settingsIfRpcConfigurationReady, type ReadyRpcSettings } from './settings.js'
 import { getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
@@ -60,6 +60,11 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 		const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
 		return { tabIdsToBlock: await getTabIdsToBlockWithoutReadyRpcConfiguration(websiteTabConnections, websiteAccess), sitesToBlock: getSitesToBlock(websiteAccess), keepAppliedTabBlock: () => true }
 	}
+	return await getRequestBlocksWithReadyRpcConfiguration(websiteTabConnections, settings)
+}
+
+// Tab blocking from runtime approvals, which only a ready RPC configuration may decide: the parameter type admits only settingsIfRpcConfigurationReady's result.
+const getRequestBlocksWithReadyRpcConfiguration = async (websiteTabConnections: WebsiteTabConnections, settings: ReadyRpcSettings): Promise<RequestBlocks> => {
 	const tabAddresses = await getActiveAddressesForAllTabs(settings)
 	const websiteAccess = requireReadableApprovals(await getWebsiteApprovalsSnapshot({ repairCorrupt: true }))
 	const tabIdsToBlock = tabAddresses.filter(({ tabId, activeAddress }) => activeAddress?.declarativeNetRequestBlockMode === 'block-all' && tabHasApprovedOrConsentedConnection(websiteTabConnections, websiteAccess, tabId, activeAddress)).map((tabData) => tabData.tabId)

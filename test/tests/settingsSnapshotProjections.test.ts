@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import * as ts from 'typescript'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
@@ -148,4 +149,20 @@ describe('admitted RPC network snapshot', () => {
 			storageReadError = undefined
 		}
 	})
+})
+
+const repositoryRoot = new URL('../../', import.meta.url).pathname
+const readyRpcSettingsFixturePath = `${ repositoryRoot }test/fixtures/readyRpcSettings/projections.ts`
+
+// The fail-closed decisions take ReadyRpcSettings, so picking a weaker projection for them must fail to compile rather than fail open.
+test('only the ready projection produces settings a fail-closed decision accepts', async () => {
+	const configFile = ts.readConfigFile(`${ repositoryRoot }tsconfig.json`, ts.sys.readFile)
+	const { options } = ts.parseJsonConfigFileContent(configFile.config, ts.sys, repositoryRoot)
+	const program = ts.createProgram([readyRpcSettingsFixturePath], { ...options, noEmit: true, rootDir: repositoryRoot })
+	const fixture = program.getSourceFile(readyRpcSettingsFixturePath)
+	if (fixture === undefined) throw new Error('Missing ready RPC settings fixture')
+	const errorLines = ts.getPreEmitDiagnostics(program, fixture).flatMap((diagnostic) => diagnostic.start === undefined ? [] : [fixture.getLineAndCharacterOfPosition(diagnostic.start).line + 1])
+	const expectedLines = (await Bun.file(readyRpcSettingsFixturePath).text()).split('\n').flatMap((line, index) => line.includes('// expect-type-error') ? [index + 1] : [])
+	assert.equal(expectedLines.length, 2)
+	assert.deepEqual([...new Set(errorLines)].sort((first, second) => first - second), expectedLines)
 })

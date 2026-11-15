@@ -1,11 +1,11 @@
 import type { Settings } from '../types/interceptor-messages.js'
-import { type AdmittedRpcNetworkNoLongerLive, type CapturedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork } from './settings.js'
+import { type AdmittedRpcNetworkNoLongerLive, type CapturedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type ReadyRpcSettings } from './settings.js'
 
 // The connection-grant contract: the only way to obtain settings that may grant a connection, and the check that they are used only inside the grant they were read for. verifyAccess and connectToPort take LiveSettings, so granting policy depends on this module, while settings.ts only reads settings and checks them against the admitted network (getLiveSettingsOnAdmittedRpcNetwork, which request routing uses as well).
 
 const liveSettingsMarker = Symbol('liveSettings')
 // Settings proven to come from a ready RPC configuration on the network the caller worked on, read just now. Granting a connection takes this type (see verifyAccess and connectToPort), so code that holds plain settings cannot grant. Only grantWithLiveSettings creates it, for the synchronous grant it runs right after the read, and the grant functions reject it outside that call (assertLiveSettingsInGrantWindow).
-export type LiveSettings = Settings & { readonly [liveSettingsMarker]: true }
+export type LiveSettings = ReadyRpcSettings & { readonly [liveSettingsMarker]: true }
 
 // The live settings whose grant is running right now. A grant runs synchronously, so a value is here only between the read and the end of its grant; a value the grant let escape (returned, or captured by a closure that runs later) is no longer here once anything could have awaited.
 const liveSettingsInGrantWindow = new WeakSet<LiveSettings>()
