@@ -3,7 +3,7 @@ import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLi
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import { getLatestUnexpectedError, getPendingAccessRequests, setLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
+import { deferSignatureUnlessAnswered, getLatestUnexpectedError, getPendingAccessRequests, setLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getRequiredSettings } from './requiredSettings.js'
 import { appendPendingTerminalReply } from '../../app/ts/background/pendingTerminalReplies.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
@@ -1146,6 +1146,22 @@ test('keeps the signing network an Accept recorded while a confirmation metadata
 	await assertStoredOnceWithOneSuccess(proposal)
 })
 
+// Only the lifecycle writers may change whether a request holds a deferred signature or has its reply queued; they check one against the other, so a generic update must not bypass them.
+test('a generic pending-request update keeps the stored Safe signer-reply state', async () => {
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(132, 72n)
+	assert.equal(await deferSignatureUnlessAnswered(proposal.requestIdentifier, { signerReply: '0x1234', chainId: fakeRpcNetwork.chainId }), 'deferred')
+
+	await modules.updatePendingTransactionOrMessage(proposal.requestIdentifier, async (pending) => {
+		const { deferredSafeSignerReply: _dropped, ...withoutDeferredReply } = pending
+		return { ...withoutDeferredReply, websiteReplyQueued: true, approvalStatus: { status: 'WaitingForUser' as const } }
+	})
+
+	const [stored] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(stored?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(stored?.deferredSafeSignerReply?.signerReply, '0x1234')
+	assert.equal(stored?.websiteReplyQueued, undefined)
+})
+
 test('does not send the confirmation window an empty queue when its last request is removed while a metadata refresh is running', async () => {
 	await storeSafeProposalAwaitingSignerOnChainA(131, 71n)
 	let removed = false
@@ -1868,10 +1884,7 @@ test.each(['other chain first', 'matching recovery during the reply', 'deferral 
 	assert.equal(signerRequest.params[0], addressString(alternateOwnerAddress))
 	assert.equal(JSON.parse(String(signerRequest.params[1])).domain.verifyingContract.toLowerCase(), addressString(activeAddress).toLowerCase())
 
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
-		...pending,
-		deferredSafeSignerReply: { signerReply: '0x1234', terminalReplyQueued: false, chainId: fakeRpcNetwork.chainId },
-	}))
+	assert.equal(await deferSignatureUnlessAnswered(uniqueRequestIdentifier, { signerReply: '0x1234', chainId: fakeRpcNetwork.chainId }), 'deferred')
 	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
 	const [invalidDeferredCoSignRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(invalidDeferredCoSignRequest?.approvalStatus.status, 'SignerError')

@@ -204,6 +204,21 @@ beforeEach(() => {
 })
 
 describe('popup message dispatcher seams', () => {
+	// The handler admits settings and a provider together, so the exported input must come from those settings: a later live read could name another address or network, or fail.
+	test('exports the simulation input from the admitted settings even when the live settings became unreadable', async () => {
+		const { requestInterceptorSimulationInput } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const ethereum = createDispatcherContext(async () => undefined).simulationServicesOwner.requireCurrent().ethereum
+		Object.defineProperty(ethereum, 'getBlockNumber', { value: async () => 1n })
+		// Reaching the provider call shows the input was built without the live read; the stub stops there so no network is needed.
+		const inputBuilt = new Error('simulation input built')
+		const simulationInputs: unknown[] = []
+		Object.defineProperty(ethereum, 'ethSimulateV1Input', { value: async (simulationInput: unknown) => { simulationInputs.push(simulationInput); throw inputBuilt } })
+		storageState.activeRpcNetwork = 'corrupt'
+
+		await assert.rejects(requestInterceptorSimulationInput(ethereum, { ...settings, simulationMode: true }), (error) => error === inputBuilt)
+		assert.equal(simulationInputs.length, 1)
+	})
+
 	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
 

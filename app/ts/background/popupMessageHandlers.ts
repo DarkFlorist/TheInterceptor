@@ -1271,7 +1271,8 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 		}
 	}
 	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
-	const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereumClientService)
+	// Built from the same settings as the mode check and the admitted provider, not a later live read that may name another address or network.
+	const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(undefined, settings), ethereumClientService)
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
 
@@ -1350,7 +1351,8 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService, admittedSettings: Settings | undefined) {
 	const settings = admittedSettings ?? requireReadableSettings(await getSettingsSnapshot())
-	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
+	// Captured from the same settings as the mode check and the admitted provider, not a later live read that may name another address or network.
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot(settings)) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {

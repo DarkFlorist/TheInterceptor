@@ -12,7 +12,7 @@ import { modifyObject } from '../utils/typescript.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { resolveSafeSignerReply } from './safeConfirmationPersistence.js'
 import { createSafeSignerErrorStatus } from './safeSignerErrors.js'
-import { deferSignatureUnlessAnswered, getPendingSafeProposalStores, getPendingTransactionOrMessage, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, removePendingTransactionOrMessage, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { deferSignatureUnlessAnswered, discardDeferredSafeSignature, getPendingSafeProposalStores, getPendingTransactionOrMessage, getPendingTransactionsAndMessages, movePendingSafeProposalToOutbox, removePendingSafeProposalStore, removePendingTransactionOrMessage, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { getPendingTerminalReplies } from './pendingTerminalReplies.js'
 import { attemptQueuedTerminalReplyDelivery, deliverOwnQueuedTerminalReply, deliverQueuedTerminalReplyOnce, queueSafeProposalReplyAndMoveToOutbox, queueTerminalReplyUnlessDeferred } from './terminalReplyDelivery.js'
 import { reportRecoveryItemFailure } from './terminalStateRecovery.js'
@@ -99,7 +99,7 @@ function removeDeferredSafeSignerReply(pending: PendingTransactionOrSignableMess
 
 // Discards a Safe signature that failed validation, so the request returns to waiting-for-signer with the approval status the user sees.
 export async function discardSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) {
-	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(removeDeferredSafeSignerReply(pending), { approvalStatus }))
+	await discardDeferredSafeSignature(uniqueRequestIdentifier, approvalStatus)
 }
 
 function createDeferredSafeProposalReply(pending: PendingTransactionOrSignableMessage, safeTxHash: bigint) {
@@ -129,9 +129,7 @@ export function isOwnedBySafeSignerReplyLifecycle(pending: PendingTransactionOrS
 
 // A Safe signature that cannot be bound to the network it was signed for fails closed: it is not kept, and the request asks the user to sign again.
 async function failSafeSignatureWithoutChain(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(removeDeferredSafeSignerReply(current), {
-		approvalStatus: createSafeSignerErrorStatus('The Gnosis Safe signature could not be matched to its network while the RPC configuration is unavailable. Sign it again once it is restored.'),
-	}))
+	await discardDeferredSafeSignature(uniqueRequestIdentifier, createSafeSignerErrorStatus('The Gnosis Safe signature could not be matched to its network while the RPC configuration is unavailable. Sign it again once it is restored.'))
 }
 
 async function removeSettledPendingRequest(pending: PendingTransactionOrSignableMessage, context: SafeSignerReplyContext) {

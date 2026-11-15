@@ -7,7 +7,7 @@ const liveSettingsMarker = Symbol('liveSettings')
 // Settings proven to come from a ready RPC configuration on the network the caller worked on, read just now. Granting a connection takes this type (see verifyAccess and connectToPort), so code that holds plain settings cannot grant. Only grantWithLiveSettings creates it, for the synchronous grant it runs right after the read, and the grant functions reject it outside that call (assertLiveSettingsInGrantWindow).
 export type LiveSettings = ReadyRpcSettings & { readonly [liveSettingsMarker]: true }
 
-// The live settings whose grant is running right now. A grant runs synchronously, so a value is here only between the read and the end of its grant; a value the grant let escape (returned, or captured by a closure that runs later) is no longer here once anything could have awaited.
+// Checked at runtime because the type system cannot see live settings captured by a closure that runs after the grant; asynchronous grants are rejected by type (Synchronous). The live settings whose grant is running right now. A grant runs synchronously, so a value is here only between the read and the end of its grant; a value the grant let escape (returned, or captured by a closure that runs later) is no longer here once anything could have awaited.
 const liveSettingsInGrantWindow = new WeakSet<LiveSettings>()
 
 // Called by every function that grants with LiveSettings: using live settings after their grant returned fails loudly instead of granting on settings that may have changed meanwhile.

@@ -70,7 +70,17 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-// Returns the queue as written, so a caller can publish exactly what storage holds even when its update left the request unchanged.
+// The Safe signer-reply state of a request (a deferred signature, or the mark that its website reply is queued) is changed only by the lifecycle writers below, which check one against the other: a generic update keeps the stored values whatever it returns, so it cannot break the answered-or-deferred invariant.
+const withStoredSafeSignerReplyState = (stored: PendingTransactionOrSignableMessage, updated: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage => {
+	const { deferredSafeSignerReply: _updatedDeferredReply, websiteReplyQueued: _updatedReplyQueued, ...updatedFields } = updated
+	return {
+		...updatedFields,
+		...stored.deferredSafeSignerReply === undefined ? {} : { deferredSafeSignerReply: stored.deferredSafeSignerReply },
+		...stored.websiteReplyQueued === undefined ? {} : { websiteReplyQueued: stored.websiteReplyQueued },
+	}
+}
+
+// Returns the queue as written, so a caller can publish exactly what storage holds even when its update left the request unchanged. The Safe signer-reply state is kept as stored (see withStoredSafeSignerReplyState).
 export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
 	return await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
@@ -79,7 +89,7 @@ export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier:
 		if (found === undefined) return pendingTransactionsOrMessages
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, withStoredSafeSignerReplyState(found, updated))
 	})
 }
 
@@ -149,6 +159,21 @@ export async function deferSignatureUnlessAnswered(uniqueRequestIdentifier: Uniq
 		if (found.websiteReplyQueued === true) return 'answered'
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: replaceElementInReadonlyArray(result.value, match, { ...found, deferredSafeSignerReply }) })
 		return 'deferred'
+	})
+}
+
+// Discards a deferred Safe signature that failed validation and sets the approval status the user sees, unless the request is gone or already answered (its reply is queued, so the signature it settled is no longer held).
+export async function discardDeferredSafeSignature(uniqueRequestIdentifier: UniqueRequestIdentifier, approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']): Promise<'discarded' | 'answered' | 'gone'> {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
+		const result = await readPendingTransactionsAndMessages()
+		if (!result.success) throw result.error
+		const match = result.value.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const found = result.value[match]
+		if (found === undefined) return 'gone'
+		if (found.websiteReplyQueued === true) return 'answered'
+		const { deferredSafeSignerReply: _discarded, ...withoutDeferredReply } = found
+		await browserStorageLocalSet2({ pendingTransactionsAndMessages: replaceElementInReadonlyArray(result.value, match, { ...withoutDeferredReply, approvalStatus }) })
+		return 'discarded'
 	})
 }
 
