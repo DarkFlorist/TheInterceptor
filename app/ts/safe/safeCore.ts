@@ -5,12 +5,13 @@ import type { SafeOwnerSignature, SafeTransactionSigningRequest, SafeTransaction
 import type { EthereumAddress, EthereumBlockTag } from '../types/wire-types.js'
 import type { Abi, Hex } from '../utils/ethereumPrimitives.js'
 import { decodeFunctionOutput, encodeFunctionCall } from '../utils/abiRuntime.js'
-import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { addressString, bytes32String, checksummedAddress, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { ensureHex } from '../utils/ethereumBytes.js'
-import { recoverAddress } from '../utils/ethereumPrimitives.js'
+import { isAbiDataDecodeError, recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getMessageAndDomainHash, getSafeTxHash } from '../utils/eip712.js'
 import { EIP712Message } from '../types/eip721.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
+import { JsonRpcResponseError } from '../utils/errors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
@@ -152,23 +153,32 @@ export function assertSafeContractStateUnchanged(reviewedState: SafeContractStat
 	}
 }
 
+// The one read of a Safe's owners and threshold, for every path that needs them. The calls and their decoding are separate so a caller can run them with its other reads and still decode in its own order.
+const callSafeOwnership = async (ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint) => await Promise.all([
+	callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
+	callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
+])
+
+const decodeSafeOwnership = ([ownersResult, thresholdResult]: Awaited<ReturnType<typeof callSafeOwnership>>) => ({
+	owners: decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult).map((owner) => BigInt(owner)),
+	threshold: decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult),
+})
+
 export async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<SafeContractState> {
 	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
 	if (code.length === 0) throw createSafeContractValidationFailure('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
-	const [versionResult, nonceResult, ownersResult, thresholdResult] = await Promise.all([
+	const [versionResult, nonceResult, ownershipResults] = await Promise.all([
 		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'VERSION', []), blockNumber),
 		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'nonce', []), blockNumber),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
+		callSafeOwnership(ethereum, safeAddress, blockNumber),
 	])
 	const version = decodeFunctionOutput(SAFE_ABI, 'VERSION', versionResult)
 	const nonce = decodeFunctionOutput(SAFE_ABI, 'nonce', nonceResult)
-	const owners = decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult)
-	const threshold = decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult)
+	const { owners, threshold } = decodeSafeOwnership(ownershipResults)
 	if (!SUPPORTED_SAFE_VERSIONS.some((supportedVersion) => supportedVersion === version)) {
 		throw createSafeContractValidationFailure(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_SAFE_VERSIONS.join(', ') }.`)
 	}
-	return { version, nonce, owners: owners.map((owner) => BigInt(owner)), threshold }
+	return { version, nonce, owners, threshold }
 }
 
 export async function getSafeContractState(ethereum: EthereumClientService, safeAddress: EthereumAddress): Promise<SafeContractState> {
@@ -178,6 +188,23 @@ export async function getSafeContractState(ethereum: EthereumClientService, safe
 export async function getSafeContractSnapshot(ethereum: EthereumClientService, safeAddress: EthereumAddress): Promise<SafeContractSnapshot> {
 	const blockNumber = await ethereum.getBlockNumber(undefined)
 	return { blockNumber, state: await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber) }
+}
+
+// Nodes report a revert as code 3, or with their own code and the word in the message. Any other JSON-RPC error says nothing about the contract.
+const isExecutionRevert = (error: unknown) => error instanceof JsonRpcResponseError && (error.code === 3 || /revert/iu.test(error.message))
+
+// A page's SafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. The active address counts as signer when it is the named Safe, because the user chose that Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
+export async function assertSafeTxPreviewAllowed(ethereum: EthereumClientService, safeAddress: EthereumAddress, activeAddress: EthereumAddress, messageChainId: bigint | undefined) {
+	if (messageChainId !== undefined && messageChainId !== ethereum.getChainId()) throw createSafeContractValidationFailure(`No outcome is simulated: this message is for chain ${ messageChainId.toString() }, not the selected network.`)
+	const notSafeMessage = `No outcome is simulated: ${ checksummedAddress(safeAddress) } is not a Gnosis Safe on this network, so nothing could execute this message there.`
+	// Unlike getSafeContractStateAtBlock, no VERSION or code is read: 1.1.1 and 1.5.0 Safes are in use and the preview only simulates, and an address without code fails the decode below.
+	const ownership = await callSafeOwnership(ethereum, safeAddress, await ethereum.getBlockNumber(undefined)).then(decodeSafeOwnership).catch((error: unknown) => {
+		if (isAbiDataDecodeError(error) || isExecutionRevert(error)) throw createSafeContractValidationFailure(notSafeMessage)
+		throw error
+	})
+	// A Safe's setup and owner changes keep its threshold between 1 and its owner count, so a reply outside that is not from a Safe.
+	if (ownership.threshold === 0n || ownership.threshold > BigInt(ownership.owners.length)) throw createSafeContractValidationFailure(notSafeMessage)
+	if (activeAddress !== safeAddress && !ownership.owners.includes(activeAddress)) throw createSafeOwnerValidationFailure(`No outcome is simulated: ${ checksummedAddress(activeAddress) } is not an owner of Gnosis Safe ${ checksummedAddress(safeAddress) }, so its signature could not execute this message.`)
 }
 
 export function createSafeOwnerValidator(
@@ -360,11 +387,22 @@ function assertSafeTransactionContext(
 	safeAddress: EthereumAddress,
 	safeTx: SafeTx,
 ) {
-	const chainId = ethereum.getChainId()
-	if (chainId === 0n) throw createSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
-	if (safeTx.domain.chainId !== chainId) throw createSafeContractValidationFailure('The Gnosis Safe transaction chain ID does not match the selected chain.')
+	assertSafeDomainChainIsConnectedChain(safeTx.domain.chainId, ethereum.getChainId())
 	if (safeTx.domain.verifyingContract !== safeAddress) throw createSafeContractValidationFailure('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
 	assertInterceptorSafeTransactionPolicy(safeTx)
+}
+
+// The single rule for which chain a SafeTx may be signed or stacked on: its EIP-712 domain fixes the chain it executes on, so that chain must be the connected one, and a connected chain without an ID (0n) never qualifies.
+export function assertSafeDomainChainIsConnectedChain(domainChainId: bigint | undefined, connectedChainId: bigint) {
+	if (connectedChainId === 0n) throw createSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
+	if (domainChainId === connectedChainId) return
+	const preparedChain = domainChainId === undefined ? 'an unspecified chain' : `chain ${ domainChainId.toString() }`
+	throw createSafeContractValidationFailure(`This Gnosis Safe transaction was prepared for ${ preparedChain }, but the connected network is chain ${ connectedChainId.toString() }. Prepare it again on the current network.`)
+}
+
+// Proposal-lifecycle guard for the steps (signing, signer refresh, stacking) that act on an already prepared proposal after the network may have changed.
+export function assertSafeProposalChainMatchesConnectedNetwork(ethereum: EthereumClientService, safeTx: SafeTx) {
+	assertSafeDomainChainIsConnectedChain(safeTx.domain.chainId, ethereum.getChainId())
 }
 
 function validateSafeTransactionState(

@@ -6,7 +6,7 @@ import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
@@ -55,6 +55,8 @@ async function prepareSafeProposalPersistence(
 	ethereum: EthereumClientService,
 	safeSigningRequest: SafeTransactionSigningRequest,
 ) {
+	// The proposal is stored in the stack of the connected chain, so its domain chain must be that chain.
+	assertSafeProposalChainMatchesConnectedNetwork(ethereum, safeSigningRequest.safeTx)
 	if (safeSigningRequest.reviewedSafeState === undefined) {
 		throw createSafeContractValidationFailure('Review this Gnosis Safe proposal again so its current owners, threshold, and nonce can be verified.')
 	}
