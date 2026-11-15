@@ -485,11 +485,6 @@ export const GetAddressBookData = funtypes.ReadonlyObject({
 	data: GetAddressBookDataFilter,
 }).asReadonly()
 
-type OpenAddressBook = funtypes.Static<typeof OpenAddressBook>
-const OpenAddressBook = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_openAddressBook'),
-}).asReadonly()
-
 export type GetAddressBookDataReply = funtypes.Static<typeof GetAddressBookDataReply>
 export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_getAddressBookDataReply'),
@@ -1055,7 +1050,6 @@ const PopupMessageRuntype = funtypes.Union(
 	AddOrEditAddressBookEntry,
 	GetAddressBookData,
 	RemoveAddressBookEntry,
-	OpenAddressBook,
 	PopupReadyAndListening,
 	funtypes.ReadonlyObject({
 		method: funtypes.Literal('popup_requestNewHomeData'),
@@ -1068,7 +1062,6 @@ const PopupMessageRuntype = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettingsChangeStatus') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openManagement') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
@@ -1081,7 +1074,6 @@ const PopupMessageRuntype = funtypes.Union(
 	OpenWebPage,
 	DisableInterceptor,
 	SetEnsNameForHash,
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openWebsiteAccess') }),
 	OpenSimulationStack,
 	RetrieveWebsiteAccess,
 	BlockOrAllowExternalRequests,
