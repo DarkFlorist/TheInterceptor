@@ -1128,6 +1128,7 @@ test('keeps the signing network an Accept recorded while a confirmation metadata
 		}
 		return readStoredItems()
 	})
+	browserMock.sentMessages.length = 0
 	try {
 		await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
 	} finally {
@@ -1135,10 +1136,38 @@ test('keeps the signing network an Accept recorded while a confirmation metadata
 	}
 	assert.equal(accepted, true)
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.signerRequestChainId, fakeRpcNetwork.chainId)
+	// The window is sent the queue as stored after the Accept, not the snapshot the refresh read before it.
+	const broadcast = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+	const broadcastFirst = isRecord(broadcast?.data) && Array.isArray(broadcast.data.pendingTransactionAndSignableMessages) ? broadcast.data.pendingTransactionAndSignableMessages[0] : undefined
+	assert.equal(isRecord(broadcastFirst) && isRecord(broadcastFirst.approvalStatus) ? broadcastFirst.approvalStatus.status : undefined, 'WaitingForSigner')
 
 	await withSilencedConsole(async () => await proposal.deliverSignature(createTestSimulationServicesOwner(simulator)))
 
 	await assertStoredOnceWithOneSuccess(proposal)
+})
+
+test('does not send the confirmation window an empty queue when its last request is removed while a metadata refresh is running', async () => {
+	await storeSafeProposalAwaitingSignerOnChainA(131, 71n)
+	let removed = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!removed && Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) {
+			removed = true
+			const readBeforeTheRemoval = await readStoredItems()
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+			return readBeforeTheRemoval
+		}
+		return readStoredItems()
+	})
+	browserMock.sentMessages.length = 0
+	try {
+		await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
+
+	// The confirmation window rejects an empty queue; the removal that emptied it updates or closes the window instead.
+	assert.equal(removed, true)
+	assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), false)
 })
 
 test('replays a deferred Safe signature when a normal network switch returns to its chain', async () => {

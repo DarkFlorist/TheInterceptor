@@ -578,14 +578,18 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
+			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
+			// Read after the visualisation awaited: an Accept, Reject, signature claim or newer request meanwhile changed the queue, so the window is sent what storage holds now, with the visualisation added only to this same message.
+			const storedRequests = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
+			// Nothing is left to confirm: the Reject, close or signature that emptied the queue updates or closes the window itself, and the window does not accept an empty queue.
+			if (storedRequests.length === 0) return
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
-					pendingTransactionAndSignableMessages: [{
-						...first,
-						visualizedPersonalSignRequest: await visualizedPersonalSignRequestPromise,
-						transactionOrMessageCreationStatus: 'Simulated' as const
-					}, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
+					pendingTransactionAndSignableMessages: storedRequests.map((stored) => stored.type === 'SignableMessage' && doesUniqueRequestIdentifiersMatch(stored.uniqueRequestIdentifier, first.uniqueRequestIdentifier)
+						? { ...stored, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
+						: stored
+					).map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: await currentBlockNumberPromise,
 					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
@@ -604,19 +608,20 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					statusCode: 'success' as const,
 					data: modifyObject(first.popupVisualisation.data, { ...visualizedSimulationState })
 				}
-				const updatedFirst = modifyObject(first, { popupVisualisation: visualizedPopupVisualisation })
 				// Only the visualisation is written, onto the stored request, so fields written while it was formed (an Accept's signerRequestChainId and approval status, a signature's claim or the answered marker) are kept, and a simulation stored meanwhile is not replaced by this older one.
-				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+				const storedQueue = await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
 					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.popupVisualisation.statusCode === 'failed') return current
 					if (getSimulationConductedTimestamp(current.popupVisualisation).getTime() !== getSimulationConductedTimestamp(first.popupVisualisation).getTime()) return current
 					return modifyObject(current, { popupVisualisation: visualizedPopupVisualisation })
 				})
+				const storedRequests = getConfirmationWindowRequests(storedQueue)
+				// Nothing is left to confirm: the Reject, close or signature that emptied the queue updates or closes the window itself, and the window does not accept an empty queue.
+				if (storedRequests.length === 0) return
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 					data: {
-						pendingTransactionAndSignableMessages: [
-							updatedFirst
-							, ...promises.slice(1)].map(toPopupPendingTransactionOrSignableMessage),
+						// The queue as written, not the snapshot read before visualising: the write is skipped when the request changed meanwhile, and the window must match storage either way.
+						pendingTransactionAndSignableMessages: storedRequests.map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: await currentBlockNumberPromise,
 						rpcConnectionStatus: await rpcConnectionStatusPromise,
 					}

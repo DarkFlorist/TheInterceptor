@@ -66,11 +66,13 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
+		return pendingTransactionsAndMessages
 	})
 }
 
+// Returns the queue as written, so a caller can publish exactly what storage holds even when its update left the request unchanged.
 export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+	return await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
 		const found = pendingTransactionsOrMessages[match]
