@@ -197,6 +197,24 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [])
 	})
 
+	test('a denial written without reconciling keeps the block of a tab whose connection is still approved', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const { reconcileWebsiteApprovalAccesses, updateDeclarativeNetRequestBlocks, updateWebsiteAccess } = await loadModules()
+		const tabId = 9920
+		const { connection, endOutage, getRequiredSettings, websiteOrigin, websiteTabConnections } = await registerConsentedTabDuringOutage(tabId)
+		await endOutage()
+		await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getRequiredSettings(), true)
+		assert.equal(connection.approved, true)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId])
+
+		// Some denials are written without reconciling (setAddressAccessForWebsite's), so the connection stays approved until a later reconciliation.
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: false }])
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+
+		assert.equal(connection.approved, true)
+		assert.deepEqual(browserMock.requestBlockingCalls.blockedSessionTabIds, [tabId], 'the block stays while the connection can still make requests')
+	})
+
 	const createConsentedBlockAllConnectionWithFailingConnectEvent = async (tabId: number) => {
 		const { websiteSocketToString } = await loadModules()
 		const websiteOrigin = `failing-connect-event-${ tabId.toString() }.example`

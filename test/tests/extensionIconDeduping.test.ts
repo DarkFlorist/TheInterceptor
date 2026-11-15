@@ -104,6 +104,7 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
+		...await import('../../app/ts/background/requestBlocking.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/iconHandler.js'),
 		...await import('../../app/ts/background/settings.js'),

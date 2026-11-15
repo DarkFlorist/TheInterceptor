@@ -27,3 +27,6 @@ export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigi
 	}
 	return 'askAccess'
 }
+
+// The access a website has for the active address, or for the website itself when no address is active. Connection approval and request blocking both decide by it.
+export const getWebsiteAccessForAddress = (websiteAccess: WebsiteAccessArray, websiteOrigin: string, activeAddress: AddressBookEntry | undefined) => activeAddress ? hasAddressAccess(websiteAccess, websiteOrigin, activeAddress) : hasAccess(websiteAccess, websiteOrigin)
