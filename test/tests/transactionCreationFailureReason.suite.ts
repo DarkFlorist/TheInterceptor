@@ -1,5 +1,6 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { spyOn, test } from 'bun:test'
+import * as errorDecodingAbis from '../../app/ts/background/errorDecodingAbis.js'
 import { activeAddress, created, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, modules, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 import { encodeErrorString } from './errorDataFixtures.js'
 import { toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -54,59 +55,64 @@ const refreshFailedTransactionCreation = async (error: TransactionCreationError,
 	return await refreshConfirmTransactionSimulation(testSimulator.ethereum, testSimulator.tokenPriceService, senderAddress, true, uniqueRequestIdentifier, createGasEstimationFailure(error))
 }
 
+// Failed-transaction previews now identify the recipient to show its names and calldata. Count ABI-decoding lookups separately so those legitimate preview reads cannot hide an unnecessary error-decoding lookup.
 const getSuccessfulVisualisationFailureReason = async (error: TransactionCreationError) => {
-	const popupVisualisation = await refreshFailedTransactionCreation(error)
-	if (popupVisualisation === undefined) throw new Error('The confirmation simulation did not complete')
-	assert.equal(popupVisualisation.statusCode, 'success')
-	return popupVisualisation.data.transactionCreationFailureReason
-}
-
-const assertRouterWasNotProbed = () => {
-	assert.equal(fakeSafeContract.requestedCodeAddresses.includes(routerAddress), false)
-	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getCode'), false)
-	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_call'), false)
+	let recipientAbiLookups = 0
+	const getErrorDecodingAbis = errorDecodingAbis.getErrorDecodingAbis
+	const lookup = spyOn(errorDecodingAbis, 'getErrorDecodingAbis').mockImplementation(async (errors, identifyRecipient) => await getErrorDecodingAbis(errors, async () => {
+		recipientAbiLookups += 1
+		return await identifyRecipient()
+	}))
+	try {
+		const popupVisualisation = await refreshFailedTransactionCreation(error)
+		if (popupVisualisation === undefined) throw new Error('The confirmation simulation did not complete')
+		assert.equal(popupVisualisation.statusCode, 'success')
+		return { reason: popupVisualisation.data.transactionCreationFailureReason, recipientAbiLookups }
+	} finally {
+		lookup.mockRestore()
+	}
 }
 
 test('decodes gas estimation custom errors with the recipient ABI when the visualisation is built', async () => {
 	await modules.updateUserAddressBookEntries((entries) => [...entries, { type: 'contract', name: 'Router', address: routerAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId, abi: routerAbi }])
 
-	const reason = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: swapDeadlinePassedSelector })
+	const { reason } = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: swapDeadlinePassedSelector })
 
 	assert.equal(reason, 'SwapDeadlinePassed')
 })
 
-test('explains Uniswap V3 revert codes in gas estimation failure reasons without probing the recipient', async () => {
-	const reason = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: encodeErrorString('STF') })
+test('explains Uniswap V3 revert codes in gas estimation failure reasons without an additional recipient ABI lookup', async () => {
+	const { reason, recipientAbiLookups } = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: encodeErrorString('STF') })
 
 	assert.equal(reason, 'STF - possible Uniswap V3 error: Token transfer from the sender via safeTransferFrom failed, usually due to insufficient token balance or allowance')
-	assertRouterWasNotProbed()
+	assert.equal(recipientAbiLookups, 0)
 })
 
 test('shows the insufficient balance override instead of the decoded revert reason', async () => {
-	const reason = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: swapDeadlinePassedSelector, insufficientBalanceMessage })
+	const { reason, recipientAbiLookups } = await getSuccessfulVisualisationFailureReason({ code: -32000, message: 'execution reverted', data: swapDeadlinePassedSelector, insufficientBalanceMessage })
 
 	assert.equal(reason, insufficientBalanceMessage)
-	assertRouterWasNotProbed()
+	assert.equal(recipientAbiLookups, 0)
 })
 
-test('shows the Gnosis Safe\'s explanation instead of the decoded revert reason, without probing the recipient', async () => {
-	const reason = await getSuccessfulVisualisationFailureReason({ code: 3, message: 'execution reverted', data: swapDeadlinePassedSelector, safeCallRevertedMessage })
+test('shows the Gnosis Safe\'s explanation instead of the decoded revert reason, without an additional recipient ABI lookup', async () => {
+	const { reason, recipientAbiLookups } = await getSuccessfulVisualisationFailureReason({ code: 3, message: 'execution reverted', data: swapDeadlinePassedSelector, safeCallRevertedMessage })
 
 	assert.equal(reason, safeCallRevertedMessage)
-	assertRouterWasNotProbed()
+	assert.equal(recipientAbiLookups, 0)
 })
 
 test('prefers the insufficient balance override over the Gnosis Safe\'s explanation', async () => {
-	const reason = await getSuccessfulVisualisationFailureReason({ code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), insufficientBalanceMessage, safeCallRevertedMessage })
+	const { reason } = await getSuccessfulVisualisationFailureReason({ code: 3, message: 'execution reverted: GS013', data: encodeErrorString('GS013'), insufficientBalanceMessage, safeCallRevertedMessage })
 
 	assert.equal(reason, insufficientBalanceMessage)
 })
 
-test('keeps the Gnosis Safe\'s explanation that older versions stored as the message when the confirmation refreshes, without probing the recipient', async () => {
-	const reason = await getSuccessfulVisualisationFailureReason({ code: 3, message: storedLegacySafeCallRevertedMessage, data: swapDeadlinePassedSelector })
+test('keeps the Gnosis Safe\'s explanation that older versions stored as the message when the confirmation refreshes, without an additional recipient ABI lookup', async () => {
+	const { reason, recipientAbiLookups } = await getSuccessfulVisualisationFailureReason({ code: 3, message: storedLegacySafeCallRevertedMessage, data: swapDeadlinePassedSelector })
 
 	assert.equal(reason, storedLegacySafeCallRevertedMessage)
-	assertRouterWasNotProbed()
+	assert.equal(recipientAbiLookups, 0)
 })
 
 test('carries the transaction creation failure reason when the simulation result reports an RPC error', async () => {

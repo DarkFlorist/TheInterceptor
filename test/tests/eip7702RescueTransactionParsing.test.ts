@@ -293,6 +293,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected',
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
 				tokenPriceQuoteToken: undefined,
