@@ -30,8 +30,7 @@ const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): 
 		try {
 			tabIds = await getConnectedTabIdsToReload(websiteTabConnections)
 		} catch (error) {
-			// After saving permissions, still reload known connections, then let the workflow
-			// reconcile approvals and propagate the lookup failure to its caller.
+			// After saving permissions, still reload known connections, then let the workflow reconcile approvals and propagate the lookup failure to its caller.
 			try {
 				await reloadTabs([...websiteTabConnections.keys()])
 			} catch (reloadError) {
