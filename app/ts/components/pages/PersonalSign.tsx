@@ -1,6 +1,5 @@
 import { Fragment } from 'preact'
 import { MAX_DATE_SECONDS, bigintSecondsToDate } from '../../utils/bigint.js'
-import { EthereumData } from '../../types/wire-types.js'
 import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
