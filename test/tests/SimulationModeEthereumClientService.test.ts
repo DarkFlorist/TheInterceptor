@@ -10,7 +10,7 @@ import { createExecutionSimulationState, createSimulationCallParams, createSimul
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { type SimulationStateInput, toResolvedExecutionSimulationState, createSimulatedExecutionInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, toSimulationStateInputMinimalData, type SimulationStateInput, createSimulatedExecutionInput } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'

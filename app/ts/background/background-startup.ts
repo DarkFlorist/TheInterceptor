@@ -1,10 +1,12 @@
-import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
+// Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
-import { captureSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { isExtensionPageMessageSender, popupMessageHandler } from './popupMessageRouting.js'
+import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
+import { getUpdatedSimulationState, captureSimulationStackSnapshot } from './simulationUpdating.js'
+import { popupMessageHandler, isExtensionPageMessageSender } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -346,6 +348,12 @@ const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () =>
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
+if (initializeWatchAssetWindowListeners()) {
+	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
+		await reportUnexpectedError(error, { code: 'watch_asset_startup_recovery_failed' })
+	})
+}
+
 browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)

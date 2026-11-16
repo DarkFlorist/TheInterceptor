@@ -1,7 +1,7 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
-import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
+import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
 import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import { type EthereumClientService, getDelegateFromCode, getExecutedTransaction } from '../simulation/services/EthereumClientService.js'
@@ -16,7 +16,7 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationExecutionInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedExecutionInput, getSimulationExecutionInputFromState, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationExecutionInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedExecutionInput, toSimulationStateInputMinimalTransaction, getSimulationExecutionInputFromState, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -71,7 +71,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides: StateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
@@ -79,13 +78,12 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 		previousBlockTimeManipulation = blockTimeManipulation
 		currentBlockSignedMessages = []
 		currentBlockStateOverrides = {}
 		currentBlockTransactions = []
-		currentBlockSimulateWithZeroBaseFee = false
 	}
 
 	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
@@ -97,11 +95,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
 				) break
-				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
-				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSimulateWithZeroBaseFee = simulateWithZeroBaseFee
 				currentBlockTransactions.push(operation.preSimulationTransaction)
 				break
 			}
@@ -129,7 +122,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 	}
 	return inputBlocks
@@ -234,7 +227,7 @@ async function getDelegationEntriesForTransactions(
 	type DelegateSource = { readonly sender: bigint, readonly readAfter: { readonly blockIndex: number, readonly transactionIndex: number } | undefined }
 	let lastAuthorizationTransaction: DelegateSource['readAfter']
 	const sources: readonly (readonly DelegateSource[])[] = blocks.map((block, blockIndex) => block.transactions.map((transaction, transactionIndex) => {
-		const executedCall = getExecutedTransaction(transaction)
+		const executedCall = getExecutedTransaction(toSimulationStateInputMinimalTransaction(transaction))
 		// A transaction's own call runs after its authorizations, so its sender's code is read after it.
 		if (executedCall.type === '7702' && executedCall.authorizationList.length > 0) lastAuthorizationTransaction = { blockIndex, transactionIndex }
 		return { sender: transaction.signedTransaction.from, readAfter: lastAuthorizationTransaction }
@@ -444,7 +437,7 @@ export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPay
 export const prepareSimulationInputForRpc = async (input: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => {
 	let simulationInput = input.value
 	const { simulationOverrides } = input
-	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
+	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) await validateSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return { ...input, value: simulationInput }
 	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.

@@ -78,7 +78,7 @@ export const simulateCompoundGovernanceExecution = async (
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const readBlock = {
 		stateOverrides: {},
-		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
+		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call), executedCallAuthorized: false })),
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 		simulateWithZeroBaseFee: true,
