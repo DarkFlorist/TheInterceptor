@@ -1,3 +1,6 @@
+import { getFailedTransactionPreviewWithLookups } from './simulationUpdating.js'
+import { lookUpMetadataForRelabel } from './storedRunVisualisation.js'
+import { isSameConfirmationRun } from '../utils/confirmationRunId.js'
 import { getSettledAddressBookRevision } from './addressBookRevision.js'
 // Re-labels stored confirmation runs when the address book changes: addressBookChangePublication.ts requests a re-label of the displayed confirmation for each published change, and each confirmation workflow requests a re-label of the run it just stored when the address book changed during that run. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
@@ -29,6 +32,25 @@ const confirmationRelabelSemaphore = new Semaphore(1)
 
 // Re-labels the stored run of one pending confirmation without simulating; isRunToRelabel limits it to a particular run. Nothing cancels it, not even a newer simulation run of the request: the write guard in relabelStoredSimulation keeps it from replacing a run stored meanwhile, and a newer run that stores nothing, because it was aborted or its RPC request failed, leaves the re-labelled run in place.
 async function relabelStoredConfirmation(rpcNetwork: RpcNetwork, stored: PendingTransactionOrSignableMessage, isRunToRelabel: (pending: PendingTransactionOrSignableMessage) => boolean) {
+	if (stored.type === 'Transaction' && (stored.transactionOrMessageCreationStatus === 'Simulated' || stored.transactionOrMessageCreationStatus === 'FailedToSimulate')) {
+		const visualisation = stored.popupVisualisation
+		// Keep the chain-scoped names of a request made on another network.
+		if (stored.transactionToSimulate.success && stored.transactionToSimulate.transaction.chainId !== rpcNetwork.chainId) return
+		const preview = visualisation.data.failedTransactionPreview
+		if (preview !== undefined && isRunToRelabel(stored)) {
+			// A failed run has no protector reads. Its preview recorded every address it identified, so it can use the same offline metadata lookup as a successful run.
+			const refreshedPreview = await getFailedTransactionPreviewWithLookups(lookUpMetadataForRelabel(preview.addressBookEntries, rpcNetwork).identifyAddress, stored.transactionToSimulate)
+			await updatePendingTransactionOrMessage(stored.uniqueRequestIdentifier, async (current) => {
+				if (!isRunToRelabel(current) || current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
+				if (!isSameConfirmationRun(current.popupVisualisation.data.confirmationRunId, visualisation.data.confirmationRunId)) return current
+				const popupVisualisation = current.popupVisualisation.statusCode === 'failed'
+					? { ...current.popupVisualisation, data: { ...current.popupVisualisation.data, failedTransactionPreview: refreshedPreview } }
+					: { ...current.popupVisualisation, data: { ...current.popupVisualisation.data, failedTransactionPreview: refreshedPreview } }
+				return modifyObject(current, { popupVisualisation })
+			})
+			return
+		}
+	}
 	await relabelStoredSimulation(rpcNetwork, {
 		stored,
 		getRunToRelabel: (pending) => isRunToRelabel(pending) ? getConfirmationRunToRelabel(pending, rpcNetwork.chainId) : undefined,
@@ -53,6 +75,6 @@ export async function relabelStoredRunIfAddressBookChangedDuringIt(rpcNetwork: R
 	await relabelReportingUnexpectedErrors(confirmationRelabelSemaphore.execute(async () => {
 		const stored = (await getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, storedRun.uniqueRequestIdentifier))
 		if (stored === undefined) return
-		await relabelStoredConfirmation(rpcNetwork, stored, (pending) => getStoredConfirmationRunId(pending) === storedRun.confirmationRunId)
+		await relabelStoredConfirmation(rpcNetwork, stored, (pending) => isSameConfirmationRun(getStoredConfirmationRunId(pending), storedRun.confirmationRunId))
 	}))
 }

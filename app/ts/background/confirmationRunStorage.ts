@@ -1,12 +1,13 @@
 // Writes confirmation simulation runs into their pending confirmations. It only stores: it returns the run it stored, and the workflow that started the run decides what follows, such as the address-book catch-up re-label (relabelStoredRunIfAddressBookChangedDuringIt in confirmationRelabel.ts). See "Address-book re-labels" in docs/popup-simulation-refresh.md.
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { isSameConfirmationRun } from '../utils/confirmationRunId.js'
+import type { ConfirmationRunId, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { updatePendingTransactionOrMessage } from './storageVariables.js'
 
 // A confirmation run as it was stored: the request it belongs to and its run id, which together identify it in storage, and the address-book revision it read when it started.
 export type StoredConfirmationRun = {
 	readonly uniqueRequestIdentifier: UniqueRequestIdentifier
-	readonly confirmationRunId: number
+	readonly confirmationRunId: ConfirmationRunId
 	readonly addressBookRevisionBeforeLookups: number
 }
 
@@ -30,7 +31,7 @@ export async function storeConfirmationRun(uniqueRequestIdentifier: UniqueReques
 	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
 		const updated = await update(current)
 		const updatedRun = updated === undefined ? undefined : getStoredConfirmationRun(updated)
-		storedRun = updatedRun !== undefined && updatedRun.confirmationRunId !== getStoredConfirmationRunId(current) ? updatedRun : undefined
+		storedRun = updatedRun !== undefined && !isSameConfirmationRun(updatedRun.confirmationRunId, getStoredConfirmationRunId(current)) ? updatedRun : undefined
 		return updated
 	})
 	return storedRun

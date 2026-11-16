@@ -96,6 +96,7 @@ function createSentTransaction({ to, value, input, gas, feeMode }: SentCall) {
 				uniqueRequestIdentifier,
 				transactionToSimulate: websiteTransaction,
 				signerName: 'NoSignerDetected',
+				confirmationRunId: { lifetime: 'placeholder', sequence: 0 },
 				error: { code: -1, message: 'Not simulated yet', decodedErrorMessage: 'Not simulated yet' },
 				simulationState: { blockNumber: 0n, simulationConductedTimestamp: oldTimestamp },
 			},
@@ -321,8 +322,8 @@ test('address-book changes re-label the stored confirmation and stack without si
 	assert.equal(stackAfter.stored.metadataRevision, 1)
 })
 
-// What the stored runs keep for re-labels in background storage only, never in a popup message.
-const BACKGROUND_ONLY_RUN_RECORD_FIELDS = ['recordedVisualisationLookups', 'confirmationRunId', 'addressBookRevisionBeforeLookups', 'identifiedAddressBookEntries', 'protectorChainReads']
+// What the stored runs keep for re-labels in background storage only, never in a popup message. The public confirmationRunId identifies the displayed run; the rest of its record stays private.
+const BACKGROUND_ONLY_RUN_RECORD_FIELDS = ['recordedVisualisationLookups', 'addressBookRevisionBeforeLookups', 'identifiedAddressBookEntries', 'protectorChainReads']
 const carriesBackgroundOnlyRunRecord = (message: unknown) => BACKGROUND_ONLY_RUN_RECORD_FIELDS.some((field) => stringifyJSONWithBigInts(message).includes(`"${ field }"`))
 
 // Every own property name of value and of the objects and arrays it holds, read from the value itself rather than from a serialization of it.
@@ -342,7 +343,7 @@ test('the popup projection of a stored confirmation holds none of its run record
 	const { pendingTransaction: placeholder } = sendEther
 	if (placeholder.type !== 'Transaction' || placeholder.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated placeholder transaction')
 	// The placeholder's failed visualisation stands in for a failed run, which stores a record without recorded lookups.
-	const storedFailedRun: PendingTransactionOrSignableMessage = { ...placeholder, confirmationRun: { confirmationRunId: 1, addressBookRevisionBeforeLookups: 0 } }
+	const storedFailedRun: PendingTransactionOrSignableMessage = { ...placeholder, confirmationRun: { confirmationRunId: { lifetime: 'fixture', sequence: 1 }, addressBookRevisionBeforeLookups: 0 } }
 	const [storedMessage] = await storeSimulatedPersonalSignMessages([uniqueRequestIdentifier])
 	const storedConfirmations = [
 		{ description: 'a transaction with a successful run', stored: getDefined(storedTransaction, 'a stored transaction') },
@@ -1282,7 +1283,7 @@ test('real simulation refreshes still simulate the confirmation and the stack ag
 	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), true)
-	assert.notEqual(await getStoredConfirmationRunId(), runIdBefore)
+	assert.notDeepEqual(await getStoredConfirmationRunId(), runIdBefore)
 	fakeSafeContract.requestedRpcMethods.length = 0
 
 	await updatePopupVisualisationState(simulator.ethereum, simulator.tokenPriceService, undefined, true)
@@ -1309,7 +1310,7 @@ test('a confirmation re-simulated on the same block within the same second durin
 	await addRecipientContactWithoutBroadcast()
 	const relabelledRun = await getStoredPendingTransactionVisualisation()
 	const relabelledRunRecord = await getStoredConfirmationRunRecord()
-	const newerRunId = relabelledRunRecord.confirmationRunId + 1
+	const newerRunId = { ...relabelledRunRecord.confirmationRunId, sequence: relabelledRunRecord.confirmationRunId.sequence + 1 }
 	const editedGasLimit = 30_000n
 	runOnceDuringAddressBookLookup(async () => {
 		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
@@ -1325,7 +1326,7 @@ test('a confirmation re-simulated on the same block within the same second durin
 	const storedRun = await getStoredPendingTransactionVisualisation()
 	assert.equal(storedRun.simulationState.blockNumber, relabelledRun.simulationState.blockNumber)
 	assert.equal(storedRun.simulationState.simulationConductedTimestamp.getTime(), relabelledRun.simulationState.simulationConductedTimestamp.getTime())
-	assert.equal(await getStoredConfirmationRunId(), newerRunId)
+	assert.deepEqual(await getStoredConfirmationRunId(), newerRunId)
 	assert.equal(storedRun.transactionToSimulate.success && storedRun.transactionToSimulate.transaction.gas, editedGasLimit)
 	assert.notEqual(getRecipientName(storedRun.visualizedSimulationState), recipientContact.name)
 })
@@ -1737,14 +1738,14 @@ test('a confirmation re-simulation aborted by a newer simulation is not re-label
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.equal(isRunAborted, true)
-	assert.equal(await getStoredConfirmationRunId(), runIdBefore)
+	assert.deepEqual(await getStoredConfirmationRunId(), runIdBefore)
 	assert.equal(addressBookReadsAfterAbort, 0)
 })
 
 test('a confirmation re-simulation that a newer stored run supersedes is not re-labelled for an address-book change published during it', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	// Stands in for a newer run of the request that was stored first: no run in this test is handed its id, and its later conducted timestamp makes the store keep it.
-	const newerRunId = Number.MAX_SAFE_INTEGER
+	const newerRunId = { lifetime: 'newer fixture', sequence: Number.MAX_SAFE_INTEGER }
 
 	const addressBookReadsAfterRun = await simulateAndStoreRunningDuringLastLookup(resimulateDisplayedConfirmation, async () => {
 		await changeAddressBookAndWaitForItsRelabel(addRecipientContactWithoutBroadcast)
@@ -1752,7 +1753,7 @@ test('a confirmation re-simulation that a newer stored run supersedes is not re-
 	})
 
 	assert.equal(addressBookReadsAfterRun, 0)
-	assert.equal(await getStoredConfirmationRunId(), newerRunId)
+	assert.deepEqual(await getStoredConfirmationRunId(), newerRunId)
 })
 
 test('a Safe signer refresh blocked while a newer run is stored and an address-book change is published is not re-labelled for that change', async () => {
@@ -1821,7 +1822,7 @@ test('a Safe signer refresh blocked while a newer run is stored and an address-b
 	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedExecution?.type !== 'Transaction' || refreshedExecution.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the direct Safe execution with the newer run')
 	// The persisted entry carries the newer run, which a re-label could reach.
-	assert.equal(refreshedExecution.confirmationRun?.confirmationRunId, newerRun.confirmationRun.confirmationRunId)
+	assert.deepEqual(refreshedExecution.confirmationRun?.confirmationRunId, newerRun.confirmationRun.confirmationRunId)
 	assert.equal(refreshedExecution.popupVisualisation.statusCode, 'success')
 	assert.equal(refreshedExecution.approvalStatus.status === 'SignerError' && refreshedExecution.approvalStatus.message.includes('could not be prepared'), true)
 	// The refresh simulated no run of its own, so it requests no re-label after persisting, although the change was published during it.
@@ -1892,7 +1893,7 @@ test('a confirmation simulation that stores no run during a re-label does not st
 		browserMock.setStorageGetHandler(undefined)
 
 		const storedRunAfter = await getStoredPendingTransactionVisualisation()
-		assert.equal(await getStoredConfirmationRunId(), runIdBefore, description)
+		assert.deepEqual(await getStoredConfirmationRunId(), runIdBefore, description)
 		assert.equal(getRecipientName(storedRunAfter.visualizedSimulationState), recipientContact.name, description)
 	}
 })

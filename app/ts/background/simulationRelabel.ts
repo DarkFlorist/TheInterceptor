@@ -1,3 +1,5 @@
+import type { ConfirmationRunId } from '../types/accessRequest.js'
+import { isSameConfirmationRun } from '../utils/confirmationRunId.js'
 import { isMissingRecordedProtectorReadError } from '../simulation/protectorChainReads.js'
 // The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the confirmation re-labels (confirmationRelabel.ts); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { RpcNetwork } from '../types/rpc.js'
@@ -7,10 +9,13 @@ import { type StoredSimulationMetadata, visualizeStoredRunWithoutNode } from './
 
 type SimulationMetadata = Omit<Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>, 'simulationState'>
 
+// Stack ids are numbers; confirmation ids survive background restarts and storage decoding.
+const isSameSimulationRun = (first: number | ConfirmationRunId, second: number | ConfirmationRunId) => typeof first === 'number' || typeof second === 'number' ? first === second : isSameConfirmationRun(first, second)
+
 // A stored simulation run whose metadata a re-label may replace.
 export type SimulationRunToRelabel<Stored> = {
-	// The stack's simulationId or the confirmation's confirmationRunId. Every new stack or confirmation simulation run stores a new id, so a run stored during the re-label's lookups has another id even on the same block within the same second.
-	readonly runId: number
+	// The stack's numeric simulationId or the confirmation's lifetime/sequence identity. Every new stack or confirmation simulation run stores a new id, so a run stored during the re-label's lookups has another id even on the same block within the same second.
+	readonly runId: number | ConfirmationRunId
 	readonly simulationState: SimulationState
 	// The metadata stored with the run: the names, prices and delegations the re-label starts from, the chain reads its protectors recorded and the entries its address lookups resolved.
 	readonly storedMetadata: StoredSimulationMetadata
@@ -48,7 +53,7 @@ export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { 
 	await updateStored((current) => {
 		// The stale-write guard: a newer run stored meanwhile has another id, and a result stored under the same id that can no longer be re-labelled (a stack invalidation keeps the id of the run it raced with) is left alone.
 		const currentRun = getRunToRelabel(current)
-		if (currentRun === undefined || currentRun.runId !== runToRelabel.runId) return undefined
+		if (currentRun === undefined || !isSameSimulationRun(currentRun.runId, runToRelabel.runId)) return undefined
 		return currentRun.withMetadata(metadata)
 	})
 }

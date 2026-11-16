@@ -1,6 +1,7 @@
 import { beforeEach } from 'bun:test'
 import { resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
 import './confirmTransactionMetadataRefresh.suite.js'
+import './failedTransactionPreview.suite.js'
 import './safeConfirmationFlows.suite.js'
 import './safeStackFlows.suite.js'
 import './confirmTransactionStrandedSimulation.suite.js'
