@@ -57,6 +57,14 @@ export const SafeTransactionSigningRequest = funtypes.ReadonlyObject({
 	reviewedSafeState: SafeContractStateSnapshot,
 }))
 
+// How a page asked for a Gnosis Safe transaction beyond its call: the SafeTx operation (0 call, 1 delegate call), and the message an on-chain Safe message approval signs.
+export type SafeTransactionRequestContext = funtypes.Static<typeof SafeTransactionRequestContext>
+export const SafeTransactionRequestContext = funtypes.ReadonlyObject({
+	operation: funtypes.Union(funtypes.Literal(0), funtypes.Literal(1)),
+}).And(funtypes.ReadonlyPartial({
+	messageReview: SafeMessageReview,
+}))
+
 export type SafeOwnerSignature = funtypes.Static<typeof SafeOwnerSignature>
 export const SafeOwnerSignature = funtypes.ReadonlyObject({
 	signer: EthereumAddress,
