@@ -56,16 +56,18 @@ const EIP2612Message = funtypes.ReadonlyObject({
 	primaryType: funtypes.Literal('Permit'),
 	domain: funtypes.ReadonlyObject({
 		name: funtypes.String,
-		version: NonHexBigInt,
+		// EIP-712 types the version as a string and it does not have to be an integer, for example "1.0".
+		version: funtypes.String,
 		chainId: NonHexBigInt,
 		verifyingContract: EthereumAddress,
 	}),
+	// Typed data requests are decoded with every JSON number kept as its source text, so like in the Permit2 types the uint256 fields arrive as decimal strings whether the dapp sent JSON numbers or strings.
 	message: funtypes.ReadonlyObject({
 		owner: EthereumAddress,
 		spender: EthereumAddress,
 		value: NonHexBigInt,
-		nonce: funtypes.Number,
-		deadline: funtypes.Number,
+		nonce: NonHexBigInt,
+		deadline: NonHexBigInt,
 	}),
 })
 
@@ -478,6 +480,7 @@ const PersonalSignRequestBase = funtypes.Intersect(
 		account: AddressBookEntry,
 		website: Website,
 		created: EthereumTimestamp,
+		// The signed payload as the website sent it, compact and indented: for typed data the request's JSON, not a parsed form, and for personal_sign the message string itself.
 		rawMessage: funtypes.String,
 		stringifiedMessage: funtypes.String,
 		messageIdentifier: EthereumQuantity,
