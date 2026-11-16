@@ -16,6 +16,7 @@ import { waitForRenderedCondition } from './preactRenderWait.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => boolean | undefined
 type TestDomNode = {
@@ -1685,5 +1686,47 @@ describe('simulation visualizer open replies', () => {
 		} finally {
 			dom.restore()
 		}
+	})
+
+	function withNetworkWithoutRpc(update: UpdateHomePage): UpdateHomePage {
+		return {
+			...update,
+			data: {
+				...update.data,
+				settings: {
+					...update.data.settings,
+					activeRpcNetwork: { name: 'Signer only', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true },
+				},
+			},
+		}
+	}
+
+	async function renderStackPageText(update: UpdateHomePage) {
+		const dom = installDomMock()
+		const { dispatchMessage: listener } = installBrowserMock()
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, update) }, {}, () => undefined)
+			})
+			return dom.document.body.textContent ?? ''
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	}
+
+	test('stack page asks for an RPC instead of claiming the Interceptor is disabled on a network without an RPC in simulation mode', async () => {
+		const text = await renderStackPageText(withNetworkWithoutRpc(createSimulationStackHomePageUpdate(18, 1, 'Simulation stack without RPC')))
+		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcNeedsConfig' })), true)
+	})
+
+	test('stack page does not claim the Interceptor is disabled on a network without an RPC in signing mode', async () => {
+		const text = await renderStackPageText(withNetworkWithoutRpc(createStackHomePageUpdate(19, 1, 'Signing stack without RPC')))
+		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcMayBypass' })), true)
 	})
 	})
