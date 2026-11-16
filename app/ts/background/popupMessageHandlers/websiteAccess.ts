@@ -4,9 +4,9 @@ import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { replaceElementInReadonlyArray } from '../../utils/typed-arrays.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { applyWebsiteAccessUpdate, reloadConnectedTabs, type WebsiteAccessMutation } from '../accessManagement.js'
+import { applyWebsiteAccessUpdate, type WebsiteAccessMutation } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getSettings, updateWebsiteAccess } from '../settings.js'
+import { getSettings } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
@@ -50,19 +50,15 @@ export async function removeWebsiteAddressAccess(simulationServicesOwner: Simula
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-const setAddressAccessForWebsite = async (websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
+const withAddressAccessForWebsite = (websiteOrigin: string, address: EthereumAddress, allowAccess: boolean): WebsiteAccessMutation => (previousAccessList) => previousAccessList.map((access) => {
 		if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
 		const addressAccess = access.addressAccess.map((entry) => entry.address === address ? modifyObject(entry, { access: allowAccess }) : entry)
 		return modifyObject(access, { addressAccess })
-	}))
-}
+})
 
 export async function allowOrPreventAddressAccessForWebsite(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
-	await setAddressAccessForWebsite(website.websiteOrigin, address, allowAccess)
-	await reloadConnectedTabs(websiteTabConnections)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'always', withAddressAccessForWebsite(website.websiteOrigin, address, allowAccess))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
