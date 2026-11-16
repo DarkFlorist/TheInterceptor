@@ -71,9 +71,9 @@ export const BlockTimeManipulationWithNoDelay = funtypes.Union(
 )
 
 export type TransactionSimulationOptions = funtypes.Static<typeof TransactionSimulationOptions>
+// Earlier versions also stored simulateWithZeroBaseFee here, true for Safe proposals. Parsing drops it from a stored or imported stack, so every stacked transaction runs in a block with the real base fee.
 export const TransactionSimulationOptions = funtypes.ReadonlyObject({
 	requiredChainId: EthereumQuantity,
-	simulateWithZeroBaseFee: funtypes.Boolean,
 }).And(funtypes.ReadonlyPartial({
 	// The transaction is a Gnosis Safe's own call. The simulator runs it the way the Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays real fees (safe/safeExecutionSimulation.ts).
 	executeThroughSafe: funtypes.Literal(true),
@@ -151,8 +151,8 @@ export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.
 	executedTransaction: EthereumSendableSignedTransaction,
 }))
 
-// Whether a transaction's simulation options let the node run an executedTransaction in place of its signedTransaction. EthereumClientService.prepareEthSimulateV1Input requires an executedTransaction exactly when this holds. executeThroughSafe is currently the only option that does.
-export const authorizesExecutedCall = (simulationOptions: TransactionSimulationOptions | undefined) => simulationOptions?.executeThroughSafe === true
+// Whether the node runs a transaction as an executedTransaction in place of its signedTransaction. It is the domain decision, read from the stored transaction; the RPC client sees it only as the executedCallAuthorized marker that toSimulationStateInputMinimalTransaction projects from it, and EthereumClientService.prepareEthSimulateV1Input requires an executedTransaction exactly when that marker is set. Only Gnosis Safe executions do: a Safe proposal (safeTransaction), which runs the SafeTx it holds, and a Safe's own call marked executeThroughSafe.
+export const authorizesExecutedCall = (transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>) => transaction.safeTransaction !== undefined || transaction.simulationOptions?.executeThroughSafe === true
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
@@ -179,8 +179,8 @@ export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 /**
  * Who pays a transaction's fees, which decides how formEthSendTransaction forms it:
  * - 'transaction-sender': the sender, whose balance limits the fees.
- * - 'external-executor': an executor outside the simulation, for a Gnosis Safe proposal or a direct Safe execution in signing mode. The transaction is formed without fees.
- * - 'simulated-safe-executor': the executor the simulation runs a Gnosis Safe's own call through (safe/safeExecutionSimulation.ts), in simulation mode. The Safe's call is formed without fees and marked to run through the Safe.
+ * - 'external-executor': an executor outside the simulation, for a direct Gnosis Safe execution in signing mode. The transaction is formed without fees.
+ * - 'simulated-safe-executor': the executor the simulation runs a Gnosis Safe's own call through (safe/safeExecutionSimulation.ts), for a Safe proposal or a Safe's transaction in simulation mode. The Safe's call is formed without fees, its gas is estimated as the executor's execTransaction call, and it is marked to run through the Safe.
  */
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor' | 'simulated-safe-executor'
 
@@ -228,7 +228,11 @@ export const SimulationStateInput = funtypes.ReadonlyArray(SimulationStateInputB
 export type SimulationStateInputMinimalDataBlock = funtypes.Static<typeof SimulationStateInputMinimalDataBlock>
 export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	stateOverrides: StateOverrides,
-	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({ signedTransaction: EthereumSendableSignedTransaction }).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction, simulationOptions: TransactionSimulationOptions }))),
+	transactions: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		signedTransaction: EthereumSendableSignedTransaction,
+		// The RPC client only needs whether the executed call is authorized; the Safe layer decides it from both markers (authorizesExecutedCall) when projecting into this input (toSimulationStateInputMinimalTransaction).
+		executedCallAuthorized: funtypes.Boolean,
+	}).And(funtypes.ReadonlyPartial({ executedTransaction: EthereumSendableSignedTransaction }))),
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
@@ -236,6 +240,21 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
 export const SimulationStateInputMinimalData = funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
+
+// Projects a simulation input transaction into the minimal transaction the RPC client simulates: the calls it sends and the domain decision whether its executed call is authorized, without any Gnosis Safe data.
+export const toSimulationStateInputMinimalTransaction = (transaction: SimulationInputTransaction): SimulationStateInputMinimalDataBlock['transactions'][number] => ({
+	signedTransaction: transaction.signedTransaction,
+	...(transaction.executedTransaction === undefined ? {} : { executedTransaction: transaction.executedTransaction }),
+	executedCallAuthorized: authorizesExecutedCall(transaction),
+})
+
+export const toSimulationStateInputMinimalData = (simulationStateInput: SimulationStateInput): SimulationStateInputMinimalData => simulationStateInput.map((block) => ({
+	stateOverrides: block.stateOverrides,
+	transactions: block.transactions.map(toSimulationStateInputMinimalTransaction),
+	signedMessages: block.signedMessages,
+	blockTimeManipulation: block.blockTimeManipulation,
+	simulateWithZeroBaseFee: block.simulateWithZeroBaseFee,
+}))
 
 export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
 export const SimulationStateBlock = funtypes.Intersect(
