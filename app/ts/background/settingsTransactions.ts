@@ -1,3 +1,4 @@
+import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
@@ -100,8 +101,8 @@ async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessAr
 }
 
 export type WebsiteAccessTransactionOutcome =
-	| { readonly status: 'completed', readonly storage: 'written', readonly websiteAccess: WebsiteAccessArray }
-	| { readonly status: 'failed', readonly storage: 'not-written' | 'rolled-back' | 'rollback-failed', readonly error: unknown }
+	| (Extract<StorageTransactionOutcome, { readonly status: 'completed' }> & { readonly websiteAccess: WebsiteAccessArray })
+	| Extract<StorageTransactionOutcome, { readonly status: 'failed' }>
 
 // The transaction itself owns the commit/rollback phase, including failures; callers never infer it from a callback being invoked.
 export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>): Promise<WebsiteAccessTransactionOutcome> {

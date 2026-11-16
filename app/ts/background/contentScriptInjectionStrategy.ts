@@ -1,4 +1,4 @@
-import type { WebsiteAccessTransactionOutcome } from './settingsTransactions.js'
+import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
@@ -11,7 +11,7 @@ import { getMetamaskCompatibilityMode } from './settings.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
-type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<WebsiteAccessTransactionOutcome>
+type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<StorageTransactionOutcome>
 
 type ContentScriptInjectionStrategyRefresh =
 	| { readonly configurationSource: 'storage' }
@@ -42,7 +42,7 @@ export async function refreshContentScriptInjectionStrategy() {
 type RefreshFailureHandling = 'rollBackUpdate' | 'reportAndKeepUpdate'
 
 type ContentScriptConfigurationUpdate =
-	| { readonly onRefreshFailure: 'rollBackUpdate', readonly refreshFailureCode: string, readonly runUpdateWithRefresh: (refreshIfChanged: () => Promise<void>) => Promise<WebsiteAccessTransactionOutcome> }
+	| { readonly onRefreshFailure: 'rollBackUpdate', readonly refreshFailureCode: string, readonly runUpdateWithRefresh: (refreshIfChanged: () => Promise<void>) => Promise<StorageTransactionOutcome> }
 	| { readonly onRefreshFailure: 'reportAndKeepUpdate', readonly refreshFailureCode: string, readonly runUpdate: () => Promise<unknown> }
 
 async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptRegistrationConfiguration, onRefreshFailure: RefreshFailureHandling) {
