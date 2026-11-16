@@ -457,8 +457,6 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 		})
 	})
 
-	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
-
 	// Settings are read after the write and the content-script reload, so active addresses changed meanwhile are the ones reconciled.
 	const editedWebsiteAccess: CommittedAccessChange = { kind: 'website-access', websiteOrigins: accessChange.data.map((change) => change.newEntry.website.websiteOrigin) }
 	await reconcileCommittedAccessChange(websiteTabConnections, editedWebsiteAccess, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })

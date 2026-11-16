@@ -5,7 +5,6 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import { modifyObject } from '../../utils/typescript.js'
 import { type CommittedAccessChange, reconcileCommittedAccessChange, setInterceptorDisabledForWebsite } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { updateWebsiteAccess, getSettingsSnapshot, requireReadableSettings } from '../settings.js'
 
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -17,29 +16,10 @@ import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../website
 // Each website-access write below returns the change it committed, so its reconciliation scope comes from the write itself.
 const websiteAccessChange = (websiteOrigin: string): CommittedAccessChange => ({ kind: 'website-access', websiteOrigins: [websiteOrigin] })
 
-const isMissingTabReloadError = (error: unknown) => {
-	const message = getErrorMessage(error)
-	return message !== undefined && (message.startsWith('No tab with id') || message.includes('Invalid tab ID'))
-}
-
-export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefresh = Array.from(websiteTabConnections.keys())
-	const currentTabId = await getLastKnownCurrentTabId()
-	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
-	for (const tabId of new Set(withCurrentTabId)) {
-		try {
-			await browser.tabs.reload(tabId)
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			if (isMissingTabReloadError(error)) continue
-			await reportUnexpectedError(error, { code: 'connected_tab_reload_failed' })
-		}
-	}
-}
+export { reloadConnectedTabs } from '../reloadConnectedTabs.js'
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
-	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	await reloadConnectedTabs(websiteTabConnections)
+	await setInterceptorDisabledForWebsite(websiteTabConnections, website, interceptorDisabled)
 	return websiteAccessChange(website.websiteOrigin)
 
 }
@@ -104,13 +84,13 @@ export async function allowOrPreventAddressAccessForWebsite(simulationServicesOw
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-const removeWebsiteAccessEntry = async (websiteOrigin: string) => {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== websiteOrigin))
+const removeWebsiteAccessEntry = async (websiteTabConnections: WebsiteTabConnections, websiteOrigin: string) => {
+	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== websiteOrigin))
 	return websiteAccessChange(websiteOrigin)
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	const change = await removeWebsiteAccessEntry(parsedRequest.data.websiteOrigin)
+	const change = await removeWebsiteAccessEntry(websiteTabConnections, parsedRequest.data.websiteOrigin)
 	await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
