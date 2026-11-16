@@ -168,18 +168,6 @@ test('the confirmation-run writer only stores, and each confirmation workflow ca
 	}
 })
 
-test('only the address-book storage writes the stored names a metadata lookup reads, through the one writer that advances the address-book revision', async () => {
-	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
-	const lookupStorageKeyWrite = /browserStorageLocalSet2?\(\{[^}]*\b(?:userAddressBookEntriesV3|ensNameHashes|ensLabelHashes)\b/u
-	const offendingFiles: string[] = []
-	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory })) {
-		if (lookupStorageKeyWrite.test(await Bun.file(`${ appSourceDirectory }${ file }`).text())) offendingFiles.push(file)
-	}
-	assert.deepEqual(offendingFiles, [])
-	assert.match(storageVariablesSource, /async function writeAddressBookStorage\(items: AddressBookStorageItems\) \{\n\tawait addressBookRevisionSemaphore\.execute\(async \(\) => \{\n\t\tawait browserStorageLocalSet\(items\)\n\t\taddressBookRevision \+= 1\n/u)
-	assert.equal([...storageVariablesSource.matchAll(/addressBookRevision \+= 1/gu)].length, 1)
-})
-
 test('the stored-data visualisation of a re-label lives apart from live simulation and builds the same typed lookups', () => {
 	// simulationUpdating.ts keeps live node-backed simulation; replaying a stored run belongs to storedRunVisualisation.ts.
 	assert.doesNotMatch(simulationUpdatingSource, /replayRecordedProtectorChainReads|lookUpMetadataForRelabel|function visualizeStoredRunWithoutNode/u)

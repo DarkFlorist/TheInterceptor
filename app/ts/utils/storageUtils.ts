@@ -1,4 +1,4 @@
-import { storeAddressBookRevision } from './addressBookRevision.js'
+import { withAddressBookRevisionUpdate } from './addressBookRevision.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -192,8 +192,8 @@ export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalSto
 }
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	const write = async () => await browser.storage.local.set(serialize(LocalStorageItems, items))
-	if ('userAddressBookEntriesV3' in items || 'ensNameHashes' in items || 'ensLabelHashes' in items) return await storeAddressBookRevision(write)
-	return await write()
+	if ('userAddressBookEntriesV3' in items || 'ensNameHashes' in items || 'ensLabelHashes' in items) return await withAddressBookRevisionUpdate(write)
+	await write()
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
