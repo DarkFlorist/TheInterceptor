@@ -342,7 +342,8 @@ test('reads a Gnosis Safe\'s nonce in a simulation on top of the parent block th
 		if (!isRecord(params) || !Array.isArray(params.blockStateCalls)) throw new Error('Expected simulated blocks')
 		const firstBlock = params.blockStateCalls[0]
 		if (!isRecord(firstBlock) || !isRecord(firstBlock.stateOverrides)) throw new Error('Expected captured account overrides')
-		assert.deepEqual(firstBlock.stateOverrides[addressString(ORDINARY_ACCOUNT)], { code: '' }, 'nonce reads retain captured delegate clearing')
+		const accountOverride = firstBlock.stateOverrides[addressString(ORDINARY_ACCOUNT)]
+		assert.ok(isRecord(accountOverride) && accountOverride.code instanceof Uint8Array && accountOverride.code.length === 0, 'nonce reads retain captured delegate clearing')
 	}
 	assert.ok(simulatedOnBlockTags.length > 0, 'the nonce is read through a simulation')
 	assert.deepEqual(simulatedOnBlockTags, simulatedOnBlockTags.map(() => parentBlockNumber), 'every simulation the read runs builds on the parent block')
