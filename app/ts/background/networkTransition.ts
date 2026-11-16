@@ -14,23 +14,14 @@ import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGener
 import { changeSimulationMode, getSettings } from './settings.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
-import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
+import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, reconcileSimulationStackChain } from './storageVariables.js'
 import { readSimulationInputSources } from './simulationInputBuilding.js'
 import { completeUnfinishedNetworkChange, type LockedNetworkReads, type NetworkSnapshot, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask, type SimulationRead } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
 import type { InterceptorStackOperation } from '../types/visualizer-types.js'
-import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
+import { activeStackContextsEqual, getActiveStackContext } from '../utils/activeStackContext.js'
 
 // The effects a committed network change owes, run under the lock of networkTransitionLock.ts, and the network snapshots that requests read under the same lock. activeSettings.ts builds address and chain changes on top of it.
-
-async function clearSimulationStackContext() {
-	await updateTransactionState((previousState) => ({
-		interceptorTransactionStack: {
-			operations: previousState.interceptorTransactionStack.operations.filter((operation) => !operationBelongsToActiveStackContext(operation, SIMULATION_STACK_CONTEXT)),
-		},
-		safeTransactionStacks: previousState.safeTransactionStacks,
-	}))
-}
 
 // The effects a committed network change owes, in the one order both its first application and its repair use. The first application runs the transition's afterNetworkApplied between the two phases, so it publishes the committed settings before websites and popups hear of the chain; a repair has no such step and runs both phases at once.
 const NETWORK_APPLICATION_EFFECTS = ['retireSnapshotsOfReplacedNetwork', 'installServices', 'clearStackForChangedChain'] as const
@@ -63,7 +54,7 @@ async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: Ne
 		}
 		case 'clearStackForChangedChain': {
 			// Simulation stack contexts carry no chain, so their operations are dropped whenever the active chain changes, in either mode; Gnosis Safe stacks are kept per chain.
-			if (chainChanged) await clearSimulationStackContext()
+			if (chainChanged) await reconcileSimulationStackChain(updatedSettings.activeRpcNetwork.chainId)
 			break
 		}
 		case 'notifyWebsitesOfChainChange': {
@@ -153,6 +144,8 @@ async function publishCommittedSettingsChange(reads: LockedNetworkReads, change:
 }
 
 type SettingsTransition = {
+	// Address-only writes keep working while earlier stack cleanup is unavailable. Such a writer must leave activeRpcNetwork untouched.
+	readonly keepsActiveNetwork?: boolean
 	// Writes the settings under the lock. Returns 'unchanged' when it decided to write nothing, so nothing is installed or published.
 	readonly writeSettings: (settingsBeforeTransition: Settings) => Promise<'committed' | 'unchanged'>
 	// Runs after the committed network's services are installed and the previous chain's stack is cleared, also when that failed, and before popups and websites are notified of the change.
@@ -161,7 +154,10 @@ type SettingsTransition = {
 
 // Runs settings writes that may commit a new network, then applies the committed network in the order of NETWORK_CHANGE_EFFECTS: retire snapshots of the replaced network, install its services, clear the previous chain's stack, notify websites and popups. Each effect is compared with the settings from before the transition. The popup refresh the change needs runs after the lock is released. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
 export async function runSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: SettingsTransition) {
-	const popupRefresh = await runNetworkTransition(async (reads) => {
+	// A later network commit must not hide the chain mismatch left by unfinished cleanup. Address-only transitions cannot do that and must still handle wallet account changes.
+	const runTransition = transition.keepsActiveNetwork === true ? runStackIndependentNetworkTask : runNetworkTransition
+	const popupRefresh = await runTransition(async (reads) => {
+
 		const settingsBeforeTransition = await getSettings()
 		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set(), notifiedWebsitePorts: new Set(), committedSettings: undefined }
 		try {

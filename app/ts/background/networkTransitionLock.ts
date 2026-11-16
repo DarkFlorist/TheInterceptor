@@ -5,8 +5,9 @@ import type { Settings } from '../types/interceptor-messages.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import type { SimulationServices, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { getSettings } from './settings.js'
-import { getInterceptorTransactionStack } from './storageVariables.js'
+import { getInterceptorTransactionStack, reconcileSimulationStackChain } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration, snapshotNetworkIsActive } from './networkChangeGeneration.js'
+
 import { buildSimulationStateInput, readSimulationInputSources, type SimulationSnapshotSources } from './simulationInputBuilding.js'
 import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -16,7 +17,7 @@ import type { SimulationStateInput } from '../types/visualizer-types.js'
 
 const networkTransitionSemaphore = new Semaphore(1)
 
-// The effects that a failed transition could not complete. They belong to the lock rather than to a call chain: the failed transition has already thrown to its caller, so the next lock holder, a read included, retries them. Reads retry too because the settings of the new network are already committed: there is no pre-transition state left to return. They live in memory only, so after a background restart services are rebuilt from the settings and websites receive the chain when they reconnect, but a stack left from the previous chain is not cleared.
+// The effects that a failed transition could not complete. They belong to the lock rather than to a call chain: the failed transition has already thrown to its caller, so the next lock holder, a read included, retries them. Reads retry too because the settings of the new network are already committed: there is no pre-transition state left to return. Service and notification effects live in memory: after a restart services are rebuilt from settings and websites receive the chain when they reconnect. The persisted simulation-stack chain identity repairs any cleanup interrupted by that restart before simulation is admitted.
 export type UnfinishedNetworkChange = {
 	// Safe to retry: it stays recorded until it succeeds.
 	readonly complete: () => Promise<void>
@@ -52,6 +53,8 @@ export async function completeUnfinishedNetworkChange() {
 async function retryUnfinishedNetworkChange() {
 	try {
 		await completeUnfinishedNetworkChange()
+		await reconcileSimulationStackChain((await getSettings()).activeRpcNetwork.chainId)
+		unfinishedNetworkChangeFailure = undefined
 	} catch (error: unknown) {
 		unfinishedNetworkChangeFailure = new Error(`An earlier network change committed its settings but could not finish applying them: ${ getErrorMessage(error) ?? 'unknown error' }`)
 	}

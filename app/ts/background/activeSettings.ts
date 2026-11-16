@@ -81,6 +81,7 @@ async function runActiveSettingsChange(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await runSettingsTransition(simulationServicesOwner, websiteTabConnections, {
+			keepsActiveNetwork: change.rpcNetwork === undefined,
 			writeSettings: async () => {
 				// These writes keep the network, mode and stack context of the settings read before the transition.
 				if (transition.simulationSignerSelection !== undefined) {

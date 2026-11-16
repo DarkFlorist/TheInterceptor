@@ -5,6 +5,8 @@ import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
@@ -108,10 +110,12 @@ const exportPayload = {
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
 // Serves the default network, which the empty test storage selects.
-const expectedInfrastructureEthereum = {
-	getRpcEntry: () => DEFAULT_RPCS[0],
-	getBlock: async () => { throw NEW_BLOCK_ABORT },
-}
+const expectedInfrastructureEthereum = new EthereumClientService({
+	rpcUrl: DEFAULT_RPCS[0].httpsRpc,
+	clearCache: () => undefined,
+	jsonRpcRequest: async () => { throw NEW_BLOCK_ABORT },
+}, async () => undefined, async () => undefined, DEFAULT_RPCS[0])
+const tokenPriceService = new TokenPriceService(expectedInfrastructureEthereum, 60_000)
 
 const create7702ExportPayload = () => ({
 	name: 'Interceptor Simulation Export' as const,
@@ -271,7 +275,7 @@ describe('import simulation stack', () => {
 			Object.assign(storageState, items)
 		}
 
-		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum, tokenPriceService, { method: 'popup_importSimulationStack', data: exportPayload })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -286,7 +290,7 @@ describe('import simulation stack', () => {
 			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
 		)
 
-		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum, tokenPriceService, { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -327,7 +331,7 @@ describe('import simulation stack', () => {
 		const serializedExport = InterceptorSimulationExport.serialize(create7702ExportPayload())
 		const parsedExport = InterceptorSimulationExport.parse(serializedExport)
 
-		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum, tokenPriceService, { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, true)

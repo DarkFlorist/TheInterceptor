@@ -1,8 +1,10 @@
+import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
 import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, runNetworkTransition, runSimulationStackMutation, runStackIndependentNetworkTask, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
+
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
@@ -1323,12 +1325,6 @@ export async function importSimulationStack(network: NetworkSnapshot, parsedRequ
 	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
 	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
 
-	const websiteAccess = await getWebsiteAccess()
-	const updateWebsiteDetails = (website: Website) => {
-		const websiteData = websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website
-		return websiteData ?? website
-	}
-
 	let updatedStack: InterceptorTransactionStack
 	let committedNetwork = network
 	try {
@@ -1347,6 +1343,7 @@ export async function importSimulationStack(network: NetworkSnapshot, parsedRequ
 		if (committed === undefined) return importSimulationStackFailure('The active network changed before the imported stack could be stored. Try importing it again.')
 		updatedStack = committed.value
 		committedNetwork = committed.network
+
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)
 	}
