@@ -8,7 +8,8 @@ type FirefoxScript = Parameters<typeof browser.contentScripts.register>[0]
 function installBrowserMock(options: { beforeRegister?: () => Promise<void>, registerError?: Error, updateError?: Error, unregisterFailures?: number, registeredContentScriptIds?: readonly string[], manifestVersion?: number } = {}) {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: { method?: string }[] = []
-	const registeredContentScripts = new Map<string, RegisteredScript>((options.registeredContentScriptIds ?? []).map((id) => [id, { id }]))
+	const defaultFiles = new Map([['inpage', ['/inpage/js/inpage.js']], ['inpage2', ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js']]])
+	const registeredContentScripts = new Map<string, RegisteredScript>((options.registeredContentScriptIds ?? []).map((id) => [id, { id, js: defaultFiles.get(id) }]))
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
 	const firefoxScripts: FirefoxScript[] = []
@@ -447,3 +448,13 @@ for (const manifestVersion of [2, 3]) {
 		else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 	})
 }
+
+
+test('replaces the page-world registration when compatibility mode changes its script file', async () => {
+	const { storageState, getRegisteredContentScripts, getScriptingOperations } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'] })
+	const { reconcileContentScriptRegistration } = await loadModules()
+	storageState.metamaskCompatibilityMode = true
+	await reconcileContentScriptRegistration()
+	assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'update'])
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+})

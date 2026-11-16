@@ -627,7 +627,7 @@ describe('settings import', () => {
 			} },
 			{ exportedSettings: buildVersion14Import(true, false, [{ website: { websiteOrigin: 'imported.example', icon: undefined, title: 'Imported' }, access: true }]), assertImportedValues: async () => {
 				await assertResetsSigningState()
-				assert.deepEqual((await settings.getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['imported.example'])
+				assert.deepEqual((await settings.getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['https://imported.example'])
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 			} },
 			{ exportedSettings: version15Import, assertImportedValues: async () => {
@@ -710,7 +710,7 @@ describe('settings import', () => {
 		importWriteGate.release()
 		await Promise.all([settingsImport, laterWebsiteAccessUpdate, laterPreferenceUpdate, laterAddressBookUpdate])
 
-		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['imported.example', 'later.example'])
+		assert.deepEqual((await getWebsiteAccess()).map(({ website }) => website.websiteOrigin), ['https://imported.example', 'later.example'])
 		assert.deepEqual((await getSigningAddressPreferences()).map(({ signerAddress }) => signerAddress), [importedSignerAddress, laterSignerAddress])
 		assert.deepEqual((await getUserAddressBookEntries()).map(({ name }) => name), ['Imported contact', 'Later contact'])
 	})

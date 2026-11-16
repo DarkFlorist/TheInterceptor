@@ -50,10 +50,16 @@ const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: r
 	}]
 	const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
 	const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+	const replacements = new Set(contentScripts.filter((desired) => {
+		const registered = registeredContentScripts.find(({ id }) => id === desired.id)
+		return registered !== undefined && (registered.js?.length !== desired.js?.length || registered.js?.some((file, index) => file !== desired.js?.[index]))
+	}).map(({ id }) => id))
 	const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
-	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
-	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id) || replacements.has(id))
+	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id) && !replacements.has(id))
 	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
+	// Chrome requires unregister/register when a bootstrap script file changes.
+	if (replacements.size > 0) await browser.scripting.unregisterContentScripts({ ids: [...replacements] })
 	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
 	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
 	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
