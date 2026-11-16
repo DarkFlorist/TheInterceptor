@@ -282,6 +282,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		transactionToSimulate,
 		website: transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
+		safeFlow: { kind: 'ordinary' },
 		popupVisualisation: {
 			statusCode: 'success',
 			data: {
@@ -291,6 +292,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected',
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				addressBookEntries: [],
 				tokenPriceEstimates: [],
 				tokenPriceQuoteToken: undefined,

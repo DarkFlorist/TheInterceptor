@@ -218,6 +218,15 @@ function makeEthSimulateBlocks(callCount: number, lastReturnData = new Uint8Arra
 	})))
 }
 
+// Answers the owner reads of the Safe preview check the way a Safe does.
+function getNamedSafeCallReply(callParameters: unknown, owners: readonly bigint[]) {
+	if (typeof callParameters !== 'object' || callParameters === null || !('data' in callParameters) || !(callParameters.data instanceof Uint8Array)) throw new Error('Missing eth_call data')
+	const callData = dataStringWith0xStart(callParameters.data)
+	if (callData === encodeFunctionCall(SAFE_ABI, 'getOwners', [])) return encodeFunctionReturn(SAFE_ABI, 'getOwners', [owners.map(addressString)])
+	if (callData === encodeFunctionCall(SAFE_ABI, 'getThreshold', [])) return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [1n])
+	throw new Error(`Unexpected eth_call: ${ callData }`)
+}
+
 function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules['defaultActiveAddresses'][number], recipient: TestModules['defaultActiveAddresses'][number], operation: 0n | 1n = 0n) {
 	const zeroAddressEntry = {
 		address: 0n,
@@ -446,6 +455,43 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
 	})
 
+	const refusedPreviews = [
+		['a contract that does not answer as a Safe', 0n, async () => '0x', /is not a Gnosis Safe on this network/u],
+		['a delegatecall to a contract that does not answer as a Safe', 1n, async () => '0x', /is not a Gnosis Safe on this network/u],
+		['a Safe the active address is not an owner of', 0n, async (parameters: unknown) => getNamedSafeCallReply(parameters, [0x1234n]), /is not an owner of Gnosis Safe/u],
+	] as const
+	for (const [name, operation, answerCall, message] of refusedPreviews) test(`shows no outcome for ${ name }`, async () => {
+		await browserMock.reset()
+		const modules = await modulesPromise
+		const activeAddress = modules.defaultActiveAddresses[0]
+		const recipient = modules.defaultActiveAddresses[1]
+		if (activeAddress === undefined || recipient === undefined) throw new Error('missing default test addresses')
+		const fakeRpcNetwork: RpcEntry = { name: 'Test Chain', chainId: 1337n, httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: true }
+		const simulationRequests: string[] = []
+		const fakeRequestHandler = {
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+				switch (rpcRequest.method) {
+					case 'eth_blockNumber': return serializeForRpc(EthereumQuantity, 123n)
+					case 'eth_call': return await answerCall(rpcRequest.params?.[0])
+					default:
+						simulationRequests.push(rpcRequest.method)
+						throw new Error(`The preview must stop before ${ rpcRequest.method }`)
+				}
+			},
+		}
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, recipient, operation)
+		const namedContract = { ...recipient, address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n }
+
+		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: namedContract }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
+
+		if (reply.success) throw new Error('expected no simulated outcome')
+		assert.match(reply.errorMessage, message)
+		assert.deepEqual(simulationRequests, [])
+	})
+
 	const safeSimulationCases = [
 		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true },
 		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true },
@@ -487,6 +533,8 @@ describe('Gnosis Safe stack simulation', () => {
 						return serializeForRpc(EthereumQuantity, 0n)
 					case 'eth_getCode':
 						return '0x6000'
+					case 'eth_call':
+						return getNamedSafeCallReply(rpcRequest.params?.[0], [activeAddress.address])
 					case 'eth_gasPrice':
 						return serializeForRpc(EthereumQuantity, 1n)
 					case 'eth_blockNumber':

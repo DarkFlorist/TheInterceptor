@@ -21,6 +21,7 @@ import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
@@ -243,6 +244,7 @@ function FailedTransactionPreviewDetails({
 	transactionIdentifier,
 	originalRequestParameters,
 	addressMetaData,
+	parsedInputData,
 	created,
 	errorMessage,
 	isGasEstimationError,
@@ -256,6 +258,7 @@ function FailedTransactionPreviewDetails({
 	transactionIdentifier: bigint
 	originalRequestParameters: OriginalSendRequestParameters
 	addressMetaData: readonly AddressBookEntry[]
+	parsedInputData: EnrichedEthereumInputData | undefined
 	created: Date
 	errorMessage: string
 	isGasEstimationError: boolean
@@ -305,7 +308,7 @@ function FailedTransactionPreviewDetails({
 			<div style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
 				{ rawRequest === undefined
-					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
+					? <TransactionInput parsedInputData = { parsedInputData } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
 				}
 			</div>
@@ -372,7 +375,8 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
-		const addressMetaData = popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : []
+		const failedTransactionPreview = popupVisualisation.data.failedTransactionPreview
+		const addressMetaData = failedTransactionPreview?.addressBookEntries ?? []
 		const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
 		return <>
 			<FailedTransactionPreviewDetails
@@ -380,6 +384,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
 				addressMetaData = { addressMetaData }
+				parsedInputData = { failedTransactionPreview?.parsedInputData }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
 				isGasEstimationError = { !popupVisualisation.data.transactionToSimulate.success }
@@ -390,7 +395,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
-				safeTransaction = { safeFlow.pending.safeTransaction }
+				safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 				addressMetaData = { addressMetaData }
 				rpcNetwork = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.simulationState.rpcNetwork : undefined }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -463,10 +468,10 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
 
-				<SafeExecutionSimulationNotice simulationOptions = { simTx.simulationOptions }/>
+				<SafeExecutionSimulationNotice transaction = { simTx }/>
 
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
-					safeTransaction = { safeFlow.pending.safeTransaction }
+					safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 					addressMetaData = { addressMetaData.value }
 					rpcNetwork = { rpcNetwork.value }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -1092,11 +1097,11 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeTransaction.messageReview } /> : <></> }
+							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.messageReview } /> : <></> }
 							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
-									narrowSummary = { `Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
+									narrowSummary = { `Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }` }
 									close = { () => undefined }
 								/>
 								: <></>

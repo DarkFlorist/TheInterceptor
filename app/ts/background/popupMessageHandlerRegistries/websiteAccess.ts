@@ -12,7 +12,7 @@ export const websiteAccessPopupMessageHandlers = {
 	popup_openWebsiteAccess: popupMessageHandler('popup_openWebsiteAccess', async () => await openNewTab('websiteAccess')),
 	popup_retrieveWebsiteAccess: popupMessageHandler('popup_retrieveWebsiteAccess', async (_context, request) => await retrieveWebsiteAccess(request)),
 	popup_blockOrAllowExternalRequests: popupMessageHandler('popup_blockOrAllowExternalRequests', async (context, request) => await blockOrAllowExternalRequests(context.simulationServicesOwner, context.websiteTabConnections, request)),
-	popup_allowOrPreventAddressAccessForWebsite: popupMessageHandler('popup_allowOrPreventAddressAccessForWebsite', async (context, request) => await allowOrPreventAddressAccessForWebsite(context.websiteTabConnections, request)),
+	popup_allowOrPreventAddressAccessForWebsite: popupMessageHandler('popup_allowOrPreventAddressAccessForWebsite', async (context, request) => await allowOrPreventAddressAccessForWebsite(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_removeWebsiteAccess: popupMessageHandler('popup_removeWebsiteAccess', async (context, request) => await removeWebsiteAccess(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_removeWebsiteAddressAccess: popupMessageHandler('popup_removeWebsiteAddressAccess', async (context, request) => await removeWebsiteAddressAccess(context.simulationServicesOwner, context.websiteTabConnections, request)),
 } satisfies Partial<PopupMessageHandlerMap>

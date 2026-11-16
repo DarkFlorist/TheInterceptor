@@ -147,6 +147,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
+		safeFlow: { kind: 'ordinary' as const },
 		popupVisualisation: {
 			statusCode: 'failed' as const,
 			data: {
@@ -156,6 +157,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				error: {
 					code: -32000,
 					message: 'simulation failed',
@@ -183,7 +185,7 @@ function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | 
 	}, 3n)
 	return {
 		...pending,
-		safeTransaction: {
+		safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 			safeAddress: pending.activeAddress,
 			safeSignerAddress: transaction.to,
 			safeVersion: '1.4.1' as const,
@@ -192,7 +194,7 @@ function makeSafeProposal<T extends ReturnType<typeof makePendingTransaction> | 
 			safeTxHash: BigInt(getSafeTxHash(safeTx)),
 			safeTx,
 			executionGasLimit: 21_000n,
-		},
+		} },
 	}
 }
 
@@ -254,6 +256,7 @@ function makeSimulatedPendingTransaction(value: bigint, simulationOptions?: Tran
 				uniqueRequestIdentifier: failed.uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 2 },
 				addressBookEntries: [safeEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
 				tokenPriceEstimates: [],
 				namedTokenIds: [],
@@ -295,7 +298,7 @@ describe('ConfirmTransaction', () => {
 		}, 3n)
 		const proposal = {
 			...pending,
-			safeTransaction: {
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 				safeAddress: pending.activeAddress,
 				safeSignerAddress: pending.originalRequestParameters.params[0].to,
 				safeVersion: '1.4.1' as const,
@@ -304,7 +307,7 @@ describe('ConfirmTransaction', () => {
 				safeTxHash: BigInt(getSafeTxHash(safeTx)),
 				safeTx,
 				executionGasLimit: 21_000n,
-			},
+			} },
 		}
 
 		await act(() => {
@@ -328,7 +331,7 @@ describe('ConfirmTransaction', () => {
 		assert.equal(dom.document.body.textContent?.includes('wrapped as Gnosis Safe transaction nonce 3'), true)
 		await dispatchPending({
 			...proposal,
-			safeExecutionOriginalRequestParameters: proposal.originalRequestParameters,
+			safeFlow: { kind: 'directExecution' as const, safeExecutionOriginalRequestParameters: proposal.originalRequestParameters },
 		})
 		assert.equal(dom.document.body.textContent?.includes('wrapped as Gnosis Safe transaction nonce 3'), false)
 
@@ -341,7 +344,7 @@ describe('ConfirmTransaction', () => {
 		const browser = createBrowserMock()
 		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)
 		const proposal = makeSafeProposal(pending)
-		const safeTx = proposal.safeTransaction.safeTx
+		const safeTx = proposal.safeFlow.safeTransaction.safeTx
 		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
 
 		await act(() => {
@@ -375,7 +378,7 @@ describe('ConfirmTransaction', () => {
 		assert.equal(renderedText.includes('Message Hash'), true)
 		assert.equal(renderedText.includes(messageHash), true)
 		assert.equal(renderedText.includes('Gnosis Safe Transaction Hash'), true)
-		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
+		assert.equal(renderedText.includes(bytes32String(proposal.safeFlow.safeTransaction.safeTxHash)), true)
 		assert.equal(renderedText.includes('Nonce: 3'), true)
 		assert.equal(renderedText.includes('Operation: 0'), true)
 		// The failed-simulation view has no network, so the value has no token symbol; the raw attoeth value is what a hardware signer shows.
@@ -384,7 +387,7 @@ describe('ConfirmTransaction', () => {
 
 		await dispatchPending({
 			...proposal,
-			safeExecutionOriginalRequestParameters: proposal.originalRequestParameters,
+			safeFlow: { kind: 'directExecution' as const, safeExecutionOriginalRequestParameters: proposal.originalRequestParameters },
 		})
 		assert.equal(findSigningRequestCardHeader(), undefined, 'direct Safe executions are signed as normal transactions and have no EIP-712 request')
 
@@ -396,7 +399,7 @@ describe('ConfirmTransaction', () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
 		const proposal = makeSafeProposal(makeSimulatedPendingTransaction(1_250_000_000_000_000_000n))
-		const { domainHash, messageHash } = getSafeTxSigningHashes(proposal.safeTransaction.safeTx)
+		const { domainHash, messageHash } = getSafeTxSigningHashes(proposal.safeFlow.safeTransaction.safeTx)
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -422,7 +425,7 @@ describe('ConfirmTransaction', () => {
 		const renderedText = dom.document.body.textContent ?? ''
 		assert.equal(renderedText.includes(domainHash), true)
 		assert.equal(renderedText.includes(messageHash), true)
-		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
+		assert.equal(renderedText.includes(bytes32String(proposal.safeFlow.safeTransaction.safeTxHash)), true)
 		assert.equal(renderedText.includes('Chain: Ethereum Mainnet (1)'), true)
 		assert.equal(renderedText.includes('Value: 1.25ETH'), true, renderedText)
 		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
@@ -436,7 +439,7 @@ describe('ConfirmTransaction', () => {
 	test('keeps the Gnosis Safe gas label, creation time and simulation time in one wrapping card footer', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const safeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { requiredChainId: 1n, simulateWithZeroBaseFee: false, executeThroughSafe: true })
+		const safeExecution = makeSimulatedPendingTransaction(1_250_000_000_000_000_000n, { requiredChainId: 1n, executeThroughSafe: true })
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -562,6 +565,63 @@ describe('ConfirmTransaction', () => {
 			})
 		})
 		assert.equal(dom.document.body.textContent?.includes('1.25 ether'), true)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
+	test('names failed transaction addresses and shows calldata parsed with the recipient ABI', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const { from: senderAddress, to: tokenAddress } = pending.originalRequestParameters.params[0]
+		const supplierAddress = 0x3333333333333333333333333333333333333333n
+		const failedTransactionPreview = {
+			addressBookEntries: [
+				{ type: 'contact' as const, name: 'Invoice Payer', address: senderAddress, entrySource: 'User' as const },
+				{ type: 'ERC20' as const, name: 'USD Coin', symbol: 'USDC', decimals: 6n, address: tokenAddress, entrySource: 'DarkFloristMetadata' as const },
+				{ type: 'contact' as const, name: 'Supplier', address: supplierAddress, entrySource: 'User' as const },
+			],
+			parsedInputData: {
+				type: 'Parsed' as const,
+				input: new Uint8Array(),
+				name: 'transfer',
+				args: [
+					{ paramName: 'dst', typeValue: { type: 'address' as const, value: supplierAddress } },
+					{ paramName: 'wad', typeValue: { type: 'unsignedInteger' as const, value: 2_500_000n } },
+				],
+			},
+		}
+		const pendingWithPreview = {
+			...pending,
+			popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, failedTransactionPreview } },
+		}
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [pendingWithPreview],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const renderedText = dom.document.body.textContent ?? ''
+		assert.equal(renderedText.includes('Invoice Payer'), true, renderedText)
+		assert.equal(renderedText.includes('USD Coin'), true, renderedText)
+		assert.equal(renderedText.includes('transfer('), true, renderedText)
+		assert.equal(renderedText.includes('Supplier'), true, renderedText)
+		assert.equal(renderedText.includes('No ABI available'), false, renderedText)
 
 		await unmountConfirmTransaction(dom)
 		clock.restore()
