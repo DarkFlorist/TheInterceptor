@@ -68,6 +68,20 @@ const startupStorageCodecs = {
 export type StartupStorageValues = { [Key in keyof typeof startupStorageCodecs]: funtypes.Static<typeof startupStorageCodecs[Key]> }
 const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
 
+// Explicit writers preserve each storage key's value type when repairing corrupt startup data.
+const startupStorageDefaultWriters: { [Key in keyof StartupStorageValues]: (value: StartupStorageValues[Key]) => Promise<void> } = {
+	independentActiveSimulationAddress: async (value) => await browserStorageLocalSet({ independentActiveSimulationAddress: value }),
+	activeSigningSafeAddress: async (value) => await browserStorageLocalSet({ activeSigningSafeAddress: value }),
+	openedPageV2: async (value) => await browserStorageLocalSet({ openedPageV2: value }),
+	useSignersAddressAsActiveAddress: async (value) => await browserStorageLocalSet({ useSignersAddressAsActiveAddress: value }),
+	websiteAccess: async (value) => await browserStorageLocalSet({ websiteAccess: value }),
+	simulationMode: async (value) => await browserStorageLocalSet({ simulationMode: value }),
+	activeRpcNetwork: async (value) => await browserStorageLocalSet({ activeRpcNetwork: value }),
+	makeCurrentAddressRich: async (value) => await browserStorageLocalSet({ makeCurrentAddressRich: value }),
+	fixedAddressRichList: async (value) => await browserStorageLocalSet({ fixedAddressRichList: value }),
+	signingAddressPreferences: async (value) => await browserStorageLocalSet({ signingAddressPreferences: value }),
+}
+
 export async function getStartupStorageValueOrDefault<Key extends keyof StartupStorageValues>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
 	const rawValue = storedItems[key]
 	// Check presence before decoding: the stored 'missing' marker decodes to undefined, but represents an explicitly cleared address and must not select the default.
@@ -76,7 +90,7 @@ export async function getStartupStorageValueOrDefault<Key extends keyof StartupS
 	if (parsedValue.success) return parsedValue.value
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue })
+	await startupStorageDefaultWriters[key](defaultValue)
 	return defaultValue
 }
 
@@ -122,7 +136,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>

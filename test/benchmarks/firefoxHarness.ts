@@ -23,6 +23,7 @@ export type FirefoxPage = {
 
 export type FirefoxSession = {
 	browserVersion: string
+	openPage: (url: string) => Promise<FirefoxPage>
 	openExtensionPage: (pagePath: string) => Promise<FirefoxPage>
 	openPage: (url: string) => Promise<FirefoxPage>
 	close: () => Promise<void>
@@ -244,7 +245,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 	await ensureExtensionReady(extensionDirectory)
 	const geckodriverBinary = await findGeckodriverBinary()
 	const port = await findAvailablePort()
-	const driverProcess = spawn(geckodriverBinary, ['--host', '127.0.0.1', '--port', String(port)], {
+	const driverProcess = spawn(geckodriverBinary, ['--host', '127.0.0.1', '--port', String(port), '--websocket-port', '0'], {
 		cwd: REPO_ROOT,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	})
@@ -292,6 +293,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 					awaitPromise: true,
 				})),
 				reload: async () => { await activeBidi.send('browsingContext.reload', { context, wait: 'complete' }) },
+
 				setViewport: async (width: number, height: number) => {
 					await activeBidi.send('browsingContext.setViewport', {
 						context,
@@ -318,6 +320,7 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 			browserVersion: webDriverSession.browserVersion,
 			openExtensionPage: (pagePath) => openPage(`${ extensionOrigin }/${ pagePath }`),
 			openPage,
+
 			close: async () => {
 				activeBidi.close()
 				await fetch(`http://127.0.0.1:${ port }/session/${ webDriverSession.sessionId }`, { method: 'DELETE' }).catch(() => undefined)
