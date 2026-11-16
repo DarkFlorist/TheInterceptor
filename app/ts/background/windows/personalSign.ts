@@ -207,8 +207,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...basicParams,
 				rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
 				type: 'Permit2SignatureTransfer' as const,
-				// `parsed` drops the witness and its struct types, so `message` keeps the original request.
-				message: namedParams.param,
+				// `parsed` drops the witness and its struct types, so retain the full signing input.
+				signedPayload: namedParams.param,
 				isBatch: transferKind.isBatch,
 				chainId: parsed.domain.chainId,
 				nonce: parsed.message.nonce,

@@ -603,8 +603,8 @@ export const VisualizedPersonalSignRequestPermit2SignatureTransfer = funtypes.In
 	funtypes.ReadonlyObject({
 		method: EthSignTyped,
 		type: funtypes.Literal('Permit2SignatureTransfer'),
-		// Raw only because the integrator defined witness and its struct types have no runtime type. Every field below is derived from it once in `craftPersonalSignPopupMessage`, so consumers read those fields and never parse this.
-		message: EIP712Message,
+		// Full typed signing input, including integrator defined witness types, retained for re-hashing. Derived fields below drive the UI; rawMessage is the serialized view of this same payload.
+		signedPayload: EIP712Message,
 		isBatch: funtypes.Boolean,
 		chainId: NonHexBigInt,
 		nonce: NonHexBigInt,

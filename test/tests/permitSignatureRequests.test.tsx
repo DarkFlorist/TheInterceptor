@@ -423,7 +423,7 @@ describe('Permit2 signature requests', () => {
 		for (const { typedData, ...expected } of expectedKinds) {
 			const visualized = await visualizeTypedData(typedData)
 			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-			const transfer = Permit2SignatureTransfer.parse(visualized.message)
+			const transfer = Permit2SignatureTransfer.parse(visualized.signedPayload)
 			const { isBatch, hasWitness, permitted } = getPermit2SignatureTransferKind(transfer)
 			assert.equal(visualized.isBatch, isBatch)
 			assert.deepEqual({ primaryType: transfer.primaryType, isBatch, hasWitness, tokenCount: permitted.length }, expected)
@@ -433,20 +433,20 @@ describe('Permit2 signature requests', () => {
 		}
 	})
 
-	test('keeps message, stringifiedMessage and rawMessage renderings of the same full signed payload for every SignatureTransfer primary type', async () => {
+	test('keeps signedPayload, stringifiedMessage and rawMessage renderings of the same full signed payload for every SignatureTransfer primary type', async () => {
 		for (const typedData of [permit2TransferFromMessage, permit2BatchTransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2BatchWitnessTransferFromMessage]) {
 			const visualized = await visualizeTypedData(typedData)
 			if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
 			const signedPayload = EIP712Message.parse(typedData)
-			assert.deepEqual(visualized.message, signedPayload)
+			assert.deepEqual(visualized.signedPayload, signedPayload)
 			assert.deepEqual(JSON.parse(visualized.rawMessage), signedPayload)
 			assert.deepEqual(JSON.parse(visualized.stringifiedMessage), signedPayload)
-			// Re-hashing needs the witness and its struct types, so this fails if `message` ever loses them.
-			assert.deepEqual(getMessageAndDomainHash({ method: visualized.method, params: [signer, visualized.message] }), { messageHash: visualized.messageHash, domainHash: visualized.domainHash })
+			// Re-hashing needs the witness and its struct types, so this fails if `signedPayload` ever loses them.
+			assert.deepEqual(getMessageAndDomainHash({ method: visualized.method, params: [signer, visualized.signedPayload] }), { messageHash: visualized.messageHash, domainHash: visualized.domainHash })
 			// Storage and popup messaging go through the codec, which must not strip the payload either.
 			const storedRequest = JSON.parse(JSON.stringify(VisualizedPersonalSignRequestPermit2SignatureTransfer.serialize(visualized)))
 			const receivedRequest = VisualizedPersonalSignRequestPermit2SignatureTransfer.parse(storedRequest)
-			assert.deepEqual(receivedRequest.message, signedPayload)
+			assert.deepEqual(receivedRequest.signedPayload, signedPayload)
 			// Components only read these stored fields, so they must match the signed payload and survive storage.
 			const transfer = Permit2SignatureTransfer.parse(signedPayload)
 			const expectedFields = { isBatch: getPermit2SignatureTransferKind(transfer).isBatch, chainId: transfer.domain.chainId, nonce: transfer.message.nonce, deadline: transfer.message.deadline }
@@ -455,12 +455,12 @@ describe('Permit2 signature requests', () => {
 		}
 	})
 
-	test('keeps the witness in message and leaves it out of the Permit2 fields parsed from it', async () => {
+	test('keeps the witness in signedPayload and leaves it out of the Permit2 fields parsed from it', async () => {
 		const visualized = await visualizeTypedData(permit2UniswapXWitnessTransferFromMessage)
 		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
-		assert.equal(Object.keys(visualized.message.message).includes('witness'), true)
-		assert.equal(Object.keys(visualized.message.types).includes('ExclusiveDutchOrder'), true)
-		const transfer = Permit2SignatureTransfer.parse(visualized.message)
+		assert.equal(Object.keys(visualized.signedPayload.message).includes('witness'), true)
+		assert.equal(Object.keys(visualized.signedPayload.types).includes('ExclusiveDutchOrder'), true)
+		const transfer = Permit2SignatureTransfer.parse(visualized.signedPayload)
 		assert.equal(Object.keys(transfer.message).includes('witness'), false)
 		assert.equal(Object.keys(transfer.types).includes('ExclusiveDutchOrder'), false)
 	})
