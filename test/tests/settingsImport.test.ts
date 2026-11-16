@@ -632,20 +632,20 @@ describe('settings import', () => {
 		}
 		const assertResetsSigningState = async () => {
 			assert.deepEqual(await settings.getSigningAddressPreferences(), [])
-			assert.equal((await settings.getSettings()).activeSigningSafeAddress, undefined)
+			assert.equal((await settings.getRequiredSettings()).activeSigningSafeAddress, undefined)
 			assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
 		}
 		return [
 			{ exportedSettings: buildVersion10Import(), assertImportedValues: async () => {
 				await assertResetsSigningState()
-				assert.equal((await settings.getSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
+				assert.equal((await settings.getRequiredSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
 				assert.equal(await settings.getMetamaskCompatibilityMode(), true, 'version 1.0 has no compatibility mode, so the stored one is kept')
 			} },
 			{ exportedSettings: version11Import, assertImportedValues: async () => {
 				await assertResetsSigningState()
-				assert.equal((await settings.getSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
-				assert.deepEqual((await settings.getSettings()).activeRpcNetwork, testRpcNetwork)
-				assert.equal((await settings.getSettings()).simulationMode, true)
+				assert.equal((await settings.getRequiredSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
+				assert.deepEqual((await settings.getRequiredSettings()).activeRpcNetwork, testRpcNetwork)
+				assert.equal((await settings.getRequiredSettings()).simulationMode, true)
 				assert.equal(await settings.getUseTabsInsteadOfPopup(), true)
 				assert.equal(await settings.getMetamaskCompatibilityMode(), true, 'version 1.1 has no compatibility mode, so the stored one is kept')
 			} },
@@ -665,7 +665,7 @@ describe('settings import', () => {
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 			} },
 			{ exportedSettings: version15Import, assertImportedValues: async () => {
-				const importedSettings = await settings.getSettings()
+				const importedSettings = await settings.getRequiredSettings()
 				assert.equal(importedSettings.activeSimulationAddress, version15SimulationAddress)
 				assert.equal(importedSettings.activeSigningSafeAddress, version15SigningSafeAddress)
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [version15SigningPreference])

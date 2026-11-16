@@ -87,7 +87,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					storageGetCalls++
-					if (Array.isArray(keys) && keys.includes('websiteAccess') && settingsReadError !== undefined) throw settingsReadError
+					if ((keys === 'websiteAccess' || (Array.isArray(keys) && keys.includes('websiteAccess'))) && settingsReadError !== undefined) throw settingsReadError
 					if (failNextStorageGet && storageGetErrorAfterSet !== undefined) {
 						failNextStorageGet = false
 						throw storageGetErrorAfterSet
@@ -135,9 +135,8 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 					return [{ id: 42, url: currentTabUrl }]
 				},
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
-				async reload() { reloadCalls += 1 },
 				async update() { return undefined },
-				async reload(tabId: number) { reloadedTabs.push(tabId) },
+				async reload(tabId: number) { reloadCalls += 1; reloadedTabs.push(tabId) },
 				async executeScript(_tabId: number, injection: { readonly code?: string, readonly file?: string }) {
 					executeScriptCalls++
 					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
@@ -899,7 +898,7 @@ describe('content script injection strategy', () => {
 		await updateContentScriptInjectionStrategyManifestV3()
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://disabled.example:443/*') === true), true)
 
-		await updateWebsiteAccessAndContentScriptInjectionStrategy((websiteAccess) => websiteAccess.filter((entry) => entry.website.websiteOrigin !== websiteOrigin))
+		await updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), (websiteAccess) => websiteAccess.filter((entry) => entry.website.websiteOrigin !== websiteOrigin))
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
 	})
 

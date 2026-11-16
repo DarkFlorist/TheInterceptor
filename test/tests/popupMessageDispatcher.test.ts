@@ -666,6 +666,8 @@ describe('popup message dispatcher seams', () => {
 		const context = createDispatcherContext(async () => undefined)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: settings.activeSimulationAddress ?? 0n, access: true }] }])
 		const exportedSettings = await exportSettingsAndAddressBook()
+		// Change bootstrap configuration so this import must update registration.
+		storageState.metamaskCompatibilityMode = !exportedSettings.settings.metamaskCompatibilityMode
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
@@ -686,7 +688,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length > 0), false)
 	})
 
-	test('a settings import that denies an approved website unapproves it even when the content-script update fails, and surfaces that failure', async () => {
+	test('a settings import that denies an approved website unapproves it and reports the best-effort content-script failure', async () => {
 		const websiteOrigin = 'denied-by-import.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const activeAddress = settings.activeSimulationAddress ?? 0n
@@ -706,7 +708,8 @@ describe('popup message dispatcher seams', () => {
 			nextApprovalsReadError = new Error('Approvals read failed')
 		}
 
-		await assert.rejects(dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings)) } }), /Approvals read failed/)
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings)) } })
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'settings_import_content_script_refresh_failed')
 
 		assert.equal((await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.access, false)
 		assert.equal(connection.approved, false)
