@@ -494,7 +494,7 @@ describe('extension icon deduping', () => {
 			activeSigningAddress: signerAccount,
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(1, 'example.test', 0)
 		return setTitleCalls.at(-1)?.title ?? ''
 	}
 

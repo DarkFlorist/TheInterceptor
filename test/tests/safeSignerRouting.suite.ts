@@ -153,7 +153,7 @@ test('replays a Safe signature deferred while only the RPC configuration was unr
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
 			signerRequestChainId: fakeRpcNetwork.chainId,
-			safeTransaction: {
+			safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: safeTestOwnerAddress,
 				safeVersion: '1.4.1',
@@ -161,7 +161,7 @@ test('replays a Safe signature deferred while only the RPC configuration was unr
 				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
 				safeTxHash,
 				safeTx,
-			},
+			} },
 		}],
 	})
 	// The owner keeps its installed services for the whole outage; only reading the RPC configuration fails.
@@ -256,7 +256,7 @@ async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modul
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
 			signerRequestChainId: fakeRpcNetwork.chainId,
-			safeTransaction: {
+			safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: safeTestOwnerAddress,
 				safeVersion: '1.4.1',
@@ -264,7 +264,7 @@ async function deferSafeProposalSignatureOnChainA(owner: Parameters<typeof modul
 				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
 				safeTxHash,
 				safeTx,
-			},
+			} },
 		}],
 	})
 	if (whileReplyIsResolved !== undefined) runOnceWhenTheSignerReplyReadsItsRequest(async () => await whileReplyIsResolved(websiteTabConnections))
@@ -350,7 +350,7 @@ test('refuses a proposal prepared for another chain than the services approving 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		simulationMode: false,
-		safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx },
+		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx } },
 	}] })
 
 	assert.equal(await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })), false)
@@ -432,7 +432,7 @@ async function storeSafeProposalAwaitingSignerOnChainA(requestId: number, connec
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForSigner' },
 		signerRequestChainId: fakeRpcNetwork.chainId,
-		safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx },
+		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx } },
 	}] })
 	const deliverSignature = async (owner: Parameters<typeof modules.signerReply>[0], reply: string = signature) => await modules.signerReply(owner, websiteTabConnections, port, {
 		method: 'signer_reply',
@@ -876,13 +876,13 @@ test('a recovery pass finishes later requests and the outbox while earlier items
 	const { JsonRpcResponseError } = await import('../../app/ts/utils/errors.js')
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(144, 77n)
 	const [base] = await modules.getPendingTransactionsAndMessages()
-	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	if (base === undefined || base.type !== 'Transaction' || getPendingSafeProposal(base) === undefined) throw new Error('Missing stored Safe proposal')
 	await setLatestUnexpectedError(undefined)
 	const unreachableSafeAddress = 0x5afe00000000000000000000000000000000beefn
 	const revertingSafeAddress = 0x5afe00000000000000000000000000000000deadn
-	const failingClaim = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 145 }, safeTransaction: { ...base.safeTransaction, safeAddress: unreachableSafeAddress }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
+	const failingClaim = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 145 }, safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { ...getPendingSafeProposal(base), safeAddress: unreachableSafeAddress } }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
 	const answered = { ...base, websiteReplyQueued: true as const }
-	const revertingOutboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 147 }, safeTransaction: { ...base.safeTransaction, safeAddress: revertingSafeAddress } }
+	const revertingOutboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 147 }, safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { ...getPendingSafeProposal(base), safeAddress: revertingSafeAddress } } }
 	const healthyOutboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 146 } }
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [failingClaim, answered],
@@ -925,9 +925,9 @@ test('a recovery pass finishes later requests and the outbox while earlier items
 test('a recovery pass surfaces an earlier settlement failure when its later outbox read rejects', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(152, 79n)
 	const [base] = await modules.getPendingTransactionsAndMessages()
-	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	if (base === undefined || base.type !== 'Transaction' || getPendingSafeProposal(base) === undefined) throw new Error('Missing stored Safe proposal')
 	const unreachableSafeAddress = 0x5afe00000000000000000000000000000000cafen
-	const failingClaim = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 153 }, safeTransaction: { ...base.safeTransaction, safeAddress: unreachableSafeAddress }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
+	const failingClaim = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 153 }, safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { ...getPendingSafeProposal(base), safeAddress: unreachableSafeAddress } }, deferredSafeSignerReply: { signerReply: proposal.signature, chainId: fakeRpcNetwork.chainId } }
 	const outboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId: 154 } }
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [failingClaim],
@@ -968,13 +968,13 @@ test('a recovery pass surfaces an earlier settlement failure when its later outb
 test('keeps consecutive outbox proposals of one Safe in nonce order when storing the first fails transiently', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(148, 78n)
 	const [base] = await modules.getPendingTransactionsAndMessages()
-	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	if (base === undefined || base.type !== 'Transaction' || getPendingSafeProposal(base) === undefined) throw new Error('Missing stored Safe proposal')
 	const otherSafeAddress = 0x5afe000000000000000000000000000000000b0bn
 	const signedProposal = async (requestId: number, safeAddress: bigint, nonce: bigint) => {
 		const safeTx = createSafeTx(fakeRpcNetwork.chainId, safeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, nonce)
 		const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 		const safeTxHash = BigInt(getSafeTxHash(safeTx))
-		const outboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId }, safeTransaction: { ...base.safeTransaction, safeAddress, safeTxHash, safeTx } }
+		const outboxProposal = { ...base, uniqueRequestIdentifier: { ...base.uniqueRequestIdentifier, requestId }, safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { ...getPendingSafeProposal(base), safeAddress, safeTxHash, safeTx } } }
 		return { entry: { chainId: fakeRpcNetwork.chainId, signerReply: signature, proposal: outboxProposal }, safeTxHash, signature }
 	}
 	const nonceOne = await signedProposal(149, activeAddress, 1n)
@@ -1041,7 +1041,7 @@ test('recovery rejects a request whose window disappeared while a Safe proposal 
 test('a signed proposal waiting in the outbox keeps its nonce from a new proposal for the same Safe', async () => {
 	const proposal = await storeSafeProposalAwaitingSignerOnChainA(154, 80n)
 	const [base] = await modules.getPendingTransactionsAndMessages()
-	if (base === undefined || base.type !== 'Transaction' || base.safeTransaction === undefined) throw new Error('Missing stored Safe proposal')
+	if (base === undefined || base.type !== 'Transaction' || getPendingSafeProposal(base) === undefined) throw new Error('Missing stored Safe proposal')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [], pendingSafeProposalStores: [{ chainId: fakeRpcNetwork.chainId, signerReply: proposal.signature, proposal: base }] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(proposal.requestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress, signerChain: fakeRpcNetwork.chainId }))
@@ -1063,11 +1063,11 @@ test('a signed proposal waiting in the outbox keeps its nonce from a new proposa
 	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, safeTestOwnerAddress)
 	const transactionToSimulate = await modules.formEthSendTransaction(simulator.ethereum, undefined, preparation.transactionExecutor, { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, preparation.effectiveTransactionParams, new Date(), 2n, false, preparation.gasPayment)
 	const finalized = await preparation.finalize(transactionToSimulate, proposal.requestIdentifier.requestSocket.tabId)
-	const newSafeTransaction = finalized.safeTransaction
+	const newSafeTransaction = finalized.safeFlow.kind === 'proposal' && finalized.safeFlow.state === 'created' ? finalized.safeFlow.safeTransaction : undefined
 	if (newSafeTransaction === undefined || !finalized.transactionToSimulate.success) throw new Error('Missing the new Safe proposal')
 	assert.equal(newSafeTransaction.safeTx.message.nonce, 1n)
 	const newRequestIdentifier = { ...proposal.requestIdentifier, requestId: 155 }
-	const newProposal = { ...base, uniqueRequestIdentifier: newRequestIdentifier, transactionToSimulate: finalized.transactionToSimulate, safeTransaction: newSafeTransaction, approvalStatus: { status: 'WaitingForUser' as const } }
+	const newProposal = { ...base, uniqueRequestIdentifier: newRequestIdentifier, transactionToSimulate: finalized.transactionToSimulate, safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: newSafeTransaction }, approvalStatus: { status: 'WaitingForUser' as const } }
 	const blocked = await modules.resolveSafeConfirmation(simulator.ethereum, newProposal, 'accept', { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
 	assert.equal(blocked.status, 'blocked')
 	assert.match(blocked.status === 'blocked' ? blocked.approvalStatus.message : '', /earlier signed Gnosis Safe proposal is still being added/u)
@@ -1278,7 +1278,7 @@ test('drops an earlier build\'s acknowledged Safe proposal without a recorded ch
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
 			deferredSafeSignerReply: { signerReply: '0x1234', terminalReplyQueued: true },
-			safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx },
+			safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: { safeAddress: activeAddress, safeSignerAddress: safeTestOwnerAddress, safeVersion: '1.4.1', threshold: 2n, reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n }, safeTxHash: BigInt(getSafeTxHash(safeTx)), safeTx } },
 		}],
 	})
 	await setLatestUnexpectedError(undefined)
@@ -1332,7 +1332,7 @@ test('does not defer a Safe signature whose signing network was not recorded', a
 			uniqueRequestIdentifier: requestIdentifier,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
-			safeTransaction: {
+			safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: safeTestOwnerAddress,
 				safeVersion: '1.4.1',
@@ -1340,7 +1340,7 @@ test('does not defer a Safe signature whose signing network was not recorded', a
 				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
 				safeTxHash,
 				safeTx,
-			},
+			} },
 		}],
 	})
 	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
@@ -1393,7 +1393,7 @@ test('atomically queues a Safe proposal result with its outbox entry before deli
 		uniqueRequestIdentifier: requestIdentifier,
 		simulationMode: false,
 		approvalStatus: { status: 'WaitingForSigner' as const },
-		safeTransaction: {
+		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: safeTestOwnerAddress,
 			safeVersion: '1.4.1',
@@ -1401,7 +1401,7 @@ test('atomically queues a Safe proposal result with its outbox entry before deli
 			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
 			safeTxHash,
 			safeTx,
-		},
+		} },
 	}
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [signedProposal] })
 	const terminalReply = { ...signedProposal.originalRequestParameters, type: 'result' as const, result: safeTxHash, uniqueRequestIdentifier: requestIdentifier }

@@ -531,13 +531,13 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return await handleContentScriptMessage(simulationServicesOwner, admittedSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, refreshedSettings, publishRpcConnectionStatus)
 	}
 
-	if (access === 'noAccess' || activeAddress === undefined) {
+	if (access === 'noAccess') return replyWithoutWebsiteAccess(websiteTabConnections, request)
+	if (activeAddress === undefined) {
 		switch (request.method) {
-			case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
-			case 'wallet_getPermissions': return replyWithEmptyPermissions(websiteTabConnections, request)
-			// if user has not given access, assume we are on chain 1
-			case 'eth_chainId': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
-			case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			case 'eth_accounts':
+			case 'wallet_getPermissions':
+			case 'eth_chainId':
+			case 'net_version': return replyWithoutWebsiteAccess(websiteTabConnections, request)
 			default: break
 		}
 	}
@@ -549,7 +549,6 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			if (currentSettings === undefined) return replyRpcConfigurationUnavailable(websiteTabConnections, request)
 			return await gateKeepRequestBehindAccessDialog(simulationServicesOwner, websiteTabConnections, socket, request, website, activeAddress, currentSettings, publishRpcConnectionStatus)
 		}
-		case 'noAccess': return refuseAccess(websiteTabConnections, request)
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 			const website = await websitePromise
@@ -658,6 +657,17 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 				message: 'Unknown error'
 			},
 		}))
+	}
+}
+
+// The same denial reply for requests resolved by the access queue and requests denied at the entry point; these passive methods need no RPC or account authority.
+export function replyWithoutWebsiteAccess(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+	switch (request.method) {
+		case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
+		case 'wallet_getPermissions': return replyWithEmptyPermissions(websiteTabConnections, request)
+		case 'eth_chainId':
+		case 'net_version': return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, result: 1n, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+		default: return refuseAccess(websiteTabConnections, request)
 	}
 }
 

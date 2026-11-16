@@ -53,6 +53,7 @@ const createRequestWaitingForSigner = (): PendingTransactionOrSignableMessage =>
 	const created = new Date('2024-01-01T00:00:00.000Z')
 	return {
 		type: 'Transaction',
+		safeFlow: { kind: 'ordinary' },
 		transactionOrMessageCreationStatus: 'Crafting',
 		popupOrTabId: { type: 'popup', id: 11 },
 		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: 0x1111111111111111111111111111111111111111n, to: 0x2222222222222222222222222222222222222222n, value: 0n, input: new Uint8Array() }] },

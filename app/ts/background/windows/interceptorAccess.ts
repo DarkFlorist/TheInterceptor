@@ -4,7 +4,7 @@ import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, Intercep
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, reconcileCommittedAccessChange, setAccess, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
-import { handleInterceptedRequest, refuseAccess, replyAdmittedRpcNetworkNoLongerLive } from '../background.js'
+import { handleInterceptedRequest, refuseAccess, replyWithoutWebsiteAccess, replyAdmittedRpcNetworkNoLongerLive } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
@@ -528,7 +528,7 @@ async function resolveRejection(simulationServicesOwner: SimulationServicesOwner
 	const { request, website } = pendingAccessRequest
 	await setAccess(website, false, accessReply.requestAccessToAddress)
 	const isAffected = isAffectedPendingRequest(accessReply, website)
-	const refusals = pendingRequests.filter(isAffected).flatMap(({ request: affectedRequest }) => affectedRequest === undefined ? [] : [async () => refuseAccess(websiteTabConnections, affectedRequest)])
+	const refusals = pendingRequests.filter(isAffected).flatMap(({ request: affectedRequest }) => affectedRequest === undefined ? [] : [async () => replyWithoutWebsiteAccess(websiteTabConnections, affectedRequest)])
 	let remainingRequests = pendingRequests.filter((pending) => !isAffected(pending))
 	const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 	const reconcile = async () => {
