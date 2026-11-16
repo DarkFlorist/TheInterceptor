@@ -1,13 +1,12 @@
-import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
+import { getUserAddressBookEntries } from './storageVariables.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -108,11 +107,10 @@ export async function getSettings() : Promise<Settings> {
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode, delegateClearingPreferences }
 }
 
-export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
+export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
+export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
-const signingAddressPreferencesSemaphore = new Semaphore(1)
-const delegateClearingPreferencesSemaphore = new Semaphore(1)
 
 export async function getDelegateClearingPreferences() {
 	return await getParsedStorageValueOrDefault('delegateClearingPreferences', [])
@@ -122,15 +120,14 @@ export async function isDelegateClearingEnabled(address: bigint, chainId: bigint
 	return hasDelegateClearingPreference(await getDelegateClearingPreferences(), address, chainId)
 }
 
+export const delegateClearingPreferencesStorageWrite = (delegateClearingPreferences: DelegateClearingPreferences): StorageWrite => ({ delegateClearingPreferences })
+
 export async function setDelegateClearingEnabled(address: bigint, chainId: bigint, enabled: boolean) {
-	return await delegateClearingPreferencesSemaphore.execute(async () => {
+	return await runSettingsStorageTransaction(async () => {
 		const preferences = await getDelegateClearingPreferences()
-		const existing = hasDelegateClearingPreference(preferences, address, chainId)
-		if (existing === enabled) return false
-		await browserStorageLocalSet({ delegateClearingPreferences: enabled
-			? [...preferences, { address, chainId }]
-			: preferences.filter((entry) => entry.address !== address || entry.chainId !== chainId) })
-		return true
+		if (hasDelegateClearingPreference(preferences, address, chainId) === enabled) return { writes: [], result: false }
+		const updated = enabled ? [...preferences, { address, chainId }] : preferences.filter((entry) => entry.address !== address || entry.chainId !== chainId)
+		return { writes: [delegateClearingPreferencesStorageWrite(updated)], result: true }
 	})
 }
 
@@ -138,15 +135,12 @@ export async function getSigningAddressPreferences() {
 	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
 }
 
+export const signingAddressPreferencesStorageWrite = (signingAddressPreferences: SigningAddressPreferences): StorageWrite => ({ signingAddressPreferences })
+
 export async function rememberSigningAddressPreference(preference: SigningAddressPreference) {
-	await signingAddressPreferencesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const preferences = await getSigningAddressPreferences()
-		await browserStorageLocalSet({
-			signingAddressPreferences: [
-				...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress),
-				preference,
-			],
-		})
+		return { writes: [signingAddressPreferencesStorageWrite([...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress), preference])], result: undefined }
 	})
 }
 
@@ -205,11 +199,13 @@ export async function trackPreviousActiveAddressForMakeMeRichList(previousActive
 	})
 }
 
+export const useSignersAddressAsActiveAddressStorageWrite = (useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined): StorageWrite => ({
+	useSignersAddressAsActiveAddress,
+	...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
+})
+
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	return await browserStorageLocalSet({
-		useSignersAddressAsActiveAddress,
-		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
-	})
+	return await browserStorageLocalSet(useSignersAddressAsActiveAddressStorageWrite(useSignersAddressAsActiveAddress, currentSignerAddress))
 }
 
 type SimulationModeChanges = {
@@ -220,7 +216,7 @@ type SimulationModeChanges = {
 	readonly activeSigningSafeAddress?: EthereumAddress
 }
 
-function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
+export function simulationModeStorageWrite(changes: SimulationModeChanges): StorageWrite {
 	return {
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
@@ -231,17 +227,9 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 }
 
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+	return await browserStorageLocalSet(simulationModeStorageWrite(changes))
 }
 
-async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
-	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
-		...getSimulationModeStorageUpdate(changes),
-		signingAddressPreferences,
-	}))
-}
-
-const websiteAccessSemaphore = new Semaphore(1)
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
@@ -252,13 +240,21 @@ export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	await websiteAccessSemaphore.execute(async () => {
+export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): StorageWrite => ({ websiteAccess: sanitizeWebsiteAccess(websiteAccess) })
+
+// Returns the stored value before and after the update so rollback transactions can restore only what this update changed.
+export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	return await runSettingsStorageTransaction(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
-		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+		const changed = nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess
+		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: { previousWebsiteAccess: sanitizedWebsiteAccess, updatedWebsiteAccess: nextWebsiteAccess } }
 	})
+}
+
+// Last-write-wins: applies the update to the latest stored value; see withWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {
@@ -276,13 +272,16 @@ export async function updateKnownWebsiteMetadata(website: Website) {
 }
 
 export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.useTabsInsteadOfPopup ?? false
-export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
+export const useTabsInsteadOfPopupStorageWrite = (useTabsInsteadOfPopup: boolean): StorageWrite => ({ useTabsInsteadOfPopup })
+export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet(useTabsInsteadOfPopupStorageWrite(useTabsInsteadOfPopup))
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
-export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
+export const metamaskCompatibilityModeStorageWrite = (metamaskCompatibilityMode: boolean): StorageWrite => ({ metamaskCompatibilityMode })
+export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet(metamaskCompatibilityModeStorageWrite(metamaskCompatibilityMode))
 
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
-export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
+export const safeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
+export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(safeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
@@ -310,34 +309,6 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	}
 }
 
-export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
-	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
-	const defaultActiveAddress = defaultActiveAddresses[0]?.address
-	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
-	const imported = exportedSettings.settings
-	if ('openedPage' in imported) await setPage(imported.openedPage)
-	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
-	if ('addressBookEntries' in imported) await updateUserAddressBookEntries(() => imported.addressBookEntries)
-	await replaceModeAndSigningPreferencesForImport({
-		simulationMode: imported.simulationMode,
-		rpcNetwork: 'rpcNetwork' in imported ? imported.rpcNetwork : defaultRpcs[0],
-		activeSimulationAddress: 'signingAddressPreferences' in imported ? imported.activeSimulationAddress : defaultActiveAddress,
-		activeSigningAddress: undefined,
-		activeSigningSafeAddress: 'activeSigningSafeAddress' in imported ? imported.activeSigningSafeAddress : undefined,
-	}, 'signingAddressPreferences' in imported ? imported.signingAddressPreferences : [])
-	await setUseSignersAddressAsActiveAddress(imported.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => imported.websiteAccess)
-	await setUseTabsInsteadOfPopup(imported.useTabsInsteadOfPopup)
-	if ('metamaskCompatibilityMode' in imported) await setMetamaskCompatibilityMode(imported.metamaskCompatibilityMode)
-	await setSafeAppsCompatibilityMode('safeAppsCompatibilityMode' in imported ? imported.safeAppsCompatibilityMode : false)
-	await delegateClearingPreferencesSemaphore.execute(async () => await browserStorageLocalSet({ delegateClearingPreferences: 'delegateClearingPreferences' in imported ? imported.delegateClearingPreferences : [] }))
-	if ('addressInfos' in imported) {
-		await updateUserAddressBookEntries((previousEntries) => {
-			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-			return getUniqueItemsByProperties(previousEntries.concat(imported.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(imported.contacts ?? []), ['address'])
-		})
-	}
-}
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
 export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
