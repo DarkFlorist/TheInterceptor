@@ -194,6 +194,19 @@ describe('content script injection strategy', () => {
 		assert.equal(firefoxScripts[3]?.excludeGlobs, undefined)
 	})
 
+	for (const manifestVersion of [2, 3]) {
+		test(`MV${ manifestVersion } repeating reconciliation leaves matching registrations untouched`, async () => {
+			const mock = installBrowserMock({ manifestVersion })
+			const { reconcileContentScriptRegistration } = await loadModules()
+			assert.equal(await reconcileContentScriptRegistration(), true)
+			mock.firefoxOperations.length = 0
+			mock.getScriptingOperations().length = 0
+			assert.equal(await reconcileContentScriptRegistration(), false)
+			assert.deepEqual(mock.firefoxOperations, [])
+			assert.deepEqual(mock.getScriptingOperations(), [])
+		})
+	}
+
 	test('propagates Firefox registration failures without removing existing protection', async () => {
 		const previous = installBrowserMock({ manifestVersion: 2 })
 		const { reconcileContentScriptRegistration } = await loadModules()
@@ -311,8 +324,8 @@ describe('content script injection strategy', () => {
 		firefoxOperations.length = 0
 		await updateWebsiteAccess((previous) => previous)
 		await reconcileContentScriptRegistration()
-		assert.deepEqual(firefoxOperations, ['unregister', 'register', 'unregister'])
-		assert.equal(getFirefoxUnregisterCalls(), 3)
+		assert.deepEqual(firefoxOperations, ['unregister'])
+		assert.equal(getFirefoxUnregisterCalls(), 2)
 		assert.equal(activeFirefoxScripts.size, 1)
 		assert.deepEqual([...activeFirefoxScripts][0]?.excludeGlobs, ['https://cleanup.example/*'])
 	})

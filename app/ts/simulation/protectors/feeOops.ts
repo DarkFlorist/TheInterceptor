@@ -1,4 +1,6 @@
-import type { Protector } from '../protectorTypes.js'
+import type { ProtectorRequestContext } from '../protectorTypes.js'
+import { getFeeProtectionInput } from '../feeProtection.js'
+import { getRequestedTransactionFees } from '../../utils/transactionFees.js'
 import type { FeeProtectionInput } from '../feeProtection.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 
@@ -13,7 +15,8 @@ export async function feeOops({ comparison, pricePerGas }: FeeProtectionInput, e
 	return `Attempt to send a transaction with an outrageous fee. Gas price: ${ pricePerGas } attoeth/gas`
 }
 
-// Bind the fee-only input at assembly time so the runner and other protectors need no fee-policy fields.
-export function createFeeProtector(input: FeeProtectionInput): Protector {
-	return async (_transaction, ethereum, requestAbortController) => await feeOops(input, ethereum, requestAbortController)
+// Fee policy is derived here from the original request, not by pipeline callers.
+export async function checkRequestedTransactionFees({ transaction, originalRequestParameters }: ProtectorRequestContext, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
+	const requestedFees = originalRequestParameters.method === 'eth_sendTransaction' ? getRequestedTransactionFees(originalRequestParameters.params[0]) : undefined
+	return await feeOops(getFeeProtectionInput(transaction, requestedFees), ethereum, requestAbortController)
 }

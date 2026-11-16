@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getRequestedTransactionFees } from '../../app/ts/utils/transactionFees.js'
 import { getFeeProtectionInput } from '../../app/ts/simulation/feeProtection.js'
-import { feeOops } from '../../app/ts/simulation/protectors/feeOops.js'
+import { checkRequestedTransactionFees, feeOops } from '../../app/ts/simulation/protectors/feeOops.js'
 
 const nanoeth = 10n ** 9n
 const marketPrice = 31n * nanoeth
@@ -59,4 +59,12 @@ test('the shared requested-fee policy preserves zero and explicit prices and sup
 	assert.equal(getRequestedTransactionFees({}).adjustForBaseFee, true)
 	assert.equal(getRequestedTransactionFees({ maxFeePerGas: 0n }).adjustForBaseFee, false)
 	assert.equal(getRequestedTransactionFees({ maxFeePerGas: marketPrice }).feeModel, 'fee-market')
+})
+
+
+test('the shared request context keeps original legacy fee semantics after transaction normalization', async () => {
+	assert.equal(await checkRequestedTransactionFees({
+		transaction: { ...transactionFields, type: '1559', maxFeePerGas: marketPrice, maxPriorityFeePerGas: marketPrice },
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: transactionFields.from, gasPrice: marketPrice }] },
+	}, ethereum, undefined), undefined)
 })

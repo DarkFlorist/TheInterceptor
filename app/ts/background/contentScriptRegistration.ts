@@ -9,20 +9,14 @@ const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 
 // This is the sole serialization boundary for reading desired settings, replacing registrations and retrying failed cleanup.
 const registrationUpdates = new Semaphore(1)
-let registrationNeedsRetry = false
 
 // Explicit exclusion workflows await reconciliation before reload/success. Storage-only metadata and access edits never retry browser infrastructure work.
-export async function reconcileContentScriptRegistration({ exclusionsChanged = true } = {}) {
+export async function reconcileContentScriptRegistration() {
 	return await registrationUpdates.execute(async () => {
-		if (!exclusionsChanged && !registrationNeedsRetry) return false
-		// Failed reconciliation stays pending here; storage-only updates never invoke this coordinator.
-		registrationNeedsRetry = true
 		const disabledOrigins = getInterceptorDisabledSites(await getWebsiteAccess())
-		// Always read the persisted desired state; repeating a failed toggle/import/removal is sufficient to retry.
-		if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3(disabledOrigins)
-		else await updateContentScriptInjectionStrategyManifestV2(disabledOrigins)
-		registrationNeedsRetry = false
-		return true
+		return browser.runtime.getManifest().manifest_version === 3
+			? await updateContentScriptInjectionStrategyManifestV3(disabledOrigins)
+			: await updateContentScriptInjectionStrategyManifestV2(disabledOrigins)
 	})
 }
 
@@ -57,32 +51,46 @@ const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: r
 	}).map(({ id }) => id))
 	const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
 	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id) || replacements.has(id))
-	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id) && !replacements.has(id))
+	const existingContentScripts = contentScripts.filter((desired) => {
+		const registered = registeredContentScripts.find(({ id }) => id === desired.id)
+		if (registered === undefined || replacements.has(desired.id)) return false
+		return registered.allFrames !== desired.allFrames
+			|| registered.runAt !== desired.runAt
+			|| JSON.stringify(registered.matches ?? []) !== JSON.stringify(desired.matches)
+			|| JSON.stringify(registered.excludeMatches ?? []) !== JSON.stringify(desired.excludeMatches)
+			|| ('world' in registered ? registered.world : 'ISOLATED') !== (desired.world ?? 'ISOLATED')
+			|| ('matchOriginAsFallback' in registered ? registered.matchOriginAsFallback : false) !== desired.matchOriginAsFallback
+	})
 	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
 	// Chrome requires unregister/register when a bootstrap script file changes.
 	if (replacements.size > 0) await browser.scripting.unregisterContentScripts({ ids: [...replacements] })
 	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
 	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
 	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+	return replacements.size > 0 || missingContentScripts.length > 0 || existingContentScripts.length > 0 || obsoleteContentScriptIds.length > 0
 }
 
-let registeredManifestV2Scripts: browser.contentScripts.RegisteredContentScript | undefined
-const manifestV2RegistrationsPendingRemoval = new Set<browser.contentScripts.RegisteredContentScript>()
+type ManifestV2RegistrationState = {
+	active?: { readonly handle: browser.contentScripts.RegisteredContentScript, readonly configuration: Parameters<typeof browser.contentScripts.register>[0] }
+	readonly pendingRemoval: Set<browser.contentScripts.RegisteredContentScript>
+}
+const manifestV2Registrations = new WeakMap<typeof browser.contentScripts, ManifestV2RegistrationState>()
 
-async function removeSupersededManifestV2Registrations() {
-	for (const registration of manifestV2RegistrationsPendingRemoval) {
+async function removeSupersededManifestV2Registrations(state: ManifestV2RegistrationState) {
+	for (const registration of state.pendingRemoval) {
 		await registration.unregister()
-		manifestV2RegistrationsPendingRemoval.delete(registration)
+		state.pendingRemoval.delete(registration)
 	}
 }
 
 const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: readonly string[]) => {
-	// Keep failed removals reachable and finish cleanup before creating another registration.
-	await removeSupersededManifestV2Registrations()
+	const state: ManifestV2RegistrationState = manifestV2Registrations.get(browser.contentScripts) ?? { pendingRemoval: new Set<browser.contentScripts.RegisteredContentScript>() }
+	manifestV2Registrations.set(browser.contentScripts, state)
+	const removedSuperseded = state.pendingRemoval.size > 0
+	await removeSupersededManifestV2Registrations(state)
 	const excludeMatches = getManifestV2ExcludeMatches(disabledOrigins)
 	const excludeGlobs = getManifestV2ExcludeGlobs(disabledOrigins)
-	// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
-	const registered = await browser.contentScripts.register({
+	const configuration = {
 		matches: injectableSitesWildcard,
 		// Firefox rejects empty exclusion lists.
 		...(excludeMatches.length === 0 ? {} : { excludeMatches }),
@@ -90,9 +98,13 @@ const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: r
 		allFrames: true,
 		runAt: 'document_start',
 		js: getManifestV2IsolatedWorldInjections(await getMetamaskCompatibilityMode()).map(({ file }) => ({ file: `/${ file }` })),
-	})
-	const previous = registeredManifestV2Scripts
-	registeredManifestV2Scripts = registered
-	if (previous !== undefined) manifestV2RegistrationsPendingRemoval.add(previous)
-	await removeSupersededManifestV2Registrations()
+	} satisfies Parameters<typeof browser.contentScripts.register>[0]
+	if (state.active !== undefined && JSON.stringify(state.active.configuration) === JSON.stringify(configuration)) return removedSuperseded
+	// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
+	const handle = await browser.contentScripts.register(configuration)
+	const previous = state.active
+	state.active = { handle, configuration }
+	if (previous !== undefined) state.pendingRemoval.add(previous.handle)
+	await removeSupersededManifestV2Registrations(state)
+	return true
 }
