@@ -1,21 +1,23 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getErrorMessage } from '../utils/errors.js'
-import { updateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
-import { withWebsiteAccessRollback } from './settingsTransactions.js'
+import { tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
+import { tryWebsiteAccessRollback } from './settingsTransactions.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getSettings } from './settings.js'
 import { reloadConnectedTabs } from './reloadConnectedTabs.js'
 import type { WebsiteAccessMutation } from './websiteAccessMutations.js'
 
 // The canonical persistence/rollback and injection composition. Return partial outcomes so the workflow can reconcile saved or rolled-back permissions even when refresh/error reporting fails.
+export async function tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: WebsiteAccessMutation) {
+	return await tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, update, tryWebsiteAccessRollback)
+}
+
+// The ordinary API rejects on failure; the named try variant lets the reconciliation workflow handle a partially committed or rolled-back update.
 export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: WebsiteAccessMutation) {
-	let saved = false
-	const outcome = await updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, update, async (mutation, refresh) => await withWebsiteAccessRollback(mutation, async (websiteAccess) => {
-		saved = true
-		await refresh(websiteAccess)
-	}))
-	return { ...outcome, saved }
+	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, update)
+	if (outcome.status === 'failed') throw outcome.error
+	return outcome
 }
 
 type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
@@ -54,8 +56,8 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 
 // Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
-	const outcome = await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, mutation)
-	if (outcome.status === 'failed' && !outcome.saved) throw outcome.error
+	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, mutation)
+	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error
 	const failures: StepFailure[] = outcome.status === 'failed' ? [{ name: 'updating website access and content script injection', error: outcome.error }] : []
 	// The injection owner reports whether it already handled the reload, including failed attempts. Only an unchanged configuration may need an additional reload.
 	const steps = reloadPolicy === 'alsoWhenInjectionUnchanged' && outcome.reload === 'not-needed' ? [reloadConnectedTabsStep(websiteTabConnections)] : []

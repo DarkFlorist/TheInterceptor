@@ -559,13 +559,13 @@ describe('content script injection strategy', () => {
 		assert.equal((await getLatestUnexpectedError())?.data.code, 'website_access_content_script_refresh_failed')
 	})
 
-	test('a website access update whose own storage write fails returns the failure unreported', async () => {
+	test('a website access update whose own storage write fails throws the failure unreported', async () => {
 		installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'], websiteAccess: disabledWebsiteAccess })
 		const { updateContentScriptInjectionSitesAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { getInterceptorErrorDiagnostics } = await loadModules()
 		const storageWriteError = new Error('website access could not be stored')
 
-		assert.deepEqual(await updateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], async () => { throw storageWriteError }), { status: 'failed', reload: 'not-needed', error: storageWriteError })
+		await assert.rejects(updateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], async () => { throw storageWriteError }), (error) => error === storageWriteError)
 
 		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
 	})
@@ -1062,5 +1062,31 @@ describe('content script injection strategy', () => {
 		assert.equal(diagnostics[0]?.cause, 'executeScript failed')
 		assert.equal(diagnostics[0]?.code, 'manifest_v2_content_script_injection_failed')
 		assert.equal(diagnostics[0]?.category, 'local_recovery')
+	})
+
+	test('website transactions return their storage phase rather than inferring it from refresh callbacks', async () => {
+		const { getStorageState } = installBrowserMock({ websiteAccess: disabledWebsiteAccess })
+		const { tryWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
+		const refreshError = new Error('Registration failed after commit')
+		const rolledBack = await tryWebsiteAccessRollback(() => [], async () => { throw refreshError })
+		assert.deepEqual(rolledBack, { status: 'failed', storage: 'rolled-back', error: refreshError })
+		assert.deepEqual(getStorageState().websiteAccess, disabledWebsiteAccess)
+		const committed = await tryWebsiteAccessRollback(() => [], async () => undefined)
+		assert.deepEqual(committed, { status: 'completed', storage: 'written', websiteAccess: [] })
+	})
+
+	test('the explicit try configuration API returns an initial write failure while the ordinary API throws it', async () => {
+		installBrowserMock({ websiteAccess: disabledWebsiteAccess })
+		const { tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged, updateContentScriptInjectionSitesAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { tryWebsiteAccessRollback } = await import('../../app/ts/background/settingsTransactions.js')
+		const writeError = new Error('Cannot commit website access')
+		const originalSet = browser.storage.local.set
+		browser.storage.local.set = async () => { throw writeError }
+		try {
+			assert.deepEqual(await tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], tryWebsiteAccessRollback), { status: 'failed', storage: 'not-written', reload: 'not-needed', error: writeError })
+			await assert.rejects(updateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], tryWebsiteAccessRollback), (error) => error === writeError)
+		} finally {
+			browser.storage.local.set = originalSet
+		}
 	})
 })

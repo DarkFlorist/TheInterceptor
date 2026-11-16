@@ -1,3 +1,4 @@
+import type { WebsiteAccessTransactionOutcome } from './settingsTransactions.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
@@ -10,7 +11,7 @@ import { getMetamaskCompatibilityMode } from './settings.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
-type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<WebsiteAccessArray>
+type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<WebsiteAccessTransactionOutcome>
 
 type ContentScriptInjectionStrategyRefresh =
 	| { readonly configurationSource: 'storage' }
@@ -41,7 +42,7 @@ export async function refreshContentScriptInjectionStrategy() {
 type RefreshFailureHandling = 'rollBackUpdate' | 'reportAndKeepUpdate'
 
 type ContentScriptConfigurationUpdate =
-	| { readonly onRefreshFailure: 'rollBackUpdate', readonly refreshFailureCode: string, readonly runUpdateWithRefresh: (refreshIfChanged: () => Promise<void>) => Promise<unknown> }
+	| { readonly onRefreshFailure: 'rollBackUpdate', readonly refreshFailureCode: string, readonly runUpdateWithRefresh: (refreshIfChanged: () => Promise<void>) => Promise<WebsiteAccessTransactionOutcome> }
 	| { readonly onRefreshFailure: 'reportAndKeepUpdate', readonly refreshFailureCode: string, readonly runUpdate: () => Promise<unknown> }
 
 async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptRegistrationConfiguration, onRefreshFailure: RefreshFailureHandling) {
@@ -59,12 +60,14 @@ async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: W
 // Reload ownership is an outcome even when refresh/error reporting fails, so callers can finish their own post-commit work without an out-parameter.
 export type ContentScriptConfigurationUpdateOutcome = {
 	readonly reload: 'not-needed' | 'handled'
+	readonly storage: 'not-written' | 'written' | 'rolled-back' | 'rollback-failed'
 } & ({ readonly status: 'completed' } | { readonly status: 'failed', readonly error: unknown })
 
 // Refresh failures are reported once here. Update failures and reporting failures are returned explicitly; website-access coordination needs the partial outcome to reconcile persisted permissions.
 async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(websiteTabConnections: WebsiteTabConnections, readConfigurationBeforeUpdate: () => Promise<Snapshot>, hasSameConfiguration: (before: Snapshot, after: ContentScriptRegistrationConfiguration) => boolean, update: ContentScriptConfigurationUpdate): Promise<ContentScriptConfigurationUpdateOutcome> {
 	return await contentScriptInjectionConfigurationSemaphore.execute(async () => {
 		let reload: ContentScriptConfigurationUpdateOutcome['reload'] = 'not-needed'
+		let storage: ContentScriptConfigurationUpdateOutcome['storage'] = 'not-written'
 		try {
 			const configurationBeforeUpdate = await readConfigurationBeforeUpdate()
 			const refreshErrors = new Set<unknown>()
@@ -82,23 +85,26 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 			}
 			try {
 				if (update.onRefreshFailure === 'rollBackUpdate') {
-					await update.runUpdateWithRefresh(refreshIfChanged)
+					const transaction = await update.runUpdateWithRefresh(refreshIfChanged)
+					storage = transaction.storage
+					if (transaction.status === 'failed') throw transaction.error
 				} else {
 					await update.runUpdate()
+					storage = 'written'
 					await refreshIfChanged()
 				}
 			} catch (error: unknown) {
 				if (!refreshErrors.has(error)) throw error
 				await reportUnexpectedError(error, { code: update.refreshFailureCode })
 			}
-			return { status: 'completed', reload }
+			return { status: 'completed', reload, storage }
 		} catch (error: unknown) {
-			return { status: 'failed', reload, error }
+			return { status: 'failed', reload, storage, error }
 		}
 	})
 }
 
-export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
+export async function tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
 	return await updateContentScriptConfigurationAndReloadTabsIfChanged(
 		websiteTabConnections,
 		getContentScriptInjectionConfiguration,
@@ -107,9 +113,15 @@ export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(we
 	)
 }
 
+// Ordinary configuration-update APIs throw on failures; only the explicitly named try variant exposes a partial outcome for website-access reconciliation.
+export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
+	return requireCompletedConfigurationUpdate(await tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, update, transaction))
+}
+
 // The other refresh workflows have no post-commit reconciliation and preserve their throwing API.
 function requireCompletedConfigurationUpdate(outcome: ContentScriptConfigurationUpdateOutcome) {
 	if (outcome.status === 'failed') throw outcome.error
+	return outcome
 }
 
 export async function updatePageWorldProviderBootstrapAfterSettingsChange(websiteTabConnections: WebsiteTabConnections, update: () => Promise<unknown>) {

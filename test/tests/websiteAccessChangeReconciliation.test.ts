@@ -161,11 +161,11 @@ describe('website access registration and reconciliation', () => {
 
 	test('uses the injection layer reload decision without predicting which settings require it', async () => {
 		const { handlers, connectedTabIds, reloadedTabIds } = await setUpApprovedConnectionAndOtherTab()
-		spyOn(injectionStrategy, 'updateContentScriptInjectionSitesAndReloadTabsIfChanged').mockImplementation(async (connections, update, transaction) => {
+		spyOn(injectionStrategy, 'tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged').mockImplementation(async (connections, update, transaction) => {
 			await transaction(update, async () => {
 				for (const tabId of connections.keys()) await browser.tabs.reload(tabId)
 			})
-			return { status: 'completed', reload: 'handled' }
+			return { status: 'completed', reload: 'handled', storage: 'written' }
 		})
 		// This mutation changes no disabled sites. The coordinator still honors the injection owner's decision to reload.
 		await handlers.blockExternalRequests()
