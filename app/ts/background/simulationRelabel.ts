@@ -1,3 +1,4 @@
+import { isMissingRecordedProtectorReadError } from '../simulation/protectorChainReads.js'
 // The one metadata re-label of a stored simulation result, shared by the stack re-label (relabelPopupVisualisation) and the confirmation re-labels (confirmationRelabel.ts); see "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationState } from '../types/visualizer-types.js'
@@ -33,8 +34,16 @@ export async function relabelStoredSimulation<Stored>(rpcNetwork: RpcNetwork, { 
 	// A run stored by a version that did not record its protectors' chain reads or the entries its address lookups resolved could only be visualised again by simulating, so it keeps its names until it is simulated again.
 	const recorded = runToRelabel.storedMetadata.recordedVisualisationLookups
 	if (recorded === undefined) return
+	let visualisation: Awaited<ReturnType<typeof visualizeStoredRunWithoutNode>>
+	try {
+		visualisation = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, recorded, rpcNetwork)
+	} catch (error: unknown) {
+		// An earlier extension version may have recorded only part of the reads the current protectors need. Keep that run unchanged until a fresh simulation records the missing data.
+		if (isMissingRecordedProtectorReadError(error)) return
+		throw error
+	}
 	// The re-visualised simulation state is dropped so the stored one, including its conducted timestamp, is kept.
-	const { simulationState: _revisualizedSimulationState, ...metadata } = await visualizeStoredRunWithoutNode(runToRelabel.simulationState, runToRelabel.storedMetadata, recorded, rpcNetwork)
+	const { simulationState: _revisualizedSimulationState, ...metadata } = visualisation
 	// Nothing cancels a re-label: newer work may store no fresh names, so the write guard below alone keeps it from replacing a result stored meanwhile.
 	await updateStored((current) => {
 		// The stale-write guard: a newer run stored meanwhile has another id, and a result stored under the same id that can no longer be re-labelled (a stack invalidation keeps the id of the run it raced with) is left alone.

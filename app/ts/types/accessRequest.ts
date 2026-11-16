@@ -85,7 +85,7 @@ export type ConfirmationRunRecord = funtypes.Static<typeof ConfirmationRunRecord
 const ConfirmationRunRecord = funtypes.ReadonlyObject({
 	// Identifies the confirmation simulation run that produced the visualisation beside it.
 	confirmationRunId: funtypes.Number,
-	// The address-book revision (getAddressBookRevision in storageVariables.ts) the run read when it started, before its first lookup; only the workflow that stores the run compares it, within the same background session.
+	// The address-book revision (getAddressBookRevision in background/addressBookRevision.ts) the run read when it started, before its first lookup; only the workflow that stores the run compares it, within the same background session.
 	addressBookRevisionBeforeLookups: funtypes.Number,
 }).And(funtypes.ReadonlyPartial({
 	// What a successful run recorded of its lookups, so a re-label can visualise it again without the node; a failed run has nothing to re-label.

@@ -1,3 +1,4 @@
+import { createInterceptorInternalError, getInterceptorInternalErrorCode } from '../utils/caughtErrors.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { type RecordedProtectorChainReads, type SimulationState, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { EthereumClientService } from './services/EthereumClientService.js'
@@ -40,18 +41,22 @@ export function readAndRecordProtectorChainReads(ethereum: EthereumClientService
 	}
 }
 
-// An address-book re-label answers from the reads recorded with the stored run, so it never simulates again. The protectors make the same reads for the same transaction, so a read missing from the record can only come from a record of another version.
+// Stored runs survive updates that may add protector reads. Missing replay data is an expected compatibility condition; the shared re-label skips the run without changing its stored result.
+export const createMissingRecordedProtectorReadError = (message: string) => createInterceptorInternalError(message, 'missing_recorded_protector_read', 'handled')
+export const isMissingRecordedProtectorReadError = (error: unknown) => getInterceptorInternalErrorCode(error) === 'missing_recorded_protector_read'
+
+// An address-book re-label answers from the reads recorded with the stored run, so it never simulates again. A missing read means the run cannot be re-labelled without fresh chain data, for example after an extension update.
 export function replayRecordedProtectorChainReads(record: RecordedProtectorChainReads): ProtectorChainReadsWithRecord {
 	return {
 		chainReads: {
 			readCode: async (address) => {
 				// Protectors reading the same address within a run send identical requests, which the RPC request cache answers once, so the first recorded read stands for every read of that address.
 				const recordedRead = record.addressCode.find((read) => read.address === address)
-				if (recordedRead === undefined) throw new Error('The stored simulation run has no recorded code read for this address')
+				if (recordedRead === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded code read for this address')
 				return recordedRead.code
 			},
 			readGasPrice: async () => {
-				if (record.gasPrice === undefined) throw new Error('The stored simulation run has no recorded gas price')
+				if (record.gasPrice === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded gas price')
 				return record.gasPrice
 			},
 		},

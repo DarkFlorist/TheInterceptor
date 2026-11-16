@@ -1,5 +1,5 @@
 // Visualises a stored simulation run again from stored data alone, for an address-book re-label. It builds the VisualisationLookups that a simulation run builds on the node (visualizeSimulatorStateAndRecordLookups in simulationUpdating.ts) from local data and what the run recorded, so it makes no RPC request; both go through the same visualisation. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
-import { replayRecordedProtectorChainReads } from '../simulation/protectorChainReads.js'
+import { createMissingRecordedProtectorReadError, replayRecordedProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { MetadataLookups } from '../types/metadataLookups.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -66,7 +66,7 @@ function lookUpVisualisationFromStoredRun(storedMetadata: StoredSimulationMetada
 		estimateTokenPrices: async (quoteToken, tokens) => storedMetadata.tokenPriceEstimates.filter((estimate) => estimate.quoteToken.address === quoteToken.address && tokens.some((token) => token.address === estimate.token.address && token.decimals === estimate.token.decimals)),
 		getProtectorChainReads: (_slicedSimulationState, blockIndex, transactionIndex) => {
 			const record = recorded.protectorChainReads[blockIndex]?.[transactionIndex]
-			if (record === undefined) throw new Error('The stored simulation run has no recorded protector chain reads for this transaction')
+			if (record === undefined) throw createMissingRecordedProtectorReadError('The stored simulation run has no recorded protector chain reads for this transaction')
 			return replayRecordedProtectorChainReads(record)
 		},
 		// The re-label keeps the run's record, as it identifies nothing new on chain.

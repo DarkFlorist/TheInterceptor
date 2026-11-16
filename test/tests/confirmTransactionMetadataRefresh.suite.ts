@@ -9,7 +9,7 @@ import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLif
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { type ConfirmationRunRecord, PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import { CompleteVisualizedSimulation, type SignedMessageTransaction, type StoredCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction, type VisualizedSimulationState, type WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
+import { CompleteVisualizedSimulation, type RecordedVisualisationLookups, type SignedMessageTransaction, type StoredCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction, type VisualizedSimulationState, type WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -61,15 +61,16 @@ const recipientContact: AddressBookEntry = {
 }
 const website: Website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
 
-type SentCall = { readonly to: bigint, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint }
+type SentCall = { readonly to: bigint, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint, readonly feeMode?: 'legacy' }
 
 // A website's eth_sendTransaction of the call from the sender, with the pending confirmation that waits for its first simulation.
-function createSentTransaction({ to, value, input, gas }: SentCall) {
+function createSentTransaction({ to, value, input, gas, feeMode }: SentCall) {
 	const requestParameters: SendTransactionParams = {
 		method: 'eth_sendTransaction',
-		params: [{ from: sender, to, value, gas, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, input }],
+		params: [{ from: sender, to, value, gas, ...(feeMode === 'legacy' ? { gasPrice: 1n } : { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n }), input }],
 	}
-	const transaction: EthereumUnsignedTransaction = { type: '1559', from: sender, chainId: fakeRpcNetwork.chainId, nonce: 0n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, gas, to, value, input, accessList: [] }
+	const transactionBase = { from: sender, chainId: fakeRpcNetwork.chainId, nonce: 0n, gas, to, value, input }
+	const transaction: EthereumUnsignedTransaction = feeMode === 'legacy' ? { ...transactionBase, type: 'legacy', gasPrice: 1n } : { ...transactionBase, type: '1559', maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, accessList: [] }
 	const websiteTransaction: WebsiteCreatedEthereumTransaction = { website, created, originalRequestParameters: requestParameters, transactionIdentifier: 1n, success: true, transaction }
 	// The placeholder visualisation is older than any simulation, so the first confirmation simulation replaces it.
 	const pendingTransaction: PendingTransactionOrSignableMessage = {
@@ -2172,4 +2173,43 @@ test('an identification cache fill persists a new name without advancing the edi
 	await cacheIdentifiedAddressBookEntry({ ...recipientContact, name: 'Older chain name', entrySource: 'OnChain' })
 	assert.equal((await getUserAddressBookEntries()).find((entry) => entry.address === recipientContact.address)?.name, recipientContact.name)
 	assert.equal(getAddressBookRevision(), revisionAfterEdit)
+})
+
+function omitRecordedProtectorRead(record: RecordedVisualisationLookups, missing: 'code' | 'gas price' | 'transaction'): RecordedVisualisationLookups {
+	if (missing === 'transaction') return { ...record, protectorChainReads: [] }
+	if (missing === 'gas price') assert.equal(record.protectorChainReads.flat().some((read) => read.gasPrice !== undefined), true)
+	return { ...record, protectorChainReads: record.protectorChainReads.map((block) => block.map((read) => {
+		if (missing === 'code') return { ...read, addressCode: [] }
+		const { gasPrice: _gasPrice, ...withoutGasPrice } = read
+		return withoutGasPrice
+	})) }
+}
+
+test.each(['code', 'gas price', 'transaction'] as const)('a partial recorded %s lookup skips stack and confirmation re-labels without RPCs or unexpected errors', async (missing) => {
+	if (missing === 'gas price') await withSimulatedCodeReadsAnsweredWithNoCode(async () => await openSimulationModeConfirmation(createSentTransaction({ to: recipient, value: sentEther, input: new Uint8Array([0x12, 0x34, 0x56, 0x78]), gas: 21_000n, feeMode: 'legacy' }), [senderAddressBookEntry]))
+	else await openConfirmationCallingRecipientWithCalldata()
+	const storedStack = await updateStoredStackVisualisation((stored) => ({ ...stored, recordedVisualisationLookups: omitRecordedProtectorRead(getDefined(stored.recordedVisualisationLookups, 'the stored stack lookups'), missing) }))
+	const storedConfirmations = await updateStoredConfirmation(({ data, confirmationRun }) => {
+		const run = getDefined(confirmationRun, 'the stored confirmation run')
+		return { data, confirmationRun: { ...run, recordedVisualisationLookups: omitRecordedProtectorRead(getDefined(run.recordedVisualisationLookups, 'the stored confirmation lookups'), missing) } }
+	})
+	await addRecipientContactWithoutBroadcast()
+	clearObservedRpcMethodsAndMessages()
+
+	const requestedMethods = await getRpcMethodsRequestedWhileEveryRequestFails(async () => await publishAddressBookChangeAndWaitForRelabel())
+
+	assert.deepEqual(requestedMethods, [])
+	assert.deepEqual(await getPopupVisualisationState(), storedStack)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), storedConfirmations)
+	assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_UnexpectedErrorOccured'), false)
+})
+
+test('the shared re-label still propagates an unrelated lookup error', async () => {
+	await openSimulationModeConfirmationSendingEther()
+	const failure = new Error('Unexpected metadata lookup failure')
+	try {
+		await assert.rejects(relabelStoredRunStandIn(() => { throw failure }), (error) => error === failure)
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+	}
 })
