@@ -39,7 +39,7 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
-// Settings reads live in storedSettings.ts, which storageVariables.ts can import; existing importers keep reading them from here.
+// Import getSettings directly from storedSettings.ts; its lack of background dependencies also lets storageVariables.ts read settings without a cycle.
 
 export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
 export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))

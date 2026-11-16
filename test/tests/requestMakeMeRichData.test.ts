@@ -342,7 +342,7 @@ describe('startup storage recovery', () => {
 
 	test('recovers corrupt websiteAccess without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
-		
+
 		storageState.websiteAccess = [null]
 		storageState.simulationMode = false
 
@@ -377,7 +377,7 @@ describe('startup storage recovery', () => {
 
 	test('recovers corrupt openedPageV2 without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
-		
+
 		storageState.openedPageV2 = null
 		storageState.useSignersAddressAsActiveAddress = true
 
