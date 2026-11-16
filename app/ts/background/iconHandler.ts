@@ -12,7 +12,8 @@ import { getLastKnownCurrentTabId } from './currentTab.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
-import { getPrettySignerName } from '../utils/signerMetadata.js'
+import { getPrettySignerName, isSignerMissing } from '../utils/signerMetadata.js'
+import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText } from '../utils/networkWithoutRpcUi.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
@@ -140,8 +141,9 @@ export async function updateExtensionIcon(tabId: number, websiteOrigin: string, 
 			return setIcon(ICON_ACCESS_DENIED, `The access to ${ activeAddress.name } for ${ websiteOrigin } has been DENIED!`)
 		}
 		if (settings.simulationMode) return setIcon(ICON_SIMULATING, 'The Interceptor simulates your sent transactions.')
-		if (settings.activeRpcNetwork.httpsRpc === undefined) return setIcon(ICON_SIGNING_NOT_SUPPORTED, `The Interceptor is disabled while it's on an unsupported network`)
 		const tabState = await getTabState(tabId)
+		const networkWithoutRpcWarningState = getNetworkWithoutRpcWarningState(settings.activeRpcNetwork, settings.simulationMode, isSignerMissing(tabState.signerName) ? 'missing' : 'available')
+		if (networkWithoutRpcWarningState.kind !== 'none') return setIcon(ICON_SIGNING_NOT_SUPPORTED, getNetworkWithoutRpcWarningText(settings.activeRpcNetwork.name, networkWithoutRpcWarningState))
 		return setIcon(ICON_SIGNING, `The Interceptor forwards your transactions to ${ getPrettySignerName(tabState.signerName) } once sent.`)
 	})
 }

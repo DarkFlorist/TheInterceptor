@@ -242,7 +242,7 @@ async function advanceSafeSignerReply(uniqueRequestIdentifier: UniqueRequestIden
 	if (claim === undefined) return 'waiting-for-signer'
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind === 'proposal' && claim.terminalReplyQueued === true) {
-		await settleAcknowledgedSafeProposal(pending, flow.pending.safeTransaction.safeTxHash, claim.signerReply, claim.chainId, context)
+		await settleAcknowledgedSafeProposal(pending, flow.pending.safeFlow.safeTransaction.safeTxHash, claim.signerReply, claim.chainId, context)
 		return 'settled'
 	}
 	if (claim.chainId === undefined) {
@@ -258,7 +258,7 @@ async function advanceSafeSignerReply(uniqueRequestIdentifier: UniqueRequestIden
 		return validated.deferredSafeSignerReply === undefined ? 'waiting-for-signer' : 'claimed'
 	}
 	if (flow?.kind === 'proposal') {
-		await moveSignedSafeProposalToOutbox(pending, flow.pending.safeTransaction.safeTxHash, { signerReply: claim.signerReply, chainId: claim.chainId }, context, false)
+		await moveSignedSafeProposalToOutbox(pending, flow.pending.safeFlow.safeTransaction.safeTxHash, { signerReply: claim.signerReply, chainId: claim.chainId }, context, false)
 		return 'settled'
 	}
 	return 'claimed'
@@ -382,7 +382,7 @@ function groupOutboxProposalsBySafeInNonceOrder(entries: readonly PendingSafePro
 	const groups = new Map<string, { readonly nonce: bigint, readonly entry: PendingSafeProposalStore }[]>()
 	for (const entry of entries) {
 		const flow = getSafePendingFlow(entry.proposal)
-		const safeTransaction = flow?.kind === 'proposal' ? flow.pending.safeTransaction : undefined
+		const safeTransaction = flow?.kind === 'proposal' ? flow.pending.safeFlow.safeTransaction : undefined
 		const groupKey = safeTransaction === undefined ? `request ${ getUniqueRequestIdentifierString(entry.proposal.uniqueRequestIdentifier) }` : `${ entry.chainId.toString() } ${ safeTransaction.safeAddress.toString() }`
 		groups.set(groupKey, [...groups.get(groupKey) ?? [], { nonce: safeTransaction?.safeTx.message.nonce ?? 0n, entry }])
 	}

@@ -95,10 +95,11 @@ const setAddressAccessForWebsite = async (websiteOrigin: string, address: Ethere
 	}))
 }
 
-export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
+export async function allowOrPreventAddressAccessForWebsite(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
 	await setAddressAccessForWebsite(website.websiteOrigin, address, allowAccess)
 	await reloadConnectedTabs(websiteTabConnections)
+	await reconcileCommittedAccessChange(websiteTabConnections, websiteAccessChange(website.websiteOrigin), { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 

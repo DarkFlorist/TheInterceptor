@@ -578,7 +578,7 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 
 	const { remainingRequests, affectedRequests } = await removeAffectedPendingRequests(accessReply, website)
 	await showRemainingRequestsOrCloseDialog(remainingRequests)
-	if (remainingRequests.length > 0 || affectedRequests.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
+	if (affectedRequests.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
 	return { pendingRequestsToReplay: affectedRequests, promptForFollowUpAccesses }
 }
