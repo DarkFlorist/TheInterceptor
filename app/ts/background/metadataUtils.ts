@@ -7,7 +7,7 @@ import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, cacheIdentifiedAddressBookEntry, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
@@ -227,7 +227,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		}
 	}
 	const entry = getEntry(tokenIdentification)
-	if (useLocalStorage) await addUserAddressBookEntryIfItDoesNotExist(entry)
+	if (useLocalStorage) await cacheIdentifiedAddressBookEntry(entry)
 	return entry
 }
 

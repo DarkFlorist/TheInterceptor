@@ -1,3 +1,4 @@
+import { getAddressBookRevision } from './addressBookRevision.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
@@ -16,7 +17,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
-import { getAddressBookRevision, getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController

@@ -1,10 +1,9 @@
 import * as assert from 'assert'
-import { ADDRESS_IDENTIFICATION_STORAGE_KEYS } from '../../app/ts/utils/addressBookRevision.js'
-import { hasOwnKey } from '../../app/ts/utils/typescript.js'
+import { getAddressBookRevision, writeAddressBookStorage } from '../../app/ts/background/addressBookRevision.js'
 import { spyOn, test } from 'bun:test'
 import { publishFailedPopupVisualisation, relabelPopupVisualisation, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import type { SimulationRunToRelabel } from '../../app/ts/background/simulationRelabel.js'
-import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getAddressBookRevision, getPopupVisualisationState, getUserAddressBookEntries, removePendingTransactionOrMessage, setUserAddressBookEntries, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
+import { addEnsLabelHash, addEnsNodeHash, cacheIdentifiedAddressBookEntry, getPopupVisualisationState, getUserAddressBookEntries, removePendingTransactionOrMessage, setUserAddressBookEntries, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
 import type { StoredConfirmationRun } from '../../app/ts/background/confirmationRunStorage.js'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
@@ -127,12 +126,9 @@ async function storeStackSending({ requestParameters, websiteTransaction }: Sent
 const storeStackSendingEtherToRecipient = async () => await storeStackSending(sendEther)
 
 async function storeSimulationModeSettings(userAddressBookEntries: readonly AddressBookEntry[]) {
-	await modules.browserStorageLocalSet({
-		simulationMode: true,
-		activeRpcNetwork: fakeRpcNetwork,
-		makeCurrentAddressRich: false,
-		userAddressBookEntriesV3: userAddressBookEntries,
-	})
+	const { runSettingsStorageTransaction } = await import('../../app/ts/background/settingsStorageTransaction.js')
+	const { userAddressBookEntriesStorageWrite } = await import('../../app/ts/background/storageVariables.js')
+	await runSettingsStorageTransaction(async () => ({ writes: [{ simulationMode: true, activeRpcNetwork: fakeRpcNetwork, makeCurrentAddressRich: false }, userAddressBookEntriesStorageWrite(userAddressBookEntries)], result: undefined }))
 }
 
 // Simulates the stack and a pending confirmation that both send the transaction.
@@ -1668,7 +1664,6 @@ test('every write of the names a lookup reads advances the address-book revision
 	await storeSimulationModeSettings([senderAddressBookEntry])
 	const writes = [
 		{ description: 'an address-book update', write: async () => await modules.updateUserAddressBookEntries((entries) => entries) },
-		{ description: 'an entry cached by an identification', write: async () => await addUserAddressBookEntryIfItDoesNotExist(recipientContact) },
 		{ description: 'an address book replaced by the migration', write: async () => await setUserAddressBookEntries([senderAddressBookEntry]) },
 		{ description: 'an atomic settings import', write: async () => {
 			const { runSettingsStorageTransaction } = await import('../../app/ts/background/settingsStorageTransaction.js')
@@ -1688,7 +1683,7 @@ test('every write of the names a lookup reads advances the address-book revision
 		assert.equal(getAddressBookRevision(), revisionBefore + 1, description)
 	}
 	const revisionBefore = getAddressBookRevision()
-	await addUserAddressBookEntryIfItDoesNotExist(senderAddressBookEntry)
+	await cacheIdentifiedAddressBookEntry(senderAddressBookEntry)
 	await addEnsLabelHash('revision')
 	assert.equal(getAddressBookRevision(), revisionBefore)
 })
@@ -2132,32 +2127,49 @@ test('failed name writes and unrelated settings writes do not advance the addres
 	const failure = new Error('name storage unavailable')
 	const write = spyOn(browser.storage.local, 'set').mockImplementationOnce(async () => { throw failure })
 	try {
-		await assert.rejects(browserStorageLocalSet({ ensNameHashes: [] }), (error) => error === failure)
+		await assert.rejects(writeAddressBookStorage({ ensNameHashes: [] }), (error) => error === failure)
 		assert.equal(getAddressBookRevision(), revisionBefore)
 	} finally {
 		write.mockRestore()
 	}
 })
 
-// The key policy and its tests share one list; a new name store needs a valid fixture here as well as a codec entry.
-test('every revision-owned name store advances after success, not failure, and a combined commit advances once', async () => {
-	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
-	const fixtures = { userAddressBookEntriesV3: [], ensNameHashes: [], ensLabelHashes: [] }
+// The explicit writer is covered independently for each codec field, with no production key registry that could hide an omitted key.
+test('explicit name writes advance after success, not failure, and an atomic settings import advances once', async () => {
+	const writes = [
+		{ userAddressBookEntriesV3: [] },
+		{ ensNameHashes: [] },
+		{ ensLabelHashes: [] },
+	]
 	const failure = new Error('Name storage unavailable')
-	for (const key of ADDRESS_IDENTIFICATION_STORAGE_KEYS) {
-		if (!hasOwnKey(fixtures, key)) throw new Error(`Missing valid name-store fixture for ${ key }`)
+	for (const items of writes) {
 		const revisionBefore = getAddressBookRevision()
 		const write = spyOn(browser.storage.local, 'set').mockImplementationOnce(async () => { throw failure })
 		try {
-			await assert.rejects(browserStorageLocalSet({ [key]: fixtures[key] }), (error) => error === failure)
-			assert.equal(getAddressBookRevision(), revisionBefore, key)
+			await assert.rejects(writeAddressBookStorage(items), (error) => error === failure)
+			assert.equal(getAddressBookRevision(), revisionBefore)
 		} finally {
 			write.mockRestore()
 		}
-		await browserStorageLocalSet({ [key]: fixtures[key] })
-		assert.equal(getAddressBookRevision(), revisionBefore + 1, key)
+		await writeAddressBookStorage(items)
+		assert.equal(getAddressBookRevision(), revisionBefore + 1)
 	}
+	const { runSettingsStorageTransaction } = await import('../../app/ts/background/settingsStorageTransaction.js')
+	const { addressBookStorageWrite } = await import('../../app/ts/background/addressBookRevision.js')
 	const revisionBeforeBatch = getAddressBookRevision()
-	await browserStorageLocalSet(fixtures)
+	await runSettingsStorageTransaction(async () => ({ writes: [addressBookStorageWrite({ ensNameHashes: [], ensLabelHashes: [] }), { useTabsInsteadOfPopup: true }], result: undefined }))
 	assert.equal(getAddressBookRevision(), revisionBeforeBatch + 1)
+})
+
+test('an identification cache fill persists a new name without advancing the edited-name revision or overwriting a user edit', async () => {
+	await storeSimulationModeSettings([senderAddressBookEntry])
+	const revisionBefore = getAddressBookRevision()
+	await cacheIdentifiedAddressBookEntry({ ...recipientContact, entrySource: 'OnChain' })
+	assert.equal((await getUserAddressBookEntries()).some((entry) => entry.address === recipientContact.address), true)
+	assert.equal(getAddressBookRevision(), revisionBefore)
+	await modules.updateUserAddressBookEntries(() => [recipientContact])
+	const revisionAfterEdit = getAddressBookRevision()
+	await cacheIdentifiedAddressBookEntry({ ...recipientContact, name: 'Older chain name', entrySource: 'OnChain' })
+	assert.equal((await getUserAddressBookEntries()).find((entry) => entry.address === recipientContact.address)?.name, recipientContact.name)
+	assert.equal(getAddressBookRevision(), revisionAfterEdit)
 })

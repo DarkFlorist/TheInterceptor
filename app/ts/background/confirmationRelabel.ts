@@ -1,3 +1,4 @@
+import { getSettledAddressBookRevision } from './addressBookRevision.js'
 // Re-labels stored confirmation runs when the address book changes: addressBookChangePublication.ts requests a re-label of the displayed confirmation for each published change, and each confirmation workflow requests a re-label of the run it just stored when the address book changed during that run. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -6,7 +7,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getStoredConfirmationRunId, type StoredConfirmationRun } from './confirmationRunStorage.js'
 import { relabelReportingUnexpectedErrors, relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
-import { getPendingTransactionsAndMessages, getSettledAddressBookRevision, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
 
 // Only a successful simulation of a pending transaction on the services' chain can be re-labelled: failed or still pending simulations show no names to re-label, and a run stored without its run record by an older version cannot be told apart from a newer run.
 function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessage, chainId: bigint): SimulationRunToRelabel<PendingTransactionOrSignableMessage> | undefined {
