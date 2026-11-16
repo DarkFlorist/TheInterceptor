@@ -5,10 +5,14 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 
-function postMessageToPortIfConnected(port: browser.runtime.Port, createWireMessage: () => unknown) {
+type OutboundInpageMessage =
+	| { readonly kind: 'reply', readonly value: Parameters<typeof serializeInpageReply>[0] }
+	| { readonly kind: 'callback', readonly value: Parameters<typeof serializeInpageCallback>[0] }
+
+function postMessageToPortIfConnected(port: browser.runtime.Port, message: OutboundInpageMessage) {
 	try {
 		checkAndThrowRuntimeLastError()
-		port.postMessage(createWireMessage())
+		port.postMessage(message.kind === 'reply' ? serializeInpageReply(message.value) : serializeInpageCallback(message.value))
 		checkAndThrowRuntimeLastError()
 		return true
 	} catch (error) {
@@ -33,7 +37,7 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 			requestId: message.uniqueRequestIdentifier.requestId,
 			...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
 		}
-		return postMessageToPortIfConnected(connection.port, () => serializeInpageReply(reply))
+		return postMessageToPortIfConnected(connection.port, { kind: 'reply', value: reply })
 	}
 	return false
 }
@@ -43,7 +47,7 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {
-	return postMessageToPortIfConnected(port, () => serializeInpageCallback({ ...message, interceptorApproved: true }))
+	return postMessageToPortIfConnected(port, { kind: 'callback', value: { ...message, interceptorApproved: true } })
 }
 
 export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: SubscriptionReplyOrCallBack) {

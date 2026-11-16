@@ -554,6 +554,35 @@ const blockNumber = 8443561n
 			assert.notEqual(staleSubscriptionId, liveSubscriptionId)
 		})
 
+		test('bulk pruning preserves a concurrent subscription without notifying it before its reply', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			await updateEthereumSubscriptionsAndFilters(() => [])
+			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, { tabId: 3, connectionName: 1n })
+			const liveSocket = { tabId: 2, connectionName: 2n }
+			const postedMessages: unknown[] = []
+			const connections = createConnectionsForSocket(liveSocket, createRecordingPort(postedMessages))
+			const read = browser.storage.local.get.bind(browser.storage.local)
+			let appendDuringRead = true
+			let appended: Awaited<ReturnType<typeof createEthereumSubscription>> | undefined
+			const reads = spyOn(browser.storage.local, 'get').mockImplementation(async (keys) => {
+				const snapshot = await read(keys)
+				if (appendDuringRead && (keys === 'ethereumSubscriptionsAndFilters' || (Array.isArray(keys) && keys.includes('ethereumSubscriptionsAndFilters')))) {
+					appendDuringRead = false
+					appended = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
+				}
+				return snapshot
+			})
+			try {
+				await sendSubscriptionMessagesForNewBlock(blockNumber, createEthereum(), false, connections, async () => PASSTHROUGH_STATE)
+			} finally {
+				reads.mockRestore()
+			}
+			if (appended === undefined) throw new Error('Expected a subscription during the block snapshot read')
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map(({ subscriptionOrFilterId }) => subscriptionOrFilterId), [appended.subscriptionId])
+			assert.deepEqual(postedMessages, [])
+		})
+
 		test('stale syncing subscriptions are pruned in the same single write while a live syncing subscription stays silent on new blocks', async () => {
 			installBrowserMock()
 			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
