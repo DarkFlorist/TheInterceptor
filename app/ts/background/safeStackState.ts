@@ -20,10 +20,9 @@ export async function reconcileStoredSafeState(
 	const chainId = ethereum.getChainId()
 	let removedExecutedOperations = false
 	const transactionState = await updateTransactionState((previousState) => {
-		const reconciledState = reconcileSafeTransactionState(previousState, chainId, safeAddress, safeState.nonce)
-		// reconcileSafeTransactionState returns the state it was given when the Safe executed none of the stored operations.
-		removedExecutedOperations = reconciledState !== previousState
-		return reconciledState
+		const reconciliation = reconcileSafeTransactionState(previousState, chainId, safeAddress, safeState.nonce)
+		removedExecutedOperations = reconciliation.removedExecutedOperations
+		return reconciliation.state
 	})
 	return {
 		safeState,

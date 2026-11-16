@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
-import { reconcileSafeTransactionStack } from '../../app/ts/safe/safeStack.js'
+import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../../app/ts/safe/safeStack.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import type { InterceptorTransactionStack, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
@@ -111,5 +111,36 @@ describe('Gnosis Safe stack reconciliation', () => {
 	test('rejects nonces outside the stack range', () => {
 		assert.throws(() => reconcileSafeTransactionStack(stack, 3n), /precedes this stack's base nonce/u)
 		assert.throws(() => reconcileSafeTransactionStack(stack, 8n), /beyond this stack's final nonce/u)
+	})
+})
+
+const stateToReconcile = {
+	safeTransactionStacks: [stack],
+	interceptorTransactionStack: { operations: [
+		{ type: 'Transaction' as const, preSimulationTransaction: stackTransaction(1n, chainId) },
+		...stack.transactions.map((safeTransaction) => ({ type: 'Transaction' as const, preSimulationTransaction: { ...stackTransaction(safeTransaction.transactionIdentifier, chainId), safeTransaction } })),
+	] },
+}
+
+describe('Gnosis Safe state reconciliation result', () => {
+	test.each([['no matching Safe', safeAddress + 1n, chainId], ['no matching chain', safeAddress, chainId + 1n], ['no executed transactions', safeAddress, chainId]] as const)('reports no removed operations with %s', (_description, selectedSafe, selectedChain) => {
+		const result = reconcileSafeTransactionState(stateToReconcile, selectedChain, selectedSafe, stack.baseNonce)
+		assert.equal(result.removedExecutedOperations, false)
+		assert.deepEqual(result.state, stateToReconcile)
+	})
+
+	test.each([5n, 7n])('reports removed operations explicitly and updates both stacks at nonce %s', (currentNonce) => {
+		const result = reconcileSafeTransactionState(stateToReconcile, chainId, safeAddress, currentNonce)
+		const remaining = stack.transactions.filter(({ safeTx }) => safeTx.message.nonce >= currentNonce)
+		assert.equal(result.removedExecutedOperations, true)
+		assert.deepEqual(result.state.safeTransactionStacks, remaining.length === 0 ? [] : [{ ...stack, baseNonce: currentNonce, transactions: remaining }])
+		assert.deepEqual(result.state.interceptorTransactionStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []), [1n, ...remaining.map(({ transactionIdentifier }) => transactionIdentifier)])
+		assert.deepEqual(stateToReconcile.safeTransactionStacks[0]?.transactions.map(({ safeTx }) => safeTx.message.nonce), [4n, 5n, 6n])
+		assert.equal(stateToReconcile.interceptorTransactionStack.operations.length, 4)
+	})
+
+	test('rejects invalid nonces instead of returning a removal flag', () => {
+		assert.throws(() => reconcileSafeTransactionState(stateToReconcile, chainId, safeAddress, 3n), /precedes/u)
+		assert.throws(() => reconcileSafeTransactionState(stateToReconcile, chainId, safeAddress, 8n), /beyond/u)
 	})
 })

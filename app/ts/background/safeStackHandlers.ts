@@ -74,7 +74,7 @@ export async function importSafeStack(
 		await updateTransactionState((previousState) => {
 			let reconciledState = previousState
 			for (const { importedStack, safeState } of validatedImports) {
-				reconciledState = reconcileSafeTransactionState(reconciledState, importedStack.chainId, importedStack.safeAddress, safeState.nonce)
+				reconciledState = reconcileSafeTransactionState(reconciledState, importedStack.chainId, importedStack.safeAddress, safeState.nonce).state
 			}
 			const mergedStacks: SafeTransactionStack[] = [...reconciledState.safeTransactionStacks]
 			for (const { importedStack, safeState } of validatedImports) {

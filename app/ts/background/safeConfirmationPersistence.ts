@@ -123,7 +123,7 @@ async function persistSafeTransaction(
 	}
 	try {
 		await updateTransactionState((previousState) => {
-			const reconciledState = reconcileSafeTransactionState(
+			const { state: reconciledState } = reconcileSafeTransactionState(
 				previousState,
 				ethereum.getChainId(),
 				safeSigningRequest.safeAddress,
