@@ -102,15 +102,14 @@ describe('removeWebsiteAddressAccess', () => {
 	test('de-approves the connection and reloads connected tabs when the current tab lookup fails', async () => {
 		const { modules, reloadedTabIds, connectedTabIds, handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab({ browserMockOptions: { firstCurrentTabIdReadError: new Error('current tab lookup failed') } })
 
-		await handlers.removeWebsiteAddressAccess()
+		await assert.rejects(handlers.removeWebsiteAddressAccess(), /current tab lookup failed/u)
 
 		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		const latestUnexpectedError = await modules.getLatestUnexpectedError()
-		assert.equal(latestUnexpectedError?.data.message, 'current tab lookup failed')
-		assert.equal(latestUnexpectedError?.data.code, 'connected_tab_reload_current_tab_lookup_failed')
+		assert.equal(latestUnexpectedError, undefined)
 		assert.deepEqual(reloadedTabIds, connectedTabIds)
-		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), true)
+		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
 	})
 
 	test('still de-approves the connection and rethrows without notifying the popup when the reload step rejects', async () => {
@@ -135,7 +134,8 @@ describe('removeWebsiteAddressAccess', () => {
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), (error) => {
 			assert.ok(error instanceof AggregateError)
 			assert.deepEqual(error.errors, [reloadStepError, reconcileError])
-			assert.equal(error.message, 'Reloading connected tabs failed (reload failure report failed) and reconciling website approvals failed (reconciliation failed)')
+			assert.ok('failures' in error)
+			assert.deepEqual(error.failures, [{ code: 'website_access_connected_tabs_reload_failed', error: reloadStepError }, { code: 'website_access_approval_reconciliation_failed', error: reconcileError }])
 			return true
 		})
 	})

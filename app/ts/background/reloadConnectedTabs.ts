@@ -28,13 +28,5 @@ export async function reloadTabs(tabIds: readonly number[]) {
 }
 
 export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	let tabIds: readonly number[]
-	try {
-		tabIds = await getConnectedTabIdsToReload(websiteTabConnections)
-	} catch (error) {
-		// Optional reloads can still reach known connections; registration transactions use the strict lookup above before committing registration.
-		await reportUnexpectedError(error, { code: 'connected_tab_reload_current_tab_lookup_failed' })
-		tabIds = [...websiteTabConnections.keys()]
-	}
-	await reloadTabs(tabIds)
+	await reloadTabs(await getConnectedTabIdsToReload(websiteTabConnections))
 }

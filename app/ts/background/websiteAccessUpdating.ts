@@ -1,11 +1,11 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { getErrorMessage } from '../utils/errors.js'
+import { createWorkflowStepsError, type WorkflowStepFailure } from '../utils/errors.js'
 import { tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
 import { tryWebsiteAccessRollback } from './settingsTransactions.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getSettings } from './settings.js'
-import { reloadConnectedTabs } from './reloadConnectedTabs.js'
+import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import type { WebsiteAccessMutation } from './websiteAccessMutations.js'
 
 // The canonical persistence/rollback and injection composition. Return partial outcomes so the workflow can reconcile saved or rolled-back permissions even when refresh/error reporting fails.
@@ -20,45 +20,53 @@ export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websi
 	return outcome
 }
 
-type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
-type StepFailure = { readonly name: string, readonly error: unknown }
+type WebsiteAccessFollowUpStep = { readonly code: string, readonly run: () => Promise<void> }
 type ConnectedTabsReloadPolicy = 'alsoWhenInjectionUnchanged' | 'whenInjectionChanges'
 
 const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
-	name: 'reloading connected tabs',
-	run: async () => await reloadConnectedTabs(websiteTabConnections),
+	code: 'website_access_connected_tabs_reload_failed',
+	run: async () => {
+		let tabIds: readonly number[]
+		try {
+			tabIds = await getConnectedTabIdsToReload(websiteTabConnections)
+		} catch (error) {
+			// After saving permissions, still reload known connections, then let the workflow
+			// reconcile approvals and propagate the lookup failure to its caller.
+			try {
+				await reloadTabs([...websiteTabConnections.keys()])
+			} catch (reloadError) {
+				throw createWorkflowStepsError([{ code: 'connected_tab_lookup_failed', error }, { code: 'connected_tab_reload_failed', error: reloadError }])
+			}
+			throw error
+		}
+		await reloadTabs(tabIds)
+	},
 })
 
-// The message names every failure because reports keep only the outer message, e.g. "Reloading connected tabs failed (a) and reconciling website approvals failed (b)".
-function describeStepFailures(failures: readonly StepFailure[]) {
-	const sentence = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(failures.map(({ name, error }) => `${ name } failed (${ getErrorMessage(error) ?? 'unknown error' })`))
-	return `${ sentence.charAt(0).toUpperCase() }${ sentence.slice(1) }`
-}
-
 // Call this once a website-access change is saved. Steps run in order and a failing step does not stop the later ones, so the saved change always reaches open connections. Reload before reconciling so outgoing pages drop their connections before reconciliation can re-prompt them. One failure is rethrown as is; several are thrown together in step order so none hides another.
-async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: StepFailure[] = []) {
+async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: WorkflowStepFailure[] = []) {
 	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
-		name: 'reconciling website approvals',
+		code: 'website_access_approval_reconciliation_failed',
 		run: async () => { await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true) },
 	}
 	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
 		try {
 			await step.run()
 		} catch (error) {
-			failures.push({ name: step.name, error })
+			failures.push({ code: step.code, error })
 		}
 	}
 	const [firstFailure, ...laterFailures] = failures
 	if (firstFailure === undefined) return
 	if (laterFailures.length === 0) throw firstFailure.error
-	throw new AggregateError(failures.map(({ error }) => error), describeStepFailures(failures))
+	throw createWorkflowStepsError(failures)
 }
 
 // Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
 	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, mutation)
 	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error
-	const failures: StepFailure[] = outcome.status === 'failed' ? [{ name: 'updating website access and content script injection', error: outcome.error }] : []
+	const failures: WorkflowStepFailure[] = outcome.status === 'failed' ? [{ code: 'website_access_injection_update_failed', error: outcome.error }] : []
 	// The injection owner reports whether it already handled the reload, including failed attempts. Only an unchanged configuration may need an additional reload.
 	const steps = reloadPolicy === 'alsoWhenInjectionUnchanged' && outcome.reload === 'not-needed' ? [reloadConnectedTabsStep(websiteTabConnections)] : []
 	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures)
