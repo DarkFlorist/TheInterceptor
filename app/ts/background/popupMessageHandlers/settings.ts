@@ -1,16 +1,20 @@
+import { importSettingsAndAddressBook } from '../settingsImport.js'
+import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 import type { ImportSettings, ImportSettingsReply, PopupRpcStatus, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, settingsEvenIfRpcConfigurationUnusable, type SettingsSnapshot } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, settingsEvenIfRpcConfigurationUnusable, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { applyRpcServicesChange, readRpcConfigurationRetry, type RpcListTransitionResult, transitionRpcList } from '../rpcConfigurationLifecycle.js'
 import { reconcileAfterIndependentSteps, throwAfterFollowUp } from '../committedWriteReconciliation.js'
 import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationAvailability.js'
+
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<readonly unknown[]>
 
@@ -55,7 +59,7 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
+export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
 	}
@@ -63,7 +67,11 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 	if (!parsed.success) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
-	await importSettingsAndAddressBook(parsed.value)
+	try {
+		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
+	} catch (error: unknown) {
+		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
+	}
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

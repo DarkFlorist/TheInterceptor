@@ -2,16 +2,16 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
-import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
 import { type CommittedAccessChange, reconcileCommittedAccessChange, setInterceptorDisabledForWebsite } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { updateWebsiteAccess, getSettingsSnapshot, requireReadableSettings } from '../settings.js'
+
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
+import { reloadConnectedTabs } from '../reloadConnectedTabs.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
 
 // Each website-access write below returns the change it committed, so its reconciliation scope comes from the write itself.
@@ -41,6 +41,7 @@ export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTa
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
 	await reloadConnectedTabs(websiteTabConnections)
 	return websiteAccessChange(website.websiteOrigin)
+
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
@@ -111,5 +112,6 @@ const removeWebsiteAccessEntry = async (websiteOrigin: string) => {
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
 	const change = await removeWebsiteAccessEntry(parsedRequest.data.websiteOrigin)
 	await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
+
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

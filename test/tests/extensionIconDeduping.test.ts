@@ -47,6 +47,12 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 				},
 			},
 		},
+		scripting: {
+			async getRegisteredContentScripts() { return [] },
+			async registerContentScripts() { return undefined },
+			async updateContentScripts() { return undefined },
+			async unregisterContentScripts() { return undefined },
+		},
 		tabs: {
 			async query() { return [] },
 			async get(tabId: number) {
@@ -55,6 +61,7 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 				return tab
 			},
 			async update() { return undefined },
+			async reload() { return undefined },
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 		},
@@ -321,7 +328,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } })
+		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } }, new Map())
 		assert.equal(importSettingsReply.data.success, true)
 		await updateWebsiteApprovalAccesses(
 			undefined,
