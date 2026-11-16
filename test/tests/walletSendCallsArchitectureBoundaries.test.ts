@@ -250,7 +250,7 @@ test('both confirmation flows share the simulation run machinery from a neutral 
 	assert.equal(importsFrom(walletSendCallsConfirmationSource, 'confirmationSimulationRun.js'), true)
 	assert.equal(importsFrom(confirmTransactionSimulationSource, 'confirmationSimulationRun.js'), true)
 	for (const flowModule of ['windows/confirmTransaction.js', 'confirmTransactionSimulation.js', 'walletSendCallsConfirmation.js']) assert.equal(importsFrom(confirmationSimulationRunSource, flowModule), false, flowModule)
-	for (const runState of ['const inFlightConfirmationRuns = new Map<string,', 'let latestConfirmationRunId']) {
+	for (const runState of ['const inFlightConfirmationRuns = new Map<string,', 'let latestConfirmationRunSequence']) {
 		assert.ok(confirmationSimulationRunSource.includes(runState), runState)
 		assert.ok(!confirmTransactionSimulationSource.includes(runState), runState)
 	}
@@ -305,7 +305,7 @@ test('the simulation stack is written in one critical section', () => {
 })
 
 test('confirmation run ids are only taken by the run module, before a run reads its inputs', async () => {
-	assert.match(confirmationSimulationRunSource, /^function getNextConfirmationRunId\(\) \{$/mu)
+	assert.match(confirmationSimulationRunSource, /^function getNextConfirmationRunId\(\): ConfirmationRunId \{$/mu)
 	assert.match(confirmationSimulationRunSource, /^export async function runConfirmationSimulation<T>\(uniqueRequestIdentifier: UniqueRequestIdentifier, run: \(confirmationRun: ConfirmationRun\) => Promise<T>\): Promise<T> \{\n\treturn await run\(\{ uniqueRequestIdentifier, confirmationRunId: getNextConfirmationRunId\(\) \}\)\n\}$/mu)
 	const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
 	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appSourceDirectory, absolute: true })) {

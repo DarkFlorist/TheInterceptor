@@ -1,3 +1,4 @@
+import type { ConfirmationRunId } from '../../app/ts/types/accessRequest.js'
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
 import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, pendingTransaction, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
@@ -68,7 +69,7 @@ const getStoredPreviewConfirmationRunId = async (uniqueRequestIdentifier: typeof
 }
 
 // Approves like the confirmation window does, naming the preview it shows: the stored one, unless a test passes the confirmationRunId of a preview the window still shows.
-async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueRequestIdentifier = batchRequestIdentifier, displayedConfirmationRunId?: number) {
+async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueRequestIdentifier = batchRequestIdentifier, displayedConfirmationRunId?: ConfirmationRunId) {
 	const approvedConfirmationRunId = displayedConfirmationRunId ?? await getStoredPreviewConfirmationRunId(uniqueRequestIdentifier)
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -224,7 +225,7 @@ const encodeRevertReason = (reason: string) => {
 // A failure record without what identifies the request and the run and when it ran, and without the transaction a single confirmation adds to it.
 function withoutRunIdentity(record: { readonly statusCode: 'success' | 'failed', readonly data: object }) {
 	if (record.statusCode !== 'failed' || !isRecord(record.data)) throw new Error('Expected a failure record')
-	const { uniqueRequestIdentifier: _uniqueRequestIdentifier, confirmationRunId: _confirmationRunId, simulationStartedTimestamp: _simulationStartedTimestamp, transactionToSimulate: _transactionToSimulate, simulationState, ...recordedFailure } = record.data
+	const { uniqueRequestIdentifier: _uniqueRequestIdentifier, confirmationRunId: _confirmationRunId, simulationStartedTimestamp: _simulationStartedTimestamp, transactionToSimulate: _transactionToSimulate, failedTransactionPreview: _failedTransactionPreview, simulationState, ...recordedFailure } = record.data
 	return { statusCode: record.statusCode, ...recordedFailure, blockNumber: isRecord(simulationState) ? simulationState.blockNumber : undefined }
 }
 
@@ -378,7 +379,7 @@ test('a metadata refresh stores the re-visualized batch preview of the same simu
 	assert.equal(queueWrites, 1)
 	const refreshedBatch = await getPendingBatch()
 	assert.equal(refreshedBatch.popupVisualisation.statusCode, 'success')
-	assert.equal(refreshedBatch.popupVisualisation.data.confirmationRunId, storedBatch.popupVisualisation.data.confirmationRunId)
+	assert.deepEqual(refreshedBatch.popupVisualisation.data.confirmationRunId, storedBatch.popupVisualisation.data.confirmationRunId)
 	assert.deepEqual(refreshedBatch.transactionsToSimulate, storedBatch.transactionsToSimulate)
 	assert.ok(browserMock.sentMessages.some((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'))
 })

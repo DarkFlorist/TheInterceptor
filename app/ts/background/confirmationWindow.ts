@@ -102,6 +102,12 @@ export async function removePendingRequestAndDeliverTerminalReply(ethereum: Ethe
 
 // Removes a confirmation whose preparation already rejected its website request, then updates its window.
 export async function removeConfirmationOfRejectedRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, rejectedRequest: Pick<PendingTransactionOrSignableMessage, 'type' | 'popupOrTabId' | 'uniqueRequestIdentifier'>) {
-	await removePendingTransactionOrMessage(rejectedRequest.uniqueRequestIdentifier)
+	try {
+		await removePendingTransactionOrMessage(rejectedRequest.uniqueRequestIdentifier)
+	} catch (error: unknown) {
+		// The preparation caller must still return its rejection. Retain the queue/window for recovery when cleanup could not be committed.
+		await reportUnexpectedError(error)
+		return
+	}
 	await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, rejectedRequest, 'unchanged')
 }

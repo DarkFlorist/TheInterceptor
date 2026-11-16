@@ -347,13 +347,25 @@ export const WalletGetCapabilities = funtypes.ReadonlyObject({
 }).asReadonly()
 
 export const WALLET_SEND_CALLS_VERSION = '2.0.0'
+export const WALLET_SEND_CALLS_MAX_CALLS = 10
+export const WALLET_SEND_CALLS_MAX_CAPABILITIES = 32
 
 // EIP-5792 call bundle identifiers are at most 4096 bytes, which is 8194 characters including the 0x prefix.
 const WalletCallsId = funtypes.String.withConstraint((id) => id.length > 0 && id.length <= 8194)
 
 // Capability payloads are wallet-specific. Only the `optional` marker matters here because the Interceptor implements no wallet_sendCalls capabilities.
 export type WalletSendCallsCapabilities = funtypes.Static<typeof WalletSendCallsCapabilities>
-const WalletSendCallsCapabilities = funtypes.ReadonlyRecord(funtypes.String, funtypes.ReadonlyPartial({ optional: funtypes.Boolean }))
+const WalletSendCallsCapabilitiesRecord = funtypes.ReadonlyRecord(funtypes.String, funtypes.ReadonlyPartial({ optional: funtypes.Boolean }))
+const WalletSendCallsCapabilities = funtypes.Unknown.withParser({
+	parse: (value) => {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return { success: false, message: 'Capabilities must be an object.' }
+		let count = 0
+		// Stop before decoding values or allocating a list of all keys.
+		for (const key in value) if (Object.prototype.hasOwnProperty.call(value, key) && ++count > WALLET_SEND_CALLS_MAX_CAPABILITIES) return { success: false, message: 'Too many wallet_sendCalls capabilities.' }
+		return WalletSendCallsCapabilitiesRecord.safeParse(value)
+	},
+	serialize: (value) => WalletSendCallsCapabilitiesRecord.safeSerialize(value),
+})
 
 // EIP-5792 call data must be 0x-prefixed, unlike the lenient transaction data parser.
 const PrefixedEthereumData = funtypes.String.withParser({
@@ -369,13 +381,22 @@ const WalletSendCallsCall = funtypes.Sealed(funtypes.ReadonlyPartial({
 	capabilities: WalletSendCallsCapabilities,
 }))
 
+const WalletSendCallsArray = funtypes.ReadonlyArray(WalletSendCallsCall)
+const BoundedWalletSendCalls = funtypes.Unknown.withParser({
+	// A post-parse constraint would already have traversed and copied every call.
+	parse: (value) => Array.isArray(value) && value.length <= WALLET_SEND_CALLS_MAX_CALLS
+		? WalletSendCallsArray.safeParse(value)
+		: { success: false, message: `wallet_sendCalls accepts at most ${ WALLET_SEND_CALLS_MAX_CALLS } calls.` },
+	serialize: (value) => WalletSendCallsArray.safeSerialize(value),
+})
+
 export type WalletSendCalls = funtypes.Static<typeof WalletSendCalls>
 export const WalletSendCalls = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_sendCalls'),
 	params: funtypes.ReadonlyTuple(funtypes.Sealed(funtypes.ReadonlyObject({
 		version: funtypes.Literal(WALLET_SEND_CALLS_VERSION),
 		chainId: CanonicalEthereumQuantity,
-		calls: funtypes.ReadonlyArray(WalletSendCallsCall),
+		calls: BoundedWalletSendCalls,
 	}).And(funtypes.ReadonlyPartial({
 		// EIP-5792 makes atomicRequired optional with a default of false, and viem omits it when atomic execution is not requested.
 		atomicRequired: funtypes.Boolean,

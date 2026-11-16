@@ -6,7 +6,8 @@ import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 // The EIP-5792 wire contract of wallet_sendCalls: canonicalizing a batch, the transactions its calls become, matching them to what was simulated, its errors and its status codes. It depends only on types and utilities; walletSendCallsRpc.ts holds the per-mode refusals and walletSendCallsStatus.ts the simulation-backed wallet_getCallsStatus.
 
 // Every call is prepared and simulated sequentially before the batch can be approved, so the batch size is kept to what wallets typically accept.
-export const WALLET_SEND_CALLS_MAX_CALLS = 10
+export { WALLET_SEND_CALLS_MAX_CALLS } from '../types/JsonRpc-types.js'
+import { WALLET_SEND_CALLS_MAX_CALLS } from '../types/JsonRpc-types.js'
 
 export type WalletSendCallsError = { readonly code: number, readonly message: string }
 type CanonicalWalletSendCalls = { readonly success: true, readonly value: WalletSendCalls } | { readonly success: false, readonly error: WalletSendCallsError }

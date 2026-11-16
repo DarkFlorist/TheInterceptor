@@ -9,7 +9,7 @@ import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visuali
 import { last } from '../utils/array.js'
 import { assertNever } from '../utils/typescript.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { getCurrentSimulationInput } from './simulationUpdating.js'
+import { getCurrentSimulationInput, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
 import { type ConfirmationRun, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 
@@ -55,6 +55,7 @@ export async function refreshConfirmTransactionSimulation(
 		simulationMode,
 		getSimulationInput: async () => await getSingleTransactionSimulationInput(transactionToSimulate, safeSigningRequest),
 		calledContracts: getRequestedRecipients(transactionToSimulate.originalRequestParameters),
+		complete: async (record, abortController) => record.statusCode === 'failed' || !transactionToSimulate.success ? await withFailedTransactionPreviewUnlessCancelled(ethereum, abortController, transactionToSimulate, record) : record,
 	})
 	if (record === undefined) return undefined
 	if (record.statusCode === 'failed') return { statusCode: 'failed', data: { ...record.data, transactionToSimulate } }

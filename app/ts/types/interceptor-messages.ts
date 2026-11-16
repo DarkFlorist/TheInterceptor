@@ -1,3 +1,4 @@
+import { ConfirmationRunId } from './accessRequest.js'
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
@@ -276,7 +277,7 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}).And(funtypes.ReadonlyPartial({
 					// The confirmationRunId of the wallet_sendCalls preview the user approved; batch approval is refused unless it is the stored preview.
-					approvedConfirmationRunId: funtypes.Number,
+					approvedConfirmationRunId: ConfirmationRunId,
 				})),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

@@ -44,7 +44,7 @@ test('a metadata refresh of an older transaction simulation does not replace a n
 test('a stored simulation run is only replaced by a newer run, ordered by confirmationRunId when both runs have one', async () => {
 	const { shouldReplacePopupVisualisation } = await import('../../app/ts/background/confirmationPreviews.js')
 	const sameSecond = new Date('2026-01-01T00:00:00.000Z')
-	const run = (statusCode: 'success' | 'failed', simulationStartedTimestamp: Date, confirmationRunId?: number) => ({ statusCode, data: { ...popupVisualisation.data, simulationStartedTimestamp, ...(confirmationRunId === undefined ? {} : { confirmationRunId }) } })
+	const run = (statusCode: 'success' | 'failed', simulationStartedTimestamp: Date, confirmationRunId?: number) => ({ statusCode, data: { ...popupVisualisation.data, simulationStartedTimestamp, confirmationRunId: confirmationRunId === undefined ? undefined : { lifetime: 'fixture', sequence: confirmationRunId } } })
 
 	assert.equal(shouldReplacePopupVisualisation(undefined, run('failed', sameSecond, 1)), true)
 	// Within one stored second, only the ids tell the runs apart, whether the older run succeeded or failed.
@@ -209,5 +209,23 @@ test('an eth_sendRawTransaction confirmation is prepared, simulated and stored',
 	const refreshed = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.uniqueRequestIdentifier.requestId === rawRequestIdentifier.requestId)
 	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus === 'Crafting') throw new Error('Missing the refreshed raw transaction confirmation')
 	assert.equal(refreshed.popupVisualisation.statusCode, 'success')
-	assert.ok(storedRunId !== undefined && (refreshed.popupVisualisation.data.confirmationRunId ?? 0) > storedRunId)
+	assert.ok(storedRunId !== undefined && (refreshed.popupVisualisation.data.confirmationRunId?.sequence ?? 0) > storedRunId.sequence)
+})
+
+test('preparation rejection cleanup reports a queue write failure while retaining the confirmation for recovery', async () => {
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	if (pending === undefined) throw new Error('Missing pending confirmation')
+	const { removeConfirmationOfRejectedRequest } = await import('../../app/ts/background/confirmationWindow.js')
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items) throw new Error('Queue removal failed')
+		writeStoredItems()
+	})
+	try {
+		await removeConfirmationOfRejectedRequest(simulator.ethereum, simulator.tokenPriceService, pending)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [pending])
+	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+	assert.equal((await getLatestUnexpectedError())?.data.message, 'Queue removal failed')
 })

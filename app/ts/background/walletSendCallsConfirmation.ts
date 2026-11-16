@@ -21,7 +21,7 @@ import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSen
 import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount } from './walletSendCallsBinding.js'
 import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
-import { refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
+import { isSameConfirmationRun, refreshSimulatedConfirmationVisualisation, refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
 import { formRejectMessage } from './confirmationReplies.js'
 import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, removePendingRequestAndDeliverTerminalReply } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
@@ -99,9 +99,10 @@ async function refreshUnapprovedTransactionBatchPreview(ethereumClientService: E
 }
 
 // The batch's part of the metadata refresh. Protectors and metadata of another network would describe different contracts, so a batch is only re-visualized on the network it was requested for.
-export async function refreshPendingTransactionBatchMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, pendingBatch: PendingTransactionBatch, updateConfirmationWindow: () => Promise<void>) {
+export async function refreshPendingTransactionBatchMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, pendingBatch: PendingTransactionBatch, updateConfirmationWindow: (isCurrent: () => boolean) => Promise<void>) {
 	if (pendingBatch.transactionOrMessageCreationStatus === 'Crafting' || pendingBatch.popupVisualisation.statusCode === 'failed' || !isEthereumClientOnBatchChain(ethereum, pendingBatch)) return
-	await refreshConfirmationMetadata(ethereum, tokenPriceService, requestAbortController, pendingBatch.uniqueRequestIdentifier, pendingBatch.popupVisualisation, (current) => current.type === 'TransactionBatch' && current.transactionOrMessageCreationStatus !== 'Crafting'
+	const original = pendingBatch.popupVisualisation
+	await refreshConfirmationMetadata(pendingBatch.uniqueRequestIdentifier, original, async () => (await refreshSimulatedConfirmationVisualisation(ethereum, tokenPriceService, requestAbortController, original)), (current) => current.type === 'TransactionBatch' && current.transactionOrMessageCreationStatus !== 'Crafting'
 		? { visualisation: current.popupVisualisation, withVisualisation: (popupVisualisation) => modifyObject(current, { popupVisualisation }) }
 		: undefined, updateConfirmationWindow)
 }
@@ -269,7 +270,7 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 		case 'accept': {
 			if (pendingBatch.transactionOrMessageCreationStatus !== 'Simulated') return false
 			// The approval names the preview the user saw. A refresh stores its replacement before the popup shows it, and a duplicate window can still show an older preview, so approving any other preview is refused and the stored one is shown for a fresh approval.
-			if (confirmation.data.approvedConfirmationRunId === undefined || confirmation.data.approvedConfirmationRunId !== pendingBatch.popupVisualisation.data.confirmationRunId) {
+			if (confirmation.data.approvedConfirmationRunId === undefined || !isSameConfirmationRun(confirmation.data.approvedConfirmationRunId, pendingBatch.popupVisualisation.data.confirmationRunId)) {
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return false
 			}

@@ -9,6 +9,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { OriginalSendRequestParameters, SendTransactionParams, WalletSendCalls } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
+import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionRequestContext, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
@@ -30,9 +31,16 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
-// Names one confirmation simulation run. Only confirmationSimulationRun.ts hands ids out and compares them with the run in flight; everything else treats an id as opaque.
-export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunId>
-export const ConfirmationRunId = funtypes.Number
+export type FailedTransactionPreview = funtypes.Static<typeof FailedTransactionPreview>
+const FailedTransactionPreview = funtypes.ReadonlyObject({ addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry), parsedInputData: EnrichedEthereumInputData })
+
+// A run is ordered within a background lifetime and compared by value across storage reads. Legacy numeric ids have no lifetime and cannot match any newly started run.
+export type ConfirmationRunId = funtypes.Static<typeof CurrentConfirmationRunId>
+const CurrentConfirmationRunId = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+export const ConfirmationRunId = funtypes.Union(CurrentConfirmationRunId, funtypes.Number.withParser({
+	parse: (sequence) => ({ success: true, value: { lifetime: '', sequence } }),
+	serialize: (value: ConfirmationRunId) => ({ success: true, value: value.sequence }),
+}))
 
 type ConfirmationSimulationCommonData = funtypes.Static<typeof ConfirmationSimulationCommonData>
 const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
@@ -44,6 +52,7 @@ const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
 }).And(funtypes.ReadonlyPartial({
 	// Names one confirmation simulation run of this pending transaction: the run that produced this visualisation. Confirmations stored by older versions have none.
 	confirmationRunId: ConfirmationRunId,
+	failedTransactionPreview: FailedTransactionPreview,
 }))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>

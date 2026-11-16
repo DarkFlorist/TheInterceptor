@@ -32,11 +32,11 @@ export type ConfirmationRun = { readonly uniqueRequestIdentifier: UniqueRequestI
 // The confirmation simulation run in flight of each request, keyed by getUniqueRequestIdentifierString, with the controller that aborts it. A run only ever supersedes a run of its own request, so independent confirmations never abort each other. An entry is removed when its run finishes, so the map only holds runs in flight.
 const inFlightConfirmationRuns = new Map<string, { readonly confirmationRunId: ConfirmationRunId, readonly abortController: AbortController }>()
 
-let latestConfirmationRunId: ConfirmationRunId = 0
-// Every confirmation simulation run gets a new id, which the confirmation metadata refresh uses to tell the run it re-visualized from a newer one, and which keeps a newer stored run from being replaced by an older run that finishes later; stored timestamps keep only whole seconds, so they cannot. Callers take the id before the run reads the simulation stack or prepares its transactions, so a run with a newer id never works from older inputs. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards.
-function getNextConfirmationRunId() {
-	latestConfirmationRunId = Math.max(latestConfirmationRunId + 1, Date.now())
-	return latestConfirmationRunId
+const confirmationRunLifetime = crypto.randomUUID()
+let latestConfirmationRunSequence = 0
+function getNextConfirmationRunId(): ConfirmationRunId {
+	latestConfirmationRunSequence += 1
+	return { lifetime: confirmationRunLifetime, sequence: latestConfirmationRunSequence }
 }
 
 // Runs one confirmation simulation run of a request, which run ids are only handed out for. The id is taken here, the only place ids come from, before run starts, so run reads the simulation stack and prepares its transactions only once its id exists.
@@ -48,7 +48,7 @@ export async function runConfirmationSimulation<T>(uniqueRequestIdentifier: Uniq
 function startConfirmationRun(confirmationRun: ConfirmationRun) {
 	const requestKey = getUniqueRequestIdentifierString(confirmationRun.uniqueRequestIdentifier)
 	const inFlight = inFlightConfirmationRuns.get(requestKey)
-	if (inFlight !== undefined && inFlight.confirmationRunId > confirmationRun.confirmationRunId) return undefined
+	if (inFlight !== undefined && inFlight.confirmationRunId.sequence > confirmationRun.confirmationRunId.sequence) return undefined
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	inFlight?.abortController.abort(NEW_BLOCK_ABORT)
 	const abortController = new AbortController()
@@ -75,6 +75,8 @@ export type ConfirmationSimulationRunRequest = {
 	readonly getSimulationInput: () => Promise<SimulationStateInput>
 	// The contracts the confirmation calls, whose ABIs may decode a revert that the RPC reports.
 	readonly calledContracts: readonly bigint[]
+	// Flow-specific projection work stays within the run's cancellation lifetime, including failed-transaction preview lookups.
+	readonly complete?: (record: ConfirmationSimulationRecord, abortController: AbortController) => Promise<ConfirmationSimulationRecord | undefined>
 }
 
 // Why a run failed: the RPC error of a simulation that failed or threw, and the block the failed simulation ran on. A run that threw has no simulation, so it records block 0, which the confirmation window shows as stale instead of naming a block that was never simulated.
@@ -134,7 +136,8 @@ export async function simulateConfirmationRun(request: ConfirmationSimulationRun
 	const abortController = startConfirmationRun(request.confirmationRun)
 	if (abortController === undefined) return undefined
 	try {
-		return await recordStartedRun(request, abortController, signerName)
+		const record = await recordStartedRun(request, abortController, signerName)
+		return record === undefined || request.complete === undefined ? record : await request.complete(record, abortController)
 	} finally {
 		finishConfirmationRun(request.confirmationRun, abortController)
 	}

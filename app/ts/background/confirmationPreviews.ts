@@ -1,11 +1,13 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { SimulationState } from '../types/visualizer-types.js'
-import { isExpectedInfrastructureError } from '../utils/errors.js'
-import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { visualizeSimulatorState } from './simulationUpdating.js'
+import type { ConfirmationRunId, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { isExpectedInfrastructureError } from '../utils/errors.js'
+import { getUniqueRequestIdentifierString, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { updatePendingTransactionOrMessage } from './storageVariables.js'
+
+export const isSameConfirmationRun = (first: ConfirmationRunId | undefined, second: ConfirmationRunId | undefined) => first === undefined || second === undefined ? first === second : first.lifetime === second.lifetime && first.sequence === second.sequence
 
 // The previews that confirmations store: which simulation run a stored preview may be replaced by, and refreshing a stored preview's metadata.
 
@@ -13,7 +15,7 @@ type TimestampedPopupVisualisation = {
 	statusCode: 'success' | 'failed'
 	data: {
 		simulationStartedTimestamp: Date
-		confirmationRunId?: number
+		confirmationRunId?: ConfirmationRunId
 		simulationState: {
 			simulationConductedTimestamp: Date
 		}
@@ -30,45 +32,53 @@ export const shouldReplacePopupVisualisation = (
 	if (currentPopupVisualisation === undefined) return true
 	const currentConfirmationRunId = currentPopupVisualisation.data.confirmationRunId
 	const nextConfirmationRunId = nextPopupVisualisation.data.confirmationRunId
-	if (currentConfirmationRunId !== undefined && nextConfirmationRunId !== undefined) return nextConfirmationRunId >= currentConfirmationRunId
+	if (currentConfirmationRunId !== undefined && nextConfirmationRunId !== undefined) return nextConfirmationRunId.lifetime !== currentConfirmationRunId.lifetime || nextConfirmationRunId.sequence >= currentConfirmationRunId.sequence
 	return getSimulationStartedTimestamp(nextPopupVisualisation).getTime() >= getSimulationStartedTimestamp(currentPopupVisualisation).getTime()
 }
 
-// A visualisation stored without a confirmationRunId by an older version cannot be told apart from a newer run, so it never matches.
-const isSameConfirmationSimulation = (current: { readonly data: { readonly confirmationRunId?: number } }, refreshed: { readonly data: { readonly confirmationRunId?: number } }) => current.data.confirmationRunId !== undefined && current.data.confirmationRunId === refreshed.data.confirmationRunId
+type ConfirmationVisualisation = { readonly statusCode: 'success' | 'failed', readonly data: { readonly confirmationRunId?: ConfirmationRunId } }
 
-type SimulatedConfirmationVisualisation<Data> = { readonly statusCode: 'success', readonly data: Data }
-
-// The simulated visualisation that a stored confirmation shows, and the confirmation with a refreshed visualisation in its place.
-export type ShownConfirmationVisualisation<Data> = {
-	readonly visualisation: { readonly data: { readonly confirmationRunId?: number } }
-	readonly withVisualisation: (popupVisualisation: SimulatedConfirmationVisualisation<Data>) => PendingTransactionOrSignableMessage
+// Each request's latest metadata refresh wins, including overlapping refreshes of the same simulation run. Entries are released once the latest refresh finishes.
+const metadataRefreshes = new Map<string, object>()
+export function startConfirmationMetadataRefresh(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	const key = getUniqueRequestIdentifierString(uniqueRequestIdentifier)
+	const ticket = {}
+	metadataRefreshes.set(key, ticket)
+	return {
+		isCurrent: () => metadataRefreshes.get(key) === ticket,
+		finish: () => { if (metadataRefreshes.get(key) === ticket) metadataRefreshes.delete(key) },
+	}
 }
 
-// Re-visualizes a confirmation's simulation with fresh metadata, then updates the confirmation window. The stored confirmation is re-read so that only its visualisation is replaced, and only while it still shows the same simulation run: approval changes made meanwhile and newer simulations are kept. An unreachable RPC leaves everything for the next refresh.
-export async function refreshConfirmationMetadata<Data extends { readonly simulationState: SimulationState, readonly confirmationRunId?: number }>(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	requestAbortController: AbortController | undefined,
+// Both single and batch confirmations use one write guard. The flow resolves its metadata, while this boundary preserves newer runs and concurrent approval changes.
+export async function refreshConfirmationMetadata<Visualisation extends ConfirmationVisualisation>(
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	refreshedVisualisation: SimulatedConfirmationVisualisation<Data>,
-	getShownVisualisation: (current: PendingTransactionOrSignableMessage) => ShownConfirmationVisualisation<Data> | undefined,
-	updateConfirmationWindow: () => Promise<void>,
+	refreshedVisualisation: Visualisation,
+	refresh: () => Promise<Visualisation | undefined>,
+	getShownVisualisation: (current: PendingTransactionOrSignableMessage) => { readonly visualisation: ConfirmationVisualisation, readonly withVisualisation: (visualisation: Visualisation) => PendingTransactionOrSignableMessage } | undefined,
+	updateConfirmationWindow: (isCurrent: () => boolean) => Promise<void>,
 ) {
+	const refreshTicket = startConfirmationMetadataRefresh(uniqueRequestIdentifier)
 	try {
-		const visualizedSimulationState = await visualizeSimulatorState(refreshedVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController)
-		const popupVisualisation = { statusCode: 'success' as const, data: { ...refreshedVisualisation.data, ...visualizedSimulationState } }
+		const popupVisualisation = await refresh()
+		if (popupVisualisation === undefined) return
 		let stored = false
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
 			const shown = getShownVisualisation(current)
-			if (shown === undefined || !isSameConfirmationSimulation(shown.visualisation, refreshedVisualisation)) return undefined
+			if (shown === undefined || !refreshTicket.isCurrent() || !isSameConfirmationRun(shown.visualisation.data.confirmationRunId, refreshedVisualisation.data.confirmationRunId)) return undefined
 			stored = true
 			return shown.withVisualisation(popupVisualisation)
 		})
-		if (!stored) return
-		await updateConfirmationWindow()
+		if (stored && refreshTicket.isCurrent()) await updateConfirmationWindow(refreshTicket.isCurrent)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return
 		throw error
+	} finally {
+		refreshTicket.finish()
 	}
+}
+
+// The shared successful-run projection used by single and batch metadata refreshes.
+export async function refreshSimulatedConfirmationVisualisation<Data extends { readonly simulationState: SimulationState }>(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, original: { readonly statusCode: 'success', readonly data: Data }) {
+	return { statusCode: 'success' as const, data: { ...original.data, ...await visualizeSimulatorState(original.data.simulationState, ethereum, tokenPriceService, requestAbortController) } }
 }

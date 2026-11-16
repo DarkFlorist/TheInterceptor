@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import type { RPCReply, Settings } from '../types/interceptor-messages.js'
-import { WALLET_SEND_CALLS_VERSION, type WalletSendCalls, type WalletShowCallsStatus } from '../types/JsonRpc-types.js'
-import { JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
+import { WALLET_SEND_CALLS_MAX_CALLS, WALLET_SEND_CALLS_VERSION, type WalletSendCalls, type WalletShowCallsStatus } from '../types/JsonRpc-types.js'
+import { EIP5792_ERROR_BUNDLE_TOO_LARGE, JSON_RPC_ERROR_CODE_INVALID_PARAMS, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { walletSendCallsUnknownBundleIdError, type WalletSendCallsError } from './walletSendCalls.js'
 
@@ -28,12 +28,13 @@ export function getSigningModeWalletCallsReply(request: InterceptedRequest, sett
 	}
 }
 
-const RequestedWalletSendCallsVersion = funtypes.ReadonlyObject({ params: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ version: funtypes.String })) })
+const RequestedWalletSendCallsVersion = funtypes.ReadonlyObject({ params: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ version: funtypes.String }).And(funtypes.ReadonlyPartial({ calls: funtypes.Unknown }))) })
 
 export function getWalletSendCallsParseFailureReply(request: InterceptedRequest): RPCReply | undefined {
 	switch (request.method) {
 		case 'wallet_sendCalls': {
 			const requestedVersion = RequestedWalletSendCallsVersion.safeParse(request)
+			if (requestedVersion.success && requestedVersion.value.params[0].version === WALLET_SEND_CALLS_VERSION && Array.isArray(requestedVersion.value.params[0].calls) && requestedVersion.value.params[0].calls.length > WALLET_SEND_CALLS_MAX_CALLS) return getWalletCallsErrorReply(request.method, { code: EIP5792_ERROR_BUNDLE_TOO_LARGE, message: `The Interceptor accepts at most ${ WALLET_SEND_CALLS_MAX_CALLS } calls per wallet_sendCalls request.` })
 			const message = requestedVersion.success && requestedVersion.value.params[0].version !== WALLET_SEND_CALLS_VERSION
 				? `Unsupported wallet_sendCalls version ${ requestedVersion.value.params[0].version }. The Interceptor supports EIP-5792 version ${ WALLET_SEND_CALLS_VERSION }.`
 				: `Invalid wallet_sendCalls version ${ WALLET_SEND_CALLS_VERSION } parameters: chainId and calls are required, atomicRequired must be a boolean when present, calls may only contain to, data, value and capabilities, hex values must be 0x-prefixed, and unknown fields are rejected.`

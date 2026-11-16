@@ -140,7 +140,7 @@ describe('wallet_sendCalls request validation', () => {
 		assert.equal(getErrorCode(createRequest({ from: addressString(otherAccount) })), 4100)
 		assert.equal(getErrorCode(createRequest({ chainId: '0x2105' })), 5710)
 		assert.equal(getErrorCode(createRequest({}, [])), -32602)
-		assert.equal(getErrorCode(createRequest({}, Array.from({ length: WALLET_SEND_CALLS_MAX_CALLS + 1 }, () => ({ to: addressString(firstRecipient) })))), 5740)
+		assert.equal(WalletSendCalls.safeParse(createRequest({}, Array.from({ length: WALLET_SEND_CALLS_MAX_CALLS + 1 }, () => ({ to: addressString(firstRecipient) })))).success, false)
 		assert.equal(getErrorCode(createRequest({ atomicRequired: true })), 5760)
 		assert.equal(getErrorCode(createRequest({ capabilities: { paymasterService: { url: 'https://paymaster.example' } } })), 5700)
 		assert.equal(getErrorCode(createRequest({}, [{ to: addressString(firstRecipient), capabilities: { permissions: { optional: false } } }])), 5700)
@@ -192,4 +192,19 @@ describe('wallet_sendCalls request validation', () => {
 		assert.equal(getSigningModeWalletCallsReply(createInterceptedRequest(createRequest()), { simulationMode: true }), undefined)
 	})
 
+})
+
+test('rejects oversized calls and capability collections before reading their entries', () => {
+	const calls = Array.from({ length: WALLET_SEND_CALLS_MAX_CALLS + 1 }, () => ({}))
+	let entryReads = 0
+	for (let index = 0; index < calls.length; index++) Object.defineProperty(calls, index, { get: () => { entryReads += 1; throw new Error('Oversized calls must not be decoded') } })
+	assert.equal(WalletSendCalls.safeParse(createRequest({}, calls)).success, false)
+	assert.equal(entryReads, 0)
+	const oversizedReply = getWalletSendCallsParseFailureReply(createInterceptedRequest(createRequest({}, calls)))
+	assert.equal(oversizedReply?.type === 'result' ? oversizedReply.error?.code : undefined, 5740)
+	const capabilities = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`capability${ index }`, {}]))
+	for (const key of Object.keys(capabilities)) Object.defineProperty(capabilities, key, { get: () => { entryReads += 1; throw new Error('Oversized capabilities must not be decoded') } })
+	assert.equal(WalletSendCalls.safeParse(createRequest({ capabilities })).success, false)
+	assert.equal(WalletSendCalls.safeParse(createRequest({}, [{ to: addressString(firstRecipient), capabilities }])).success, false)
+	assert.equal(entryReads, 0)
 })
