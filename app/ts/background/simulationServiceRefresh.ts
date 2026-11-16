@@ -1,0 +1,14 @@
+import type { SimulationServicesUpdateObserver } from '../simulation/serviceLifecycle.js'
+import { selectionShowsStack } from '../utils/simulationSelection.js'
+import { getSettings } from './settings.js'
+import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
+import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+
+// One policy for every owner replacement and selection refresh, after the complete update has settled.
+export const refreshAfterSimulationServicesUpdate: SimulationServicesUpdateObserver = async (services, outcome) => {
+	if (outcome.status === 'failed') {
+		await publishFailedPopupVisualisation()
+		return
+	}
+	if (selectionShowsStack(await getSettings())) await queuePopupSimulationRefresh({ ...services, invalidateOldState: outcome.invalidateOldState })
+}

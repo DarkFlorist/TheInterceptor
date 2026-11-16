@@ -1,4 +1,3 @@
-import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
@@ -80,7 +79,7 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		await changeActiveAddressAndChainSemaphore.execute(async () => {
+		await simulationServicesOwner.update(async (servicesUpdate) => await changeActiveAddressAndChainSemaphore.execute(async () => {
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -113,13 +112,7 @@ async function runActiveSettingsChange(
 					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
 					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
 					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
-						try {
-							simulationServicesOwner.reset(change.rpcNetwork)
-						} catch (error) {
-							// Only failed provider installation invalidates simulation output here.
-							await publishFailedPopupVisualisation()
-							throw error
-						}
+						servicesUpdate.reset(change.rpcNetwork)
 					}
 					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
 				} finally {
@@ -138,10 +131,10 @@ async function runActiveSettingsChange(
 			}
 			// The same rule by which a refresh queued for the previous selection steps aside, so the change publishes whatever that refresh no longer may.
 			if (selectionNeedsRefresh(previousSettings, updatedSettings)) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+				servicesUpdate.requestRefresh()
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
-		})
+		}))
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {

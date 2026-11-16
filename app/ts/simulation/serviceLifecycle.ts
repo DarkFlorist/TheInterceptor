@@ -1,3 +1,4 @@
+import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
@@ -70,9 +71,49 @@ export function resetSimulationServices(
 	)
 }
 
+export type SimulationServicesUpdate = {
+	// Replacement automatically requests an invalidating refresh after this whole update completes.
+	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+	readonly requestRefresh: () => void
+}
+export type SimulationServicesUpdateOutcome = { readonly status: 'completed', readonly invalidateOldState: boolean } | { readonly status: 'failed', readonly error: unknown }
+export type SimulationServicesUpdateObserver = (services: SimulationServices, outcome: SimulationServicesUpdateOutcome) => Promise<void>
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
-	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+	readonly update: <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>) => Promise<Result>
+}
+
+// Raw replacement is private to a serialized update. Its observer runs after every storage/notification step, so replacing a client cannot retire old work without scheduling its replacement or publishing a failed state.
+export function createSimulationServicesOwnerFromOperations(getCurrent: () => SimulationServices, replace: SimulationServicesUpdate['reset'], observe: SimulationServicesUpdateObserver): SimulationServicesOwner {
+	const updates = new Semaphore(1)
+	return {
+		getCurrent,
+		update: async <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>): Promise<Result> => await updates.execute(async () => {
+			let refreshRequested = false
+			let invalidateOldState = false
+			let result: Result
+			let updateOpen = true
+			const requireOpenUpdate = () => { if (!updateOpen) throw new Error('This simulation services update is no longer active') }
+			try {
+				result = await apply({
+					reset: (network) => {
+						requireOpenUpdate()
+						refreshRequested = true
+						invalidateOldState = true
+						return replace(network)
+					},
+					requestRefresh: () => { requireOpenUpdate(); refreshRequested = true },
+				})
+			} catch (error: unknown) {
+				updateOpen = false
+				if (refreshRequested) await observe(getCurrent(), { status: 'failed', error })
+				throw error
+			}
+			updateOpen = false
+			if (refreshRequested) await observe(getCurrent(), { status: 'completed', invalidateOldState })
+			return result
+		}),
+	}
 }
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
@@ -80,21 +121,19 @@ export function createSimulationServicesOwner(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
+	observeUpdate: SimulationServicesUpdateObserver,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
 	// Advanced by every install. Each client compares the generation it was installed at, so installing a replacement makes every earlier client report itself replaced.
 	let installedGeneration = 0
 	const livenessAt = (generation: number): ClientLiveness => () => generation === installedGeneration
 	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, livenessAt(installedGeneration), 60000, rpcRequestLifecycleCallbacks)
-	return {
-		getCurrent: () => current,
-		reset: (nextRpc: RpcEntry): SimulationServices => {
-			// The generation advances only once the replacement exists, so a reset that fails to build it leaves the installed services current.
-			const nextGeneration = installedGeneration + 1
-			const next = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, livenessAt(nextGeneration), rpcRequestLifecycleCallbacks)
-			installedGeneration = nextGeneration
-			current = next
-			return current
-		},
-	}
+	return createSimulationServicesOwnerFromOperations(() => current, (nextRpc: RpcEntry): SimulationServices => {
+		// The generation advances only once the replacement exists, so a reset that fails to build it leaves the installed services current.
+		const nextGeneration = installedGeneration + 1
+		const next = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, livenessAt(nextGeneration), rpcRequestLifecycleCallbacks)
+		installedGeneration = nextGeneration
+		current = next
+		return current
+	}, observeUpdate)
 }

@@ -243,7 +243,7 @@ describe('popup message dispatcher seams', () => {
 		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
 		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
 		let next = replacement
-		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next)
+		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next, async () => undefined)
 		const entered = createDeferredValue<void>()
 		const release = createDeferredValue<void>()
 		const observed: typeof initial[] = []
@@ -256,11 +256,11 @@ describe('popup message dispatcher seams', () => {
 			observed.push(snapshot.services)
 		})
 		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
-		context.simulationServicesOwner.reset(network)
+		await context.simulationServicesOwner.update(async ({ reset }) => reset(network))
 		const pending = handler(context, { method: 'popup_requestSimulationMetadata' })
 		await entered.promise
 		next = last
-		context.simulationServicesOwner.reset(network)
+		await context.simulationServicesOwner.update(async ({ reset }) => reset(network))
 		release.resolve(undefined)
 		await pending
 		await handler(context, { method: 'popup_requestSimulationMetadata' })

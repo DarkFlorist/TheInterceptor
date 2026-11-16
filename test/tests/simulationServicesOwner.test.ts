@@ -1,16 +1,16 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { createEthereumClientService, createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createEthereumClientService, createSimulationServicesOwner, type SimulationServicesUpdate } from '../../app/ts/simulation/serviceLifecycle.js'
 import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
-test('the service owner publishes the exact pair returned by every reset', () => {
+test('the service owner publishes the exact pair returned by every reset', async () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => undefined)
 	const original = owner.getCurrent()
 	try {
 		for (const chainId of [2n, 3n]) {
 			const network = { ...rpc, chainId, httpsRpc: `https://chain${ chainId }.invalid` }
-			const replacement = owner.reset(network)
+			const replacement = await owner.update(async ({ reset }) => reset(network))
 			assert.equal(owner.getCurrent(), replacement)
 			assert.notEqual(replacement.ethereum, original.ethereum)
 			assert.deepEqual(replacement.ethereum.getRpcEntry(), network)
@@ -34,10 +34,10 @@ test('a captured client can execute RPC work after the owner installs its replac
 		},
 	})
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: `${ server.url }initial`, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => undefined)
 	const snapshot = owner.getCurrent()
 	try {
-		owner.reset({ ...rpc, httpsRpc: `${ server.url }replacement` })
+		await owner.update(async ({ reset }) => reset({ ...rpc, httpsRpc: `${ server.url }replacement` }))
 		assert.deepEqual(await snapshot.ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
 		assert.deepEqual(await owner.getCurrent().ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
 		assert.deepEqual(paths, ['/initial', '/replacement'])
@@ -47,24 +47,63 @@ test('a captured client can execute RPC work after the owner installs its replac
 	}
 })
 
-test('the owner answers whether a pair it handed out is still installed', () => {
+test('the owner answers whether a pair it handed out is still installed', async () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => undefined)
 	const original = owner.getCurrent()
 	// A temporary client that no owner installed has nothing replacing it.
 	const temporary = createEthereumClientService(rpc, async () => undefined, async (_ethereum, error) => { throw error }, alwaysLive)
 	try {
 		assert.equal(original.ethereum.isCurrent(), true)
 		// Even a reset to the same endpoint installs a new pair, so work holding the old one steps aside.
-		const replacement = owner.reset(rpc)
+		const replacement = await owner.update(async ({ reset }) => reset(rpc))
 		assert.equal(original.ethereum.isCurrent(), false)
 		assert.equal(replacement.ethereum.isCurrent(), true)
-		const latest = owner.reset({ ...rpc, httpsRpc: 'https://latest.invalid' })
+		const latest = await owner.update(async ({ reset }) => reset({ ...rpc, httpsRpc: 'https://latest.invalid' }))
 		assert.equal(replacement.ethereum.isCurrent(), false)
 		assert.equal(latest.ethereum.isCurrent(), true)
 		assert.equal(temporary.isCurrent(), true)
 	} finally {
 		owner.getCurrent().ethereum.cleanup()
 		temporary.cleanup()
+	}
+})
+
+test('every scoped replacement refreshes once after the complete update even when its caller requests no refresh', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const order: string[] = []
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async (services, outcome) => {
+		assert.equal(services, owner.getCurrent())
+		assert.deepEqual(outcome, { status: 'completed', invalidateOldState: true })
+		order.push('refresh')
+	})
+	try {
+		await owner.update(async ({ reset }) => {
+			reset(rpc)
+			reset({ ...rpc, httpsRpc: 'https://replacement.invalid' })
+			await Promise.resolve()
+			order.push('settings, stack and notifications complete')
+		})
+		assert.deepEqual(order, ['settings, stack and notifications complete', 'refresh'])
+	} finally {
+		owner.getCurrent().ethereum.cleanup()
+	}
+})
+
+
+test('an update context cannot replace services after its callback has completed', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	let refreshes = 0
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => { refreshes += 1 })
+	let captured: SimulationServicesUpdate | undefined
+	try {
+		await owner.update(async (update) => { captured = update })
+		const expired = captured
+		if (expired === undefined) throw new Error('Missing captured update')
+		assert.throws(() => expired.reset(rpc), /no longer active/)
+		assert.throws(() => expired.requestRefresh(), /no longer active/)
+		assert.equal(refreshes, 0)
+	} finally {
+		owner.getCurrent().ethereum.cleanup()
 	}
 })

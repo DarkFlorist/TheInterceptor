@@ -163,7 +163,7 @@ describe('active settings concurrency', () => {
 		])
 	})
 
-	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
+	test.each(['signing preference', 'stack storage', 'settings broadcast'])('keeps committed selection visualization coherent when %s fails', async (failurePoint) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
 		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
@@ -202,8 +202,16 @@ describe('active settings concurrency', () => {
 				await assert.rejects(transition, error => error === failure)
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 			}
-			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
-			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
+			if (failurePoint === 'stack storage') {
+				// The installed replacement retired old refreshes, so failed cleanup must invalidate their stored result too.
+				const visualisation = await getPopupVisualisationState()
+				assert.equal(visualisation.simulationUpdatingState, 'failed')
+				assert.equal(visualisation.simulationResultState, 'invalid')
+				assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), true)
+			} else {
+				assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
+				assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
+			}
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })

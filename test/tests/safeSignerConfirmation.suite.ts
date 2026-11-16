@@ -740,7 +740,7 @@ test('refreshes the selected signer and uses services installed during the walle
 		data: { action: 'accept', uniqueRequestIdentifier },
 	})
 	await accountRequestEntered.promise
-	owner.reset(fakeRpcNetwork)
+	await owner.update(async ({ reset }) => reset(fakeRpcNetwork))
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply

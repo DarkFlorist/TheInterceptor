@@ -7,7 +7,7 @@ import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimula
 import { Future } from '../../app/ts/utils/future.js'
 import { buildSimulationInput, captureSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
-import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwnerFromOperations, type SimulationServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { queuePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
@@ -150,7 +150,7 @@ test('a refresh skipped as unchanged does not stop an earlier refresh from finis
 // Same chain on another endpoint: selecting it installs new services but keeps the simulation stack.
 const otherEndpointNetwork = { ...fakeRpcNetwork, name: 'Test Chain (other endpoint)', httpsRpc: 'https://other-endpoint.example.invalid' }
 
-function createNetworkSwitchFixture() {
+function createNetworkSwitchFixture({ refreshReplacements = true } = {}) {
 	const firstEndpointReadsBlockNumber = new Future<void>()
 	const releaseFirstEndpointBlockNumber = new Future<void>()
 	let holdFirstEndpointBlockNumber = false
@@ -192,14 +192,14 @@ function createNetworkSwitchFixture() {
 	const otherEndpointServices: SimulationServices = { ethereum: otherEndpointEthereum, tokenPriceService: new modules.TokenPriceService(otherEndpointEthereum, 60_000) }
 	let currentServices = firstEndpointServices
 	const otherEndpointInstalled = new Future<void>()
-	const simulationServicesOwner: SimulationServicesOwner = {
-		getCurrent: () => currentServices,
-		reset: () => {
-			currentServices = otherEndpointServices
-			otherEndpointInstalled.resolve(undefined)
-			return currentServices
-		},
-	}
+	const simulationServicesOwner: SimulationServicesOwner = createSimulationServicesOwnerFromOperations(() => currentServices, () => {
+		currentServices = otherEndpointServices
+		otherEndpointInstalled.resolve(undefined)
+		return currentServices
+	}, async (services, outcome) => {
+		if (refreshReplacements) await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome)
+	})
+
 	return {
 		firstEndpointServices,
 		simulationServicesOwner,
@@ -342,13 +342,13 @@ test('execution with the services of a previously selected endpoint publishes no
 
 const signerOnlyNetwork: RpcNetwork = { chainId: fakeRpcNetwork.chainId, httpsRpc: undefined, name: 'Test Chain (signer only)', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 
-// Selection changes that queue no refresh of their own, so nothing would replace what a refresh left behind by them publishes. A signer-only network keeps the previous services, so these services still look current to a comparison of services alone.
+// These stale-work guard tests use an inert observer to isolate cancellation from the replacement-refresh integration tests. Selection changes that queue no refresh of their own, so nothing would replace what a refresh left behind by them publishes. A signer-only network keeps the previous services, so these services still look current to a comparison of services alone.
 const selectionChangesWithoutFollowUp = [
 	{
 		name: 'another endpoint',
 		apply: async (fixture: ReturnType<typeof createNetworkSwitchFixture>) => {
 			await modules.browserStorageLocalSet({ activeRpcNetwork: otherEndpointNetwork })
-			fixture.simulationServicesOwner.reset(otherEndpointNetwork)
+			await fixture.simulationServicesOwner.update(async ({ reset }) => reset(otherEndpointNetwork))
 		},
 	},
 	{ name: 'a signer-only network', apply: async () => { await modules.browserStorageLocalSet({ activeRpcNetwork: signerOnlyNetwork }) } },
@@ -373,7 +373,7 @@ async function assertRefreshLeftNoTrace(fixture: ReturnType<typeof createNetwork
 }
 
 for (const selectionChange of selectionChangesWithoutFollowUp) test(`a queue entry left behind by selecting ${ selectionChange.name } returns from its pre-abort check without publishing`, async () => {
-	const fixture = createNetworkSwitchFixture()
+	const fixture = createNetworkSwitchFixture({ refreshReplacements: false })
 	await acceptTransactionOnFirstEndpoint(fixture)
 	const restoreSendMessage = openVisualisationConsumer()
 	try {
@@ -391,7 +391,7 @@ for (const selectionChange of selectionChangesWithoutFollowUp) test(`a queue ent
 })
 
 for (const selectionChange of selectionChangesWithoutFollowUp) test(`execution of a snapshot left behind by selecting ${ selectionChange.name } publishes nothing`, async () => {
-	const fixture = createNetworkSwitchFixture()
+	const fixture = createNetworkSwitchFixture({ refreshReplacements: false })
 	await acceptTransactionOnFirstEndpoint(fixture)
 	await storeVisualisationForAnotherBlock()
 	const snapshot = await captureSimulationSnapshot()
@@ -404,13 +404,13 @@ for (const selectionChange of selectionChangesWithoutFollowUp) test(`execution o
 })
 
 test('a queue entry for a previously selected endpoint does not cancel the refresh running for the selected endpoint', async () => {
-	const fixture = createNetworkSwitchFixture()
+	const fixture = createNetworkSwitchFixture({ refreshReplacements: false })
 	await acceptTransactionOnFirstEndpoint(fixture)
 	const restoreSendMessage = openVisualisationConsumer()
 	try {
 		const { refresh: queueEntry } = await startQueuedFirstEndpointRefreshHeldInUnchangedInputCheck(fixture)
 		await modules.browserStorageLocalSet({ activeRpcNetwork: otherEndpointNetwork })
-		const otherEndpointServices = fixture.simulationServicesOwner.reset(otherEndpointNetwork)
+		const otherEndpointServices = await fixture.simulationServicesOwner.update(async ({ reset }) => reset(otherEndpointNetwork))
 		fixture.holdNextOtherEndpointSimulation()
 		const otherEndpointRefresh = updatePopupVisualisationIfNeeded(otherEndpointServices.ethereum, otherEndpointServices.tokenPriceService)
 		await fixture.otherEndpointSimulates

@@ -1,4 +1,4 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { ImportSettings, ImportSettingsReply, SetRpcList } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
@@ -9,8 +9,6 @@ import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariabl
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
-import { selectionShowsStack } from '../../utils/simulationSelection.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
 
@@ -57,12 +55,11 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
-	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary === undefined) return
-	simulationServicesOwner.reset(primary)
-	// Refreshes holding the replaced services now step aside, so the reset queues the one for the services it installed, as a selection change does.
-	if (selectionShowsStack(settings)) await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList) {
+	await simulationServicesOwner.update(async ({ reset }) => {
+		await setRpcList(request.data)
+		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+		const primary = await getPrimaryRpcForChain((await getSettings()).activeRpcNetwork.chainId)
+		if (primary !== undefined) reset(primary)
+	})
 }

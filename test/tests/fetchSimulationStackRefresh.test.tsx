@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -177,10 +178,7 @@ const requestHandler = {
 }
 const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
-const simulationServicesOwner = {
-	getCurrent: () => ({ ethereum, tokenPriceService }),
-	reset: () => ({ ethereum, tokenPriceService }),
-}
+const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 
 // Requests that reach the real background dispatcher. The live consumer's cached home-data requests neither simulate nor publish simulation state, so they stay unanswered here.
 const BACKGROUND_SIMULATION_REQUESTS = new Set(['popup_readyAndListening', 'popup_requestCompleteVisualizedSimulation', 'popup_requestSimulationMetadata', 'popup_refreshSimulation'])
