@@ -1228,7 +1228,7 @@ const otherChainRpcNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chai
 
 // Services for a second chain on which the Safe has the same address, owners, and nonce as on fakeRpcNetwork, so only the chain differs.
 function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
-	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork)
+	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
 }
 

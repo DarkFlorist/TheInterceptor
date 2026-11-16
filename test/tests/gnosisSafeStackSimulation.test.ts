@@ -465,7 +465,7 @@ describe('Gnosis Safe stack simulation', () => {
 				}
 			},
 		}
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, recipient, operation)
 		const namedContract = { ...recipient, address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n }
 

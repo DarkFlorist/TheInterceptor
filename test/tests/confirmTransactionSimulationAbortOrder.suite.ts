@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, browserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, simulator } from './confirmTransactionTestHarness.js'
@@ -28,7 +29,7 @@ test('an older confirmation simulation whose tab state loads late does not abort
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
 	}
-	const newerRunEthereum = new modules.EthereumClientService(suspendedRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const newerRunEthereum = new modules.EthereumClientService(suspendedRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const newerRunTokenPriceService = new modules.TokenPriceService(newerRunEthereum, 60_000)
 
 	const olderRun = refreshConfirmTransactionSimulation(

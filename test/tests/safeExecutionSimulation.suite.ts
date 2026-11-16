@@ -333,7 +333,7 @@ test('reads a Gnosis Safe\'s nonce in a simulation on top of the parent block th
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
 	}
-	const recordingEthereum = new modules.EthereumClientService(recordingRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const recordingEthereum = new modules.EthereumClientService(recordingRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const ordinaryTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
 	const preparedInputBefore = [createBlock([{ ...ordinaryTransaction, signedTransaction: { ...ordinaryTransaction.signedTransaction, from: ORDINARY_ACCOUNT } }])]
 

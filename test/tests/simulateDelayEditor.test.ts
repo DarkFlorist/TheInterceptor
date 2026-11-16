@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
@@ -245,7 +246,7 @@ describe('eth_simulateV1 block timestamps', () => {
 		},
 		async () => undefined,
 		async () => undefined,
-		rpcEntry,
+		rpcEntry,, alwaysLive
 	)
 
 	// Seconds each simulated block is ahead of its parent. Nodes reject the whole eth_simulateV1 request unless every step is positive.
