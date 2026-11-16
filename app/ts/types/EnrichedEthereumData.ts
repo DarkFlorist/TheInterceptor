@@ -319,6 +319,13 @@ export const TokenVisualizerResultWithMetadata = funtypes.Union(
 	TokenVisualizerNFTAllApprovalEvent,
 )
 
+// Only what the approval box renders, so a signature request can show an approval without any simulation data. Simulated token events fit this type as they are.
+export type TokenApprovalDisplay =
+	| { type: 'ERC20', token: Erc20TokenEntry, amount: bigint }
+	| { type: 'ERC721', token: Erc721Entry, tokenId: bigint }
+	| { type: 'ERC1155', token: Erc1155Entry, tokenId: bigint, tokenIdName: string | undefined, amount: bigint }
+	| { type: 'NFT All approval', token: Erc721Entry | Erc1155Entry, allApprovalAdded: boolean }
+
 export type TokenEvent = funtypes.Static<typeof TokenEvent>
 export const TokenEvent = funtypes.Intersect(
 	ParsedEvent,
