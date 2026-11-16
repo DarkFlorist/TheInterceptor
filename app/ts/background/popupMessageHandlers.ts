@@ -3,11 +3,12 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
 import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
-import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
+import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, resolvePendingTransactionOrMessage, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
+import type { PendingTransactionSafeFlow, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
@@ -18,7 +19,7 @@ import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './meta
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
@@ -51,7 +52,7 @@ import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
-import { getPendingTransactionGasPayment, getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getCreatedSafeProposal, getPendingTransactionGasPayment, getPendingTransactionRefresh, getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
@@ -60,9 +61,9 @@ export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import { setMetamaskCompatibilityMode } from './metamaskCompatibilityMode.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 
 type TimestampedPopupVisualisation = {
@@ -423,7 +424,7 @@ export async function setSafeSimulationSigner(
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
+	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
 			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
@@ -431,8 +432,6 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 			return changeForEntry.newEntry
 		})
 	})
-
-	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
@@ -491,8 +490,8 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 						&& transaction.signedTransaction.from === removedTransaction.signedTransaction.from
 						&& transaction.signedTransaction.nonce > removedTransaction.signedTransaction.nonce
 						// A Gnosis Safe execution raises no account nonce of the Safe, and its own nonce field is a sequence that stays unique only if it is never renumbered (getSimulatedSafeCallNonce).
-						&& !authorizesExecutedCall(removedTransaction.simulationOptions)
-						&& !authorizesExecutedCall(transaction.simulationOptions)
+						&& !authorizesExecutedCall(removedTransaction)
+						&& !authorizesExecutedCall(transaction)
 				}
 
 				const newOperations: InterceptorStackOperation[] = []
@@ -622,40 +621,59 @@ export async function refreshPopupConfirmTransactionMetadata(network: NetworkSna
 	}
 }
 
+// Forms a pending transaction's request again with the fee mode of its flow.
+async function formPendingTransactionAgain(network: NetworkSnapshot, pending: SimulatedPendingTransaction) {
+	if (pending.originalRequestParameters.method === 'eth_sendTransaction') return await formEthSendTransaction(
+		requireSimulationSnapshot(network.simulation),
+		undefined,
+		pending.activeAddress,
+		pending.transactionToSimulate.website,
+		pending.originalRequestParameters,
+		pending.created,
+		pending.transactionIdentifier,
+		pending.simulationMode,
+		getPendingTransactionGasPayment(pending),
+	)
+	return await formSendRawTransaction(network.services.ethereum, pending.originalRequestParameters, pending.transactionToSimulate.website, pending.created, pending.transactionIdentifier)
+}
+
 export async function refreshPopupConfirmTransactionSimulation(network: NetworkSnapshot) {
-	const { ethereum } = network.services
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const simulation = requireSimulationSnapshot(network.simulation)
-	// An accepted transaction that already joined the stack keeps it, since re-preparing it would change its nonce and hash.
+	// Already appended transactions keep their nonce and hash; simulation-mode requests stay on their admitted chain.
 	if (simulation.interceptorTransactionStack.operations.some((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === firstTxn.transactionIdentifier)) return
-	// A simulation-mode transaction only joins the stack of the chain it was admitted on, so after a switch it keeps that chain's simulation until the chain is active again; re-simulating it here would move it to the new chain. A signing-mode transaction goes to the wallet on the active chain, so it is re-simulated there.
 	if (firstTxn.simulationMode && firstTxn.simulationChainId !== undefined && firstTxn.simulationChainId !== network.settings.activeRpcNetwork.chainId) return
-	const safeFlow = getSafePendingFlow(firstTxn)
-	const proposalSafeTransaction = safeFlow?.kind === 'proposal' ? safeFlow.pending.safeTransaction : undefined
-	const transactionToSimulate = firstTxn.originalRequestParameters.method === 'eth_sendTransaction'
-		? await formEthSendTransaction(
-			simulation,
-			undefined,
-			firstTxn.activeAddress,
-			firstTxn.transactionToSimulate.website,
-			firstTxn.originalRequestParameters,
-			firstTxn.created,
-			firstTxn.transactionIdentifier,
-			firstTxn.simulationMode,
-			getPendingTransactionGasPayment(firstTxn),
-		)
-		: await formSendRawTransaction(ethereum, firstTxn.originalRequestParameters, firstTxn.transactionToSimulate.website, firstTxn.created, firstTxn.transactionIdentifier)
+	const refresh = getPendingTransactionRefresh(firstTxn)
+	switch (refresh.kind) {
+		case 'keepFailure': return
+		case 'prepareSafeProposal': return await runWithPendingConfirmationLock(async () => {
+			const prepared = await prepareUnformedSafeProposalAgain(network, firstTxn, refresh.safeRequestContext)
+			if (prepared === undefined) return
+			await simulateAndStoreRefreshedTransaction(prepared.network, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal)
+		})
+		case 'formTransaction': return await simulateAndStoreRefreshedTransaction(network, firstTxn, await formPendingTransactionAgain(network, firstTxn), undefined)
+		default: return assertNever(refresh)
+	}
+}
+
+// Simulates the transaction a refresh formed and stores it in the pending transaction it was formed from, with the flow and approval status of a Gnosis Safe proposal the refresh prepared again.
+async function simulateAndStoreRefreshedTransaction(
+	network: NetworkSnapshot,
+	pending: SimulatedPendingTransaction,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	preparedSafeProposal: { readonly safeFlow: PendingTransactionSafeFlow, readonly approvalStatus: SimulatedPendingTransaction['approvalStatus'] } | undefined,
+) {
 	const refreshMessage = await refreshConfirmTransactionSimulation(
-		simulation,
-		firstTxn.activeAddress,
-		firstTxn.simulationMode,
-		firstTxn.uniqueRequestIdentifier,
+		requireSimulationSnapshot(network.simulation),
+		pending.activeAddress,
+		pending.simulationMode,
+		pending.uniqueRequestIdentifier,
 		transactionToSimulate,
-		proposalSafeTransaction,
+		getCreatedSafeProposal(preparedSafeProposal?.safeFlow ?? pending.safeFlow),
 	)
 	if (refreshMessage === undefined) return
-	await updatePendingTransactionOrMessage(firstTxn.uniqueRequestIdentifier, async (transactionOrMessage) => {
+	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (transactionOrMessage) => {
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
@@ -665,9 +683,11 @@ export async function refreshPopupConfirmTransactionSimulation(network: NetworkS
 				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
 				// The refresh ran on the active chain, which in simulation mode is the chain the transaction was admitted on.
 				const simulationChainId = network.settings.activeRpcNetwork.chainId
+				if (preparedSafeProposal !== undefined && getPendingTransactionRefresh(transactionOrMessage).kind !== 'prepareSafeProposal') return transactionOrMessage
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,
+						...preparedSafeProposal,
 						transactionToSimulate,
 						popupVisualisation: refreshMessage,
 						simulationChainId,
@@ -676,6 +696,7 @@ export async function refreshPopupConfirmTransactionSimulation(network: NetworkS
 				}
 				return {
 					...transactionOrMessage,
+					...preparedSafeProposal,
 					transactionToSimulate,
 					popupVisualisation: refreshMessage,
 					simulationChainId,
@@ -912,7 +933,7 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 
 export async function changeSettings(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
-	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
+	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(websiteTabConnections, parsedRequest.data.metamaskCompatibilityMode)
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
@@ -1252,7 +1273,7 @@ export async function requestInterceptorSimulationInput(network: NetworkSnapshot
 	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
 	const simulationInput = await prepareSafeExecutionsForRpc(simulation.simulationStateInput, ethereumClientService)
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
-	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
+	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(toSimulationStateInputMinimalData(simulationInput), await currentBlockNumberPromise, undefined)
 
 	const interceptorSimulateStack = modifyObject(simulationStack, { operations: simulationStack.operations.map((operation) => {
 		switch(operation.type) {

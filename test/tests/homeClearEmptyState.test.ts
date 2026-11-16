@@ -9,11 +9,12 @@ import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
 import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SignedMessageTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -1639,5 +1640,68 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	const networkWithoutRpc: RpcNetwork = {
+		name: 'Signer only',
+		chainId: 5n,
+		httpsRpc: undefined,
+		currencyName: 'Ether?',
+		currencyTicker: 'ETH?',
+		primary: false,
+		minimized: true,
+	}
+	const interceptorDisabledText = getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcBypassToSigner' })
+	const configureRpcText = getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' })
+
+	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName'] | undefined) {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					rpcNetwork: new Signal<RpcNetwork | undefined>(networkWithoutRpc),
+					simulationMode: new Signal(simulationMode),
+					tabState: new Signal<TabState | undefined>(signerName === undefined ? undefined : {
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName,
+						signerAccounts: [ACTIVE_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: networkWithoutRpc.chainId,
+						tabIconDetails: { icon: simulationMode ? ICON_SIMULATING : ICON_SIGNING, iconReason: 'Test tab.' },
+						activeSigningAddress: ACTIVE_ADDRESS,
+					}),
+				})), dom.document.body)
+			})
+			return dom.document.body.textContent ?? ''
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	}
+
+	test('does not claim the Interceptor is disabled on a network without an RPC in simulation mode', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(true, 'MetaMask')
+		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(configureRpcText), true)
+	})
+
+	test('does not claim the Interceptor is disabled on a network without an RPC when signing mode has no signer', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, 'NoSignerDetected')
+		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(configureRpcText), true)
+	})
+
+	test('treats a missing tab state as having no signer on a network without an RPC in signing mode', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, undefined)
+		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(configureRpcText), true)
+	})
+
+	test('says the Interceptor is disabled on a network without an RPC when signing mode forwards to the signer', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, 'MetaMask')
+		assert.equal(text.includes(interceptorDisabledText), true)
+		assert.equal(text.includes(configureRpcText), false)
 	})
 })

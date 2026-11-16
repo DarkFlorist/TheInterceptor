@@ -1289,7 +1289,11 @@ describe('network transition snapshot', () => {
 		try {
 			const failure = new Error('Injected stack clearing failure')
 			failStorageWrites('interceptorTransactionStack', 1, failure)
-			await assert.rejects(commitNetworkB(), (error) => error === failure)
+			if (kind === 'switch') await assert.rejects(commitNetworkB(), (error) => error === failure)
+			else {
+				const reply = await modules.importSettings(owner, websiteTabConnections, importRequest)
+				assert.deepEqual(reply.data, { success: false, errorMessage: failure.message })
+			}
 			await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
 
 			await commitNetworkB()
@@ -2282,7 +2286,7 @@ describe('network transition snapshot', () => {
 		}
 	})
 
-	test('a settings import that fails after storing its network still completes that network change, and so does its retry', async () => {
+	test('a settings import whose atomic write fails keeps the old network and stack until its retry succeeds', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
@@ -2292,15 +2296,19 @@ describe('network transition snapshot', () => {
 		const { websiteTabConnections, getChainChangedResults } = createApprovedConnection(modules.websiteSocketToString)
 		try {
 			const importRequest = await createImportRequest(modules.exportSettingsAndAddressBook, networkB)
-			// The import writes this preference after it has stored the imported network.
+			// All imported settings, including the network and this preference, now land in one atomic write.
 			const failure = new Error('Injected signer preference write failure')
 			failNextStorageWrite('useSignersAddressAsActiveAddress', failure)
-			await assert.rejects(modules.importSettings(owner, websiteTabConnections, importRequest), failure)
-			const afterFailure = await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
+			const reply = await modules.importSettings(owner, websiteTabConnections, importRequest)
+			assert.deepEqual(reply.data, { success: false, errorMessage: failure.message })
+			assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkA.chainId)
+			assert.equal(owner.getCurrent().ethereum.getChainId(), networkA.chainId)
+			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+			assert.deepEqual(getChainChangedResults(), [])
+			assert.equal(installed.length, 1)
 
 			assert.equal((await modules.importSettings(owner, websiteTabConnections, importRequest)).data.success, true)
-			const afterRetry = await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
-			assert.equal(afterRetry.services, afterFailure.services)
+			await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
 			assert.equal(installed.length, 2)
 		} finally {
 			retireAll()
@@ -2319,7 +2327,9 @@ describe('network transition snapshot', () => {
 			const importRequest = await createImportRequest(modules.exportSettingsAndAddressBook, networkB)
 			const failure = new Error('Injected settings read failure')
 			failFirstSettingsReadAfterNetworkWrite(failure)
-			await assert.rejects(modules.importSettings(owner, websiteTabConnections, importRequest), (error) => error === failure)
+			// The registration refresh reports its read failure and keeps the committed import; network transition effects still run.
+			assert.equal((await modules.importSettings(owner, websiteTabConnections, importRequest)).data.success, true)
+			assert.equal((await modules.getLatestUnexpectedError())?.data.code, 'settings_import_content_script_refresh_failed')
 			await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
 			assert.equal(installed.length, 2)
 		} finally {

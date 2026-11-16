@@ -3,6 +3,7 @@ import { getSignedTransactionForSimulation } from '../simulation/services/simula
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
@@ -18,6 +19,31 @@ import type { SimulationSnapshot } from './networkTransitionLock.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+
+// The result stored for a confirmation's first simulation when the run ended without one (refreshConfirmTransactionSimulation returned undefined because it was aborted or its RPC fetch failed). A failed result is what confirmation refreshes simulate again, and the window shows it as "Failed to simulate. Retrying...".
+export function createInterruptedConfirmTransactionSimulation(
+	activeAddress: bigint,
+	simulationMode: boolean,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	signerName: SignerName,
+	simulationStartedTimestamp: Date,
+): ConfirmTransactionTransactionSingleVisualization {
+	const message = 'The simulation was interrupted before it finished.'
+	return { statusCode: 'failed', data: {
+		uniqueRequestIdentifier,
+		transactionToSimulate,
+		simulationMode,
+		activeAddress,
+		signerName,
+		simulationStartedTimestamp,
+		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
+		simulationState: {
+			blockNumber: 0n,
+			simulationConductedTimestamp: new Date(),
+		},
+	} }
+}
 
 export async function refreshConfirmTransactionSimulation(
 	simulation: SimulationSnapshot,
@@ -61,7 +87,7 @@ export async function refreshConfirmTransactionSimulation(
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput
-				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
+				: appendTransactionsToInput(simulationInput, [preSimulationTransaction])
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}

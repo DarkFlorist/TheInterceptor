@@ -1,5 +1,7 @@
-import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
+import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
+// Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
@@ -15,7 +17,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
+import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -124,7 +126,7 @@ const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
 if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
+	silenceChromeUnCaughtPromise(refreshContentScriptInjectionStrategy())
 }
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
@@ -318,6 +320,12 @@ const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () =>
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
+if (initializeWatchAssetWindowListeners()) {
+	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
+		await reportUnexpectedError(error, { code: 'watch_asset_startup_recovery_failed' })
+	})
+}
+
 browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)

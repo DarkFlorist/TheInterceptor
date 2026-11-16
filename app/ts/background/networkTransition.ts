@@ -9,7 +9,9 @@ import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWeb
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import { changeSimulationMode, getSettings, importSettingsAndAddressBook } from './settings.js'
+import { changeSimulationMode, getSettings } from './settings.js'
+import { importSettingsAndAddressBook } from './settingsImport.js'
+import { updateAllContentScriptConfigurationAfterSettingsImport } from './contentScriptInjectionStrategy.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
@@ -205,7 +207,7 @@ export async function selectUpdatedPrimaryRpcTransition(simulationServicesOwner:
 export async function importSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, exportedSettings: ExportedSettings) {
 	await runSettingsTransition(simulationServicesOwner, websiteTabConnections, {
 		writeSettings: async () => {
-			await importSettingsAndAddressBook(exportedSettings)
+			await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(exportedSettings))
 			return 'committed'
 		},
 	})
