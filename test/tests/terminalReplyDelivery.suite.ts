@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
@@ -7,7 +8,7 @@ import { activeAddress, browserMock, bytes32String, createDisconnectedPort, crea
 import { createEthereumWithGetBlockCounter, createTestSimulationServicesOwner, fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
-const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+const readNetworkState = async () => await readTestNetworkSnapshot({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })

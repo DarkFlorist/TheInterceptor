@@ -1,14 +1,14 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, browserMock, fakeRequestHandler, fakeRpcNetwork, modules, pendingTransaction, simulator } from './confirmTransactionTestHarness.js'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 import { getConfirmTransactionAbortController, refreshConfirmTransactionSimulation } from '../../app/ts/background/confirmTransactionSimulation.js'
-import { readNetworkSnapshotForServices } from '../../app/ts/background/networkTransitionLock.js'
 import { requireSimulationSnapshot } from '../../app/ts/background/simulationUpdating.js'
 import type { SimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
 
 // Confirmations simulate on a snapshot read with the services they run on; both runs' clients serve the active network, so each read pairs them with the stack.
-const readSimulationSnapshot = async (services: SimulationServices) => requireSimulationSnapshot((await readNetworkSnapshotForServices(services)).simulation)
+const readSimulationSnapshot = async (services: SimulationServices) => requireSimulationSnapshot((await readTestNetworkSnapshot(services)).simulation)
 
 test('an older confirmation simulation whose tab state loads late does not abort a newer simulation', async () => {
 	const olderRunTabId = 1

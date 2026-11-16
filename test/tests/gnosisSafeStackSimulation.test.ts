@@ -9,7 +9,7 @@ import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
-import { readActiveSimulationInput } from './simulationInputTestHelper.js'
+import { readActiveSimulationInput, readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -471,7 +471,7 @@ describe('Gnosis Safe stack simulation', () => {
 
 		// The snapshot only serves the network the services were made for, so that network is the active one, with an empty stack.
 		await modules.browserStorageLocalSet({ simulationMode: true, independentActiveSimulationAddress: activeAddress.address, activeRpcNetwork: fakeRpcNetwork, interceptorTransactionStack: { operations: [] } })
-		const network = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 0) })
+		const network = await readTestNetworkSnapshot({ ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 0) })
 		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: namedContract }, network)
 
 		if (reply.success) throw new Error('expected no simulated outcome')
@@ -631,7 +631,7 @@ describe('Gnosis Safe stack simulation', () => {
 		})
 
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, stackRecipient, operation)
-		const network = await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService })
+		const network = await readTestNetworkSnapshot({ ethereum, tokenPriceService })
 		const snapshot = modules.requireSimulationSnapshot(network.simulation)
 		assert.equal(snapshot.simulationStateInput.length, seedStack ? 1 : 0)
 		assert.equal(snapshot.simulationStateInput[0]?.transactions.length, seedStack ? 1 : undefined)

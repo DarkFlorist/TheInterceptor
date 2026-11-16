@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { isValidMessage } from '../../app/ts/utils/eip712.js'
 import * as assert from 'assert'
@@ -11,7 +12,7 @@ import { activeAddress, createSafeAddressBookEntry, createWebsitePort, EIP712Mes
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
-const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+const readNetworkState = async () => await readTestNetworkSnapshot({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
 
 const originalMessage = 'Hello Safe 👋'
 const typedData = () => createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, originalMessage)

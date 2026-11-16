@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -275,7 +276,7 @@ describe('import simulation stack', () => {
 			Object.assign(storageState, items)
 		}
 
-		const reply = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: exportPayload })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -290,7 +291,7 @@ describe('import simulation stack', () => {
 			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
 		)
 
-		const reply = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -316,7 +317,7 @@ describe('import simulation stack', () => {
 			},
 		}
 
-		const reply = await modules.requestInterceptorSimulationInput(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService: {} }))
+		const reply = await modules.requestInterceptorSimulationInput(await readTestNetworkSnapshot({ ethereum, tokenPriceService: {} }))
 
 		assert.equal(reply.ok, true)
 		if (!reply.ok) throw new Error(reply.message)
@@ -331,7 +332,7 @@ describe('import simulation stack', () => {
 		const serializedExport = InterceptorSimulationExport.serialize(create7702ExportPayload())
 		const parsedExport = InterceptorSimulationExport.parse(serializedExport)
 
-		const reply = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, true)

@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
@@ -1446,12 +1447,12 @@ describe('network transition snapshot', () => {
 			failStorageWrites(failedKey, 3, new Error('Restart cleanup is unavailable'))
 			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'unavailable')
 			const { ethereum, tokenPriceService } = owner.getCurrent()
-			const failedImport = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService }), stackImportRequest)
+			const failedImport = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum, tokenPriceService }), stackImportRequest)
 			assert.equal(failedImport.ok, false)
 			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, failedKey === 'interceptorTransactionStack' ? operations : [])
 			assert.equal((await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId, networkA.chainId)
 			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'loaded')
-			assert.equal((await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService }), stackImportRequest)).ok, true)
+			assert.equal((await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum, tokenPriceService }), stackImportRequest)).ok, true)
 			await modules.readNetworkSnapshot(owner)
 			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, stackImportRequest.data.interceptorSimulateStack.operations)
 		} finally {
@@ -1478,7 +1479,7 @@ describe('network transition snapshot', () => {
 			return result
 		} })
 		const { ethereum, tokenPriceService } = owner.getCurrent()
-		const importing = modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService }), stackImportRequest)
+		const importing = modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum, tokenPriceService }), stackImportRequest)
 		try {
 			await preparing.promise
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
@@ -2584,7 +2585,34 @@ describe('network transition snapshot', () => {
 		}
 	})
 
-	test('a read for services of another network has no stack to simulate, and a read for the active network simulates on its own client', async () => {
+	test('an unavailable stack cannot turn mismatched services into a coherent snapshot', async () => {
+		const { modules } = await createApprovedSimulationDapp()
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const replacedServices = createNetworkServices(networkB)
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		const failure = new Error('Simulation input is unavailable')
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys: Parameters<typeof originalGet>[0]) => {
+			if (keys === 'preSimulationBlockTimeManipulation' || Array.isArray(keys) && keys.includes('preSimulationBlockTimeManipulation')) throw failure
+			return await originalGet(keys)
+		} })
+		try {
+			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'unavailable')
+			assert.equal(await modules.readNetworkSnapshotForServices(replacedServices), undefined)
+			await assert.rejects(modules.readNetworkSnapshot({ getCurrent: () => replacedServices }), /no longer serve the active network/u)
+			// Pending replies retain the weaker read even while no coherent pairing can be admitted.
+			const pending = await modules.readNetworkSnapshotForPendingRequest({ getCurrent: () => replacedServices })
+			assert.equal(pending.settings.activeRpcNetwork.chainId, networkA.chainId)
+			assert.equal(pending.services.ethereum, replacedServices.ethereum)
+			assert.equal(pending.simulation.kind, 'unavailable')
+			assert.equal('readUnderNetworkLock' in pending, false)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+			retireAll()
+			replacedServices.ethereum.cleanup()
+		}
+	})
+
+	test('a read for services of another network returns no snapshot, and a read for the active network simulates on its own client', async () => {
 		const { modules } = await createApprovedSimulationDapp()
 		const { getSimulationProviderForSnapshot, getUpdatedSimulationState, requireSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
@@ -2593,9 +2621,8 @@ describe('network transition snapshot', () => {
 		const otherEndpointServices = createNetworkServices(networkAOnOtherEndpoint)
 		try {
 			for (const services of [otherChainServices, otherEndpointServices]) {
-				const { simulation } = await modules.readNetworkSnapshotForServices(services)
-				assert.equal(simulation.kind, 'replaced')
-				assert.throws(() => requireSimulationSnapshot(simulation), /no longer serve the active network/u)
+				assert.equal(await modules.readNetworkSnapshotForServices(services), undefined)
+				await assert.rejects(modules.readNetworkSnapshot({ getCurrent: () => services }), /no longer serve the active network/u)
 				assert.deepEqual(services.requests, [])
 			}
 			const ownServices = getInstalled()

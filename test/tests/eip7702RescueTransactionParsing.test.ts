@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
@@ -24,7 +25,7 @@ const readNetworkState = async (ethereum: EthereumClientService) => {
 	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
 	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
 	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: ethereum.getRpcEntry() })
-	return await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 0) })
+	return await readTestNetworkSnapshot({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 0) })
 }
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'

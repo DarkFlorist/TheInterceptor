@@ -4,10 +4,10 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
-import { readActiveSimulationInput } from './simulationInputTestHelper.js'
+import { readActiveSimulationInput, readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
-const readNetworkState = async (services: { ethereum: typeof simulator.ethereum, tokenPriceService: typeof simulator.tokenPriceService } = simulator) => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService })
+const readNetworkState = async (services: { ethereum: typeof simulator.ethereum, tokenPriceService: typeof simulator.tokenPriceService } = simulator) => await readTestNetworkSnapshot({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService })
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })

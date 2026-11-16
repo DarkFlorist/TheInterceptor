@@ -22,8 +22,9 @@ export async function readCurrentPollingNetwork(getSimulationServices: () => Sim
 	const services = getSimulationServices()
 	if (ethereumClientService !== services.ethereum) return undefined
 	const network = await readNetworkSnapshotForServices(services)
+	if (network === undefined) return undefined
 	const isCurrent = () => ethereumClientService === getSimulationServices().ethereum && snapshotNetworkIsActive(network.simulation)
-	if (network.simulation.kind === 'replaced' || network.settings.activeRpcNetwork.httpsRpc === undefined || !isCurrent()) return undefined
+	if (network.settings.activeRpcNetwork.httpsRpc === undefined || !isCurrent()) return undefined
 	return { network, isCurrent }
 }
 
@@ -44,10 +45,10 @@ export const createNewBlockAttemptCallback = ({ getSimulationServices, publishRp
 		}
 		await publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus, networkIsCurrent)
 		if (isNewBlock && networkIsCurrent()) {
-			// Replaced services have no stack to simulate. A read can only say so after a change committed since this callback started, so networkIsCurrent already keeps the result from being published.
+			// Services replaced since this callback started have no snapshot; networkIsCurrent prevents that obsolete result from being published.
 			const simulateCurrentStack = async () => {
-				const { simulation } = await readNetworkSnapshotForServices(callbackServices)
-				return simulation.kind === 'replaced' ? PASSTHROUGH_STATE : await getUpdatedSimulationState(requireSimulationSnapshot(simulation))
+				const network = await readNetworkSnapshotForServices(callbackServices)
+				return network === undefined ? PASSTHROUGH_STATE : await getUpdatedSimulationState(requireSimulationSnapshot(network.simulation))
 			}
 			const settings = callbackNetwork.settings
 			if (settings.simulationMode) {

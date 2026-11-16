@@ -6,10 +6,10 @@ import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { createTestSimulationServicesOwner, fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../../app/ts/utils/constants.js'
-import { readActiveSimulationInput } from './simulationInputTestHelper.js'
+import { readActiveSimulationInput, readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
-const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+const readNetworkState = async () => await readTestNetworkSnapshot({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })

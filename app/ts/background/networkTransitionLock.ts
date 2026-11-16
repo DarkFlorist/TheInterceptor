@@ -89,7 +89,7 @@ export type NetworkRead = {
 	readonly services: SimulationServices
 }
 
-// Only this module holds the value, so only its reads can be built as the types below. The pairing is a plain field, so a read can be copied and logged; a spread that replaces its services would still type-check, which is the accepted limit, so no production code spreads a read.
+// Only this module holds the value, so only its reads can be built as the types below. The pairing is a plain field, so a read can be copied and logged; a spread that replaces its services would still type-check, which is the accepted limit, so consumers must never replace the services of a copied read.
 const readUnderNetworkLock: unique symbol = Symbol('read under the network transition lock')
 
 // One read's stack, with the services it simulates on. Consumers take this value instead of a client next to a snapshot, so they cannot simulate a stack on another network's client. Built only here, which stamps the committed network change generation and derives simulationStateInput from interceptorTransactionStack and, like both rich-address fields, from the same settings and rich-address sources. The input is built under the lock, not where it is used: a later read outside the lock could pair this network with another network's stack, and one under the lock cannot run inside the visualisation semaphore, which a transition takes while holding the lock.
@@ -106,7 +106,10 @@ export type SimulationSnapshot = SimulationReadIdentity & {
 }
 
 // Settings, services and the simulation read with them, all describing one network. Handlers take this one value, so they cannot pair services with another read's settings.
-export type NetworkSnapshot = NetworkRead & { readonly readUnderNetworkLock: typeof readUnderNetworkLock }
+export type NetworkSnapshot = NetworkRead & {
+	readonly simulation: SimulationSnapshot | UnavailableSimulation
+	readonly readUnderNetworkLock: typeof readUnderNetworkLock
+}
 
 const buildSimulationSnapshot = (settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack, simulationStateInput: SimulationStateInput, services: SimulationServices): SimulationSnapshot => ({
 	...getSimulationReadIdentity(settings),
@@ -151,15 +154,32 @@ async function readSimulation(settings: Settings): Promise<(services: Simulation
 	}
 }
 
-async function captureNetworkSnapshot(getServices: () => SimulationServices): Promise<NetworkSnapshot> {
+async function captureNetworkRead(getServices: () => SimulationServices): Promise<NetworkRead> {
 	const settings = await getSettings()
 	const pairSimulationWith = await readSimulation(settings)
 	const services = getServices()
-	return { settings, simulation: pairSimulationWith(services), services, readUnderNetworkLock }
+	return { settings, simulation: pairSimulationWith(services), services }
+}
+
+// Only a coherent read receives the snapshot brand. Service identity is checked even when a failed stack read has made the simulation unavailable.
+function snapshotOfCoherentRead(read: NetworkRead): NetworkSnapshot | undefined {
+	const { simulation } = read
+	if (!servicesServeNetwork(read.services, read.settings.activeRpcNetwork) || simulation.kind === 'replaced') return undefined
+	return { ...read, simulation, readUnderNetworkLock }
+}
+
+function requireCoherentSnapshot(read: NetworkRead): NetworkSnapshot {
+	const snapshot = snapshotOfCoherentRead(read)
+	if (snapshot === undefined) throw new Error('These services no longer serve the active network')
+	return snapshot
+}
+
+async function captureNetworkSnapshot(getServices: () => SimulationServices): Promise<NetworkSnapshot> {
+	return requireCoherentSnapshot(await captureNetworkRead(getServices))
 }
 
 const buildNetworkSnapshot = (settings: Settings, sources: SimulationSnapshotSources, interceptorTransactionStack: InterceptorTransactionStack, services: SimulationServices): NetworkSnapshot => (
-	({ settings, simulation: buildSimulationSnapshot(settings, sources, interceptorTransactionStack, buildSimulationStateInput(settings, sources, interceptorTransactionStack), services), services, readUnderNetworkLock })
+	requireCoherentSnapshot({ settings, simulation: buildSimulationSnapshot(settings, sources, interceptorTransactionStack, buildSimulationStateInput(settings, sources, interceptorTransactionStack), services), services })
 )
 
 // The snapshot builders, handed only to tasks that hold the lock: they read storage without taking it, so outside the lock they could pair one network's settings or stack with a later network's generation.
@@ -197,13 +217,13 @@ export async function readNetworkSnapshot(simulationServicesOwner: SimulationSer
 export async function readNetworkSnapshotForPendingRequest(simulationServicesOwner: SimulationServicesReader): Promise<NetworkRead> {
 	return await networkTransitionSemaphore.execute(async () => {
 		await retryUnfinishedNetworkChange()
-		return await captureNetworkSnapshot(simulationServicesOwner.getCurrent)
+		return await captureNetworkRead(simulationServicesOwner.getCurrent)
 	})
 }
 
-// For callers that already hold the services they work with, such as the shared visualisation refresh and the new-block handler, or that changed the stack after their snapshot was read. This read waits for a network change in progress, so the held services may have been replaced by the time it returns: its simulation then says so, because this race is expected on any network switch and that change refreshes its own network.
-export async function readNetworkSnapshotForServices(services: SimulationServices): Promise<NetworkSnapshot> {
-	return await runStackIndependentNetworkTask(async (reads) => await reads.captureNetworkSnapshot(() => services))
+// For callers that already hold services, such as shared refreshes and block callbacks. Wait for the transition, then return a coherent snapshot or undefined when those services have been replaced. No branded snapshot pairs the active settings with a previous network's services.
+export async function readNetworkSnapshotForServices(services: SimulationServices): Promise<NetworkSnapshot | undefined> {
+	return await runStackIndependentNetworkTask(async () => snapshotOfCoherentRead(await captureNetworkRead(() => services)))
 }
 
 
@@ -211,9 +231,8 @@ export async function readNetworkSnapshotForServices(services: SimulationService
 export async function runSimulationStackMutation<T>(admitted: NetworkSnapshot, write: () => Promise<T>) {
 	return await runNetworkTransition(async (reads) => {
 		if (admitted.simulation.kind === 'unavailable') throw admitted.simulation.error
-		if (admitted.simulation.kind === 'replaced') return undefined
-		const current = await reads.captureNetworkSnapshot(() => admitted.services)
-		if (!snapshotNetworkIsActive(admitted.simulation) || current.simulation.kind === 'replaced' || !activeStackContextsEqual(getActiveStackContext(admitted.settings), getActiveStackContext(current.settings))) return undefined
+		const current = snapshotOfCoherentRead(await captureNetworkRead(() => admitted.services))
+		if (current === undefined || !snapshotNetworkIsActive(admitted.simulation) || !activeStackContextsEqual(getActiveStackContext(admitted.settings), getActiveStackContext(current.settings))) return undefined
 		if (current.simulation.kind === 'unavailable') throw current.simulation.error
 		const value = await write()
 		return { value, network: await reads.captureNetworkSnapshot(() => admitted.services) }

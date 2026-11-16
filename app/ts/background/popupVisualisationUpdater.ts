@@ -63,8 +63,8 @@ export const createUnavailableVisualisation = (): CompleteVisualizedSimulation =
 
 // A refresh without a snapshot of its own reads one under the network transition lock, so its settings and stack describe one network. It reads it before waiting for the visualisation semaphore, which a transition takes while holding its lock to publish a failed provider installation. Undefined means these services were replaced: the change that replaced them refreshes its own network, so this refresh has nothing to do.
 const readSharedRefreshSnapshot = async (services: SimulationServices) => {
-	const { simulation } = await readNetworkSnapshotForServices(services)
-	return simulation.kind === 'replaced' ? undefined : requireSimulationSnapshot(simulation)
+	const network = await readNetworkSnapshotForServices(services)
+	return network === undefined ? undefined : requireSimulationSnapshot(network.simulation)
 }
 
 type ReadRefreshSnapshot = () => Promise<SimulationSnapshot | undefined>

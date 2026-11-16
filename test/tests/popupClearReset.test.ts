@@ -9,7 +9,7 @@ import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
-import { readActiveSimulationInput } from './simulationInputTestHelper.js'
+import { readActiveSimulationInput, readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -401,7 +401,7 @@ function createResetTestTransaction(transactionIdentifier: bigint, requiredChain
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
-const readNetworkState = async () => await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+const readNetworkState = async () => await readTestNetworkSnapshot({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
 
 describe('popup clear reset', () => {
 	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {

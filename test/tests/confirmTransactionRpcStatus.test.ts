@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -9,7 +10,7 @@ const readNetworkState = async (services: Parameters<typeof import('../../app/ts
 	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
 	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
 	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: services.ethereum.getRpcEntry() })
-	return await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshotForServices(services)
+	return await readTestNetworkSnapshot(services)
 }
 
 type RuntimeMessageListener = (message: unknown) => unknown
