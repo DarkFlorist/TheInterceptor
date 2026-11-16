@@ -1,5 +1,5 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { getInFlightConfirmationRunAbortController, runConfirmationSimulation } from './confirmationSimulationRun.js'
+import { getInFlightConfirmationRunAbortController, runConfirmationSimulation, type ConfirmationRun } from './confirmationSimulationRun.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
@@ -582,17 +582,19 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 	// A batch that is still Crafting is refreshed too, because an interrupted first simulation leaves it without results until it is retried.
 	if (firstTxn?.type === 'TransactionBatch') return await refreshPendingTransactionBatchSimulation(ethereum, tokenPriceService, firstTxn)
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
-	const refresh = getPendingTransactionRefresh(firstTxn)
-	switch (refresh.kind) {
-		case 'keepFailure': return
-		case 'prepareSafeProposal': return await runWithPendingConfirmationLock(async () => {
-			const prepared = await prepareUnformedSafeProposalAgain(ethereum, firstTxn, refresh.safeRequestContext)
-			if (prepared === undefined) return
-			await simulateAndStoreRefreshedTransaction(ethereum, tokenPriceService, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal)
-		})
-		case 'formTransaction': return await simulateAndStoreRefreshedTransaction(ethereum, tokenPriceService, firstTxn, await formPendingTransactionAgain(ethereum, firstTxn), undefined)
-		default: return assertNever(refresh)
-	}
+	return await runConfirmationSimulation(firstTxn.uniqueRequestIdentifier, async (confirmationRun) => {
+		const refresh = getPendingTransactionRefresh(firstTxn)
+		switch (refresh.kind) {
+			case 'keepFailure': return
+			case 'prepareSafeProposal': return await runWithPendingConfirmationLock(async () => {
+				const prepared = await prepareUnformedSafeProposalAgain(ethereum, firstTxn, refresh.safeRequestContext)
+				if (prepared === undefined) return
+				await simulateAndStoreRefreshedTransaction(ethereum, tokenPriceService, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal, confirmationRun)
+			})
+			case 'formTransaction': return await simulateAndStoreRefreshedTransaction(ethereum, tokenPriceService, firstTxn, await formPendingTransactionAgain(ethereum, firstTxn), undefined, confirmationRun)
+			default: return assertNever(refresh)
+		}
+	})
 }
 
 // Simulates the transaction a refresh formed and stores it in the pending transaction it was formed from, with the flow and approval status of a Gnosis Safe proposal the refresh prepared again.
@@ -602,8 +604,9 @@ async function simulateAndStoreRefreshedTransaction(
 	pending: SimulatedPendingTransaction,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	preparedSafeProposal: { readonly safeFlow: PendingTransactionSafeFlow, readonly approvalStatus: SimulatedPendingTransaction['approvalStatus'] } | undefined,
+	confirmationRun: ConfirmationRun,
 ) {
-	const refreshMessage = await runConfirmationSimulation(pending.uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(
+	const refreshMessage = await refreshConfirmTransactionSimulation(
 		ethereum,
 		tokenPriceService,
 		pending.activeAddress,
@@ -611,7 +614,7 @@ async function simulateAndStoreRefreshedTransaction(
 		confirmationRun,
 		transactionToSimulate,
 		getCreatedSafeProposal(preparedSafeProposal?.safeFlow ?? pending.safeFlow),
-	))
+	)
 	if (refreshMessage === undefined) return
 	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (transactionOrMessage) => {
 		switch (transactionOrMessage.type) {

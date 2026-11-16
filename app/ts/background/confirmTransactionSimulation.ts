@@ -1,5 +1,3 @@
-import type { UniqueRequestIdentifier } from '../utils/requests.js'
-import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -7,7 +5,6 @@ import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulatio
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { assertNever } from '../utils/typescript.js'
@@ -26,31 +23,6 @@ async function getSingleTransactionSimulationInput(transactionToSimulate: Websit
 		? toPreSimulationTransaction(transactionToSimulate)
 		: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 	return appendTransactionsToInput(simulationInput, [preSimulationTransaction])
-}
-
-// The result stored for a confirmation's first simulation when the run ended without one (refreshConfirmTransactionSimulation returned undefined because it was aborted or its RPC fetch failed). A failed result is what confirmation refreshes simulate again, and the window shows it as "Failed to simulate. Retrying...".
-export function createInterruptedConfirmTransactionSimulation(
-	activeAddress: bigint,
-	simulationMode: boolean,
-	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-	signerName: SignerName,
-	simulationStartedTimestamp: Date,
-): ConfirmTransactionTransactionSingleVisualization {
-	const message = 'The simulation was interrupted before it finished.'
-	return { statusCode: 'failed', data: {
-		uniqueRequestIdentifier,
-		transactionToSimulate,
-		simulationMode,
-		activeAddress,
-		signerName,
-		simulationStartedTimestamp,
-		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
-		simulationState: {
-			blockNumber: 0n,
-			simulationConductedTimestamp: new Date(),
-		},
-	} }
 }
 
 // The contract an eth_sendTransaction request names as its recipient. A raw transaction's parameter is its signed bytes, which name no recipient here, so it is branched on by method rather than probed with property checks.

@@ -232,7 +232,7 @@ async function getRpcBlockLayoutWithSafeCallAppended(recordingEthereum: ReturnTy
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const { appendTransactionsToInput } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 	const previewInput = await prepareSafeExecutionSimulationInput(appendTransactionsToInput(simulationInput, [safeCall], simulationInput.length - 1), recordingEthereum, parentBlock.number, BASE_FEE_PER_GAS)
-	const prepared = await recordingEthereum.prepareEthSimulateV1Input(previewInput, parentBlock.number, undefined)
+	const prepared = await recordingEthereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(previewInput), parentBlock.number, undefined)
 	return prepared.rpcBlocks.map((block) => block.transactions.length)
 }
 

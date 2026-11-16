@@ -9,8 +9,8 @@ import type { TransactionConfirmation } from '../../types/interceptor-messages.j
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import type { InterceptorTransactionStack, WebsiteCreatedEthereumTransactionOrFailed } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { runConfirmationSimulation } from '../confirmationSimulationRun.js'
+import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
+import { runConfirmationSimulation, createInterruptedConfirmTransactionSimulation } from '../confirmationSimulationRun.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPendingTransactionsAndMessagesExceptBatches, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
@@ -642,6 +642,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				storedConfirmation = pendingTransaction
 				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
+				const simulationStartedTimestamp = new Date()
 				const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
 					ethereumClientService,
 					tokenPriceService,
@@ -656,7 +657,7 @@ export async function openConfirmTransactionDialogForTransaction(
 					await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 				}
 				const simulationResult = await simulationResultsPromise
-				const popupVisualisation = simulationResult ?? createInterruptedConfirmTransactionSimulation(transactionExecutor, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate, signerTabState.signerName, new Date())
+				const popupVisualisation = simulationResult ?? createInterruptedConfirmTransactionSimulation(transactionExecutor, simulationMode, confirmationRun, transactionToSimulate, signerTabState.signerName, simulationStartedTimestamp)
 				markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 					if (transaction.type !== 'Transaction') return transaction

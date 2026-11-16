@@ -90,7 +90,6 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(context.richAddresses)
 	let previousBlockTimeManipulation = context.activeStackContext.simulationMode ? context.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({

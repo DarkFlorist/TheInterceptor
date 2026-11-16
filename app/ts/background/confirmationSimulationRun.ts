@@ -1,9 +1,10 @@
+import type { SignerName } from '../types/signerTypes.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
-import type { ConfirmationRunId, ConfirmationSimulationRecord } from '../types/accessRequest.js'
+import type { ConfirmationRunId, ConfirmationSimulationRecord, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
-import type { PreSimulationTransaction, SimulationStateInput, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
+import type { PreSimulationTransaction, SimulationStateInput, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
@@ -138,3 +139,31 @@ export async function simulateConfirmationRun(request: ConfirmationSimulationRun
 		finishConfirmationRun(request.confirmationRun, abortController)
 	}
 }
+
+// The result stored for a confirmation's first simulation when the run ended without one (refreshConfirmTransactionSimulation returned undefined because it was aborted or its RPC fetch failed). A failed result is what confirmation refreshes simulate again, and the window shows it as "Failed to simulate. Retrying...".
+export function createInterruptedConfirmTransactionSimulation(
+	activeAddress: bigint,
+	simulationMode: boolean,
+	confirmationRun: ConfirmationRun,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	signerName: SignerName,
+	simulationStartedTimestamp: Date,
+): ConfirmTransactionTransactionSingleVisualization {
+	const { uniqueRequestIdentifier, confirmationRunId } = confirmationRun
+	const message = 'The simulation was interrupted before it finished.'
+	return { statusCode: 'failed', data: {
+		uniqueRequestIdentifier,
+		confirmationRunId,
+		transactionToSimulate,
+		simulationMode,
+		activeAddress,
+		signerName,
+		simulationStartedTimestamp,
+		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
+		simulationState: {
+			blockNumber: 0n,
+			simulationConductedTimestamp: new Date(),
+		},
+	} }
+}
+

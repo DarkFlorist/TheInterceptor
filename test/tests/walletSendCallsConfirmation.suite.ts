@@ -1805,7 +1805,7 @@ test('approving a batch adds every call to the simulation stack and answers wall
 	assert.equal('error' in duplicate ? duplicate.error.code : undefined, 5720)
 })
 
-const SAFE_EXECUTION_SIMULATION_OPTIONS = { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true }
+const SAFE_EXECUTION_SIMULATION_OPTIONS = { requiredChainId: fakeRpcNetwork.chainId, executeThroughSafe: true }
 
 // Configures the batch's account as a Gnosis Safe in the address book, deployed with the given on-chain nonce.
 async function configureBatchAccountAsSafe() {
