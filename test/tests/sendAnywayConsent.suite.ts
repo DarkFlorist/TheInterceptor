@@ -105,6 +105,20 @@ test('the reviewed-result id ignores approval status, popup window and field ord
 	assert.notEqual(getReviewedResultId({ ...reviewed, safeFlow: { kind: 'directExecution', safeExecutionSignerAddress: recipientAddress, safeExecutionOriginalRequestParameters: reviewed.originalRequestParameters } }), reviewedId)
 })
 
+test('the reviewed-result id binds signing inputs even while the displayed visualization is unchanged', async () => {
+	const { websiteTabConnections } = createSignerConnection()
+	const signRequest = { method: 'personal_sign' as const, params: ['0x6869', activeAddress] as const }
+	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	const pending = await getStoredRequest()
+	if (pending.type !== 'SignableMessage') throw new Error('Expected a signature request')
+	const signedMessageTransaction = pending.signedMessageTransaction
+	const reviewedId = getReviewedResultId(pending)
+	assert.notEqual(getReviewedResultId({ ...pending, signedMessageTransaction: { ...signedMessageTransaction, fakeSignedFor: recipientAddress } }), reviewedId)
+	assert.notEqual(getReviewedResultId({ ...pending, signedMessageTransaction: { ...signedMessageTransaction, safeMessageReview: { text: 'Changed Safe review', isTypedData: false } } }), reviewedId)
+})
+
 test('the canonical encoding sorts nested keys, keeps array order, encodes bigints and bytes as hex and drops undefined object fields', () => {
 	const encoded = stringifyCanonically({
 		b: 255n,

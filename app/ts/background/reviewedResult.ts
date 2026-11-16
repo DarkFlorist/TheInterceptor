@@ -26,8 +26,8 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	uniqueRequestIdentifier: false,
 	popupOrTabId: false,
 	approvalStatus: false,
-	// The popup reviews the visualizedPersonalSignRequest built from it instead.
-	signedMessageTransaction: false,
+	// Bind the visualization and its signing inputs together, including the simulated signer and Safe message review.
+	signedMessageTransaction: true,
 }
 
 const isReviewedField = (field: string) => Object.entries(IS_REVIEWED_FIELD).some(([reviewedField, isReviewed]) => isReviewed && reviewedField === field)
