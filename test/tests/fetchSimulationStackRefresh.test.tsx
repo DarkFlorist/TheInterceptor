@@ -1,3 +1,4 @@
+import { getSettings } from '../../app/ts/background/storedSettings.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -112,7 +113,7 @@ const [
 	{ popupMessageHandler },
 	{ updatePopupVisualisationIfNeeded },
 	{ browserStorageLocalSet },
-	{ getSettings },
+	{  },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise },
 	{ EthereumClientService },
 	{ TokenPriceService },

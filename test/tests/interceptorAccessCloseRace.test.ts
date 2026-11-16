@@ -1,3 +1,4 @@
+import { getSettings } from '../../app/ts/background/storedSettings.js'
 import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -160,7 +161,7 @@ async function loadModules() {
 describe('interceptor access close handling', () => {
 	test('does not emit pre-response connection events when eth_requestAccounts already has access', async () => {
 		const browserMock = installBrowserMock()
-		const { requestAccessFromUser, websiteSocketToString, changeSimulationMode, updateWebsiteAccess, getSettings } = await loadModules()
+		const { requestAccessFromUser, websiteSocketToString, changeSimulationMode, updateWebsiteAccess } = await loadModules()
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const account = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }

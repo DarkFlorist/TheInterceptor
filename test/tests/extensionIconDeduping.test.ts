@@ -1,3 +1,4 @@
+import { getSettings } from '../../app/ts/background/storedSettings.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
@@ -216,7 +217,7 @@ describe('extension icon deduping', () => {
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -252,7 +253,7 @@ describe('extension icon deduping', () => {
 
 	test('access refresh updates stale icons for tabs without active connections', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -280,7 +281,7 @@ describe('extension icon deduping', () => {
 	})
 
 	test('imported mode change updates tabs without active connections', async () => {
-		const { changeSimulationMode, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const importedSettingsReply = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
