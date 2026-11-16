@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import * as fs from 'node:fs'
-import { beforeEach, describe, test } from 'bun:test'
+import { beforeEach, describe, spyOn, test } from 'bun:test'
 import * as ts from 'typescript'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
@@ -135,9 +136,14 @@ const forEachDescendant = (node: ts.Node, visit: (descendant: ts.Node) => void) 
 	})
 }
 
-const getStringLiterals = (node: ts.Node) => {
+// Shape checks inspect decoded input properties; their string operands are not storage-key accesses.
+const getStorageKeyStringLiterals = (node: ts.Node) => {
 	const literals: string[] = []
-	forEachDescendant(node, (descendant) => { if (ts.isStringLiteral(descendant) || ts.isNoSubstitutionTemplateLiteral(descendant)) literals.push(descendant.text) })
+	forEachDescendant(node, (descendant) => {
+		if (!ts.isStringLiteral(descendant) && !ts.isNoSubstitutionTemplateLiteral(descendant)) return
+		if (ts.isBinaryExpression(descendant.parent) && descendant.parent.operatorToken.kind === ts.SyntaxKind.InKeyword && descendant.parent.left === descendant) return
+		literals.push(descendant.text)
+	})
 	return literals
 }
 
@@ -799,7 +805,7 @@ describe('settings import', () => {
 		assert.notDeepEqual(writtenKeys, [])
 		for (const path of [settingsStorageModulePaths.settingsImport, settingsStorageModulePaths.settingsStorageTransaction]) {
 			const sourceFile = parseSourceFile(path)
-			const namedKeys = [...getStringLiterals(sourceFile), ...getStorageItemObjectKeys(sourceFile)].filter((name) => writtenKeys.includes(name))
+			const namedKeys = [...getStorageKeyStringLiterals(sourceFile), ...getStorageItemObjectKeys(sourceFile)].filter((name) => writtenKeys.includes(name))
 			assert.deepEqual(namedKeys, [], `${ path } names storage keys instead of composing their owners' writes`)
 		}
 	})
@@ -810,8 +816,35 @@ describe('settings import', () => {
 		for (const key of writtenKeys) {
 			const owners = modules.filter(({ sourceFile }) => getKeysWrittenByStorageWriteFunctions(sourceFile).includes(key)).map(({ path }) => path)
 			assert.equal(owners.length, 1, `${ key } is written by the …StorageWrite functions of ${ owners.length === 0 ? 'no module' : owners.join(' and ') }`)
-			const modulesNamingKey = modules.filter(({ sourceFile }) => getStringLiterals(sourceFile).includes(key)).map(({ path }) => path)
+			const modulesNamingKey = modules.filter(({ sourceFile }) => getStorageKeyStringLiterals(sourceFile).includes(key)).map(({ path }) => path)
 			assert.deepEqual(modulesNamingKey.filter((path) => !owners.includes(path)), [], `${ key } is named outside its owner ${ owners.join('') }`)
 		}
 	})
+})
+
+
+test('settings reply gets delegate preferences and network from the same settings snapshot', async () => {
+	const settings = await import('../../app/ts/background/settings.js')
+	const { settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+	const snapshot = await settings.getSettings()
+	const readSettings = spyOn(settings, 'getSettings').mockResolvedValue(snapshot)
+	const readPreference = spyOn(settings, 'getDelegateClearingPreferences').mockImplementation(async () => { throw new Error('Separate preference read splits the snapshot') })
+	const sendMessage = spyOn(browser.runtime, 'sendMessage')
+	try {
+		await settingsOpened()
+		assert.equal(readSettings.mock.calls.length, 1)
+		assert.equal(readPreference.mock.calls.length, 0)
+		const messages = sendMessage.mock.calls.flatMap(([message]) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success ? [parsed.value] : []
+		})
+		const reply = messages.find((message) => message.method === 'popup_requestSettingsReply')
+		if (reply?.method !== 'popup_requestSettingsReply') throw new Error('Missing settings reply')
+		assert.deepEqual(reply.data.delegateClearingPreferences, snapshot.delegateClearingPreferences)
+		assert.deepEqual(reply.data.activeRpcNetwork, snapshot.activeRpcNetwork)
+	} finally {
+		readSettings.mockRestore()
+		readPreference.mockRestore()
+		sendMessage.mockRestore()
+	}
 })

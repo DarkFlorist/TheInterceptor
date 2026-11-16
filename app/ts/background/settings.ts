@@ -286,7 +286,7 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences, delegateClearingPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences(), getDelegateClearingPreferences()])
+	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.7' as const,
@@ -295,7 +295,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			activeSimulationAddress: settings.activeSimulationAddress,
 			activeSigningSafeAddress: settings.activeSigningSafeAddress,
 			signingAddressPreferences,
-			delegateClearingPreferences,
+			delegateClearingPreferences: settings.delegateClearingPreferences,
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,

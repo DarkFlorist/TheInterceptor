@@ -10,7 +10,6 @@ import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeApps
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
-import { getDelegateClearingPreferences } from '../settings.js'
 import { getPopupRefreshGeneration } from '../popupRefreshGeneration.js'
 
 
@@ -20,7 +19,6 @@ export async function settingsOpened() {
 	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
 	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
-	const delegateClearingPreferencesPromise = silenceChromeUnCaughtPromise(getDelegateClearingPreferences())
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const settings = await settingsPromise
 
@@ -33,7 +31,7 @@ export async function settingsOpened() {
 			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
 			rpcEntries: await rpcEntriesPromise,
 			activeRpcNetwork: settings.activeRpcNetwork,
-			delegateClearingPreferences: await delegateClearingPreferencesPromise,
+			delegateClearingPreferences: settings.delegateClearingPreferences,
 		}
 	})
 }

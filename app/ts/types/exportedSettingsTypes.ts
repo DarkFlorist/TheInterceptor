@@ -53,6 +53,22 @@ const compatibilityExportedSettingsFields = {
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
+// Version 1.7 extends the 1.6 schema with delegate simulation preferences.
+const safeAppsExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
+	signingAddressPreferences: SigningAddressPreferences,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+	safeAppsCompatibilityMode: funtypes.Boolean,
+}
+
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -121,37 +137,15 @@ export const ExportedSettings = funtypes.Union(
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.6'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
-			safeAppsCompatibilityMode: funtypes.Boolean,
+			...safeAppsExportedSettingsFields,
 		})
 	}),
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.7'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
+			...safeAppsExportedSettingsFields,
 			delegateClearingPreferences: DelegateClearingPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
-			safeAppsCompatibilityMode: funtypes.Boolean,
 		})
 	}),
 )
