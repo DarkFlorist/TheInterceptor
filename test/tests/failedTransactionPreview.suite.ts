@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { setSystemTime, test } from 'bun:test'
+import { setSystemTime, test as testWithDefaultNetwork } from 'bun:test'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
@@ -7,6 +7,17 @@ import type { ConfirmationRunId } from '../../app/ts/types/accessRequest.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
 import { activeAddress, addressString, browserMock, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, popupVisualisation as successfulPopupVisualisation, recipientAddress, signedTransaction, simulator, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+
+// These previews decode mainnet USDC calldata using the bundled mainnet ABI. The shared Safe harness now defaults to a local chain.
+const test = (name: string, run: () => Promise<void>) => testWithDefaultNetwork(name, async () => {
+	const previousChainId = fakeRpcNetwork.chainId
+	fakeRpcNetwork.chainId = 1n
+	try {
+		await run()
+	} finally {
+		fakeRpcNetwork.chainId = previousChainId
+	}
+})
 
 const USDC_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
 const TRANSFERRED_USDC = 2_500_000n

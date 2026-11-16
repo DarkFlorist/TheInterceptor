@@ -46,6 +46,7 @@ export function createInterruptedConfirmTransactionSimulation(
 		simulationMode,
 		activeAddress,
 		signerName,
+		confirmationRunId: getNextConfirmationRunId(),
 		simulationStartedTimestamp,
 		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
 		simulationState: {
