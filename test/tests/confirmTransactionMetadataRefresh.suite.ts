@@ -73,6 +73,7 @@ function createSentTransaction({ to, value, input, gas }: SentCall) {
 	// The placeholder visualisation is older than any simulation, so the first confirmation simulation replaces it.
 	const pendingTransaction: PendingTransactionOrSignableMessage = {
 		type: 'Transaction',
+		safeFlow: { kind: 'ordinary' },
 		popupOrTabId: { type: 'popup', id: 1 },
 		originalRequestParameters: requestParameters,
 		uniqueRequestIdentifier,
