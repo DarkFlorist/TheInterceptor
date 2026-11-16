@@ -131,8 +131,6 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 			default: assertNever(operation)
 		}
 	}
-	// A further transaction without simulation options closes a block of zero base fee transactions, as in the Transaction case above.
-	if (openBlockForNextTransaction && currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee) pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
 	if (
 		openBlockForNextTransaction
 		|| currentBlockTransactions.length > 0
