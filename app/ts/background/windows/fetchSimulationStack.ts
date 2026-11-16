@@ -52,6 +52,15 @@ export function getSimulationStack(snapshot: SimulationStackSnapshot, version: S
 }
 
 export async function resolveFetchSimulationStackRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+	await resolveFetchSimulationStackDecision(snapshot, websiteTabConnections, confirmation)
+}
+
+// A rejection needs no network read or simulation but shares approval's request ownership and cleanup.
+export async function rejectFetchSimulationStackRequest(websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+	await resolveFetchSimulationStackDecision(undefined, websiteTabConnections, confirmation)
+}
+
+async function resolveFetchSimulationStackDecision(snapshot: SimulationStackSnapshot | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	if (pendForUserReply !== undefined) {
 		// A confirmation waits for its snapshot, so it can arrive after its dialog closed and a newer request started waiting
 		pendForUserReply.tryResolve(confirmation.data.uniqueRequestIdentifier, { confirmation, snapshot })
@@ -77,31 +86,19 @@ async function runExclusiveFetchSimulationStackResolution(resolution: () => Prom
 }
 
 // The reply is prepared first so a failed extraction leaves the request stored and retryable. The clear precedes the close so a request arriving while the dialog closes finds the slot free instead of being refused
-async function resolveStoredRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
+async function resolveStoredRequest(snapshot: SimulationStackSnapshot | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
 	const { uniqueRequestIdentifier, simulationStackVersion, popupOrTabId } = storedRequest
-	const reply: FetchSimulationStackRequestResult = confirmation.data.accept
-		? { type: 'result', method: 'interceptor_getSimulationStack', result: await getSimulationStack(snapshot, simulationStackVersion) }
+	if (confirmation.data.accept && snapshot === undefined) throw new Error('An accepted simulation stack request requires a snapshot')
+	const reply: FetchSimulationStackRequestResult = confirmation.data.accept && snapshot !== undefined
+		? { type: 'result', method: 'interceptor_getSimulationStack', result: getSimulationStack(snapshot, simulationStackVersion) }
 		: { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error }
-	// Preparing the reply can wait on storage, so a newer request may hold the slot by now. It only got there because openFetchSimulationStackDialog found this request's dialog gone, which makes the close below a no-op in that case
+	// Clear only this request: a newer request may have acquired the slot while storage was read.
 	await clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier)
 	replyToInterceptedRequest(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
 	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
 	await closePopupOrTabById(popupOrTabId)
 }
 
-// Needs neither a network read nor a simulation, so a website gets its rejection whatever state the stack or the network is in.
-export async function rejectFetchSimulationStackRequest(websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
-	if (pendForUserReply !== undefined) {
-		// Like an approval, a rejection only answers the request it names, never a newer request now waiting in the same dialog slot
-		pendForUserReply.tryResolve(confirmation.data.uniqueRequestIdentifier, { confirmation, snapshot: undefined })
-		return
-	}
-	const data = await getFetchSimulationStackRequestPromise()
-	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
-	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, ...userDeniedChange, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
-	if (openedDialog) await closePopupOrTabById(openedDialog)
-	openedDialog = undefined
-}
 
 function getRejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, simulationStackVersion: SimulationStackVersion) {
 	return {

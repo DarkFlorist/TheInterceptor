@@ -249,10 +249,10 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 	test('rejecting replies with the user-rejected error and does not share the simulation stack', async () => {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
-		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { rejectFetchSimulationStackRequest } = await fetchSimulationStackPromise
 		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
 
-		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false))
+		await rejectFetchSimulationStackRequest(websiteTabConnections, createConfirmation(false))
 
 		assertUserRejectedReply(getOnlyPostedMessage(postedMessages))
 		assert.equal(await getFetchSimulationStackRequestPromise(), undefined)
@@ -275,10 +275,10 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 	test('a dialog opened while the restarted request closes its dialog can still be closed to reject its own request', async () => {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
-		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { rejectFetchSimulationStackRequest } = await fetchSimulationStackPromise
 		const getNewRequest = startNewRequestWhenOldDialogCloses()
 
-		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false))
+		await rejectFetchSimulationStackRequest(websiteTabConnections, createConfirmation(false))
 		const newRequest = getNewRequest()
 		assert.equal(openWindowIds.has(newDialogWindowId), true)
 
@@ -291,11 +291,11 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 	test('a request stored while the old dialog closes stays stored', async () => {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
-		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { rejectFetchSimulationStackRequest } = await fetchSimulationStackPromise
 		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
 		const getNewRequest = startNewRequestWhenOldDialogCloses()
 
-		await resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false))
+		await rejectFetchSimulationStackRequest(websiteTabConnections, createConfirmation(false))
 
 		assert.equal((await getFetchSimulationStackRequestPromise())?.uniqueRequestIdentifier.requestId, newRequestIdentifier.requestId)
 
@@ -306,11 +306,11 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 	test('concurrent confirmations answer the website once, with the first decision', async () => {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages)
-		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
+		const { resolveFetchSimulationStackRequest, rejectFetchSimulationStackRequest } = await fetchSimulationStackPromise
 		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
 
 		await Promise.all([
-			resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(false)),
+			rejectFetchSimulationStackRequest(websiteTabConnections, createConfirmation(false)),
 			resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(true)),
 		])
 

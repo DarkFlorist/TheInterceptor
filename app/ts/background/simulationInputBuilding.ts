@@ -47,7 +47,7 @@ export function buildSimulationStateInput(settings: Settings, sources: Simulatio
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(sources.richAddresses)
 	let previousBlockTimeManipulation = settings.simulationMode ? sources.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-	
+
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
 			stateOverrides: currentBlockStateOverrides,
