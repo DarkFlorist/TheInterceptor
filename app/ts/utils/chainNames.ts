@@ -1363,3 +1363,24 @@ export const CHAIN_NAMES = new Map<string, string>([
 	['6022140761023', 'Molereum Network'],
 	['868455272153094', 'Godwoken Testnet (V1)']
 ])
+
+// EIP-3770 short names of well-known chains, used to check a pasted `<shortName>:<address>` against the chain the address is entered for: https://eips.ethereum.org/EIPS/eip-3770
+// Each name maps to the same chain in ethereum-lists/chains (https://github.com/ethereum-lists/chains) and in Safe{Wallet} (https://safe-config.safe.global/api/v1/chains/), except Polygon: Safe{Wallet} writes `matic` and the registry now writes `pol`, and no other chain uses either name.
+// Add a name only when its chain is certain, because a wrong entry rejects valid addresses while a missing entry only skips the comparison. Names are matched exactly, including letter case.
+export const CHAIN_IDS_BY_EIP3770_SHORT_NAME: ReadonlyMap<string, bigint> = new Map([
+	['eth', 1n],
+	['oeth', 10n],
+	['bnb', 56n],
+	['gno', 100n],
+	['matic', 137n],
+	['pol', 137n],
+	['zksync', 324n],
+	['base', 8453n],
+	['arb1', 42161n],
+	['celo', 42220n],
+	['avax', 43114n],
+	['linea', 59144n],
+	['basesep', 84532n],
+	['scr', 534352n],
+	['sep', 11155111n],
+])
