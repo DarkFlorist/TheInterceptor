@@ -1,8 +1,9 @@
+import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
-import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
+import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, readNetworkSnapshotForServices, runNetworkTransition, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
@@ -55,7 +56,7 @@ import { createSafeContractValidationFailure, getSafeContractSnapshot, validateS
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getCreatedSafeProposal, getPendingTransactionGasPayment, getPendingTransactionRefresh, getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
-import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
+import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT, activeStackContextsEqual, getActiveStackContext } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
@@ -1298,25 +1299,31 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	const importedStackBytes = estimateSerializedStateBytes(InterceptorTransactionStack, parsedRequest.data.interceptorSimulateStack)
 	console.info(`[simulation-stack import] received ${ parsedRequest.data.interceptorSimulateStack.operations.length } operations (${ formatEstimatedBytes(importedStackBytes) }).`)
 
-	const websiteAccess = await getWebsiteAccess()
-	const updateWebsiteDetails = (website: Website) => {
-		const websiteData = websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website
-		return websiteData ?? website
-	}
-
 	let updatedStack: InterceptorTransactionStack
 	try {
-		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...admission.operations]
-			// generate new ids for operations to prevent duplicated ids
-			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
-				switch(operation.type) {
-					case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
-					case 'TimeManipulation': return operation
-					case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
-					default: return assertNever(operation)
-				}
-			})) }
+		const network = await readNetworkSnapshotForServices({ ethereum, tokenPriceService })
+		requireSimulationSnapshot(network.simulation)
+		const websiteAccess = await getWebsiteAccess()
+		const updateWebsiteDetails = (website: Website) => {
+			const websiteData = websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website
+			return websiteData ?? website
+		}
+		updatedStack = await runNetworkTransition(async () => {
+			const settings = await getSettings()
+			// Import preparation may outlive a switch, even away and back to the same endpoint. Check under the lock that also protects persistence, after any pending cleanup has completed.
+			if (!snapshotNetworkIsActive(network.simulation) || !activeStackContextsEqual(getActiveStackContext(settings), network.simulation.activeStackContext)) throw new Error('The active network or stack selection changed while preparing the import. Try importing again.')
+			return await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+				const newOperations = [...prevStack.operations, ...admission.operations]
+				// generate new ids for operations to prevent duplicated ids
+				return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
+					switch(operation.type) {
+						case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
+						case 'TimeManipulation': return operation
+						case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
+						default: return assertNever(operation)
+					}
+				})) }
+			})
 		})
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)

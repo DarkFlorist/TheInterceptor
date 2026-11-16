@@ -436,9 +436,11 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
 		const originalGet = browser.storage.local.get
 		let changed = false
+		let chainReconciled = false
 		browser.storage.local.get = async keys => {
 			const result = await originalGet(keys)
-			if (!changed && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			if (Array.isArray(keys) && keys.includes('simulationStackChainId')) chainReconciled = true
+			if (!changed && chainReconciled && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
 				changed = true
 				// Initial settings reads have captured their values; rich-address resolution has not started yet.
 				await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress + 1n, simulationMode: nextSimulationMode })

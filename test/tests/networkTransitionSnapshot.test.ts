@@ -4,6 +4,7 @@ import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLif
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
+import type { ImportSimulationStack } from '../../app/ts/types/interceptor-messages.js'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
 import { type EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -36,6 +37,15 @@ const websiteOrigin = 'https://example.test'
 const rawTransactionSignerKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
 const AGGREGATE3_SELECTOR = '0x82ad56cb'
 const website = { websiteOrigin, icon: undefined, title: undefined }
+
+const stackImportRequest = {
+	method: 'popup_importSimulationStack',
+	data: {
+		name: 'Interceptor Simulation Export', version: '1.0.0',
+		eth_simulateV1: { method: 'eth_simulateV1', params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest'] },
+		interceptorSimulateStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 77n, deltaUnit: 'Seconds' } }] },
+	},
+} satisfies ImportSimulationStack
 
 function parseRpcResult(data: string) {
 	const response = JsonRpcResponse.parse(JSON.parse(data))
@@ -1327,6 +1337,161 @@ describe('network transition snapshot', () => {
 			}
 			await assertCommittedNetworkBEffects(modules, owner, getChainChangedResults, 0)
 		} finally {
+			retireAll()
+		}
+	})
+
+	test.each(['interceptorTransactionStack', 'simulationStackChainId'])('a restarted background retries interrupted chain cleanup when writing %s fails', async (failedKey) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { browserStorageLocalSet, browserStorageLocalGet } = await import('../../app/ts/utils/storageUtils.js')
+		// Recreate only durable state, with no in-memory unfinished-transition callback: settings committed B, but the stack still belongs to A.
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkB })
+		await browserStorageLocalSet({ simulationStackChainId: networkA.chainId })
+		await modules.updateTransactionState(() => ({
+			interceptorTransactionStack: { operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] },
+			safeTransactionStacks: [{ chainId: networkA.chainId, safeAddress: firstAddress, safeVersion: '1.4.1', baseNonce: 0n, threshold: 1n, transactions: [] }],
+		}))
+		const safeStacks = await modules.getSafeTransactionStacks()
+		// Startup recreates services for the committed network, even though its stack cleanup was interrupted.
+		const { owner, retireAll } = createRecordingServicesOwner(networkB)
+		try {
+			failNextStorageWrite(failedKey, new Error('Interrupted cleanup'))
+			const failedRead = await modules.readNetworkSnapshot(owner)
+			assert.equal(failedRead.settings.activeRpcNetwork.chainId, networkB.chainId)
+			assert.equal(failedRead.simulation.kind, 'unavailable')
+			assert.equal((await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId, networkA.chainId)
+			const repaired = await modules.readNetworkSnapshot(owner)
+			assert.equal(repaired.simulation.kind, 'loaded')
+			if (repaired.simulation.kind !== 'loaded') throw new Error('Expected repaired simulation')
+			assert.deepEqual(repaired.simulation.interceptorTransactionStack.operations, [])
+			assert.equal((await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId, networkB.chainId)
+			assert.deepEqual(await modules.getSafeTransactionStacks(), safeStacks)
+			// A subsequent read must not clear operations added after recovery.
+			await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(2n, networkB.chainId, STACKED_ON_B_RECIPIENT)] }))
+			await modules.readNetworkSnapshot(owner)
+			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test.each([undefined, networkA.chainId])('a restarted background preserves its current stack with chain identity %s', async (simulationStackChainId) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { browserStorageLocalSet, browserStorageLocalGet } = await import('../../app/ts/utils/storageUtils.js')
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkAOnOtherEndpoint })
+		if (simulationStackChainId !== undefined) await browserStorageLocalSet({ simulationStackChainId })
+		const operations = [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)]
+		await modules.updateInterceptorTransactionStack(() => ({ operations }))
+		const { owner, retireAll } = createRecordingServicesOwner(networkAOnOtherEndpoint)
+		try {
+			const read = await modules.readNetworkSnapshot(owner)
+			assert.equal(read.simulation.kind, 'loaded')
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, operations)
+			assert.equal((await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId, networkA.chainId)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test('a failed initial stack chain identity write prevents committing a network switch', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		try {
+			failNextStorageWrite('simulationStackChainId', new Error('Cannot persist stack chain'))
+			await assert.rejects(modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false }), /Cannot persist stack chain/u)
+			assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkA.chainId)
+			assert.equal(owner.getCurrent().ethereum.getRpcEntry().chainId, networkA.chainId)
+			await modules.readNetworkSnapshot(owner)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test('another settings transition cannot commit while the earlier chain cleanup is still failing', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		try {
+			failStorageWrites('interceptorTransactionStack', 3, new Error('Cannot clear old stack'))
+			await assert.rejects(modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false }), /Cannot clear old stack/u)
+			// Returning to A before cleanup finishes would hide the mismatch from restart recovery and let A's old stack survive the chain changes.
+			await assert.rejects(modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false }), /Cannot clear old stack/u)
+			assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkB.chainId)
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
+			assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkA.chainId)
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+		} finally {
+			retireAll()
+		}
+	})
+
+	test.each(['interceptorTransactionStack', 'simulationStackChainId'])('an import cannot append during failed restart cleanup of %s, and succeeds after repair', async (failedKey) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { browserStorageLocalSet, browserStorageLocalGet } = await import('../../app/ts/utils/storageUtils.js')
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkB })
+		await browserStorageLocalSet({ simulationStackChainId: networkA.chainId })
+		const operations = [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)]
+		await modules.updateInterceptorTransactionStack(() => ({ operations }))
+		const { owner, retireAll } = createRecordingServicesOwner(networkB)
+		try {
+			// Both the dispatcher's read and the import's own admission read see unavailable simulation.
+			failStorageWrites(failedKey, 2, new Error('Restart cleanup is unavailable'))
+			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'unavailable')
+			const { ethereum, tokenPriceService } = owner.getCurrent()
+			const failedImport = await modules.importSimulationStack(ethereum, tokenPriceService, stackImportRequest)
+			assert.equal(failedImport.ok, false)
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, failedKey === 'interceptorTransactionStack' ? operations : [])
+			assert.equal((await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId, networkA.chainId)
+			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'loaded')
+			assert.equal((await modules.importSimulationStack(ethereum, tokenPriceService, stackImportRequest)).ok, true)
+			await modules.readNetworkSnapshot(owner)
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, stackImportRequest.data.interceptorSimulateStack.operations)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test.each([false, true])('an import paused during preparation cannot append after a network switch (switchBack=%s)', async (switchBack) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const preparing = createDeferredSignal()
+		const releasePreparation = createDeferredSignal()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let held = false
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys: Parameters<typeof originalGet>[0]) => {
+			const result = await originalGet(keys)
+			if (!held && keys === 'websiteAccess') {
+				held = true
+				preparing.resolve()
+				await releasePreparation.promise
+			}
+			return result
+		} })
+		const { ethereum, tokenPriceService } = owner.getCurrent()
+		const importing = modules.importSimulationStack(ethereum, tokenPriceService, stackImportRequest)
+		try {
+			await preparing.promise
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			if (switchBack) await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
+			releasePreparation.resolve()
+			const reply = await importing
+			assert.equal(reply.ok, false)
+			if (reply.ok) throw new Error('Expected stale import to fail')
+			assert.match(reply.message, /active network or stack selection changed/u)
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+		} finally {
+			releasePreparation.resolve()
+			await importing
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
 			retireAll()
 		}
 	})

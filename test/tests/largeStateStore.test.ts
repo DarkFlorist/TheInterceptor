@@ -501,7 +501,7 @@ describe('large state store helpers', () => {
 		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), undefined, true), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
-		assert.deepEqual(storageState, {})
+		assert.deepEqual(storageState, { simulationStackChainId: '0x1' })
 	})
 
 	for (const operation of ['write', 'delete']) {
