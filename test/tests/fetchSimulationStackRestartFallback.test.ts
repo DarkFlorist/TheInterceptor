@@ -338,12 +338,12 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 		assert.equal(openWindowIds.has(dialogWindowId), false)
 	})
 
-	test('a request stored while legacy extraction waits on settings survives and the old website still gets one reply', async () => {
+	test('a request stored while an old stored approval is being read survives and the old website still gets one reply', async () => {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = await setUpStoredRequestWithoutPendingWaiter(postedMessages, '1.0.0')
 		const { resolveFetchSimulationStackRequest } = await fetchSimulationStackPromise
 		const { getFetchSimulationStackRequestPromise } = await storageVariablesPromise
-		const settingsRead = pauseAfterStorageReadOf('simulationMode')
+		const settingsRead = pauseAfterStorageReadOf('fetchSimulationStackRequestPromise')
 
 		const oldResolution = resolveFetchSimulationStackRequest(createSnapshot(), websiteTabConnections, createConfirmation(true))
 		await settingsRead.paused

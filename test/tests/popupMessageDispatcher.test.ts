@@ -1,3 +1,4 @@
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
@@ -159,11 +160,13 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
-	Object.defineProperty(ethereum, 'getRpcEntry', { configurable: true, value: () => settings.activeRpcNetwork })
+	let currentRpcNetwork = settings.activeRpcNetwork
+	Object.defineProperty(ethereum, 'getRpcEntry', { configurable: true, value: () => currentRpcNetwork })
+	Object.defineProperty(ethereum, 'updateRpcEntryMetadata', { configurable: true, value: (network: RpcNetwork) => { currentRpcNetwork = network } })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),
-		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, (network) => { ethereum.updateRpcEntryMetadata(network); return { ethereum, tokenPriceService } }),
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),
