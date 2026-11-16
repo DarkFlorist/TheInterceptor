@@ -207,6 +207,10 @@ describe('popup message dispatcher seams', () => {
 	test('does not refresh content script exclusions after removing an enabled website', async () => {
 		storageState.websiteAccess = [{ ...disabledWebsiteAccess, interceptorDisabled: false }]
 
+		const { reconcileContentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await reconcileContentScriptRegistration()
+		contentScriptUpdateBatches.length = 0
+
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_removeWebsiteAccess',
 			data: { websiteOrigin: 'disabled.test' },
