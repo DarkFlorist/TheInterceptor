@@ -3,8 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import { getFailureReasonForDisplay } from '../simulation/failureReasons.js'
-import { getInterceptorTransactionCreationExplanation, getTransactionCreationFailureReason } from '../simulation/transactionCreationFailureReason.js'
+import { getFailureReasonForDisplay, getInterceptorTransactionCreationExplanation } from '../simulation/failureReasons.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
@@ -82,7 +81,7 @@ export async function refreshConfirmTransactionSimulation(
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
 	const transactionCreationError = transactionToSimulate.success ? undefined : transactionToSimulate.error
-	// getTransactionCreationFailureReason shows an Interceptor explanation instead of the decoded reason, so its revert data is never decoded.
+	// getFailureReasonForDisplay shows an Interceptor explanation instead of the decoded reason, so its revert data is never decoded.
 	const transactionCreationErrorDataToDecode = transactionCreationError === undefined || getInterceptorTransactionCreationExplanation(transactionCreationError) !== undefined ? undefined : transactionCreationError.data
 	// The errors decoded in this function (the transaction creation error, plus the thrown simulation error in the catch path) use the recipient's ABI, a best-effort guess for a simulation error that may come from another stacked transaction, so they share a single lookup that is skipped unless one is a custom error selector.
 	const getRecipientErrorAbis = async (errorDataToDecode: readonly (string | undefined)[]): Promise<readonly string[]> => {
@@ -102,7 +101,7 @@ export async function refreshConfirmTransactionSimulation(
 		}
 	}
 	// A transaction that failed to be created is not simulated, so callers pass the recipient ABI, plus the simulation ABIs when the simulation produced them, to decode its custom errors.
-	const getTransactionCreationFailureReasonWithAbis = (errorAbis: readonly string[]) => transactionCreationError === undefined ? undefined : getTransactionCreationFailureReason(errorAbis, transactionCreationError)
+	const getCreationFailureReasonWithAbis = (errorAbis: readonly string[]) => transactionCreationError === undefined ? undefined : getFailureReasonForDisplay(errorAbis, transactionCreationError)
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput()
 		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
@@ -130,7 +129,7 @@ export async function refreshConfirmTransactionSimulation(
 		const availableAbis = visualizedSimulatorState.addressBookEntries
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
-		const transactionCreationFailureReason = getTransactionCreationFailureReasonWithAbis([...availableAbis, ...await getRecipientErrorAbis([transactionCreationErrorDataToDecode])])
+		const transactionCreationFailureReason = getCreationFailureReasonWithAbis([...availableAbis, ...await getRecipientErrorAbis([transactionCreationErrorDataToDecode])])
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
 			return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 				...info,
@@ -178,7 +177,7 @@ export async function refreshConfirmTransactionSimulation(
 		return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
-			transactionCreationFailureReason: getTransactionCreationFailureReasonWithAbis(recipientErrorAbis),
+			transactionCreationFailureReason: getCreationFailureReasonWithAbis(recipientErrorAbis),
 			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? getFailureReasonForDisplay(recipientErrorAbis, baseError) : baseError.message },
 			simulationState: {
 				blockNumber: 0n,

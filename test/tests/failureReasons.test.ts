@@ -27,3 +27,9 @@ describe('getFailureReasonForDisplay', () => {
 		expect(getFailureReasonForDisplay([], { code: -32000, message: 'STF' })).toBe('STF')
 	})
 })
+
+test('the common display policy preserves explicit transaction-creation explanations before decoding revert data', () => {
+	const revert = revertWithData(encodeErrorString('GS013'))
+	expect(getFailureReasonForDisplay([], { ...revert, safeCallRevertedMessage: 'The Safe call reverted; its inner reason is unavailable.' })).toBe('The Safe call reverted; its inner reason is unavailable.')
+	expect(getFailureReasonForDisplay([], { ...revert, insufficientBalanceMessage: 'The account cannot cover the transaction fees.' })).toBe('The account cannot cover the transaction fees.')
+})

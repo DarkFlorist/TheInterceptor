@@ -55,7 +55,7 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	confirmationRunId: ConfirmationRunIdCodec,
 }).And(funtypes.ReadonlyPartial({
 	failedTransactionPreview: FailedTransactionPreview,
-	// Displayed reason when transactionToSimulate failed to be created, derived only by getTransactionCreationFailureReason. Optional so visualisations stored before it existed still parse; the confirmation popup fills it in for them with addMissingTransactionCreationFailureReason.
+	// Displayed reason when transactionToSimulate failed to be created, derived only by getFailureReasonForDisplay. Optional so visualisations stored before it existed still parse; the confirmation popup fills it in for them with addMissingTransactionCreationFailureReason.
 	transactionCreationFailureReason: funtypes.String,
 }))
 

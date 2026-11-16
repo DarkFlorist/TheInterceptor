@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { encodeErrorString } from './errorDataFixtures.js'
-import { getTransactionCreationFailureReason } from '../../app/ts/simulation/transactionCreationFailureReason.js'
+import { getFailureReasonForDisplay } from '../../app/ts/simulation/failureReasons.js'
 import { SAFE_CALL_REVERTED_MESSAGE } from '../../app/ts/safe/safeExecutionFailure.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -309,7 +309,7 @@ function makeRevertedGasEstimationPendingTransaction(revertReason: string, reque
 		transactionToSimulate,
 		popupVisualisation: {
 			...simulated.popupVisualisation,
-			data: { ...simulated.popupVisualisation.data, uniqueRequestIdentifier, transactionToSimulate, transactionCreationFailureReason: getTransactionCreationFailureReason([], gasEstimationError) },
+			data: { ...simulated.popupVisualisation.data, uniqueRequestIdentifier, transactionToSimulate, transactionCreationFailureReason: getFailureReasonForDisplay([], gasEstimationError) },
 		},
 	}
 }
@@ -650,7 +650,7 @@ describe('ConfirmTransaction', () => {
 
 		const failedPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const transactionToSimulate = { ...failedPendingTransaction.transactionToSimulate, error: { code: -32000, message: 'execution reverted', data: encodeErrorString('STF') } }
-		const stfReason = getTransactionCreationFailureReason([], transactionToSimulate.error)
+		const stfReason = getFailureReasonForDisplay([], transactionToSimulate.error)
 		const pendingTransaction = {
 			...failedPendingTransaction,
 			transactionToSimulate,

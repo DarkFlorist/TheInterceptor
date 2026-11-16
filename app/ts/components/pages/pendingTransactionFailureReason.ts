@@ -1,4 +1,4 @@
-import { getTransactionCreationFailureReason } from '../../simulation/transactionCreationFailureReason.js'
+import { getFailureReasonForDisplay } from '../../simulation/failureReasons.js'
 import type { PendingTransaction } from '../../types/accessRequest.js'
 
 // Pending transactions stored by older versions lack transactionCreationFailureReason. It is derived with the same function the background uses, but without contract ABIs, so their custom errors stay undecoded until the next confirmation refresh recomputes the reason. A reason that is already present is never replaced.
@@ -7,7 +7,7 @@ export const addMissingTransactionCreationFailureReason = (pending: PendingTrans
 	const popupVisualisation = pending.popupVisualisation
 	const transactionToSimulate = popupVisualisation.data.transactionToSimulate
 	if (transactionToSimulate.success || popupVisualisation.data.transactionCreationFailureReason !== undefined) return pending
-	const transactionCreationFailureReason = getTransactionCreationFailureReason([], transactionToSimulate.error)
+	const transactionCreationFailureReason = getFailureReasonForDisplay([], transactionToSimulate.error)
 	// Spread per status so TypeScript keeps each data shape paired with its statusCode.
 	switch (popupVisualisation.statusCode) {
 		case 'failed': return { ...pending, popupVisualisation: { ...popupVisualisation, data: { ...popupVisualisation.data, transactionCreationFailureReason } } }
