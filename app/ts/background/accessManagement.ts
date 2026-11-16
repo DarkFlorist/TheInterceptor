@@ -22,7 +22,6 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { getInterceptorDisabledSites } from '../utils/contentScriptInjectionConfiguration.js'
 import { reloadConnectedTabs } from './reloadConnectedTabs.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { updateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
@@ -504,7 +503,7 @@ export async function persistWebsiteAccessChange(
 type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
 type StepFailure = { readonly name: string, readonly error: unknown }
 export type WebsiteAccessMutation = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
-type ConnectedTabsReloadPolicy = 'always' | 'whenDisabledSitesChange'
+type ConnectedTabsReloadPolicy = 'alsoWhenInjectionUnchanged' | 'whenInjectionChanges'
 
 const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
 	name: 'reloading connected tabs',
@@ -536,31 +535,21 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 	throw new AggregateError(failures.map(({ error }) => error), describeStepFailures(failures))
 }
 
-function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
-	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
-	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
-}
-
 // Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
 	let saved = false
-	let disabledSitesChanged = false
+	let reloadHandled = false
 	const failures: StepFailure[] = []
 	try {
-		await updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, (previousWebsiteAccess) => {
-			const nextWebsiteAccess = mutation(previousWebsiteAccess)
-			disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
-			return nextWebsiteAccess
-		}, async (update, refresh) => await withWebsiteAccessRollback(update, async (websiteAccess) => {
+		await updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, mutation, async (update, refresh) => await withWebsiteAccessRollback(update, async (websiteAccess) => {
 			saved = true
 			await refresh(websiteAccess)
-		}))
+		}), () => { reloadHandled = true })
 	} catch (error) {
 		if (!saved) throw error
 		failures.push({ name: 'updating website access and content script injection', error })
 	}
-	// Injection-site changes already reload connected tabs inside the registration transaction.
-	const steps = reloadPolicy === 'always' && !disabledSitesChanged ? [reloadConnectedTabsStep(websiteTabConnections)] : []
+	// The injection layer reports whether it handled the reload; only an unchanged configuration can need this workflow's additional reload.
+	const steps = reloadPolicy === 'alsoWhenInjectionUnchanged' && !reloadHandled ? [reloadConnectedTabsStep(websiteTabConnections)] : []
 	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures)
 }

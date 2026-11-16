@@ -57,7 +57,7 @@ async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: W
 }
 
 // A refresh failure is reported here and not rethrown: a kept update stays saved and a rolled-back one leaves storage as it was, and either way the popup re-reads storage. Failures of the update itself propagate unreported to the caller.
-async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(websiteTabConnections: WebsiteTabConnections, readConfigurationBeforeUpdate: () => Promise<Snapshot>, hasSameConfiguration: (before: Snapshot, after: ContentScriptRegistrationConfiguration) => boolean, update: ContentScriptConfigurationUpdate) {
+async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(websiteTabConnections: WebsiteTabConnections, readConfigurationBeforeUpdate: () => Promise<Snapshot>, hasSameConfiguration: (before: Snapshot, after: ContentScriptRegistrationConfiguration) => boolean, update: ContentScriptConfigurationUpdate, onReloadHandled?: () => void) {
 	await contentScriptInjectionConfigurationSemaphore.execute(async () => {
 		const configurationBeforeUpdate = await readConfigurationBeforeUpdate()
 		const refreshErrors = new Set<unknown>()
@@ -65,6 +65,8 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 			try {
 				const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
 				if (hasSameConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return
+				// This layer owns the reload for changed configuration, including its rollback/failure path.
+				onReloadHandled?.()
 				await applyConfigurationAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate, update.onRefreshFailure)
 			} catch (error: unknown) {
 				refreshErrors.add(error)
@@ -85,12 +87,13 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 	})
 }
 
-export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
+export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction, onReloadHandled?: () => void) {
 	await updateContentScriptConfigurationAndReloadTabsIfChanged(
 		websiteTabConnections,
 		getContentScriptInjectionConfiguration,
 		(before, after) => hasSameContentScriptInjectionSitesConfiguration(before.injectionSites, after.injectionSites),
 		{ onRefreshFailure: 'rollBackUpdate', refreshFailureCode: 'website_access_content_script_refresh_failed', runUpdateWithRefresh: async (refreshIfChanged) => await transaction(update, refreshIfChanged) },
+		onReloadHandled,
 	)
 }
 

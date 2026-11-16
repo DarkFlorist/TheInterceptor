@@ -1,3 +1,4 @@
+import * as injectionStrategy from '../../app/ts/background/contentScriptInjectionStrategy.js'
 import * as assert from 'assert'
 import { afterEach, describe, mock, spyOn, test } from 'bun:test'
 import * as errors from '../../app/ts/utils/errors.js'
@@ -156,6 +157,19 @@ describe('website access registration and reconciliation', () => {
 
 		assert.deepEqual(sideEffectOrder, ['content script update', 'reload tab 1', 'reload tab 3', 'reconcile', 'port accountsChanged', 'port disconnect'])
 		assert.equal(sentPopupMessageMethods().at(-1), 'popup_interceptor_access_changed')
+	})
+
+	test('uses the injection layer reload decision without predicting which settings require it', async () => {
+		const { handlers, connectedTabIds, reloadedTabIds } = await setUpApprovedConnectionAndOtherTab()
+		spyOn(injectionStrategy, 'updateContentScriptInjectionSitesAndReloadTabsIfChanged').mockImplementation(async (connections, update, transaction, onReloadHandled) => {
+			await transaction(update, async () => {
+				onReloadHandled?.()
+				for (const tabId of connections.keys()) await browser.tabs.reload(tabId)
+			})
+		})
+		// This mutation changes no disabled sites. The coordinator still honors the injection owner's decision to reload.
+		await handlers.blockExternalRequests()
+		assert.deepEqual(reloadedTabIds, connectedTabIds)
 	})
 
 	test('does not run follow-ups when the initial storage write fails', async () => {
