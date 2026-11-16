@@ -1,3 +1,5 @@
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { reloadConnectedTabs } from './reloadConnectedTabs.js'
 import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { getInterceptorDisabledSites } from '../utils/contentScriptExclusions.js'
@@ -9,12 +11,15 @@ function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWe
 	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
 }
 
-export async function updateWebsiteAccessAndContentScriptInjectionStrategy(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
+export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
 	let disabledSitesChanged = false
 	await updateWebsiteAccess((previousWebsiteAccess) => {
 		const nextWebsiteAccess = update(previousWebsiteAccess)
 		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
 		return nextWebsiteAccess
 	})
-	return await reconcileContentScriptRegistration({ exclusionsChanged: disabledSitesChanged })
+	const refreshed = await reconcileContentScriptRegistration({ exclusionsChanged: disabledSitesChanged })
+	if (refreshed) await reloadConnectedTabs(websiteTabConnections)
+	return refreshed
+
 }

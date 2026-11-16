@@ -1,3 +1,5 @@
+import { getMetamaskCompatibilityMode } from './settings.js'
+import { getPageWorldScriptPaths, getManifestV2IsolatedWorldInjections } from '../utils/contentScriptInjectionArtifacts.js'
 import { getWebsiteAccess } from './settings.js'
 import { getInterceptorDisabledSites, getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -41,7 +43,7 @@ const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: r
 		allFrames: true,
 		matches: injectableSitesWildcard,
 		excludeMatches,
-		js: ['/inpage/js/inpage.js'],
+		js: getPageWorldScriptPaths(await getMetamaskCompatibilityMode()).map((path) => `/${ path }`),
 		runAt: 'document_start',
 		world: 'MAIN',
 		matchOriginAsFallback: true
@@ -80,11 +82,7 @@ const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: r
 		...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
 		allFrames: true,
 		runAt: 'document_start',
-		js: [
-			{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
-			{ file: '/inpage/js/listenContentScript.js' },
-			{ file: '/inpage/js/document_start.js' },
-		],
+		js: getManifestV2IsolatedWorldInjections(await getMetamaskCompatibilityMode()).map(({ file }) => ({ file: `/${ file }` })),
 	})
 	const previous = registeredManifestV2Scripts
 	registeredManifestV2Scripts = registered

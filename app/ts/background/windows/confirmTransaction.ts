@@ -382,7 +382,9 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
 	const signerFacingRequest = safeResolution.signerFacingRequest ?? getConfirmationSignerRequest(pendingTransactionOrMessage)
-	const authorizedRequestMethods = getSafeSignerAuthorizedRequestMethods(getSafePendingFlow(pendingTransactionOrMessage)?.kind, signerFacingRequest.method)
+	// Authorize using the same resolved confirmation that supplies the signer-facing request.
+	const pendingSafeFlow = getSafePendingFlow(pendingTransactionOrMessage)
+	const authorizedRequestMethods = getSafeSignerAuthorizedRequestMethods(pendingSafeFlow?.kind, signerFacingRequest.method)
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => await updateViewAfterPendingRequestLeftQueue(ethereum, tokenPriceService, pendingTransactionOrMessage, simulationStack)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)

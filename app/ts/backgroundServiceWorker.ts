@@ -2,6 +2,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from './utils/popupPerforman
 import './background/background-startup.js'
 import { keepTabStateCleanupAlive } from './background/tabStateLifecycle.js'
 
+
 markPerformance(POPUP_PERFORMANCE_MARKS.backgroundLoaded)
 
 self.addEventListener('install', () => {
@@ -12,3 +13,4 @@ self.addEventListener('activate', (event) => {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundActivated)
 	keepTabStateCleanupAlive(event)
 })
+

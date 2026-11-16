@@ -22,6 +22,7 @@ import { getWebsiteOrigin, getWebsiteOriginForSender } from '../utils/websiteOri
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
+
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -129,6 +130,7 @@ const manifestVersion = browser.runtime.getManifest().manifest_version
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
 const dispatchWebsiteRequest = createWebsiteRequestDispatcher(isInternalProviderCallback)
+
 
 async function onContentScriptConnected(waitForStartup: () => Promise<{ simulationServicesOwner: SimulationServicesOwner }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
