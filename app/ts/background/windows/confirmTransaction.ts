@@ -11,7 +11,7 @@ import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
-import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
+import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -82,6 +82,40 @@ async function runConfirmationViewStep(step: () => Promise<unknown>) {
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, { code: 'confirm_transaction_view_update_failed' })
 	}
+}
+
+// The parts of a stored confirmation that identify its request and the window showing it.
+type StoredConfirmation = Pick<PendingTransactionOrSignableMessage, 'popupOrTabId' | 'uniqueRequestIdentifier'>
+
+// Updates the confirmation window once a request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. A failure in this view work is reported instead of reaching the caller, so it never holds back or replaces the website's answer.
+async function updateViewAfterPendingRequestLeftQueue(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	removedRequest: StoredConfirmation,
+	simulationStack: SimulationStackChange,
+) {
+	const removedRequestWindow = removedRequest.popupOrTabId
+	await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
+	await runConfirmationViewStep(async () => {
+		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: removedRequest.uniqueRequestIdentifier.requestSocket.tabId })
+	})
+	await runConfirmationViewStep(async () => {
+		const confirmationQueueIsShown = await updateConfirmTransactionView(ethereum, tokenPriceService)
+		// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
+		const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
+		if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
+	})
+}
+
+// Removes the stored confirmation of a request whose opening failed and that the website is told was rejected, and updates its window as for any request that left the queue. A failure to remove it is reported so that the website still gets its rejection.
+async function removeConfirmationOfRejectedRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, rejectedRequest: StoredConfirmation) {
+	try {
+		await removePendingTransactionOrMessage(rejectedRequest.uniqueRequestIdentifier)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'rejected_request_confirmation_removal_failed' })
+		return
+	}
+	await updateViewAfterPendingRequestLeftQueue(ethereum, tokenPriceService, rejectedRequest, 'unchanged')
 }
 
 async function refreshDirectSafeExecutionSimulation(
@@ -346,20 +380,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
-		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
-		await runConfirmationViewStep(async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
-		await runConfirmationViewStep(async () => {
-			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-		})
-		await runConfirmationViewStep(async () => {
-			const confirmationQueueIsShown = await updateConfirmTransactionView(ethereum, tokenPriceService)
-			// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
-			const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
-			if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
-		})
-	}
+	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => await updateViewAfterPendingRequestLeftQueue(ethereum, tokenPriceService, pendingTransactionOrMessage, simulationStack)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		await updateViewAfterPendingRequestRemoved('unchanged')
@@ -850,6 +871,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			await transactionToSimulatePromise,
 			request.uniqueRequestIdentifier.requestSocket.tabId,
 		)
+		let storedConfirmation: StoredConfirmation | undefined
 		try {
 			const { transactionToSimulate, safeTransaction, approvalStatus: safeSignerMismatch, pendingSafeFields } = finalizedSafePreparation
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
@@ -872,8 +894,10 @@ export async function openConfirmTransactionDialogForTransaction(
 				...(pendingSafeFields ?? {}),
 			}
 			await appendPendingTransactionOrMessage(pendingTransaction)
+			storedConfirmation = pendingTransaction
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationStart)
+			const simulationStartedTimestamp = new Date()
 			const simulationResultsPromise = silenceChromeUnCaughtPromise(refreshConfirmTransactionSimulation(
 				ethereumClientService,
 				tokenPriceService,
@@ -887,12 +911,15 @@ export async function openConfirmTransactionDialogForTransaction(
 				await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => ({ ...transaction, transactionToSimulate: transactionToSimulate, transactionOrMessageCreationStatus: 'Simulating' as const }))
 				await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			}
-			const popupVisualisation = await simulationResultsPromise
+			const simulationResult = await simulationResultsPromise
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionSimulationEnd)
+			// Refreshes skip a confirmation that is still simulating, so a run that ended without a result is stored as a failed simulation, which refreshes simulate again, instead of leaving the confirmation simulating with no run left to finish it.
+			const popupVisualisation = simulationResult ?? createInterruptedConfirmTransactionSimulation(transactionExecutor, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate, signerTabState.signerName, simulationStartedTimestamp)
 			await updatePendingTransactionOrMessage(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 				if (transaction.type !== 'Transaction') return transaction
-				if (popupVisualisation === undefined) return transaction
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
+					// A result another run stored meanwhile is kept over this run's interruption.
+					if (simulationResult === undefined) return transaction
 					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
 				}
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
@@ -903,6 +930,8 @@ export async function openConfirmTransactionDialogForTransaction(
 			return { success: true }
 		} catch(e: unknown) {
 			await reportLocalRecovery(e, { code: 'send_transaction_preparation_failed', message: 'Returning a wallet-compatible rejection to the requesting page.', details: e instanceof Error ? e.stack : undefined })
+			// The requesting page gets this rejection, so a confirmation already stored for the request is removed rather than left for the user to answer a request that is already answered.
+			if (storedConfirmation !== undefined) await removeConfirmationOfRejectedRequest(ethereumClientService, tokenPriceService, storedConfirmation)
 			return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'The Interceptor failed to send transaction')
 		}
 	})
