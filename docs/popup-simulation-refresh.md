@@ -54,3 +54,15 @@ The ordinary simulation stack's chain identity is persisted separately from its 
 Simulation-stack imports capture their admission network, then verify its generation and stack context while persisting under the same transition lock. A switch during preparation rejects the import, including a switch away and back. Visualization runs after releasing the lock.
 
 `reconcileSafeTransactionState` in `safe/safeStack.ts` returns both the reconciled state and `removedExecutedOperations`, derived from the validated on-chain nonce. Confirmation preparation uses that explicit flag to decide whether its earlier stack snapshot needs a new read; it never infers the change from object identity.
+
+## Confirmation dialog staleness
+
+A pending transaction confirmation stores one simulation run, and three kinds of guard keep an older result from replacing a newer one. Each answers a different question, so none can stand in for another:
+
+| Guard | Where | Question | Why it is not one of the others |
+| --- | --- | --- | --- |
+| Simulation timestamps: `simulationStartedTimestamp`, compared by `shouldReplacePopupVisualisation` when a new confirmation stores its first simulation; `simulationConductedTimestamp`, compared by `refreshPopupConfirmTransactionSimulation` when a refreshed simulation is stored | `windows/confirmTransaction.ts`, `popupMessageHandlers.ts` | Did this simulation start, or run, before the one already stored? | Both are stored in whole seconds, so two runs in the same second tie. |
+| `confirmationRunId` from `getNextConfirmationRunId` | `confirmTransactionSimulation.ts` | Is the stored run still the run this metadata refresh read? `refreshPopupConfirmTransactionMetadata` compares it for equality before writing (`isSameConfirmationRun`). | Overlapping metadata refreshes read the same run and share its id. |
+| `latestConfirmationMetadataRefresh` | `popupMessageHandlers.ts` | Is this the latest started metadata refresh? Only that one stores and sends its lookups. | It counts metadata refreshes, not runs: storing a new run does not change it. |
+
+A run id is the random id of the background lifetime that ran the simulation (`lifetime`) and the run's place among that lifetime's runs (`sequence`). It is stored with the run and compared only for equality, so unlike the popup refresh generation (`popupRefreshGeneration.ts`) neither part needs a persisted counter. The sequence starts over after a restart, but the lifetime doesn't repeat, so a new run never gets the id of a run stored before the restart. A metadata refresh that read a stored run therefore writes only onto that run, whichever background lifetime stored it, and its own re-stamped `simulationConductedTimestamp` or names don't change the answer, because the run's content is not part of its identity. A confirmation stored without a run id decodes as a run of no lifetime, which no new run matches. The metadata refresh counter lives in memory because a refresh never outlives the background. #1647 uses the same `{ lifetime, sequence }` id, and #1622, #1633 and #1651 still use a numeric `confirmationRunId` that has to move to it when they merge.

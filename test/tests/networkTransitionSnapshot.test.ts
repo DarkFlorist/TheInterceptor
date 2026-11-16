@@ -1201,22 +1201,31 @@ describe('network transition snapshot', () => {
 		}
 	})
 
-	test.each(['transaction', 'message'] as const)('a confirmation metadata refresh after a switch does not enrich the pending %s of the previous network', async (kind) => {
+	test.each(['transaction', 'failed transaction', 'message'] as const)('a confirmation metadata refresh after a switch does not enrich the pending %s of the previous network', async (kind) => {
 		const { modules, runtimeMessages, sendDappRequest, switchToNetworkB, createPopupContext } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
 		try {
-			if (kind === 'transaction') await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
+			if (kind !== 'message') await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
 			else await sendDappRequest(owner, { method: 'personal_sign', params: ['0x68656c6c6f', addressString(firstAddress)] })
+			if (kind === 'failed transaction') {
+				const [request] = await modules.getPendingTransactionsAndMessages()
+				if (request === undefined) throw new Error('Expected the admitted request')
+				await modules.updatePendingTransactionOrMessage(request.uniqueRequestIdentifier, async (current) => {
+					if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated transaction')
+					const data = current.popupVisualisation.data
+					return { ...current, popupVisualisation: { statusCode: 'failed', data: { ...data, error: { code: -32000, message: 'Simulation unavailable', decodedErrorMessage: 'Simulation unavailable' }, simulationState: { blockNumber: data.simulationState.blockNumber, simulationConductedTimestamp: data.simulationState.simulationConductedTimestamp } } } }
+				})
+			}
 			await switchToNetworkB(owner)
 			const servicesB = installed[1]
 			if (servicesB === undefined) throw new Error('Expected the switch to install network B services')
 			const pendingBeforeRefresh = await modules.getPendingTransactionsAndMessages()
 			const [pending] = pendingBeforeRefresh
-			if (pending?.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a request simulated on A')
+			if (pending?.transactionOrMessageCreationStatus !== 'Simulated' && pending?.transactionOrMessageCreationStatus !== 'FailedToSimulate') throw new Error('Expected a request simulated on A')
 			if (pending.type === 'Transaction') {
-				if (pending.popupVisualisation.statusCode !== 'success') throw new Error('Expected a successful simulation on A')
-				assert.equal(pending.popupVisualisation.data.simulationState.rpcNetwork.chainId, networkA.chainId)
+				if (pending.popupVisualisation.statusCode === 'success') assert.equal(pending.popupVisualisation.data.simulationState.rpcNetwork.chainId, networkA.chainId)
+				else assert.equal(pending.simulationChainId, networkA.chainId)
 			} else {
 				assert.equal(pending.simulationChainId, networkA.chainId)
 			}
