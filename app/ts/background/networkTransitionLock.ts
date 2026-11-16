@@ -210,6 +210,8 @@ export async function readNetworkSnapshotForServices(services: SimulationService
 // Storage-only stack mutations validate their admitted context and commit under the same lock as network changes. RPC simulation and popup delivery run afterwards on the returned snapshot.
 export async function runSimulationStackMutation<T>(admitted: NetworkSnapshot, write: () => Promise<T>) {
 	return await runNetworkTransition(async (reads) => {
+		if (admitted.simulation.kind === 'unavailable') throw admitted.simulation.error
+		if (admitted.simulation.kind === 'replaced') return undefined
 		const current = await reads.captureNetworkSnapshot(() => admitted.services)
 		if (!snapshotNetworkIsActive(admitted.simulation) || current.simulation.kind === 'replaced' || !activeStackContextsEqual(getActiveStackContext(admitted.settings), getActiveStackContext(current.settings))) return undefined
 		if (current.simulation.kind === 'unavailable') throw current.simulation.error

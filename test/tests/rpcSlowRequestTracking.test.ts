@@ -201,3 +201,28 @@ describe('rpc slow request tracking', () => {
 		assert.equal(currentStatus?.slowRequest, undefined)
 	})
 })
+
+
+test('queued block status is dropped when its network guard expires', async () => {
+	const started = createDeferred()
+	const release = createDeferred()
+	const published: string[] = []
+	const publisher = createRpcConnectionStatusPublisher({
+		getEthereumClientService: createFakeEthereumClient,
+		getRpcConnectionStatus: async () => baseRpcConnectionStatus,
+		slowRpcRequests: new Map(),
+		publishRpcConnectionStatus: async (method) => {
+			published.push(method)
+			started.resolve()
+			await release.promise
+		},
+	})
+	const first = publisher.publishRpcConnectionStatus('popup_rpc_connection_status_changed', baseRpcConnectionStatus)
+	await started.promise
+	let current = true
+	const block = publisher.publishRpcConnectionStatus('popup_new_block_arrived', baseRpcConnectionStatus, () => current)
+	current = false
+	release.resolve()
+	await Promise.all([first, block])
+	assert.deepEqual(published, ['popup_rpc_connection_status_changed'])
+})

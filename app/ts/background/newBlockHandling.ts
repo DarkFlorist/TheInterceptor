@@ -1,3 +1,4 @@
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { NewBlockAttemptCallback, SimulationServices } from '../simulation/serviceLifecycle.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -16,16 +17,24 @@ type NewBlockHandlerDependencies = {
 	readonly websiteTabConnections: WebsiteTabConnections
 }
 
-// Read the callback client and generation under the transition lock, so a callback starting between retirement and installation cannot adopt the replacement network's generation.
+// Read client identity and generation together after any transition finishes; polling a retained fallback client on a signer-only network must not publish active-network events.
+export async function readCurrentPollingNetwork(getSimulationServices: () => SimulationServices, ethereumClientService: EthereumClientService) {
+	const services = getSimulationServices()
+	if (ethereumClientService !== services.ethereum) return undefined
+	const network = await readNetworkSnapshotForServices(services)
+	const isCurrent = () => ethereumClientService === getSimulationServices().ethereum && snapshotNetworkIsActive(network.simulation)
+	if (network.simulation.kind === 'replaced' || network.settings.activeRpcNetwork.httpsRpc === undefined || !isCurrent()) return undefined
+	return { network, isCurrent }
+}
+
 export const createNewBlockAttemptCallback = ({ getSimulationServices, publishRpcConnectionStatus, websiteTabConnections }: NewBlockHandlerDependencies): NewBlockAttemptCallback => async (blockheader, ethereumClientService, isNewBlock) => {
-	const callbackServices = getSimulationServices()
-	if (ethereumClientService !== callbackServices.ethereum) return
+	if (ethereumClientService !== getSimulationServices().ethereum) return
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
-		const callbackNetwork = await readNetworkSnapshotForServices(callbackServices)
-		if (callbackNetwork.simulation.kind === 'replaced') return
-		const networkIsCurrent = () => ethereumClientService === getSimulationServices().ethereum && snapshotNetworkIsActive(callbackNetwork.simulation)
-		if (!networkIsCurrent()) return
+		const current = await readCurrentPollingNetwork(getSimulationServices, ethereumClientService)
+		if (current === undefined) return
+		const { network: callbackNetwork, isCurrent: networkIsCurrent } = current
+		const callbackServices = callbackNetwork.services
 		const rpcConnectionStatus = {
 			isConnected: true,
 			lastConnnectionAttempt: new Date(),
@@ -33,7 +42,7 @@ export const createNewBlockAttemptCallback = ({ getSimulationServices, publishRp
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
+		await publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus, networkIsCurrent)
 		if (isNewBlock && networkIsCurrent()) {
 			// Replaced services have no stack to simulate. A read can only say so after a change committed since this callback started, so networkIsCurrent already keeps the result from being published.
 			const simulateCurrentStack = async () => {

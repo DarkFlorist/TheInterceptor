@@ -983,7 +983,7 @@ test('keeps the hashes of identical Gnosis Safe executions distinct after one is
 	const transactionParams = await createTransferParams({})
 	await stackFormedTransaction(simulator, transactionParams, 1n, 'simulated-safe-executor')
 	await stackFormedTransaction(simulator, transactionParams, 2n, 'simulated-safe-executor')
-	await (await import('../../app/ts/background/popupMessageHandlers.js')).removeTransactionOrSignedMessage(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
+	await (await import('../../app/ts/background/popupMessageHandlers.js')).removeTransactionOrSignedMessage(await readNetworkState(simulator), { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
 	const [survivorOperation] = (await modules.getInterceptorTransactionStack()).operations
 	if (survivorOperation?.type !== 'Transaction') throw new Error('Expected the surviving Safe execution')
 	const survivor = survivorOperation.preSimulationTransaction
@@ -1056,7 +1056,7 @@ async function importStackedTransaction(transaction: PreSimulationTransaction) {
 	const { importSimulationStack } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const eth_simulateV1 = await ethereum.ethSimulateV1Input([], 123n, undefined)
 	// Storing the stack comes before visualizing it, whose result doesn't matter here.
-	await withSilencedConsole(async () => await importSimulationStack(ethereum, new modules.TokenPriceService(ethereum, 60_000), {
+	await withSilencedConsole(async () => await importSimulationStack(await readNetworkState({ ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 60_000) }), {
 		method: 'popup_importSimulationStack',
 		data: { name: 'Interceptor Simulation Export', version: '1.0.0', eth_simulateV1, interceptorSimulateStack: { operations: [{ type: 'Transaction', preSimulationTransaction: transaction }] } },
 	}))

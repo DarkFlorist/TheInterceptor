@@ -25,7 +25,7 @@ import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { createNewBlockAttemptCallback } from './newBlockHandling.js'
+import { createNewBlockAttemptCallback, readCurrentPollingNetwork } from './newBlockHandling.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
@@ -52,9 +52,12 @@ function getSimulationServices() {
 	return simulationServicesOwner.getCurrent()
 }
 
-async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
+async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus, isCurrent: () => boolean = () => true) {
+	if (!isCurrent()) return
 	await setRpcConnectionStatus(rpcConnectionStatus)
+	if (!isCurrent()) return
 	await updateExtensionBadge()
+	if (!isCurrent()) return
 	await sendPopupMessageToOpenWindows({ method, data: { rpcConnectionStatus } })
 }
 
@@ -232,8 +235,9 @@ const newBlockAttemptCallback = createNewBlockAttemptCallback({
 })
 
 async function onErrorBlockCallback(ethereumClientService: EthereumClientService, _error: unknown) {
-	if (ethereumClientService !== getSimulationServices().ethereum) return
 	try {
+		const current = await readCurrentPollingNetwork(getSimulationServices, ethereumClientService)
+		if (current === undefined) return
 		const rpcConnectionStatus = {
 			isConnected: false,
 			lastConnnectionAttempt: new Date(),
@@ -241,7 +245,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus)
+		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus, current.isCurrent)
 	} catch(error) {
 		await reportUnexpectedError(error)
 	}

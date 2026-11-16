@@ -275,7 +275,7 @@ describe('import simulation stack', () => {
 			Object.assign(storageState, items)
 		}
 
-		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum, tokenPriceService, { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: exportPayload })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -290,7 +290,7 @@ describe('import simulation stack', () => {
 			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
 		)
 
-		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum, tokenPriceService, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -331,7 +331,7 @@ describe('import simulation stack', () => {
 		const serializedExport = InterceptorSimulationExport.serialize(create7702ExportPayload())
 		const parsedExport = InterceptorSimulationExport.parse(serializedExport)
 
-		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum, tokenPriceService, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, true)

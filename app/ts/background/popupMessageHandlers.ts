@@ -1,4 +1,3 @@
-import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -1328,6 +1327,8 @@ export async function importSimulationStack(network: NetworkSnapshot, parsedRequ
 	let updatedStack: InterceptorTransactionStack
 	let committedNetwork = network
 	try {
+		const websiteAccess = await getWebsiteAccess()
+		const updateWebsiteDetails = (website: Website) => websiteAccess.find((access) => access.website.websiteOrigin === website.websiteOrigin)?.website ?? website
 		const committed = await runSimulationStackMutation(network, async () => await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 			const newOperations = [...prevStack.operations, ...admission.operations]
 			// generate new ids for operations to prevent duplicated ids
@@ -1340,7 +1341,7 @@ export async function importSimulationStack(network: NetworkSnapshot, parsedRequ
 				}
 			})) }
 		}))
-		if (committed === undefined) return importSimulationStackFailure('The active network changed before the imported stack could be stored. Try importing it again.')
+		if (committed === undefined) return importSimulationStackFailure('The active network or stack selection changed while preparing the import. Try importing again.')
 		updatedStack = committed.value
 		committedNetwork = committed.network
 

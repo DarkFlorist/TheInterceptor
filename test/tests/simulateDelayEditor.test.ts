@@ -123,10 +123,11 @@ const signedMessage: SignedMessageTransaction = {
 	messageIdentifier: 1n,
 }
 
-const ethereum = {
-	getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
-} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[0]
-const tokenPriceService = {} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[1]
+const readEditorNetwork = async () => {
+	const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
+	const { readNetworkSnapshot } = await import('../../app/ts/background/networkTransitionLock.js')
+	return await readNetworkSnapshot(createEthereumWithGetBlockCounter({ count: 0 }).simulationServicesOwner)
+}
 
 const resetStack = async () => {
 	await updateInterceptorTransactionStack(() => ({
@@ -150,7 +151,7 @@ describe('simulate delay editor', () => {
 	test('replacing an existing delay removes adjacent duplicate manipulators', async () => {
 		await resetStack()
 
-		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
+		await setTransactionOrMessageBlockTimeManipulator(await readEditorNetwork(), {
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
 			data: {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
@@ -170,7 +171,7 @@ describe('simulate delay editor', () => {
 	test('the simulation input has one block transition per remaining delay', async () => {
 		await resetStack()
 
-		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
+		await setTransactionOrMessageBlockTimeManipulator(await readEditorNetwork(), {
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
 			data: {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },
@@ -193,7 +194,7 @@ describe('simulate delay editor', () => {
 			preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 13n, deltaUnit: 'Seconds' },
 		})
 
-		await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, {
+		await setTransactionOrMessageBlockTimeManipulator(await readEditorNetwork(), {
 			method: 'popup_setTransactionOrMessageBlockTimeManipulator',
 			data: {
 				transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n },

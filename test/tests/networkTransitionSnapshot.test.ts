@@ -30,6 +30,7 @@ const networkA = {
 	minimized: false,
 } satisfies RpcEntry
 const networkB = { ...networkA, name: 'Network B', chainId: 10n, httpsRpc: 'https://network-b.invalid' } satisfies RpcEntry
+const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 const networkAOnOtherEndpoint = { ...networkA, name: 'Network A on another endpoint', httpsRpc: 'https://network-a-other-endpoint.invalid' } satisfies RpcEntry
 const firstAddress = 0x1111111111111111111111111111111111111111n
 const secondAddress = 0x2222222222222222222222222222222222222222n
@@ -1441,16 +1442,16 @@ describe('network transition snapshot', () => {
 		await modules.updateInterceptorTransactionStack(() => ({ operations }))
 		const { owner, retireAll } = createRecordingServicesOwner(networkB)
 		try {
-			// Both the dispatcher's read and the import's own admission read see unavailable simulation.
-			failStorageWrites(failedKey, 2, new Error('Restart cleanup is unavailable'))
+			// The dispatch read, captured admission, and writer lock all encounter unavailable cleanup.
+			failStorageWrites(failedKey, 3, new Error('Restart cleanup is unavailable'))
 			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'unavailable')
 			const { ethereum, tokenPriceService } = owner.getCurrent()
-			const failedImport = await modules.importSimulationStack(ethereum, tokenPriceService, stackImportRequest)
+			const failedImport = await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService }), stackImportRequest)
 			assert.equal(failedImport.ok, false)
 			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, failedKey === 'interceptorTransactionStack' ? operations : [])
 			assert.equal((await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId, networkA.chainId)
 			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'loaded')
-			assert.equal((await modules.importSimulationStack(ethereum, tokenPriceService, stackImportRequest)).ok, true)
+			assert.equal((await modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService }), stackImportRequest)).ok, true)
 			await modules.readNetworkSnapshot(owner)
 			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, stackImportRequest.data.interceptorSimulateStack.operations)
 		} finally {
@@ -1477,7 +1478,7 @@ describe('network transition snapshot', () => {
 			return result
 		} })
 		const { ethereum, tokenPriceService } = owner.getCurrent()
-		const importing = modules.importSimulationStack(ethereum, tokenPriceService, stackImportRequest)
+		const importing = modules.importSimulationStack(await modules.readNetworkSnapshotForServices({ ethereum, tokenPriceService }), stackImportRequest)
 		try {
 			await preparing.promise
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
@@ -1599,7 +1600,7 @@ describe('network transition snapshot', () => {
 		assert.deepEqual(repaired, firstApplication)
 	})
 
-	test('a website notification that throws leaves the change unfinished, and its repair delivers the chain once', async () => {
+	test('partially delivered website notifications are not duplicated when the unfinished change is repaired', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
@@ -1608,14 +1609,14 @@ describe('network transition snapshot', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
 		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: true }
-		const brokenConnections: Record<string, typeof connection | undefined> = { broken: undefined, [modules.websiteSocketToString(socket)]: connection }
+		const brokenConnections: Record<string, typeof connection | undefined> = { [modules.websiteSocketToString(socket)]: connection, broken: undefined }
 		const websiteTabConnections = new Map([[socket.tabId, { connections: brokenConnections }]])
 		try {
 			await assert.rejects(modules.changeActiveAddressAndChain(owner, websiteTabConnections, { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false }), /missing connection/u)
 			const unfinished = await modules.readNetworkSnapshot(owner)
 			assert.deepEqual(unfinished.settings.activeRpcNetwork, networkB)
 			assert.equal(unfinished.simulation.kind, 'unavailable')
-			assert.deepEqual(messages.filter((message) => message.method === 'chainChanged'), [])
+			assert.deepEqual(messages.filter((message) => message.method === 'chainChanged').map((message) => message.result), ['0xa'])
 
 			delete brokenConnections.broken
 			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'loaded')
@@ -1941,7 +1942,6 @@ describe('network transition snapshot', () => {
 		const { setFixedMakeMeRichList } = await import('../../app/ts/background/settings.js')
 		const { setRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
-		const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		// The home page identifies this rich address with the client, so building it sends a request that the test can hold.
 		await setFixedMakeMeRichList([{ address: 0x3333333333333333333333333333333333333333n, makingRich: true, type: 'UserAdded' }])
 		await setRpcConnectionStatus({ isConnected: false, lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'), latestBlock: undefined, rpcNetwork: networkA, retrying: false })
@@ -2026,7 +2026,6 @@ describe('network transition snapshot', () => {
 		const { modules, runtimeMessages, createPopupContext } = await createApprovedSimulationDapp({ simulationConsumerOpen: true })
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
-		const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
 		// A signer-only network is selected in signing mode.
 		const switchToNetwork = async (rpcNetwork: RpcNetwork) => await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: rpcNetwork.httpsRpc !== undefined, rpcNetwork, promptForAccessesIfNeeded: false })
@@ -2120,7 +2119,6 @@ describe('network transition snapshot', () => {
 		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { getCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
-		const signerOnlyB: RpcNetwork = { chainId: networkB.chainId, httpsRpc: undefined, name: 'Signer-only B', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		const { owner, installed, retireAll } = createRecordingServicesOwner(networkA)
 		const [servicesA] = installed
 		if (servicesA === undefined) throw new Error('Missing network A services')
@@ -2612,6 +2610,131 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test('a block callback starting between generation retirement and service installation cannot adopt the new generation', async () => {
+		const dapp = await createApprovedSimulationDapp()
+		const { modules } = dapp
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const servicesA = getInstalled()
+		const block = await servicesA.ethereum.getBlock(undefined)
+		if (block === null) throw new Error('Expected a block')
+		const published: string[] = []
+		const { createNewBlockAttemptCallback } = await import('../../app/ts/background/newBlockHandling.js')
+		const { advanceCommittedNetworkChangeGeneration } = await import('../../app/ts/background/networkChangeGeneration.js')
+		const callback = createNewBlockAttemptCallback({ getSimulationServices: owner.getCurrent, websiteTabConnections: dapp.websiteTabConnections, publishRpcConnectionStatus: async (method) => { published.push(method) } })
+		let delivery: Promise<unknown> | undefined
+		try {
+			await modules.runNetworkTransition(async () => {
+				advanceCommittedNetworkChangeGeneration()
+				delivery = callback(block, servicesA.ethereum, true)
+				await Promise.resolve()
+				await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkB })
+				owner.reset(networkB)
+			})
+			await delivery
+			assert.deepEqual(published, [])
+			assert.deepEqual(dapp.messages.filter((message) => message.method === 'newHeads'), [])
+		} finally {
+			retireAll()
+		}
+	})
+
+	test('a retained polling client sends no active-network events for a signer-only selection', async () => {
+		const dapp = await createApprovedSimulationDapp()
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const { ethereum } = getInstalled()
+		const { createNewBlockAttemptCallback } = await import('../../app/ts/background/newBlockHandling.js')
+		const published: string[] = []
+		const callback = createNewBlockAttemptCallback({ getSimulationServices: owner.getCurrent, websiteTabConnections: dapp.websiteTabConnections, publishRpcConnectionStatus: async (method) => { published.push(method) } })
+		try {
+			await dapp.modules.runSettingsTransition(owner, new Map(), { writeSettings: async () => {
+				await dapp.modules.changeSimulationMode({ simulationMode: false, rpcNetwork: signerOnlyB })
+				return 'committed'
+			} })
+			assert.equal(getInstalled().ethereum, ethereum)
+			await callback(await ethereum.getBlock(undefined), ethereum, true)
+			assert.deepEqual(published, [])
+		} finally {
+			retireAll()
+		}
+	})
+
+	test.each(['import', 'delay', 'gas', 'reset', 'remove'])('%s stack writes finish before a waiting network switch can commit', async (mutation) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const admitted = await modules.readNetworkSnapshot(owner)
+		const writeStarted = createDeferredSignal()
+		const releaseWrite = createDeferredSignal()
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		let armed = true
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+			if (armed && 'interceptorTransactionStack' in items) {
+				armed = false
+				writeStarted.resolve()
+				await releaseWrite.promise
+			}
+			await originalSet(items)
+		} })
+		const mutate = async () => {
+			switch (mutation) {
+				case 'import': return await modules.importSimulationStack(admitted, stackImportRequest)
+				case 'delay': return await modules.setTransactionOrMessageBlockTimeManipulator(admitted, { method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n }, blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 15n, deltaUnit: 'Seconds' } } })
+				case 'gas': return await modules.forceSetGasLimitForTransaction(owner, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: 1n, gasLimit: 25_000n } })
+				case 'reset': return await modules.resetSimulationStateFromConfig(owner)
+				case 'remove': return await modules.removeTransactionOrSignedMessage(admitted, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
+				default: throw new Error('Unexpected mutation')
+			}
+		}
+		const writing = mutate()
+		let switching: Promise<unknown> | undefined
+		try {
+			await writeStarted.promise
+			switching = modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkA.chainId)
+			releaseWrite.resolve()
+			await Promise.all([writing, switching])
+			assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkB.chainId)
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+		} finally {
+			releaseWrite.resolve()
+			await Promise.allSettled([writing, switching])
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+			retireAll()
+		}
+	})
+
+	test('rich-address settings wait for the network and use the services captured with them', async () => {
+		const dapp = await createApprovedSimulationDapp()
+		const { modules } = dapp
+		const unknownAddress = 0x4545454545454545454545454545454545454545n
+		await modules.setFixedMakeMeRichList([{ address: unknownAddress, makingRich: false, type: 'UserAdded' }])
+		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+		const servicesA = getInstalled()
+		const context = await dapp.createPopupContext(owner)
+		const paused = pauseAfterActiveNetworkWrite()
+		const switching = dapp.switchToNetworkB(owner)
+		let requested: Promise<unknown> | undefined
+		try {
+			await paused.written
+			const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+			requested = dispatchPopupMessage(context, { method: 'popup_requestMakeMeRichData' })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(servicesA.requests, [])
+			paused.release()
+			await Promise.all([switching, requested])
+			assert.equal(getInstalled().ethereum.getChainId(), networkB.chainId)
+			assert.deepEqual(servicesA.requests, [])
+			assert.ok(getInstalled().requests.some((request) => request.method === 'eth_getCode'))
+		} finally {
+			paused.release()
+			await Promise.allSettled([switching, requested])
+			retireAll()
+		}
+	})
+
 	test('a block of a client that a network switch replaces while the handler is suspended simulates nothing and publishes no newHeads, and the next block of the installed client carries on', async () => {
 		const dapp = await createApprovedSimulationDapp()
 		const { modules, switchToNetworkB } = dapp
@@ -2650,7 +2773,7 @@ describe('network transition snapshot', () => {
 
 	test('a block that reads the stack while an endpoint change is in flight simulates nothing on the client that change replaces', async () => {
 		const dapp = await createApprovedSimulationDapp()
-		const { modules, messages } = dapp
+		const { modules } = dapp
 		await modules.updateInterceptorTransactionStack(() => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)] }))
 		const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
 		const { deliverNewBlock, getNewHeads } = await subscribeDappToNewBlocks(dapp, owner)
@@ -2669,8 +2792,9 @@ describe('network transition snapshot', () => {
 			})
 			await settingsWritten.promise
 			const blockOfReplacedClient = deliverNewBlock(servicesA)
-			// The live block goes out first: the client is still installed, so websites have not been told of any change yet.
-			await waitForPortMessageCount(messages, 'newHeads', 1, 5_000)
+			// The callback must wait for installation, even though the old client is still installed now.
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(getNewHeads(), [])
 			assert.equal(servicesA.ethereum.isRetired(), false)
 			transitionRelease.resolve()
 			await endpointChange
@@ -2678,7 +2802,7 @@ describe('network transition snapshot', () => {
 
 			assert.equal(servicesA.ethereum.isRetired(), true)
 			assert.deepEqual(getSimulateV1Requests(servicesA), [])
-			assert.equal(getNewHeads().length, 1)
+			assert.equal(getNewHeads().length, 0)
 			assert.equal(await modules.getLatestUnexpectedError(), undefined)
 		} finally {
 			transitionRelease.resolve()

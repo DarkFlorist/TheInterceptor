@@ -73,6 +73,11 @@ async function loadModules() {
 	}
 }
 
+async function readRichListSettings() {
+	const { getMakeCurrentAddressRich, getFixedAddressRichList } = await loadModules()
+	return { makeCurrentAddressRich: await getMakeCurrentAddressRich(), fixedAddressRichList: await getFixedAddressRichList() }
+}
+
 async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
 	const originalConsole = {
 		error: console.error,
@@ -243,7 +248,7 @@ describe('requestMakeMeRichList resilience', () => {
 			getChainId: () => 1n,
 		}
 
-		const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined))
+		const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined, await readRichListSettings()))
 		assert.equal(reply.method, 'popup_requestMakeMeRichData')
 		assert.equal(reply.makeCurrentAddressRich, true)
 		assert.equal(reply.richList.length, 2)
@@ -275,7 +280,7 @@ describe('requestMakeMeRichList resilience', () => {
 		const { requestMakeMeRichList } = await loadModules()
 		storageState.makeCurrentAddressRich = null
 
-		const reply = await withSilencedConsole(async () => await requestMakeMeRichList({}, undefined))
+		const reply = await withSilencedConsole(async () => await requestMakeMeRichList({}, undefined, await readRichListSettings()))
 
 		assert.equal(reply.method, 'popup_requestMakeMeRichData')
 		assert.equal(reply.makeCurrentAddressRich, false)
