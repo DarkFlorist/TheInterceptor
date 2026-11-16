@@ -12,7 +12,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import { authorizesExecutedCall, type BlockTimeManipulation, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
@@ -41,7 +41,7 @@ export const getExecutedTransaction = (transaction: RpcTransaction) => transacti
 export type UnpreparedSimulationInputViolation = 'missing-executed-call' | 'unauthorized-executed-call'
 const UNPREPARED_SIMULATION_INPUT_ERROR_NAME = 'UnpreparedSimulationInputError'
 
-// A distinctly named error for an input whose preparation a caller skipped, so it reads apart from a node failure in logs and error reports. A plain Error with a name, not an InterceptorInternalError, so it is still reported as unexpected. The precondition is checked here at runtime rather than encoded in the parameter type, because SimulationStateInputMinimalData is also the stored simulation state's input and is built at many call sites, so a separate prepared type would have to wrap all of them.
+// A distinctly named error for an input whose preparation a caller skipped, so it reads apart from a node failure in logs and error reports. A plain Error with a name, not an InterceptorInternalError, so it is still reported as unexpected. The precondition is checked here at runtime rather than encoded in the parameter type, because SimulationStateInputMinimalData is projected from the simulation input at many call sites, so a separate prepared type would have to wrap all of them.
 export const createUnpreparedSimulationInputError = (violation: UnpreparedSimulationInputViolation, message: string) => Object.assign(new Error(message), { name: UNPREPARED_SIMULATION_INPUT_ERROR_NAME, violation })
 
 export const isUnpreparedSimulationInputError = (error: unknown): error is Error & { readonly violation: UnpreparedSimulationInputViolation } => error instanceof Error
@@ -346,9 +346,9 @@ export class EthereumClientService {
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
-		// Every simulation input reaches the node through here, so this enforces, in both directions, that a transaction runs a call other than its signedTransaction exactly when its simulation options authorize one (authorizesExecutedCall). A transaction whose options ask for an executed call but whose input was not prepared with one would otherwise run as the call it shows. Both throws are internal invariant failures (a caller skipped preparing its input), not user-facing errors, so they stay reported as unexpected errors. Their messages stay protocol-agnostic so this RPC layer names no Safe or background helper.
-		if (simulationStateInput.some((block) => block.transactions.some((transaction) => authorizesExecutedCall(transaction.simulationOptions) && transaction.executedTransaction === undefined))) throw createUnpreparedSimulationInputError('missing-executed-call', 'A transaction whose simulation options require a prepared executed call reached the node without one.')
-		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !authorizesExecutedCall(transaction.simulationOptions)))) throw createUnpreparedSimulationInputError('unauthorized-executed-call', 'A transaction reached the node with an executed call other than its signed transaction, which its simulation options do not authorize.')
+		// Every simulation input reaches the node through here, so this enforces, in both directions, that a transaction runs a call other than its signedTransaction exactly when its executedCallAuthorized marker authorizes one. A transaction that asks for an executed call but whose input was not prepared with one would otherwise run as the call it shows. Both throws are internal invariant failures (a caller skipped preparing its input), not user-facing errors, so they stay reported as unexpected errors. Their messages stay protocol-agnostic so this RPC layer names no Safe or background helper.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedCallAuthorized && transaction.executedTransaction === undefined))) throw createUnpreparedSimulationInputError('missing-executed-call', 'A transaction that requires a prepared executed call reached the node without one.')
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !transaction.executedCallAuthorized))) throw createUnpreparedSimulationInputError('unauthorized-executed-call', 'A transaction reached the node with an executed call other than its signed transaction, which it does not authorize.')
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
@@ -359,8 +359,7 @@ export class EthereumClientService {
 		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
 			signedTransaction: clampGasToBlock(transaction.signedTransaction),
 			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
-			// simulationOptions stays with executedTransaction: the rpcBlocks are simulation input blocks too and must satisfy the invariant checked above.
-			...(transaction.simulationOptions === undefined ? {} : { simulationOptions: transaction.simulationOptions }),
+			executedCallAuthorized: transaction.executedCallAuthorized,
 		})
 
 		const splitTransactionsByGasLimit = (currentTransactions: readonly RpcTransaction[], gasLimit: bigint): RpcTransaction[][] => {
