@@ -505,7 +505,7 @@ describe('import simulation stack', () => {
 			if (operation === undefined) throw new Error('Expected transaction fixture')
 			return { ...operation, preSimulationTransaction: { ...operation.preSimulationTransaction, transactionIdentifier, simulationOptions } }
 		}
-		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize({ operations: [withSimulationOptions(1n, { requiredChainId: 1n, simulateWithZeroBaseFee: true })] })
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize({ operations: [withSimulationOptions(1n, { requiredChainId: 1n, executeThroughSafe: true })] })
 		const parsedExport = InterceptorSimulationExport.parse(InterceptorSimulationExport.serialize({
 			...exportPayload,
 			interceptorSimulateStack: { operations: [
@@ -525,7 +525,7 @@ describe('import simulation stack', () => {
 			if (operation.type !== 'Transaction') throw new Error('Expected only transaction operations')
 			return operation.preSimulationTransaction
 		})
-		assert.deepEqual(storedTransactions.map((transaction) => transaction.simulationOptions), [{ requiredChainId: 1n, simulateWithZeroBaseFee: true }, undefined, undefined, undefined])
+		assert.deepEqual(storedTransactions.map((transaction) => transaction.simulationOptions), [{ requiredChainId: 1n, executeThroughSafe: true }, undefined, undefined, undefined])
 		assert.equal(storedTransactions.every((transaction) => transaction.signedTransaction.type === '7702'), true)
 	})
 
