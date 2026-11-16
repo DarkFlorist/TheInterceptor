@@ -1,4 +1,3 @@
-import { migrateWebsiteAccessOrigins } from './websiteAccessMigration.js'
 import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 
 import type { Settings } from '../types/interceptor-messages.js'

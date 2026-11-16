@@ -2,8 +2,6 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website, WebsiteAccess, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
-import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
-import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 
 import { modifyObject } from '../../utils/typescript.js'
 import { getNetworkBlockingKey, getWebsiteHostname, shareNetworkBlocking } from '../../utils/websiteOrigin.js'

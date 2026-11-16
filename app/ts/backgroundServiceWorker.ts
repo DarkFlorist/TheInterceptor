@@ -13,4 +13,3 @@ self.addEventListener('activate', (event) => {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundActivated)
 	keepTabStateCleanupAlive(event)
 })
-

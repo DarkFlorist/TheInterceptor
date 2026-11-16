@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 
-type RegisteredScript = { readonly id: string, readonly excludeMatches?: readonly string[] }
+type RegisteredScript = { readonly id: string, readonly excludeMatches?: readonly string[], readonly js?: readonly string[] }
 type FirefoxScript = Parameters<typeof browser.contentScripts.register>[0]
 
 function installBrowserMock(options: { beforeRegister?: () => Promise<void>, registerError?: Error, updateError?: Error, unregisterFailures?: number, registeredContentScriptIds?: readonly string[], manifestVersion?: number } = {}) {
@@ -434,5 +434,16 @@ for (const manifestVersion of [2, 3]) {
 		const successfulOperations = operationCount()
 		await remove()
 		assert.equal(operationCount(), successfulOperations)
+	})
+}
+
+for (const manifestVersion of [2, 3]) {
+	test(`manifest v${ manifestVersion } uses the compatibility bootstrap selected in storage`, async () => {
+		const { storageState, firefoxScripts, getRegisteredContentScripts } = installBrowserMock({ manifestVersion })
+		const { reconcileContentScriptRegistration } = await loadModules()
+		storageState.metamaskCompatibilityMode = true
+		await reconcileContentScriptRegistration()
+		if (manifestVersion === 2) assert.equal(firefoxScripts.at(-1)?.js?.at(-1)?.file, '/inpage/js/document_start-metamask-compatibility.js')
+		else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 	})
 }
