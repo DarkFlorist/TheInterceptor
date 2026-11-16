@@ -1,6 +1,6 @@
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { type OpenSeaOrderMessage, type Permit2SignatureTransferKind, type Permit2Witness, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest, findPermit2WitnessField, getPermit2SignatureTransferKind } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getRpcNetworkForChain, getTabState } from '../storageVariables.js'
@@ -13,6 +13,7 @@ import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
+import type { EIP712Message } from '../../types/eip721.js'
 
 async function addMetadataToOpenSeaOrder(identify: IdentifyAddress, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -23,6 +24,28 @@ async function addMetadataToOpenSeaOrder(identify: IdentifyAddress, openSeaOrder
 		consideration: await promiseAllMapAbortSafe(openSeaOrder.consideration, async (offer) => ({ ...offer, token: await identify(offer.token), recipient: await identify(offer.recipient) }))
 	 }
 }
+
+// Rejects only tokens positively identified as NFTs. Contracts that do not answer the ERC20 and ERC165 probes, addresses without code and address book contacts pass, and the signing page shows them under the unidentified token warning.
+async function identifyPermitToken(identify: IdentifyAddress, tokenAddress: bigint) {
+	const token = await identify(tokenAddress)
+	if (token.type === 'ERC721') throw new Error('Attempted to perform Permit to an ERC721')
+	if (token.type === 'ERC1155') throw new Error('Attempted to perform Permit to an ERC1155')
+	return token
+}
+
+async function extractPermit2Witness(identify: IdentifyAddress, typedData: EIP712Message, transferKind: Permit2SignatureTransferKind): Promise<Permit2Witness | undefined> {
+	if (!transferKind.hasWitness) return undefined
+	const witnessTypeField = findPermit2WitnessField(transferKind.structFields)
+	if (witnessTypeField === undefined) throw new Error('Permit2 witness transfer must declare exactly one witness field besides permitted, spender, nonce and deadline')
+	// The witness struct is integrator defined, so it is enriched with the generic EIP-712 extractor from the original request instead of a dedicated runtime type.
+	const enrichedTypedData = await extractEIP712Message(identify, typedData)
+	const witnessValue = enrichedTypedData.message[witnessTypeField.name]
+	if (witnessValue === undefined) throw new Error(`Permit2 witness field "${ witnessTypeField.name }" is missing from the message`)
+	return { fieldName: witnessTypeField.name, typeName: witnessTypeField.type, value: witnessValue }
+}
+
+// The signed payload exactly as the website sent it, never a parsed form whose bigints would be re-encoded as hex, so the raw message view means the same for every message type.
+const serializeSignedPayload = (signedPayload: unknown) => ({ stringifiedMessage: stringifyJSONWithBigInts(signedPayload, 4), rawMessage: stringifyJSONWithBigInts(signedPayload) })
 
 export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined): { quarantine: boolean, quarantineReasons: readonly string[] } {
 	const quarantineReasons: string[] = []
@@ -58,8 +81,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 			message: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			account,
 			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
-			rawMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0]),
+			...serializeSignedPayload(originalParams.originalRequestParameters.params[0]),
 			isValidMessage: isValid.valid,
 			messageHash: undefined,
 		}
@@ -93,8 +115,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 			message: stringifyJSONWithBigInts(namedParams.param, 4),
 			account,
 			quarantine: true, quarantineReasons: [isValid.reason],
-			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
-			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			...serializeSignedPayload(namedParams.param),
 			isValidMessage: isValid.valid,
 			messageHash: undefined,
 		}
@@ -116,8 +137,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 			message,
 			account,
 			...getSigningQuarantineCodes(chainid, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
-			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			...serializeSignedPayload(namedParams.param),
 			isValidMessage: isValid.valid,
 			...hashes,
 		}
@@ -126,10 +146,8 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
-			const token = await identify(parsed.domain.verifyingContract)
+			const token = await identifyPermitToken(identify, parsed.domain.verifyingContract)
 			const owner = await identify(parsed.message.owner)
-			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
-			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
@@ -140,17 +158,14 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 				owner,
 				spender: await identify(parsed.message.spender),
 				verifyingContract: token,
-				...getSigningQuarantineCodes(BigInt(parsed.domain.chainId), rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, owner.address),
-				rawMessage: stringifyJSONWithBigInts(parsed, 4),
-				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
+				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, owner.address),
+				...serializeSignedPayload(namedParams.param),
 				isValidMessage: isValid.valid,
 				...hashes,
 			}
 		}
 		case 'PermitSingle': {
-			const token = await identify(parsed.message.details.token)
-			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
-			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
+			const token = await identifyPermitToken(identify, parsed.message.details.token)
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
@@ -162,8 +177,49 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 				spender: await identify(parsed.message.spender),
 				verifyingContract: await identify(parsed.domain.verifyingContract),
 				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-				rawMessage: stringifyJSONWithBigInts(parsed),
+				...serializeSignedPayload(namedParams.param),
+				isValidMessage: isValid.valid,
+				...hashes,
+			}
+		}
+		case 'PermitBatch': return {
+			method: originalParams.originalRequestParameters.method,
+			...basicParams,
+			rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+			type: 'Permit2Batch' as const,
+			message: parsed,
+			account,
+			details: await promiseAllMapAbortSafe(parsed.message.details, async (details) => ({ ...details, token: await identifyPermitToken(identify, details.token) })),
+			spender: await identify(parsed.message.spender),
+			verifyingContract: await identify(parsed.domain.verifyingContract),
+			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
+			...serializeSignedPayload(namedParams.param),
+			isValidMessage: isValid.valid,
+			...hashes,
+		}
+		case 'PermitTransferFrom':
+		case 'PermitBatchTransferFrom':
+		case 'PermitWitnessTransferFrom':
+		case 'PermitBatchWitnessTransferFrom': {
+			const transferKind = getPermit2SignatureTransferKind(parsed)
+			return {
+				method: originalParams.originalRequestParameters.method,
+				...basicParams,
+				rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+				type: 'Permit2SignatureTransfer' as const,
+				// `parsed` drops the witness and its struct types, so retain the full signing input.
+				signedPayload: namedParams.param,
+				isBatch: transferKind.isBatch,
+				chainId: parsed.domain.chainId,
+				nonce: parsed.message.nonce,
+				deadline: parsed.message.deadline,
+				account,
+				permitted: await promiseAllMapAbortSafe(transferKind.permitted, async (permission) => ({ ...permission, token: await identifyPermitToken(identify, permission.token) })),
+				spender: await identify(parsed.message.spender),
+				verifyingContract: await identify(parsed.domain.verifyingContract),
+				witness: await extractPermit2Witness(identify, namedParams.param, transferKind),
+				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
+				...serializeSignedPayload(namedParams.param),
 				isValidMessage: isValid.valid,
 				...hashes,
 			}
@@ -187,8 +243,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 				...addresses,
 				quarantine: false,
 				quarantineReasons: [],
-				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-				rawMessage: stringifyJSONWithBigInts(parsed),
+				...serializeSignedPayload(namedParams.param),
 				parsedMessageData,
 				parsedMessageDataAddressBookEntries: await promiseAllMapAbortSafe(addressesInEventsAndInputData, (address) => identify(address)),
 				isValidMessage: isValid.valid,
@@ -204,8 +259,7 @@ export async function craftPersonalSignPopupMessage(identify: IdentifyAddress, s
 			message: await addMetadataToOpenSeaOrder(identify, parsed.message),
 			account,
 			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-			rawMessage: stringifyJSONWithBigInts(parsed),
+			...serializeSignedPayload(namedParams.param),
 			isValidMessage: isValid.valid,
 			...hashes,
 		}
