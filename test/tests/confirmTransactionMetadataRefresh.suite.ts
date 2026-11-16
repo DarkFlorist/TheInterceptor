@@ -2155,9 +2155,9 @@ test('explicit name writes advance after success, not failure, and an atomic set
 		assert.equal(getAddressBookRevision(), revisionBefore + 1)
 	}
 	const { runSettingsStorageTransaction } = await import('../../app/ts/background/settingsStorageTransaction.js')
-	const { addressBookStorageWrite } = await import('../../app/ts/background/addressBookRevision.js')
+	const { prepareAddressBookWrite } = await import('../../app/ts/background/addressBookRevision.js')
 	const revisionBeforeBatch = getAddressBookRevision()
-	await runSettingsStorageTransaction(async () => ({ writes: [addressBookStorageWrite({ ensNameHashes: [], ensLabelHashes: [] }), { useTabsInsteadOfPopup: true }], result: undefined }))
+	await runSettingsStorageTransaction(async () => ({ writes: [prepareAddressBookWrite({ ensNameHashes: [], ensLabelHashes: [] }), { useTabsInsteadOfPopup: true }], result: undefined }))
 	assert.equal(getAddressBookRevision(), revisionBeforeBatch + 1)
 })
 

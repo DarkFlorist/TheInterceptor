@@ -1,4 +1,4 @@
-import { addressBookStorageWrite, identificationCacheStorageWrite, writeAddressBookStorage } from './addressBookRevision.js'
+import { prepareAddressBookWrite, prepareIdentificationCacheWrite, writeAddressBookStorage } from './addressBookRevision.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -311,7 +311,7 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries) => addressBookStorageWrite({ userAddressBookEntriesV3 })
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries) => prepareAddressBookWrite({ userAddressBookEntriesV3 })
 
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
@@ -329,7 +329,7 @@ export async function cacheIdentifiedAddressBookEntry(newEntry: AddressBookEntry
 	await runSettingsStorageTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		return { writes: existingEntry === undefined ? [identificationCacheStorageWrite({ userAddressBookEntriesV3: entries.concat(newEntry) })] : [], result: undefined }
+		return { writes: existingEntry === undefined ? [prepareIdentificationCacheWrite({ userAddressBookEntriesV3: entries.concat(newEntry) })] : [], result: undefined }
 	})
 }
 

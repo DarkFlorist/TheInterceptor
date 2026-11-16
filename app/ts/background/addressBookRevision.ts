@@ -24,5 +24,5 @@ export type AddressBookStorageWrite = {
 	readonly addressBookWrite: AddressBookStorageItems
 	readonly change: 'names-changed' | 'identification-cache-filled'
 }
-export const addressBookStorageWrite = (addressBookWrite: AddressBookStorageItems): AddressBookStorageWrite => ({ addressBookWrite, change: 'names-changed' })
-export const identificationCacheStorageWrite = (addressBookWrite: AddressBookStorageItems): AddressBookStorageWrite => ({ addressBookWrite, change: 'identification-cache-filled' })
+export const prepareAddressBookWrite = (addressBookWrite: AddressBookStorageItems): AddressBookStorageWrite => ({ addressBookWrite, change: 'names-changed' })
+export const prepareIdentificationCacheWrite = (addressBookWrite: AddressBookStorageItems): AddressBookStorageWrite => ({ addressBookWrite, change: 'identification-cache-filled' })
