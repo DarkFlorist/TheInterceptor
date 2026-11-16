@@ -23,10 +23,10 @@ import { activeStackContextsEqual, getActiveStackContext } from '../utils/active
 
 // The effects a committed network change owes, run under the lock of networkTransitionLock.ts, and the network snapshots that requests read under the same lock. activeSettings.ts builds address and chain changes on top of it.
 
-// The effects a committed network change owes, in the one order both its first application and its repair use. The first application runs the transition's afterNetworkApplied between the two phases, so it publishes the committed settings before websites and popups hear of the chain; a repair has no such step and runs both phases at once.
+// The effects a committed network change owes. Both first application and repair include the transition callback before chain notifications, and record it only after it succeeds.
 const NETWORK_APPLICATION_EFFECTS = ['retireSnapshotsOfReplacedNetwork', 'installServices', 'clearStackForChangedChain'] as const
 const NETWORK_CHANGE_NOTIFICATION_EFFECTS = ['notifyWebsitesOfChainChange', 'notifyPopupsOfChainChange'] as const
-const NETWORK_CHANGE_EFFECTS = [...NETWORK_APPLICATION_EFFECTS, ...NETWORK_CHANGE_NOTIFICATION_EFFECTS] as const
+const NETWORK_CHANGE_EFFECTS = [...NETWORK_APPLICATION_EFFECTS, 'afterNetworkApplied', ...NETWORK_CHANGE_NOTIFICATION_EFFECTS] as const
 type NetworkChangeEffect = typeof NETWORK_CHANGE_EFFECTS[number]
 
 type CommittedNetworkChange = {
@@ -35,6 +35,7 @@ type CommittedNetworkChange = {
 	readonly settingsBeforeTransition: Settings
 	readonly completedEffects: Set<NetworkChangeEffect>
 	readonly notifiedWebsitePorts: Set<browser.runtime.Port>
+	readonly afterNetworkApplied: SettingsTransition['afterNetworkApplied']
 	committedSettings: Settings | undefined
 }
 
@@ -55,6 +56,10 @@ async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: Ne
 		case 'clearStackForChangedChain': {
 			// Simulation stack contexts carry no chain, so their operations are dropped whenever the active chain changes, in either mode; Gnosis Safe stacks are kept per chain.
 			if (chainChanged) await reconcileSimulationStackChain(updatedSettings.activeRpcNetwork.chainId)
+			break
+		}
+		case 'afterNetworkApplied': {
+			await change.afterNetworkApplied?.(updatedSettings)
 			break
 		}
 		case 'notifyWebsitesOfChainChange': {
@@ -114,7 +119,7 @@ export async function appendToActiveSimulationStack(simulationServicesOwner: Sim
 async function installServicesForCommittedNetwork(simulationServicesOwner: SimulationServicesOwner, committedRpcNetwork: RpcNetwork) {
 	if (committedRpcNetwork.httpsRpc === undefined) return
 	const installedClient = simulationServicesOwner.getCurrent().ethereum
-	if (!getRpcNetworkChange(installedClient.getRpcEntry(), committedRpcNetwork).endpointChanged) {
+	if (!installedClient.isRetired() && !getRpcNetworkChange(installedClient.getRpcEntry(), committedRpcNetwork).endpointChanged) {
 		installedClient.updateRpcEntryMetadata(committedRpcNetwork)
 		return
 	}
@@ -148,7 +153,7 @@ type SettingsTransition = {
 	readonly keepsActiveNetwork?: boolean
 	// Writes the settings under the lock. Returns 'unchanged' when it decided to write nothing, so nothing is installed or published.
 	readonly writeSettings: (settingsBeforeTransition: Settings) => Promise<'committed' | 'unchanged'>
-	// Runs after the committed network's services are installed and the previous chain's stack is cleared, also when that failed, and before popups and websites are notified of the change.
+	// Runs at the application boundary, including a failed application, before chain notifications. It must be safe to retry after partial failure; repair records completion only once it succeeds.
 	readonly afterNetworkApplied?: (committedSettings: Settings) => Promise<void>
 }
 
@@ -159,7 +164,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 	const popupRefresh = await runTransition(async (reads) => {
 
 		const settingsBeforeTransition = await getSettings()
-		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set(), notifiedWebsitePorts: new Set(), committedSettings: undefined }
+		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set(), notifiedWebsitePorts: new Set(), afterNetworkApplied: transition.afterNetworkApplied, committedSettings: undefined }
 		try {
 			if (await transition.writeSettings(settingsBeforeTransition) === 'unchanged') return undefined
 			const committedSettings = await getSettings()
@@ -168,7 +173,7 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 				await runNetworkChangeEffects(change, NETWORK_APPLICATION_EFFECTS, committedSettings)
 			} finally {
 				// The phase boundary of NETWORK_CHANGE_EFFECTS.
-				await transition.afterNetworkApplied?.(committedSettings)
+				await runNetworkChangeEffect(change, 'afterNetworkApplied', committedSettings)
 			}
 			return await publishCommittedSettingsChange(reads, change, committedSettings)
 		} catch (error) {

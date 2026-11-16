@@ -2878,3 +2878,61 @@ describe('network transition snapshot', () => {
 		}
 	})
 })
+
+for (const callbackFailures of [1, 2]) {
+	test(`network repair retries a transition callback that fails ${ callbackFailures } times before notifying websites`, async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: false, rpcNetwork: networkA })
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		const { websiteTabConnections, getChainChangedResults } = createApprovedConnection(modules.websiteSocketToString)
+		const { runSettingsTransition } = await import('../../app/ts/background/networkTransition.js')
+		const failure = new Error('Committed approval reconciliation failed')
+		let attempts = 0
+		let reconciled = false
+		try {
+			await assert.rejects(runSettingsTransition(owner, websiteTabConnections, {
+				writeSettings: async () => { await modules.changeSimulationMode({ simulationMode: false, rpcNetwork: networkB }); return 'committed' },
+				afterNetworkApplied: async (settings) => {
+					assert.equal(settings.activeRpcNetwork.chainId, networkB.chainId)
+					assert.deepEqual(getChainChangedResults(), [])
+					if (++attempts <= callbackFailures) throw failure
+					reconciled = true
+				},
+			}), (error) => error === failure)
+			if (callbackFailures === 2) {
+				assert.equal(reconciled, false)
+				assert.deepEqual(getChainChangedResults(), [])
+			}
+			await modules.readNetworkSnapshot(owner)
+			assert.equal(reconciled, true)
+			assert.equal(attempts, callbackFailures + 1)
+			assert.deepEqual(getChainChangedResults(), [`0x${ networkB.chainId.toString(16) }`])
+			await modules.readNetworkSnapshot(owner)
+			assert.equal(attempts, callbackFailures + 1, 'a completed callback is not replayed')
+		} finally {
+			retireAll()
+		}
+	})
+}
+
+test('returning to an endpoint never admits a retired client from its previous installation', async () => {
+	const { modules } = await createApprovedSimulationDapp()
+	const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+	const previousA = getInstalled()
+	try {
+		await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: false, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+		await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: false, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
+		assert.equal(previousA.ethereum.isRetired(), true)
+		assert.notEqual(getInstalled().ethereum, previousA.ethereum)
+		assert.equal(await modules.readNetworkSnapshotForServices(previousA), undefined)
+		await assert.rejects(modules.readNetworkSnapshot({ getCurrent: () => previousA }), /no longer serve the active network/)
+		const current = await modules.readNetworkSnapshot(owner)
+		assert.equal(current.services.ethereum, getInstalled().ethereum)
+		const pending = await modules.readNetworkSnapshotForPendingRequest({ getCurrent: () => previousA })
+		assert.equal(pending.simulation.kind, 'replaced')
+		assert.equal('readUnderNetworkLock' in pending, false)
+	} finally {
+		retireAll()
+	}
+})

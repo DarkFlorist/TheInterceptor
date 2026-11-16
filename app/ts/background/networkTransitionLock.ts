@@ -132,7 +132,7 @@ const getSimulationReadIdentity = (settings: Settings): SimulationReadIdentity =
 const createUnavailableSimulation = (settings: Settings, error: unknown): UnavailableSimulation => ({ ...getSimulationReadIdentity(settings), kind: 'unavailable', error })
 
 // A signer-only network is never simulated, so it keeps the previous network's services and any services serve it.
-const servicesServeNetwork = ({ ethereum }: SimulationServices, network: RpcNetwork) => isSignerOnlyNetwork(network) || !getRpcNetworkChange(network, ethereum.getRpcEntry()).endpointChanged
+const servicesServeNetwork = ({ ethereum }: SimulationServices, network: RpcNetwork) => !ethereum.isRetired() && (isSignerOnlyNetwork(network) || !getRpcNetworkChange(network, ethereum.getRpcEntry()).endpointChanged)
 
 // Reads what the settings need and returns how to pair it with the services, which are read last. A stack that cannot be read becomes an explicit result rather than a failed read, so everything that needs only the settings and services carries on; the type makes each user of the stack handle it.
 async function readSimulation(settings: Settings): Promise<(services: SimulationServices) => SimulationRead> {
