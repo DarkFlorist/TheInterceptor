@@ -650,7 +650,9 @@ describe('popup message dispatcher seams', () => {
 
 	test('legacy imports preserve compatibility mode and conservatively migrate disabled hostname settings', async () => {
 		storageState.metamaskCompatibilityMode = true
-		registeredContentScripts.set('inpage', { id: 'inpage', js: ['/inpage/js/inpage-metamask-compatibility.js'], excludeMatches: [] })
+		// Start with the current bootstrap installed and no pending retry from an earlier failed update.
+		const { reconcileContentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await reconcileContentScriptRegistration()
 		const importedSettings = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
 			version: '1.0',
