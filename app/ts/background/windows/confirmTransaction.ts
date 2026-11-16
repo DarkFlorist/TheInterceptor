@@ -220,7 +220,7 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
-// The pending confirmation as the confirmation dialog is sent it. A stored transaction is its popup type plus the record of its confirmation run beside popupVisualisation, so the projection drops that one field and forwards every display field, including ones added later.
+// The pending confirmation as the confirmation dialog is sent it. Drop the named background records and signing inputs, forwarding every display field, including ones added later.
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction': {
@@ -230,34 +230,10 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 			return popupTransaction
 		}
 		case 'SignableMessage': {
-			const base = {
-				type: pending.type,
-				popupOrTabId: pending.popupOrTabId,
-				originalRequestParameters: pending.originalRequestParameters,
-				simulationMode: pending.simulationMode,
-				uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
-				created: pending.created,
-				website: pending.website,
-				activeAddress: pending.activeAddress,
-				approvalStatus: pending.approvalStatus,
-			}
-			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
-			switch (transactionOrMessageCreationStatus) {
-				case 'Simulated':
-					return {
-						...base,
-						transactionOrMessageCreationStatus,
-						visualizedPersonalSignRequest: pending.visualizedPersonalSignRequest,
-					}
-				case 'Crafting':
-				case 'Simulating':
-					return {
-						...base,
-						transactionOrMessageCreationStatus,
-					}
-				default:
-					return assertNever(transactionOrMessageCreationStatus)
-			}
+			const { signedMessageTransaction: _signedMessageTransaction, safeMessageCoSignSnapshot: _safeMessageCoSignSnapshot, ...popupMessage } = pending
+			if (popupMessage.transactionOrMessageCreationStatus !== 'Simulated') return popupMessage
+			const { identifiedAddressBookEntries: _identifiedAddressBookEntries, ...simulatedPopupMessage } = popupMessage
+			return simulatedPopupMessage
 		}
 		default:
 			return assertNever(pending)

@@ -190,6 +190,7 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
+// All persisted names used by address identification pass this boundary, including atomic settings imports. Extend this key list when adding a name store, and keep those writes here so they advance the revision only after a successful commit. See docs/popup-simulation-refresh.md, Confirmation runs in flight.
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	const write = async () => await browser.storage.local.set(serialize(LocalStorageItems, items))
 	if ('userAddressBookEntriesV3' in items || 'ensNameHashes' in items || 'ensLabelHashes' in items) return await withAddressBookRevisionUpdate(write)

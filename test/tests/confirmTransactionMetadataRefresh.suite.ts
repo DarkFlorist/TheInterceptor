@@ -377,6 +377,26 @@ test('the popup projection of a stored transaction drops only its run record, so
 	assert.equal(Object.keys(projection).includes('confirmationRun'), false)
 })
 
+test('signable-message projections keep new display fields while removing background inputs in every creation status', async () => {
+	const [stored] = await storeSimulatedPersonalSignMessages([uniqueRequestIdentifier])
+	if (stored?.type !== 'SignableMessage' || stored.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated signable message')
+	const { visualizedPersonalSignRequest, identifiedAddressBookEntries: _identifiedAddressBookEntries, ...base } = stored
+	const messages = [
+		{ ...stored, newDisplayField: 'shown' },
+		{ ...base, transactionOrMessageCreationStatus: 'Crafting' as const, newDisplayField: 'shown' },
+		{ ...base, transactionOrMessageCreationStatus: 'Simulating' as const, newDisplayField: 'shown' },
+	]
+	for (const message of messages) {
+		const projection = toPopupPendingTransactionOrSignableMessage(message)
+		assert.equal(Object.entries(projection).find(([key]) => key === 'newDisplayField')?.[1], 'shown')
+		assert.equal(Object.keys(projection).includes('signedMessageTransaction'), false)
+		assert.equal(Object.keys(projection).includes('safeMessageCoSignSnapshot'), false)
+		assert.equal(Object.keys(projection).includes('identifiedAddressBookEntries'), false)
+		assert.equal(projection.transactionOrMessageCreationStatus, message.transactionOrMessageCreationStatus)
+		if (projection.type === 'SignableMessage' && projection.transactionOrMessageCreationStatus === 'Simulated') assert.deepEqual(projection.visualizedPersonalSignRequest, visualizedPersonalSignRequest)
+	}
+})
+
 test('a confirmation stored with its run record inside the visualisation, as earlier builds of this change stored it, decodes without the record and is simulated again before a re-label', async () => {
 	await openSimulationModeConfirmationSendingEther()
 	const [stored] = await modules.getPendingTransactionsAndMessages()
