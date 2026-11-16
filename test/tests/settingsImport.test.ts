@@ -615,6 +615,11 @@ describe('settings import', () => {
 			assert.equal((await settings.getSettings()).activeSigningSafeAddress, undefined)
 			assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
 		}
+		const latestExport = await settings.exportSettingsAndAddressBook()
+		if (latestExport.version !== '1.7') throw new Error('Expected current settings export version')
+		const { delegateClearingPreferences, ...version16Settings } = latestExport.settings
+		assert.deepEqual(delegateClearingPreferences, [])
+		const version16Export: ExportedSettings = { ...latestExport, version: '1.6', settings: version16Settings }
 		return [
 			{ exportedSettings: buildVersion10Import(), assertImportedValues: async () => {
 				await assertResetsSigningState()
@@ -653,7 +658,11 @@ describe('settings import', () => {
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
 			} },
-			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
+			{ exportedSettings: version16Export, assertImportedValues: async () => {
+				assert.deepEqual(await settings.getDelegateClearingPreferences(), [])
+				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+			} },
+			{ exportedSettings: latestExport, assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
@@ -704,7 +713,7 @@ describe('settings import', () => {
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
-		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
+		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
 			settings: {
