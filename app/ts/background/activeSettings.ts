@@ -13,7 +13,7 @@ import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 import { runSettingsTransition } from './networkTransition.js'
-import { readNetworkSnapshot } from './networkTransitionLock.js'
+import { runNetworkTransition } from './networkTransitionLock.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -45,8 +45,10 @@ async function clearSimulationStateFromConfig() {
 }
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesReader) {
-	await clearSimulationStateFromConfig()
-	const { simulation } = await readNetworkSnapshot(simulationServicesOwner)
+	const { simulation } = await runNetworkTransition(async (reads) => {
+		await clearSimulationStateFromConfig()
+		return await reads.captureNetworkSnapshot(simulationServicesOwner.getCurrent)
+	})
 	await queuePopupSimulationRefresh(simulation, { invalidateOldState: true })
 }
 

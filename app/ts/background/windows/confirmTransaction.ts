@@ -96,7 +96,7 @@ type StoredConfirmation = Pick<PendingTransactionOrSignableMessage, 'popupOrTabI
 
 // Updates the confirmation window once a request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. A failure in this view work is reported instead of reaching the caller, so it never holds back or replaces the website's answer.
 async function updateViewAfterPendingRequestLeftQueue(
-	network: NetworkSnapshot,
+	network: NetworkRead,
 	removedRequest: StoredConfirmation,
 	simulationStack: SimulationStackChange,
 ) {
@@ -388,21 +388,8 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
-	// Updates the confirmation window once the request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => {
-		const removedRequestWindow = pendingTransactionOrMessage.popupOrTabId
-		// Reads current when it runs: after an append, these are the services and snapshot read with that append.
-		await runConfirmationViewStep(async () => await showSimulationStackChange(current.services, simulationStack))
-		await runConfirmationViewStep(async () => {
-			if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-		})
-		await runConfirmationViewStep(async () => {
-			const confirmationQueueIsShown = await updateViewOnCurrentSnapshot()
-			// The website may send its next request as soon as it has this answer. Arriving while the queue is empty, that request opens a window of its own, so this window is closed once no pending request is shown in it rather than only once the queue is empty.
-			const windowShowsAPendingRequest = (await getPendingTransactionsAndMessages()).some((pending) => pending.popupOrTabId.type === removedRequestWindow.type && pending.popupOrTabId.id === removedRequestWindow.id)
-			if (!confirmationQueueIsShown || !windowShowsAPendingRequest) await closePopupOrTabById(removedRequestWindow)
-		})
-	}
+	// Read current when this runs, so an append's snapshot also owns the shared view update.
+	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => await updateViewAfterPendingRequestLeftQueue(current, pendingTransactionOrMessage, simulationStack)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		await updateViewAfterPendingRequestRemoved('unchanged')
@@ -950,37 +937,8 @@ export async function openConfirmTransactionDialogForTransaction(
 	}
 	// Checked before the request joins the confirmation queue, so a stack that cannot be read fails the request rather than leaving it pending.
 	const simulation = requireSimulationSnapshot(network.simulation)
-	const {
-		effectiveTransactionParams,
-		transactionExecutor,
-		gasPayment,
-		preparationMessage: safePreparationMessage,
-	} = safePreparation
-	const transactionToSimulatePromise = safePreparationMessage !== undefined
-		? Promise.resolve({
-			website,
-			created,
-			originalRequestParameters: effectiveTransactionParams,
-			transactionIdentifier,
-			success: false as const,
-			error: {
-				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-				message: safePreparationMessage,
-			},
-		})
-		: effectiveTransactionParams.method === 'eth_sendTransaction'
-		? formEthSendTransaction(
-			simulation,
-			undefined,
-			transactionExecutor,
-			website,
-			effectiveTransactionParams,
-			created,
-			transactionIdentifier,
-			simulationMode,
-			gasPayment,
-		)
-		: formSendRawTransaction(simulation.services.ethereum, effectiveTransactionParams, website, created, transactionIdentifier)
+	const { effectiveTransactionParams, transactionExecutor } = safePreparation
+	const transactionToSimulatePromise = formPreparedTransaction(simulation, safePreparation, website, created, transactionIdentifier, simulationMode)
 	silenceChromeUnCaughtPromise(transactionToSimulatePromise)
 	const outcome = await pendingConfirmationSemaphore.execute(async () => {
 		const finalizedSafePreparation = await safePreparation.finalize(

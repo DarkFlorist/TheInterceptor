@@ -1,12 +1,12 @@
 import { Semaphore } from '../utils/semaphore.js'
 import { getErrorMessage } from '../utils/errors.js'
-import { getActiveStackContext } from '../utils/activeStackContext.js'
+import { activeStackContextsEqual, getActiveStackContext } from '../utils/activeStackContext.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import type { SimulationServices, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
-import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
+import { getCommittedNetworkChangeGeneration, snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import { buildSimulationStateInput, readSimulationInputSources, type SimulationSnapshotSources } from './simulationInputBuilding.js'
 import { getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -201,4 +201,16 @@ export async function readNetworkSnapshotForPendingRequest(simulationServicesOwn
 // For callers that already hold the services they work with, such as the shared visualisation refresh and the new-block handler, or that changed the stack after their snapshot was read. This read waits for a network change in progress, so the held services may have been replaced by the time it returns: its simulation then says so, because this race is expected on any network switch and that change refreshes its own network.
 export async function readNetworkSnapshotForServices(services: SimulationServices): Promise<NetworkSnapshot> {
 	return await runStackIndependentNetworkTask(async (reads) => await reads.captureNetworkSnapshot(() => services))
+}
+
+
+// Storage-only stack mutations validate their admitted context and commit under the same lock as network changes. RPC simulation and popup delivery run afterwards on the returned snapshot.
+export async function runSimulationStackMutation<T>(admitted: NetworkSnapshot, write: () => Promise<T>) {
+	return await runNetworkTransition(async (reads) => {
+		const current = await reads.captureNetworkSnapshot(() => admitted.services)
+		if (!snapshotNetworkIsActive(admitted.simulation) || current.simulation.kind === 'replaced' || !activeStackContextsEqual(getActiveStackContext(admitted.settings), getActiveStackContext(current.settings))) return undefined
+		if (current.simulation.kind === 'unavailable') throw current.simulation.error
+		const value = await write()
+		return { value, network: await reads.captureNetworkSnapshot(() => admitted.services) }
+	})
 }

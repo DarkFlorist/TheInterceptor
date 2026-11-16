@@ -6,9 +6,8 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { readNetworkSnapshotForServices } from './networkTransitionLock.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { getSettings } from './settings.js'
 import { getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
-import { getCommittedNetworkChangeGeneration, snapshotNetworkIsActive } from './networkChangeGeneration.js'
+import { snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import { PASSTHROUGH_STATE } from '../types/visualizer-types.js'
 
 type NewBlockHandlerDependencies = {
@@ -17,14 +16,16 @@ type NewBlockHandlerDependencies = {
 	readonly websiteTabConnections: WebsiteTabConnections
 }
 
-// The client is installed when this callback starts, so the committed network change generation of that moment is its network's; a change committed later advances it, and from then on these blocks and this stack belong to a replaced network and nothing is published for them.
+// Read the callback client and generation under the transition lock, so a callback starting between retirement and installation cannot adopt the replacement network's generation.
 export const createNewBlockAttemptCallback = ({ getSimulationServices, publishRpcConnectionStatus, websiteTabConnections }: NewBlockHandlerDependencies): NewBlockAttemptCallback => async (blockheader, ethereumClientService, isNewBlock) => {
 	const callbackServices = getSimulationServices()
 	if (ethereumClientService !== callbackServices.ethereum) return
-	const callbackNetwork = { networkChangeGeneration: getCommittedNetworkChangeGeneration() }
-	const networkIsCurrent = () => snapshotNetworkIsActive(callbackNetwork)
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
+		const callbackNetwork = await readNetworkSnapshotForServices(callbackServices)
+		if (callbackNetwork.simulation.kind === 'replaced') return
+		const networkIsCurrent = () => ethereumClientService === getSimulationServices().ethereum && snapshotNetworkIsActive(callbackNetwork.simulation)
+		if (!networkIsCurrent()) return
 		const rpcConnectionStatus = {
 			isConnected: true,
 			lastConnnectionAttempt: new Date(),
@@ -33,15 +34,15 @@ export const createNewBlockAttemptCallback = ({ getSimulationServices, publishRp
 			retrying: ethereumClientService.isBlockPolling(),
 		}
 		await publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
-		if (isNewBlock) {
+		if (isNewBlock && networkIsCurrent()) {
 			// Replaced services have no stack to simulate. A read can only say so after a change committed since this callback started, so networkIsCurrent already keeps the result from being published.
 			const simulateCurrentStack = async () => {
 				const { simulation } = await readNetworkSnapshotForServices(callbackServices)
 				return simulation.kind === 'replaced' ? PASSTHROUGH_STATE : await getUpdatedSimulationState(requireSimulationSnapshot(simulation))
 			}
-			const settings = await getSettings()
+			const settings = callbackNetwork.settings
 			if (settings.simulationMode) {
-				const { ethereum, tokenPriceService } = getSimulationServices()
+				const { ethereum, tokenPriceService } = callbackServices
 				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
 				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, simulateCurrentStack, networkIsCurrent)

@@ -2,7 +2,7 @@ import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
-import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
+import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, runNetworkTransition, runSimulationStackMutation, runStackIndependentNetworkTask, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
@@ -447,7 +447,14 @@ export async function requestAccountsFromSigner(websiteTabConnections: WebsiteTa
 	}
 }
 
-export async function removeTransactionOrSignedMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, params: RemoveTransaction) {
+export async function removeTransactionOrSignedMessage(network: NetworkSnapshot, params: RemoveTransaction) {
+	const committed = await runSimulationStackMutation(network, async () => await removeTransactionOrSignedMessageFromStack(params))
+	if (committed === undefined) return
+	const { ethereum, tokenPriceService } = committed.network.services
+	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
+}
+
+async function removeTransactionOrSignedMessageFromStack(params: RemoveTransaction) {
 	if (params.data.type === 'Transaction') {
 		const currentStack = await getInterceptorTransactionStack()
 		const transactionIdentifier = params.data.transactionIdentifier
@@ -474,7 +481,6 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 					},
 				}
 			})
-			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 			return
 		}
 	}
@@ -524,7 +530,6 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 		}
 	})
 
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 }
 
 type ConfirmTransactionMetadataDependencies = {
@@ -879,13 +884,13 @@ type HomePageAttemptSteps = {
 // Builds and publishes the home page from one snapshot, and starts over on a new snapshot when a network change commits meanwhile, at most HOME_PAGE_ATTEMPTS times. The page reads settings when it is built, so it is built with the snapshot's client. This is the one place that checks the snapshot's network, after the preparation and before publishing. Each attempt takes its popup refresh generation just before it reads what it shows: a network change broadcasts a newer generation than the attempt it interrupts, which the popup would then drop, and generations keep the order of the reads, so an older page cannot replace a newer one.
 async function publishHomePageOnCurrentNetwork(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>, { prepare, onCurrentNetwork }: HomePageAttemptSteps = {}): Promise<'published' | 'network kept changing'> {
 	for (let attempt = 1; attempt <= HOME_PAGE_ATTEMPTS; attempt++) {
-		const snapshot = await readNetworkSnapshot(simulationServicesOwner)
+		const { network: snapshot, richSettings } = await captureRichListSnapshot(simulationServicesOwner)
 		if (prepare !== undefined) {
 			await prepare(snapshot)
 			if (!await snapshotNetworkIsStillActive(snapshot)) continue
 		}
 		await onCurrentNetwork?.(snapshot)
-		const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() })
+		const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() }, richSettings)
 		// Nothing is awaited between this check and the broadcast, so no network change commits in between.
 		if (!await snapshotNetworkIsStillActive(snapshot)) continue
 		await sendPopupMessageToOpenWindows(updatedPage)
@@ -1052,21 +1057,24 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 }
 
 export async function forceSetGasLimitForTransaction(simulationServicesOwner: SimulationServicesReader, parsedRequest: ForceSetGasLimitForTransaction) {
-	await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
-	// The gas limit may belong to a stacked transaction, so read the stack after the write; the shared visualisation reads it again when its refresh runs.
-	const network = await readNetworkSnapshot(simulationServicesOwner)
+	const network = await runNetworkTransition(async (reads) => {
+		await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
+		return await reads.captureNetworkSnapshot(simulationServicesOwner.getCurrent)
+	})
 	const { ethereum, tokenPriceService } = network.services
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 	await refreshPopupConfirmTransactionSimulation(network)
 }
 
-export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
-	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
+export async function changePreSimulationBlockTimeManipulation(network: NetworkSnapshot, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
+	const committed = await runSimulationStackMutation(network, async () => await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation))
+	if (committed === undefined) return
+	const { ethereum, tokenPriceService } = committed.network.services
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true, onlyIfNotAlreadyUpdating: true })
 }
 
-export async function setTransactionOrMessageBlockTimeManipulator(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
-	const newStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+export async function setTransactionOrMessageBlockTimeManipulator(network: NetworkSnapshot, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
+	const committed = await runSimulationStackMutation(network, async () => await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const normalizedPrevStack = { operations: normalizeConsecutiveTimeManipulations(prevStack.operations) }
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
 		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => {
@@ -1091,7 +1099,10 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 		if (parsedRequest.data.blockTimeManipulation.type === 'No Delay') return normalizedPrevStack
 		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
 		return { operations: normalizeConsecutiveTimeManipulations([...normalizedPrevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...normalizedPrevStack.operations.slice(indexOfMaybeManipulator)]) }
-	})
+	}))
+	if (committed === undefined) return
+	const newStack = committed.value
+	const { ethereum, tokenPriceService } = committed.network.services
 	const secondToLastOperation = newStack.operations[newStack.operations.length - 2]
 	if (secondToLastOperation === undefined || secondToLastOperation.type === 'TimeManipulation') {
 		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true, onlyIfNotAlreadyUpdating: true })
@@ -1103,9 +1114,25 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: !appendedToEnd, onlyIfNotAlreadyUpdating: true })
 }
 
-export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
-	const makeMeRichPromise = silenceChromeUnCaughtPromise(getMakeCurrentAddressRich())
-	const fixedAddressRichList = await getFixedAddressRichList()
+async function readRichListSettings() {
+	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([getMakeCurrentAddressRich(), getFixedAddressRichList()])
+	return { makeCurrentAddressRich, fixedAddressRichList }
+}
+
+type RichListSettings = Awaited<ReturnType<typeof readRichListSettings>>
+
+// Rich-address settings and the services that identify them are captured before a network change can commit.
+async function captureRichListSnapshot(simulationServicesOwner: SimulationServicesReader) {
+	return await runStackIndependentNetworkTask(async (reads) => ({ network: await reads.captureNetworkSnapshot(simulationServicesOwner.getCurrent), richSettings: await readRichListSettings() }))
+}
+
+export async function requestMakeMeRichData(simulationServicesOwner: SimulationServicesReader, requestAbortController: AbortController | undefined) {
+	const { network, richSettings } = await captureRichListSnapshot(simulationServicesOwner)
+	return await requestMakeMeRichList(network.services.ethereum, requestAbortController, richSettings)
+}
+
+export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, richSettings: RichListSettings) {
+	const { makeCurrentAddressRich, fixedAddressRichList } = richSettings
 	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
 		try {
 			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
@@ -1132,7 +1159,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedRichListPromises),
-		makeCurrentAddressRich: await makeMeRichPromise,
+		makeCurrentAddressRich,
 	}
 }
 
@@ -1142,11 +1169,8 @@ export const requestSimulationMode = async () => ({ method: 'popup_requestSimula
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
-async function getCachedRichData(chainId: bigint) {
-	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
-		getMakeCurrentAddressRich(),
-		getFixedAddressRichList(),
-	])
+async function getCachedRichData(chainId: bigint, richSettings: RichListSettings) {
+	const { makeCurrentAddressRich, fixedAddressRichList } = richSettings
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedAddressRichList.map(async(element) => (
@@ -1177,7 +1201,8 @@ async function buildHomePageUpdate(
 		shouldRefreshSignerAccounts,
 		includeWebsiteAccessAddressMetadata,
 		popupRefreshGeneration,
-	}: HomePageUpdateOptions
+	}: HomePageUpdateOptions,
+	richSettings: RichListSettings,
 ): Promise<UpdateHomePage> {
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
@@ -1188,8 +1213,8 @@ async function buildHomePageUpdate(
 	const latestUnexpectedErrorPromise = silenceChromeUnCaughtPromise(getLatestUnexpectedError())
 	const richDataPromise = silenceChromeUnCaughtPromise(
 		richDataSource === 'fresh'
-			? requestMakeMeRichList(ethereum, requestAbortController)
-			: settingsPromise.then(async (currentSettings) => await getCachedRichData(currentSettings.activeRpcNetwork.chainId))
+			? requestMakeMeRichList(ethereum, requestAbortController, richSettings)
+			: settingsPromise.then(async (currentSettings) => await getCachedRichData(currentSettings.activeRpcNetwork.chainId, richSettings))
 	)
 	const hasSafeTransactionsToExportPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks().then((stacks) => stacks.some((stack) =>
 		stack.chainId === ethereum.getChainId() && stack.transactions.length > 0
@@ -1289,7 +1314,7 @@ export async function requestInterceptorSimulationInput(network: NetworkSnapshot
 	}
 }
 
-export async function importSimulationStack(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ImportSimulationStack): Promise<ImportSimulationStackReply> {
+export async function importSimulationStack(network: NetworkSnapshot, parsedRequest: ImportSimulationStack): Promise<ImportSimulationStackReply> {
 	if (parsedRequest.data.version !== '1.0.0') return importSimulationStackFailure('Only simulation stack export version 1.0.0 is supported.')
 	if (parsedRequest.data.interceptorSimulateStack.operations.length === 0) return importSimulationStackSuccess()
 	const admission = admitImportedSimulationStackOperations(parsedRequest.data.interceptorSimulateStack.operations)
@@ -1305,8 +1330,9 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	}
 
 	let updatedStack: InterceptorTransactionStack
+	let committedNetwork = network
 	try {
-		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+		const committed = await runSimulationStackMutation(network, async () => await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 			const newOperations = [...prevStack.operations, ...admission.operations]
 			// generate new ids for operations to prevent duplicated ids
 			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
@@ -1317,7 +1343,10 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 					default: return assertNever(operation)
 				}
 			})) }
-		})
+		}))
+		if (committed === undefined) return importSimulationStackFailure('The active network changed before the imported stack could be stored. Try importing it again.')
+		updatedStack = committed.value
+		committedNetwork = committed.network
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)
 	}
@@ -1326,7 +1355,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	console.info(`[simulation-stack import] persisted transaction stack at ${ formatEstimatedBytes(updatedStackBytes) }.`)
 
 	try {
-		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
+		await updatePopupVisualisationState(committedNetwork.services.ethereum, committedNetwork.services.tokenPriceService, undefined, true)
 		const popupVisualisation = await getPopupVisualisationState()
 		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
 		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)

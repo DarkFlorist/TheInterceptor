@@ -43,6 +43,8 @@ type CommittedNetworkChange = {
 	readonly websiteTabConnections: WebsiteTabConnections
 	readonly settingsBeforeTransition: Settings
 	readonly completedEffects: Set<NetworkChangeEffect>
+	readonly notifiedWebsitePorts: Set<browser.runtime.Port>
+	committedSettings: Settings | undefined
 }
 
 // Every effect is idempotent or recorded once it succeeds: installation compares with the installed client, clearing the active stack context twice is harmless, the snapshot generation advances and websites are notified once per committed change. Popup notifications are best-effort.
@@ -65,7 +67,7 @@ async function runNetworkChangeEffect(change: CommittedNetworkChange, effect: Ne
 			break
 		}
 		case 'notifyWebsitesOfChainChange': {
-			if (chainChanged) sendMessageToApprovedWebsitePorts(change.websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
+			if (chainChanged) sendMessageToApprovedWebsitePorts(change.websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId }, change.notifiedWebsitePorts)
 			break
 		}
 		case 'notifyPopupsOfChainChange': {
@@ -84,7 +86,8 @@ async function runNetworkChangeEffects(change: CommittedNetworkChange, effects: 
 
 // Retries the effects that have not succeeded in commit order against the committed settings, so websites hear of the chain only once its state is complete. While one still fails, the completed ones stay recorded in the change and this throws.
 async function completeNetworkChangeEffects(change: CommittedNetworkChange) {
-	await runNetworkChangeEffects(change, NETWORK_CHANGE_EFFECTS, await getSettings())
+	change.committedSettings ??= await getSettings()
+	await runNetworkChangeEffects(change, NETWORK_CHANGE_EFFECTS, change.committedSettings)
 }
 
 // The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
@@ -158,12 +161,13 @@ type SettingsTransition = {
 
 // Runs settings writes that may commit a new network, then applies the committed network in the order of NETWORK_CHANGE_EFFECTS: retire snapshots of the replaced network, install its services, clear the previous chain's stack, notify websites and popups. Each effect is compared with the settings from before the transition. The popup refresh the change needs runs after the lock is released. If the transition fails, every effect that has not succeeded is retried before the lock is released and, if one still fails, kept for the next lock holder; the transition's own error is kept.
 export async function runSettingsTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: SettingsTransition) {
-	const popupRefresh = await runStackIndependentNetworkTask(async (reads) => {
+	const popupRefresh = await runNetworkTransition(async (reads) => {
 		const settingsBeforeTransition = await getSettings()
-		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set() }
+		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set(), notifiedWebsitePorts: new Set(), committedSettings: undefined }
 		try {
 			if (await transition.writeSettings(settingsBeforeTransition) === 'unchanged') return undefined
 			const committedSettings = await getSettings()
+			change.committedSettings = committedSettings
 			try {
 				await runNetworkChangeEffects(change, NETWORK_APPLICATION_EFFECTS, committedSettings)
 			} finally {

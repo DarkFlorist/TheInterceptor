@@ -5,7 +5,7 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
+import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichData, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
 import { popupLookupMessageHandler, popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
@@ -21,8 +21,7 @@ const popupMessageHandlers = {
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupSnapshotMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
-		return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, request)
+		return await removeTransactionOrSignedMessage(context.network, request)
 	}),
 	popup_refreshSimulation: popupSnapshotMessageHandler('popup_refreshSimulation', async (context) => {
 		await queuePopupSimulationRefresh(context.network.simulation, { invalidateOldState: true })
@@ -50,17 +49,12 @@ const popupMessageHandlers = {
 	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)),
 	popup_forceSetGasLimitForTransaction: popupMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => await forceSetGasLimitForTransaction(context.simulationServicesOwner, request)),
 	popup_changePreSimulationBlockTimeManipulation: popupSnapshotMessageHandler('popup_changePreSimulationBlockTimeManipulation', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
-		return await changePreSimulationBlockTimeManipulation(ethereum, tokenPriceService, request)
+		return await changePreSimulationBlockTimeManipulation(context.network, request)
 	}),
 	popup_setTransactionOrMessageBlockTimeManipulator: popupSnapshotMessageHandler('popup_setTransactionOrMessageBlockTimeManipulator', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
-		return await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, request)
+		return await setTransactionOrMessageBlockTimeManipulator(context.network, request)
 	}),
-	popup_requestMakeMeRichData: popupLookupMessageHandler('popup_requestMakeMeRichData', async (context) => {
-		const { ethereum } = context.services
-		return await requestMakeMeRichList(ethereum, context.simulationAbortController)
-	}),
+	popup_requestMakeMeRichData: popupMessageHandler('popup_requestMakeMeRichData', async (context) => await requestMakeMeRichData(context.simulationServicesOwner, context.simulationAbortController)),
 	popup_requestActiveAddresses: popupMessageHandler('popup_requestActiveAddresses', async () => await requestActiveAddresses()),
 	popup_requestSimulationMode: popupMessageHandler('popup_requestSimulationMode', async () => await requestSimulationMode()),
 	popup_requestLatestUnexpectedError: popupMessageHandler('popup_requestLatestUnexpectedError', async () => await requestLatestUnexpectedError()),
@@ -74,8 +68,7 @@ const popupMessageHandlers = {
 		return await requestInterceptorSimulationInput(context.network)
 	}),
 	popup_importSimulationStack: popupSnapshotMessageHandler('popup_importSimulationStack', async (context, request) => {
-		const { ethereum, tokenPriceService } = context.network.services
-		return await importSimulationStack(ethereum, tokenPriceService, request)
+		return await importSimulationStack(context.network, request)
 	}),
 	popup_requestSafeStackExport: popupLookupMessageHandler('popup_requestSafeStackExport', async (context) => {
 		const { ethereum } = context.services
