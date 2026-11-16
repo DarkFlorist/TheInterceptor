@@ -282,6 +282,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 		transactionToSimulate,
 		website: transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
+		safeFlow: { kind: 'ordinary' },
 		popupVisualisation: {
 			statusCode: 'success',
 			data: {

@@ -10,7 +10,7 @@ import { assertNever } from '../utils/typescript.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { getPendingTransactionsAndMessages } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, removePendingTransactionOrMessage } from './storageVariables.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply } from './terminalReplyDelivery.js'
 
 // The lifecycle of the confirmation window: opening the window that shows the queue, answering a request as it leaves the queue, and focusing the website or closing the window once it left.
@@ -53,12 +53,12 @@ async function showSimulationStackChange(ethereum: EthereumClientService, tokenP
 }
 
 // The error code a failing view step is reported with, which tells wallet_sendCalls batches apart from the other requests in error reports.
-const getConfirmationViewFailureCode = (removedRequest: PendingTransactionOrSignableMessage) => removedRequest.type === 'TransactionBatch'
+const getConfirmationViewFailureCode = (removedRequest: Pick<PendingTransactionOrSignableMessage, 'type' | 'popupOrTabId' | 'uniqueRequestIdentifier'>) => removedRequest.type === 'TransactionBatch'
 	? 'wallet_send_calls_confirmation_view_update_failed'
 	: 'confirm_transaction_view_update_failed'
 
 // Runs one step of the confirmation window work done after a request is resolved. A failing step is reported and does not skip the steps after it, so the window is still updated and closed.
-async function runConfirmationViewStep(removedRequest: PendingTransactionOrSignableMessage, step: () => Promise<unknown>) {
+async function runConfirmationViewStep(removedRequest: Pick<PendingTransactionOrSignableMessage, 'type' | 'popupOrTabId' | 'uniqueRequestIdentifier'>, step: () => Promise<unknown>) {
 	try {
 		await step()
 	} catch (error: unknown) {
@@ -67,7 +67,7 @@ async function runConfirmationViewStep(removedRequest: PendingTransactionOrSigna
 }
 
 // Updates the confirmation window once a request has left the confirmation queue: the view of how the simulation stack changed, and the queue view, which focuses the website's tab once the queue is empty and closes the window once no pending request is shown in it. The website's answer never waits for this view work, so a failure in it is reported instead of reaching the caller.
-export async function updateViewAfterPendingRequestRemoved(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, removedRequest: PendingTransactionOrSignableMessage, simulationStack: SimulationStackChange) {
+export async function updateViewAfterPendingRequestRemoved(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, removedRequest: Pick<PendingTransactionOrSignableMessage, 'type' | 'popupOrTabId' | 'uniqueRequestIdentifier'>, simulationStack: SimulationStackChange) {
 	const removedRequestWindow = removedRequest.popupOrTabId
 	await runConfirmationViewStep(removedRequest, async () => await showSimulationStackChange(ethereum, tokenPriceService, simulationStack))
 	await runConfirmationViewStep(removedRequest, async () => {
@@ -83,7 +83,7 @@ export async function updateViewAfterPendingRequestRemoved(ethereum: EthereumCli
 
 // How a request leaves the confirmation queue with its terminal reply: the request, the reply, the storage write that removes the request, and how that resolution changed the simulation stack.
 export type PendingRequestRemoval = {
-	readonly removedRequest: PendingTransactionOrSignableMessage
+	readonly removedRequest: Pick<PendingTransactionOrSignableMessage, 'type' | 'popupOrTabId' | 'uniqueRequestIdentifier'>
 	readonly terminalReply: InterceptedRequestForward
 	readonly removeFromQueue: () => Promise<void>
 	readonly simulationStack: SimulationStackChange
@@ -98,4 +98,10 @@ export async function removePendingRequestAndDeliverTerminalReply(ethereum: Ethe
 	} finally {
 		await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, removal.removedRequest, removal.simulationStack)
 	}
+}
+
+// Removes a confirmation whose preparation already rejected its website request, then updates its window.
+export async function removeConfirmationOfRejectedRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, rejectedRequest: Pick<PendingTransactionOrSignableMessage, 'type' | 'popupOrTabId' | 'uniqueRequestIdentifier'>) {
+	await removePendingTransactionOrMessage(rejectedRequest.uniqueRequestIdentifier)
+	await updateViewAfterPendingRequestRemoved(ethereum, tokenPriceService, rejectedRequest, 'unchanged')
 }

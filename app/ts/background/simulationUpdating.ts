@@ -1,7 +1,7 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
-import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
+import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
 import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -98,13 +98,12 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 		previousBlockTimeManipulation = blockTimeManipulation
 		currentBlockSignedMessages = []
 		currentBlockStateOverrides = {}
 		currentBlockTransactions = []
-		currentBlockSimulateWithZeroBaseFee = false
 	}
 
 	const operations = getOperationsForActiveStackContext({ operations: [...context.stack.operations, ...appendedOperations] }, context.activeStackContext)
@@ -116,11 +115,6 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== context.chainId
 				) break
-				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
-				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSimulateWithZeroBaseFee = simulateWithZeroBaseFee
 				currentBlockTransactions.push(operation.preSimulationTransaction)
 				break
 			}
@@ -151,7 +145,7 @@ export function getSimulationInputForStack(context: StackSimulationContext, appe
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 	}
 	return inputBlocks
@@ -507,7 +501,7 @@ export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationSta
 export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment) => gasPayment === 'simulated-safe-executor' ? createSafeExecutionCallFormation(ethereum) : undefined
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
+	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) await validateSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.
