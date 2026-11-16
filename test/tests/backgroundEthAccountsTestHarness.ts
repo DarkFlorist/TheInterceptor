@@ -29,6 +29,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
+	const removedWindowIds: number[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
@@ -86,7 +87,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, focused: true } },
 			async get(windowId: number) { return { id: windowId, focused: true } },
 			async update() { return undefined },
-			async remove() { return undefined },
+			async remove(windowId: number) {
+				removedWindowIds.push(windowId)
+				return undefined
+			},
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 		},
 		action: {
@@ -131,6 +135,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
 		runtimeMessages,
+		removedWindowIds,
 		readStoredValue: (key: string) => storageState[key],
 	}
 }
