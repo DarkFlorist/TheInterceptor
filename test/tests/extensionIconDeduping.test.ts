@@ -328,7 +328,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } }, new Map())
+		const { reply: importSettingsReply } = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } }, new Map())
 		assert.equal(importSettingsReply.data.success, true)
 		await updateWebsiteApprovalAccesses(
 			undefined,

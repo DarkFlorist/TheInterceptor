@@ -59,20 +59,29 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
+type SettingsImportOutcome = { readonly reply: ImportSettingsReply, readonly postCommitFailures: readonly unknown[] }
+
+// A failed followup cannot turn a committed import into a failed write: the registry must still install services and revoke imported denials.
+export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<SettingsImportOutcome> {
 	if (!isJSON(settingsData.data.fileContents)) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }, postCommitFailures: [] }
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }, postCommitFailures: [] }
 	}
+	const committedReply: ImportSettingsReply = { method: 'popup_initiate_export_settings_reply', data: { success: true } }
+	let committed = false
 	try {
-		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
+		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => {
+			await importSettingsAndAddressBook(parsed.value)
+			committed = true
+		})
 	} catch (error: unknown) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
+		if (committed) return { reply: committedReply, postCommitFailures: [error] }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }, postCommitFailures: [] }
 	}
-	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
+	return { reply: committedReply, postCommitFailures: [] }
 }
 
 export async function exportSettings() {

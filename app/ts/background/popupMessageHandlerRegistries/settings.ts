@@ -11,13 +11,14 @@ export const settingsPopupMessageHandlers = {
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupRecoveryMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
 	popup_import_settings: popupRecoveryMessageHandler('popup_import_settings', async (context, request) => {
-		const importSettingsReply = await importSettings(request, context.websiteTabConnections)
+		const { reply: importSettingsReply, postCommitFailures } = await importSettings(request, context.websiteTabConnections)
 		if (!importSettingsReply.data.success) {
 			await sendPopupMessageToOpenWindows(importSettingsReply)
 			return
 		}
 		// The import is committed, so neither its reply nor the content-script registration may skip its reconciliation; their failures are surfaced afterwards.
 		await reconcileAfterIndependentSteps([
+			...postCommitFailures.map((failure) => async () => { throw failure }),
 			async () => await sendPopupMessageToOpenWindows(importSettingsReply),
 			async () => await installRpcServicesForStoredConfiguration(context.simulationServicesOwner),
 		], async () => await reconcileCommittedAccessChangeCollectingFailures(context.websiteTabConnections, { kind: 'settings-import' }, async (importedSettings) => {

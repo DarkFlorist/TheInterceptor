@@ -1,9 +1,10 @@
+import * as errorReporting from '../../app/ts/utils/errors.js'
 import { getRequiredSettings } from './requiredSettings.js'
 import { createDeferredValue, createPort, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 import * as assert from 'assert'
-import { beforeEach, describe, test } from 'bun:test'
+import { beforeEach, describe, spyOn, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -60,6 +61,7 @@ Reflect.set(globalThis, 'browser', {
 				return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 			},
 			async set(items: Record<string, unknown>) {
+
 				if (storageSetError !== undefined) throw storageSetError
 				if ('websiteAccess' in items && websiteAccessStorageSetError !== undefined) throw websiteAccessStorageSetError
 				Object.assign(storageState, items)
@@ -714,6 +716,37 @@ describe('popup message dispatcher seams', () => {
 		assert.equal((await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.access, false)
 		assert.equal(connection.approved, false)
 		assert.equal(messages.some((message) => message.method === 'disconnect'), true)
+	})
+
+	test('a committed import reconciles services and denials even when bootstrap error reporting fails', async () => {
+		const websiteOrigin = 'denied-despite-reporting-failure.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const context = createDispatcherContext(async () => undefined)
+		const services = context.simulationServicesOwner.getCurrent()
+		if (services === undefined) throw new Error('Expected test services')
+		context.simulationServicesOwner = createTestSimulationServicesOwner(undefined, () => services)
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: settings.activeRpcNetwork, activeSimulationAddress: settings.activeSimulationAddress })
+		await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
+		const exportedSettings = await exportSettingsAndAddressBook()
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: settings.activeSimulationAddress ?? 0n, access: true }] }])
+		storageState.metamaskCompatibilityMode = true
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: true, wantsToConnect: false }
+		context.websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: connection } }]])
+		contentScriptRegistrationError = new Error('Registration unavailable')
+		const reportingFailure = new Error('Diagnostics unavailable')
+		const reporter = spyOn(errorReporting, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingFailure })
+		try {
+
+			await assert.rejects(dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: JSON.stringify(serialize(ExportedSettings, exportedSettings)) } }), (error) => error === reportingFailure)
+			assert.equal(context.simulationServicesOwner.getCurrent(), services)
+			assert.equal(connection.approved, false)
+			assert.equal(messages.some((message) => message.method === 'disconnect'), true)
+			assert.equal((await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.access, false)
+		} finally {
+			reporter.mockRestore()
+		}
 	})
 
 	test.each([
