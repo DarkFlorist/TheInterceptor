@@ -1,5 +1,5 @@
 import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupReadyAndListeningPage, type Settings, WindowMessage } from '../types/interceptor-messages.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError, getFrameOrigins } from '../utils/requests.js'
+import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
@@ -316,10 +316,10 @@ export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId
 
 export const getWebsiteSocketConnection = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
 
-// The full origin of the frame behind a socket, such as `https://example.com`. It comes from getFrameOrigins and the same content script port URL as the connection's `websiteOrigin`, so the two always name the same host and port.
-export const getWebsiteSocketRequestOrigin = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => {
-	const senderUrl = getWebsiteSocketConnection(websiteTabConnections, socket)?.port.sender?.url
-	return senderUrl === undefined ? undefined : getFrameOrigins(senderUrl).requestOrigin
+// Read the connection's original frame identity, never a later port URL. A mismatched website cannot borrow another connection's origin.
+export const getWebsiteSocketRequestOrigin = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) => {
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
+	return connection?.websiteOrigin === websiteOrigin ? connection.requestOrigin : undefined
 }
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {

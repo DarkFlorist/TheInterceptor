@@ -1,4 +1,5 @@
 import * as assert from 'assert'
+import { getFrameOrigins } from '../../app/ts/utils/requests.js'
 import { test } from 'bun:test'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
@@ -19,7 +20,7 @@ const localDappSiweMessage = (chainId: bigint) => [
 ].join('\n')
 
 // Opens the confirmation dialog for a personal_sign request sent by a frame at `pageUrl` and returns the reply to the page together with the stored pending message.
-async function openSignInConfirmation(siweMessage: string, pageUrl: string) {
+async function openSignInConfirmation(siweMessage: string, pageUrl: string, livePortUrl = pageUrl) {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const signRequest = {
 		method: 'personal_sign' as const,
@@ -33,10 +34,10 @@ async function openSignInConfirmation(siweMessage: string, pageUrl: string) {
 	}
 	const socket = uniqueRequestIdentifier.requestSocket
 	const websitePort = createWebsitePort(socket, 0, [])
-	const port = { ...websitePort, sender: { ...websitePort.sender, url: pageUrl } }
+	const port = { ...websitePort, sender: { ...websitePort.sender, url: livePortUrl } }
 	const websiteTabConnections = new Map([[socket.tabId, {
 		connections: {
-			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'localhost:3000', approved: true, wantsToConnect: true },
+			[modules.websiteSocketToString(socket)]: { port, socket, ...getFrameOrigins(pageUrl), approved: true, wantsToConnect: true },
 		},
 	}]])
 	const reply = await modules.openConfirmTransactionDialogForMessage(
@@ -83,4 +84,13 @@ test('quarantines a sign-in message whose chain ID a stored request cannot hold 
 	assert.equal(pendingMessage.visualizedPersonalSignRequest.type, 'NotParsed')
 	assert.equal(pendingMessage.visualizedPersonalSignRequest.quarantine, true)
 	assert.deepEqual(pendingMessage.visualizedPersonalSignRequest.quarantineReasons, [SIWE_LOOKALIKE_QUARANTINE_REASON])
+})
+
+
+test('uses the origin captured at connection setup even if the live port URL changes', async () => {
+	const { pendingMessages } = await openSignInConfirmation(localDappSiweMessage(fakeRpcNetwork.chainId), 'https://localhost:3000/login', 'http://localhost:3000/changed')
+	const [pending] = pendingMessages
+	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing simulated sign-in message')
+	assert.equal(pending.signedMessageTransaction.requestOrigin, 'https://localhost:3000')
+	assert.equal(pending.visualizedPersonalSignRequest.quarantine, false)
 })

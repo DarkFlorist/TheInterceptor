@@ -49,8 +49,8 @@ async function extractPermit2Witness(ethereumClientService: EthereumClientServic
 // The signed payload exactly as the website sent it, never a parsed form whose bigints would be re-encoded as hex, so the raw message view means the same for every message type.
 const serializeSignedPayload = (signedPayload: unknown) => ({ stringifiedMessage: stringifyJSONWithBigInts(signedPayload, 4), rawMessage: stringifyJSONWithBigInts(signedPayload) })
 
-export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined): { quarantine: boolean, quarantineReasons: readonly string[] } {
-	const quarantineReasons: string[] = []
+export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined, additionalReasons: readonly string[] = []): { quarantine: boolean, quarantineReasons: readonly string[] } {
+	const quarantineReasons = [...additionalReasons]
 	if (messageChainId !== undefined && messageChainId !== activeChainId) quarantineReasons.push(`The signature request is for a different chain (${ getChainName(messageChainId) }) than what is currently active (${ getChainName(activeChainId) }).`)
 	if (accountAddress !== activeAddress || (ownerAddress !== undefined && accountAddress !== ownerAddress)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
@@ -103,28 +103,20 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
 		}
 		if (siweMessage !== undefined) {
-			const quarantineReasons = [
-				...getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin),
-				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address).quarantineReasons,
-			]
 			return {
 				...personalSignParams,
 				type: 'SignInWithEthereum' as const,
 				message: siweMessage,
 				signInAccount: await identifyAddress(ethereumClientService, requestAbortController, siweMessage.address),
-				quarantine: quarantineReasons.length > 0,
-				quarantineReasons,
+				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address, getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin)),
 				stringifiedMessage: decodedMessage,
 			}
 		}
-		const signingQuarantineReasons = getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined).quarantineReasons
-		const quarantineReasons = [...getSiweLookalikeQuarantineReasons(decodedMessage), ...signingQuarantineReasons]
 		return {
 			...personalSignParams,
 			type: 'NotParsed' as const,
 			message: originalParams.originalRequestParameters.params[0],
-			quarantine: quarantineReasons.length > 0,
-			quarantineReasons,
+			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined, getSiweLookalikeQuarantineReasons(decodedMessage)),
 			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 		}
 	}
