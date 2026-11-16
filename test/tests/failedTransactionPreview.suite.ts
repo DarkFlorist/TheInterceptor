@@ -21,7 +21,8 @@ const successfulPopupVisualisation = { ...sharedSuccessfulPopupVisualisation, da
 	simulationState: { ...sharedSuccessfulPopupVisualisation.data.simulationState, rpcNetwork: previewRpcNetwork },
 } }
 const test = (name: string, run: () => Promise<void>) => testWithDefaultNetwork(name, async () => {
-	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	const { getSettings } = await import('../../app/ts/background/storedSettings.js')
 	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: previewRpcNetwork })
 	await run()
 })

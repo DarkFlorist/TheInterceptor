@@ -10,7 +10,7 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { assertNever } from '../utils/typescript.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { getSettings } from './settings.js'
+import { getSettings } from './storedSettings.js'
 import { getPendingTransactionsAndMessages, getRpcConnectionStatus } from './storageVariables.js'
 
 // What the confirmation window is sent: the confirmation queue in its popup wire format, together with the current simulation stack.

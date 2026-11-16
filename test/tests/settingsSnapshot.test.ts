@@ -58,7 +58,7 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getSettings } = await import('../../app/ts/background/settings.js')
+const { getSettings } = await import('../../app/ts/background/storedSettings.js')
 
 test('getSettings returns one atomic browser storage snapshot', async () => {
 	storageReadCount = 0
