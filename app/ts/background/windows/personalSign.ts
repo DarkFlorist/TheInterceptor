@@ -13,7 +13,7 @@ import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
-import { type EIP712Message } from '../../types/eip721.js'
+import type { EIP712Message } from '../../types/eip721.js'
 import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
 import { getSiweLookalikeQuarantineReasons, getSiweQuarantineReasons, parseSiweMessage } from '../../utils/siwe.js'
 

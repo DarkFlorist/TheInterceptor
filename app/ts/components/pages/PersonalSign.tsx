@@ -9,7 +9,7 @@ import { TokenApprovalsVisualisation } from '../simulationExplaining/customExpla
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import { TokenSymbol } from '../subcomponents/coins.js'
-import { type Permit2Witness, type VisualizedPersonalSignRequest, type VisualizedPersonalSignRequestPermit, type VisualizedPersonalSignRequestPermit2, type VisualizedPersonalSignRequestPermit2Batch, type VisualizedPersonalSignRequestPermit2SignatureTransfer, type VisualizedPersonalSignRequestSafeTx, type SiweMessage } from '../../types/personal-message-definitions.js'
+import type { Permit2Witness, VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestPermit2Batch, VisualizedPersonalSignRequestPermit2SignatureTransfer, VisualizedPersonalSignRequestSafeTx, SiweMessage } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
