@@ -8,6 +8,7 @@ import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-typ
 import { findPermit2WitnessField, getPermit2SignatureTransferKind, VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { checksummedAddress, stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
 import { EthereumAddress } from '../../app/ts/types/wire-types.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
 import { Permit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
@@ -128,7 +129,7 @@ function getPermit2BatchTokenRows(body: RenderedElement) {
 	const tokenRowLabels = collectRenderedElements(body, (node) => node.tagName === 'P' && /(?: nonce: |^Spender can spend .* for: )$/u.test(node.textContent ?? ''))
 	return tokenRowLabels.map((label) => ({
 		tokenAddress: getCopyableAddresses(label)[0],
-		untrusted: collectRenderedElements(label, (node) => node.attributes?.role === 'alert' && node.attributes.title === 'Untrusted address').length > 0,
+		untrusted: collectRenderedElements(label, (node) => node.attributes?.role === 'alert' && node.attributes['aria-label'] === ON_CHAIN_TOKEN_METADATA_WARNING && node.attributes['data-warning-tooltip'] === ON_CHAIN_TOKEN_METADATA_WARNING).length > 0,
 	}))
 }
 
