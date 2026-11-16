@@ -270,6 +270,7 @@ describe('pages that show RPC connections follow popup_update_rpc_list', () => {
 			transactionToSimulate,
 			website,
 			approvalStatus: { status: 'WaitingForUser' },
+			safeFlow: { kind: 'ordinary' },
 			popupVisualisation: {
 				statusCode: 'failed',
 				data: {
