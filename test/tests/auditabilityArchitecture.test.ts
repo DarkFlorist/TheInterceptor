@@ -154,8 +154,8 @@ test('the simulation and utils layers take the metadata lookup types from types/
 })
 
 test('the confirmation-run writer only stores, and each confirmation workflow catches the run it stored up on address-book changes made during it', () => {
-	// The writer depends only on the pending-confirmation storage: no re-label, publication or address-book revision.
-	assert.deepEqual([...confirmationRunStorageSource.matchAll(/^import .* from '([^']+)'$/gmu)].map(([, module]) => module), ['../types/accessRequest.js', '../utils/requests.js', './storageVariables.js'])
+	// The writer depends on pending-confirmation storage and pure run-identity comparison: no re-label, publication or address-book revision.
+	assert.deepEqual([...confirmationRunStorageSource.matchAll(/^import .* from '([^']+)'$/gmu)].map(([, module]) => module), ['../utils/confirmationRunId.js', '../types/accessRequest.js', '../utils/requests.js', './storageVariables.js'])
 	assert.doesNotMatch(confirmationRunStorageSource, /[Rr]elabel\w*\(|AddressBookRevision/u)
 	// The publication starts its re-labels and knows nothing of runs in flight; the address-book write itself advances the revision.
 	assert.doesNotMatch(addressBookChangePublicationSource, /confirmationRunStorage\.js|AddressBookRevision/u)
