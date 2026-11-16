@@ -1313,7 +1313,8 @@ test('propagates unexpected Safe signer-reply RPC and storage failures', async (
 const otherChainRpcNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: 1338n }
 
 // Services for a second chain on which the Safe has the same address, owners, and nonce as on fakeRpcNetwork, so only the chain differs.
-function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
+async function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork })
 	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork)
 	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
 }
@@ -1371,7 +1372,7 @@ async function prepareSafeProposalFromFakeRpcNetwork(approvalStatus: { readonly 
 
 test('refuses to forward a Safe proposal prepared on another chain after the network switches', async () => {
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' })
-	const otherChainSimulator = createOtherChainSimulator()
+	const otherChainSimulator = await createOtherChainSimulator()
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService), await readNetworkState(otherChainSimulator), websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -1390,7 +1391,7 @@ test('refuses to forward a Safe proposal prepared on another chain after the net
 test('does not store a Safe proposal signed for another chain after the network switches', async () => {
 	const { safeTx, postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForSigner' })
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
-	const otherChainSimulator = createOtherChainSimulator()
+	const otherChainSimulator = await createOtherChainSimulator()
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService), await readNetworkState(otherChainSimulator), websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -1408,7 +1409,7 @@ test('does not store a Safe proposal signed for another chain after the network 
 
 test('does not add an unsigned Safe proposal prepared on another chain to the Safe stack', async () => {
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' })
-	const otherChainSimulator = createOtherChainSimulator()
+	const otherChainSimulator = await createOtherChainSimulator()
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService), await readNetworkState(otherChainSimulator), websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -1429,7 +1430,7 @@ test('does not move a Safe proposal to the connected chain when the wallet switc
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' }, [safeTestOwnerAddress, otherOwner])
 	// The Safe on the other chain would hash a rebuilt proposal with that chain's domain.
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(createSafeTx(otherChainRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)))
-	const otherChainSimulator = createOtherChainSimulator()
+	const otherChainSimulator = await createOtherChainSimulator()
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService), await readNetworkState(otherChainSimulator), websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -1447,7 +1448,7 @@ test('does not move a Safe proposal to the connected chain when the wallet switc
 test('refuses a Safe proposal whose domain chain and connected chain are both the missing chain ID 0', async () => {
 	const missingChainIdRpcNetwork = { ...fakeRpcNetwork, name: 'Missing Chain ID', chainId: 0n }
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' }, [safeTestOwnerAddress], missingChainIdRpcNetwork.chainId)
-	const missingChainIdSimulator = createOtherChainSimulator(missingChainIdRpcNetwork)
+	const missingChainIdSimulator = await createOtherChainSimulator(missingChainIdRpcNetwork)
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(missingChainIdSimulator.ethereum, missingChainIdSimulator.tokenPriceService), await readNetworkState(missingChainIdSimulator), websiteTabConnections, {
 		method: 'popup_confirmDialog',

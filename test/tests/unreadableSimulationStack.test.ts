@@ -26,8 +26,8 @@ async function createApprovedWebsite(modules: Awaited<ReturnType<typeof loadModu
 		[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
 	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-	const send = async (requestId: number, method: string, params: readonly unknown[], usingInterceptorWithoutSigner = false) => {
-		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+	const send = async (requestId: number, method: string, params: readonly unknown[], usingInterceptorWithoutSigner = false, owner = simulationServicesOwner) => {
+		await handleInterceptedRequest(port, websiteOrigin, website, owner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner,
 			uniqueRequestIdentifier: { requestId, requestSocket: socket },
@@ -255,9 +255,9 @@ describe('an unreadable simulation stack', () => {
 		const { send, websiteTabConnections } = await createApprovedWebsite(modules)
 		const { simulationServicesOwner, letRepairSucceed } = await failNetworkSwitch(modules, 'stack clearing', websiteTabConnections)
 
-		assert.ok((await send(1, 'eth_chainId', []))?.result !== undefined)
-		assert.deepEqual((await send(2, 'eth_accounts', []))?.result, [addressString(account)])
-		assert.equal((await send(3, 'eth_getBalance', [addressString(account), 'latest']))?.error?.code, 123456)
+		assert.ok((await send(1, 'eth_chainId', [], false, simulationServicesOwner))?.result !== undefined)
+		assert.deepEqual((await send(2, 'eth_accounts', [], false, simulationServicesOwner))?.result, [addressString(account)])
+		assert.equal((await send(3, 'eth_getBalance', [addressString(account), 'latest'], false, simulationServicesOwner))?.error?.code, 123456)
 
 		await letRepairSucceed()
 		assert.equal((await modules.readNetworkSnapshot(simulationServicesOwner)).simulation.kind, 'loaded')

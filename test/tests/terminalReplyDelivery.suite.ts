@@ -521,9 +521,9 @@ test('a confirmation dialog initialised while services cannot be installed shows
 	const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 	const { readNetworkSnapshot } = await import('../../app/ts/background/networkTransitionLock.js')
 	let installationFails = true
-	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, () => {
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, (network) => {
 		if (installationFails) throw new Error('the services cannot be installed')
-		return { ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }
+		return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network })
 	})
 	const { websiteTabConnections, storePendingRequests } = createConnectionRecordingReplies([pendingTransaction])
 	await storePendingRequests()

@@ -492,6 +492,7 @@ describe('large state store helpers', () => {
 		indexedDbState.set('popupVisualisation', savedResults)
 		indexedDbState.set('interceptorTransactionStack', serializedStack())
 		const rpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://ethereum.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		storageState.activeRpcNetwork = { ...rpcNetwork, chainId: '0x1' }
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache: () => undefined,
@@ -501,7 +502,7 @@ describe('large state store helpers', () => {
 		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), undefined, true), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
-		assert.deepEqual(storageState, { simulationStackChainId: '0x1' })
+		assert.deepEqual(storageState, { activeRpcNetwork: { ...rpcNetwork, chainId: '0x1' }, simulationStackChainId: '0x1' })
 	})
 
 	for (const operation of ['write', 'delete']) {

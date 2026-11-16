@@ -1,4 +1,4 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
@@ -775,7 +775,7 @@ describe('popup clear reset', () => {
 		const resets: RpcNetwork[] = []
 		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
-			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
+			return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: nextRpcEntry })
 		})
 		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
 		await browserStorageLocalSet({

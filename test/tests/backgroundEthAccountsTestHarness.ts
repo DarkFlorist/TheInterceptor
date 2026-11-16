@@ -267,11 +267,12 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
+// Reset fixtures install a client for the selected endpoint, just as the production owner does.
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current = initial
 	return {
 		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		reset: network => { current = reset === undefined ? createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network }) : reset(network); return current },
 	}
 }
 

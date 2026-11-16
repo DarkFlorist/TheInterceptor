@@ -376,7 +376,7 @@ async function proposeSafeTransactionWhileNetworkSwitchCommits(stack: 'executed-
 			websiteTabConnections,
 		)
 		assert.equal(switchCommitted, true)
-		assert.equal((await readNetworkState()).settings.activeRpcNetwork.chainId, otherChain.chainId)
+		assert.equal((await (await import('../../app/ts/background/networkTransitionLock.js')).readNetworkSnapshot(servicesOwner)).settings.activeRpcNetwork.chainId, otherChain.chainId)
 		// The switch retired the admitted client and installed the other chain's.
 		assert.equal(admittedServices.ethereum.isRetired(), true)
 		const installedServices = servicesOwner.getCurrent()

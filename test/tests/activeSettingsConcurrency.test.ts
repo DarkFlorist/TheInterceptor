@@ -58,7 +58,7 @@ describe('active settings concurrency', () => {
 		} satisfies RpcEntry
 		const resetNetworks: RpcEntry[] = []
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, network => { resetNetworks.push(network); return { ethereum, tokenPriceService } })
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, network => { resetNetworks.push(network); return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network }) })
 
 		const firstTransition = changeActiveAddressAndChain(simulationServicesOwner, connections, {
 			simulationMode: true,

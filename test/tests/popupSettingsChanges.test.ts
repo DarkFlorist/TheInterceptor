@@ -294,7 +294,7 @@ describe('popup settings changes', () => {
 		await changeActiveAddressAndChain(createTestSimulationServicesOwner({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService }, (entry) => {
 			assert.equal(entry.httpsRpc, rpc.httpsRpc)
 			installed = true
-			return services
+			return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: entry })
 		}), new Map(), { simulationMode: true, rpcNetwork: rpc })
 		assert.equal(announced, true)
 	})
