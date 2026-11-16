@@ -3,7 +3,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 
-// Pure changes to website-access data live here. Persistence, injection refresh, reloads and approval reconciliation belong to websiteAccessUpdating.ts.
+// Pure changes to website-access data live here. The handler-level workflow in applyWebsiteAccessUpdate.ts owns persistence, injection refresh, reloads and approval reconciliation.
 export type WebsiteAccessMutation = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
 
 export const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => {
