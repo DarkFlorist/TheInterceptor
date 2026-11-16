@@ -1,3 +1,5 @@
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { readNetworkSnapshotForServices } from '../../app/ts/background/networkTransitionLock.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, createWebsitePort, fakeRequestHandler, modules, recipientAddress, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
@@ -34,8 +36,8 @@ function createWebsiteTabConnections() {
 
 async function openTransactionConfirmation() {
 	return await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
+		await readNetworkSnapshotForServices(simulator),
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -95,7 +97,7 @@ for (const { cause, error } of [
 			assert.equal(interrupted.popupVisualisation.statusCode, 'failed')
 
 			failSimulation = false
-			await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+			await modules.refreshPopupConfirmTransactionSimulation(await readNetworkSnapshotForServices(simulator))
 			const [refreshed] = await modules.getPendingTransactionsAndMessages()
 			if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed confirmation to stay simulated')
 			assert.equal(refreshed.popupVisualisation.statusCode, 'success')

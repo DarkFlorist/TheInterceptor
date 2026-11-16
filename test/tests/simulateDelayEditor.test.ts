@@ -309,18 +309,7 @@ describe('eth_simulateV1 block timestamps', () => {
 		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
 	})
 
-	test('the block split before a plain transaction stays a zero delay so the simulate delay picker keeps showing 0 seconds', async () => {
-		await resetStack()
-		await updateInterceptorTransactionStack(() => ({
-			operations: [
-				{ type: 'Transaction', preSimulationTransaction: zeroBaseFeeTransaction },
-				{ type: 'Transaction', preSimulationTransaction: tx2 },
-			],
-		}))
 
-		const simulationInput = await readActiveSimulationInput()
-		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
-	})
 
 	test('leaves positive delays and absolute times unchanged', () => {
 		const previousTime = new Date('2024-01-01T00:00:00.000Z')

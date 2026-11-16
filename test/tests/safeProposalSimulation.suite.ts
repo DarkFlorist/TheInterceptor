@@ -379,7 +379,7 @@ test('a Gnosis Safe proposal whose reconciliation changes nothing opens on the n
 	assert.deepEqual(reply, { type: 'doNotReply' })
 	if (pendingProposal?.type !== 'Transaction') throw new Error('Expected the Gnosis Safe proposal to open a confirmation')
 	assert.equal(pendingProposal.simulationChainId, requestNetwork.settings.activeRpcNetwork.chainId)
-	assert.equal(pendingProposal.safeTransaction?.safeTx.message.nonce, proposalNonce)
+	assert.equal(getPendingSafeProposal(pendingProposal)?.safeTx.message.nonce, proposalNonce)
 })
 
 test('a Gnosis Safe proposal whose reconciliation removes executed operations is rejected when a switch commits during its preparation', async () => {

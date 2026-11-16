@@ -1153,7 +1153,7 @@ for (const change of ['switches network', 'selects another Gnosis Safe'] as cons
 		...pendingTransaction,
 		simulationMode: false as const,
 		approvalStatus: { status: 'WaitingForUser' as const },
-		safeTransaction: {
+		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress,
 			safeVersion: '1.4.1',
@@ -1161,7 +1161,7 @@ for (const change of ['switches network', 'selects another Gnosis Safe'] as cons
 			reviewedSafeState: { version: '1.4.1' as const, nonce: 0n, owners: [safeSignerAddress], threshold: 2n },
 			safeTxHash,
 			safeTx,
-		},
+		} },
 	}
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
 	const validationStarted = createDeferredValue<void>()

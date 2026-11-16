@@ -19,7 +19,7 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, simulator as confirmationSimulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
@@ -381,8 +381,8 @@ test('drops the zero base fee flag of a Safe proposal stored by an earlier versi
 	if (loadedOperation?.type !== 'Transaction') throw new Error('Expected the stored proposal')
 	assert.deepEqual(loadedOperation.preSimulationTransaction.simulationOptions, { requiredChainId: fakeRpcNetwork.chainId })
 	await modules.updateInterceptorTransactionStack(() => loadedStack)
-	const { getCurrentSimulationInput, prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
-	const stackInput = await getCurrentSimulationInput()
+	const { prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const stackInput = await readActiveSimulationInput()
 	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
 	const preparedInput = await prepareSafeExecutionsForRpc(stackInput, ethereum)
 	assert.equal(preparedInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
@@ -401,7 +401,7 @@ async function getOpenedAndRefreshedGasPayments(transactionParams: SendTransacti
 	// As the confirmation does, a preparation failure is shown instead of forming the transaction.
 	const transactionToSimulate = preparation.preparationMessage !== undefined
 		? { website, created, originalRequestParameters: preparation.effectiveTransactionParams, transactionIdentifier: 1n, success: false as const, error: { code: -32700, message: preparation.preparationMessage } }
-		: await modules.formEthSendTransaction(ethereum, undefined, preparation.transactionExecutor, website, preparation.effectiveTransactionParams, created, 1n, simulationMode, preparation.gasPayment)
+		: await modules.formEthSendTransaction((await readNetworkState(confirmationSimulator)).simulation, undefined, preparation.transactionExecutor, website, preparation.effectiveTransactionParams, created, 1n, simulationMode, preparation.gasPayment)
 	const { safeFlow } = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	const pending = { ...pendingTransaction, safeFlow }
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
@@ -443,8 +443,8 @@ async function openSigningModeSafeConfirmation(simulator: ReturnType<typeof crea
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
+		await readNetworkState(simulator),
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
 		{ kind: 'transaction', parameters: transactionParams, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
 		false,
@@ -470,7 +470,7 @@ async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransa
 		assertPending(pending, stage)
 	}
 	await assertFailure('when the confirmation opens')
-	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator)))
 	await assertFailure('after a refresh')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
@@ -505,7 +505,7 @@ for (const { description, outcome } of safeProposalFormationFailures) {
 		const simulator = createRecordingSimulator('fake-node', () => executorCall.outcome)
 		// Without a gas limit, so forming the transaction estimates its gas.
 		await openSigningModeSafeConfirmation(simulator, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), { operation: 0 })
-		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator)))
 		const assertProposalRetried = async (stage: string) => {
 			const pending = await getFirstPendingTransaction(stage)
 			assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
@@ -536,7 +536,7 @@ test('keeps a Gnosis Safe proposal whose transaction did not form as it is when 
 	assert.deepEqual(opened.safeFlow, { kind: 'proposal', state: 'formationFailed' })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 	const simulatedCallCount = simulator.simulatedCalls.length
-	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator)))
 	assert.deepEqual(await getFirstPendingTransaction('after the refresh'), opened)
 	assert.equal(simulator.simulatedCalls.length, simulatedCallCount, 'nothing is formed or simulated')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })

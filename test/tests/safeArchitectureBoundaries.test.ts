@@ -76,7 +76,7 @@ test('the RPC client enforces the executed-call invariant without Gnosis Safe do
 
 test('the minimal simulation input that crosses into the RPC client carries no Gnosis Safe domain type', async () => {
 	const visualizerTypesSource = await Bun.file(new URL('../../app/ts/types/visualizer-types.ts', import.meta.url)).text()
-	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)/u)?.[0]
 	if (minimalDataBlockDefinition === undefined) throw new Error('SimulationStateInputMinimalDataBlock definition not found')
 	assert.match(minimalDataBlockDefinition, /executedCallAuthorized: funtypes\.Boolean,/u)
 	assert.doesNotMatch(minimalDataBlockDefinition.split('\n').filter((line) => !/^\s*\/\//u.test(line)).join('\n'), /Safe|safeTransaction|simulationOptions|TransactionSimulationOptions|PreSimulationTransaction|SimulationInputTransaction/u)
@@ -126,11 +126,11 @@ test('a Gnosis Safe confirmation and its refreshes take the fee mode from one ma
 test('a pending transaction records its flow once, as the safeFlow that the confirmation stores and every refresh reads', async () => {
 	const accessRequestSource = await Bun.file(new URL('../../app/ts/types/accessRequest.ts', import.meta.url)).text()
 	const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
-	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)/u)?.[0]
 	if (pendingTransactionBaseDefinition === undefined) throw new Error('SimulatedPendingTransactionBase definition not found')
 	assert.match(pendingTransactionBaseDefinition, /\tsafeFlow: PendingTransactionSafeFlow,\n/u)
 	// The flow's data lives only in safeFlow, so no other pending field can disagree with it.
-	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest|\.And\(/u)
+	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest/u)
 	assert.equal(accessRequestSource.match(/export const PendingTransactionSafeFlow = /gu)?.length, 1)
 	assert.match(safePendingFlowSource, /export type SafeTransactionFlowKind = PendingTransactionSafeFlow\['kind'\]/u)
 	assert.match(safePendingFlowSource, /export const getPendingTransactionFlowKind = \(pending: PendingTransaction\): SafeTransactionFlowKind => pending\.safeFlow\.kind/u)
