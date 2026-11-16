@@ -1,3 +1,4 @@
+import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { getFailedTransactionPreviewWithLookups } from './simulationUpdating.js'
 import { lookUpMetadataForRelabel } from './storedRunVisualisation.js'
 import { isSameConfirmationRun } from '../utils/confirmationRunId.js'
@@ -9,7 +10,7 @@ import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from 
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { storeConfirmationRun, getStoredConfirmationRunId, type StoredConfirmationRun } from './confirmationRunStorage.js'
-import { relabelReportingUnexpectedErrors, relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
+import { relabelReportingUnexpectedErrors, relabelStoredRunMetadata, relabelStoredSimulation, type StoredRunToRelabel, type SimulationRunToRelabel } from './simulationRelabel.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
 
 // Preserve each status/data pairing while adding the same preview metadata to either visualisation shape.
@@ -30,27 +31,41 @@ function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessag
 	}
 }
 
+type FailedPreviewRun = StoredRunToRelabel<PendingTransactionOrSignableMessage, FailedTransactionPreview> & {
+	readonly preview: FailedTransactionPreview
+	readonly transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed
+}
+
+function getFailedPreviewRunToRelabel(pending: PendingTransactionOrSignableMessage, chainId: bigint): FailedPreviewRun | undefined {
+	if (pending.type !== 'Transaction' || (pending.transactionOrMessageCreationStatus !== 'Simulated' && pending.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return undefined
+	const visualisation = pending.popupVisualisation
+	const runChainId = pending.confirmationRun?.chainId
+		?? (pending.transactionToSimulate.success ? pending.transactionToSimulate.transaction.chainId : undefined)
+		?? (visualisation.statusCode === 'success' ? visualisation.data.simulationState.rpcNetwork.chainId : undefined)
+	// Legacy failed runs without a known chain keep their names until a fresh run captures the network.
+	if (runChainId !== chainId || visualisation.data.failedTransactionPreview === undefined) return undefined
+	return {
+		runId: visualisation.data.confirmationRunId,
+		preview: visualisation.data.failedTransactionPreview,
+		transactionToSimulate: pending.transactionToSimulate,
+		withMetadata: (preview) => modifyObject(pending, { popupVisualisation: withFailedPreview(visualisation, preview) }),
+	}
+}
+
 // One re-label at a time, so the last one requested reads the latest address book.
 const confirmationRelabelSemaphore = new Semaphore(1)
 
 // Re-labels the stored run of one pending confirmation without simulating; isRunToRelabel limits it to a particular run. Nothing cancels it, not even a newer simulation run of the request: the write guard in relabelStoredSimulation keeps it from replacing a run stored meanwhile, and a newer run that stores nothing, because it was aborted or its RPC request failed, leaves the re-labelled run in place.
 async function relabelStoredConfirmation(rpcNetwork: RpcNetwork, stored: PendingTransactionOrSignableMessage, isRunToRelabel: (pending: PendingTransactionOrSignableMessage) => boolean) {
-	if (stored.type === 'Transaction' && (stored.transactionOrMessageCreationStatus === 'Simulated' || stored.transactionOrMessageCreationStatus === 'FailedToSimulate')) {
-		const visualisation = stored.popupVisualisation
-		// Keep the chain-scoped names of a request made on another network.
-		if (stored.transactionToSimulate.success && stored.transactionToSimulate.transaction.chainId !== rpcNetwork.chainId) return
-		const preview = visualisation.data.failedTransactionPreview
-		if (preview !== undefined && isRunToRelabel(stored)) {
-			// A failed run has no protector reads. Its preview recorded every address it identified, so it can use the same offline metadata lookup as a successful run.
-			const refreshedPreview = await getFailedTransactionPreviewWithLookups(lookUpMetadataForRelabel(preview.addressBookEntries, rpcNetwork).identifyAddress, stored.transactionToSimulate)
-			await updatePendingTransactionOrMessage(stored.uniqueRequestIdentifier, async (current) => {
-				if (!isRunToRelabel(current) || current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
-				if (!isSameConfirmationRun(current.popupVisualisation.data.confirmationRunId, visualisation.data.confirmationRunId)) return current
-				const popupVisualisation = withFailedPreview(current.popupVisualisation, refreshedPreview)
-				return modifyObject(current, { popupVisualisation })
-			})
-			return
-		}
+	const getPreviewRun = (pending: PendingTransactionOrSignableMessage) => isRunToRelabel(pending) ? getFailedPreviewRunToRelabel(pending, rpcNetwork.chainId) : undefined
+	if (getPreviewRun(stored) !== undefined) {
+		await relabelStoredRunMetadata<PendingTransactionOrSignableMessage, FailedTransactionPreview, FailedPreviewRun>({
+			stored,
+			getRunToRelabel: getPreviewRun,
+			readMetadata: async (run) => await getFailedTransactionPreviewWithLookups(lookUpMetadataForRelabel(run.preview.addressBookEntries, rpcNetwork).identifyAddress, run.transactionToSimulate),
+			updateStored: async (relabel) => await updatePendingTransactionOrMessage(stored.uniqueRequestIdentifier, async (current) => relabel(current)),
+		})
+		return
 	}
 	await relabelStoredSimulation(rpcNetwork, {
 		stored,

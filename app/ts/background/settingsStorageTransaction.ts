@@ -1,6 +1,6 @@
 import { Semaphore } from '../utils/semaphore.js'
-import { commitBrowserStorageLocalWrite, type GeneralStorageItems, type LocalStorageItems } from '../utils/storageUtils.js'
-import { recordAddressBookWrite, addressBookWriteChangesNames, isAddressBookStorageWrite, getAddressBookWriteItems, type AddressBookStorageWrite } from './addressBookRevision.js'
+import type { GeneralStorageItems } from '../utils/storageUtils.js'
+import { commitSettingsWritesWithAddressBookRevision, type AddressBookStorageWrite } from './addressBookRevision.js'
 
 // The items one storage owner writes for its own keys, built by that owner's …StorageWrite function so each key, value transform and sanitization stays with its owner.
 export type StorageWrite = GeneralStorageItems
@@ -15,12 +15,7 @@ const settingsStorageLock = new Semaphore(1)
 export async function runSettingsStorageTransaction<Result>(plan: () => Promise<StorageTransactionPlan<Result>>) {
 	return await settingsStorageLock.execute(async () => {
 		const { writes, result } = await plan()
-		if (writes.length > 0) {
-			const items = writes.reduce<LocalStorageItems>((items, write) => ({ ...items, ...(isAddressBookStorageWrite(write) ? getAddressBookWriteItems(write) : write) }), {})
-			const commit = async () => await commitBrowserStorageLocalWrite(items)
-			if (writes.some((write) => isAddressBookStorageWrite(write) && addressBookWriteChangesNames(write))) await recordAddressBookWrite(commit)
-			else await commit()
-		}
+		await commitSettingsWritesWithAddressBookRevision(writes)
 		return result
 	})
 }

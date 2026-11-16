@@ -75,6 +75,7 @@ export async function refreshConfirmTransactionSimulation(
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const confirmationRun = {
+		chainId: ethereum.getChainId(),
 		// Taken with the controller, before the first await, so run ids follow the order in which runs replace each other.
 		confirmationRunId: getNextConfirmationRunId(),
 		// Read once as the run starts, before its first lookup, so the workflow that stores the run can tell whether the address book changed during it.

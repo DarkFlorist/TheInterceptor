@@ -2,7 +2,7 @@ import { type AddressBookEntries, type AddressBookEntry, doAddressBookChainIdsMa
 import type { ENSNameHashes, ENSLabelHashes } from '../types/ens.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { commitBrowserStorageLocalWrite } from '../utils/storageUtils.js'
+import { commitBrowserStorageLocalWrite, type GeneralStorageItems, type LocalStorageItems } from '../utils/storageUtils.js'
 import type { AddressBookStorageItems } from '../types/addressBookStorage.js'
 
 // Background-only revision of edited/imported names. Universal addresses and ENS names can affect multiple chains, so edits conservatively share a revision; identification-cache fills do not advance it.
@@ -27,10 +27,19 @@ const addressBookWriteData: unique symbol = Symbol('address book write')
 export type AddressBookStorageWrite = {
 	readonly [addressBookWriteData]: { readonly items: AddressBookStorageItems, readonly policy: 'edit' | 'cache-insertion' }
 }
-export const isAddressBookStorageWrite = (write: object): write is AddressBookStorageWrite => addressBookWriteData in write
-export const getAddressBookWriteItems = (write: AddressBookStorageWrite) => write[addressBookWriteData].items
-export const addressBookWriteChangesNames = (write: AddressBookStorageWrite) => write[addressBookWriteData].policy === 'edit'
+const isAddressBookStorageWrite = (write: object): write is AddressBookStorageWrite => addressBookWriteData in write
+const getAddressBookWriteItems = (write: AddressBookStorageWrite) => write[addressBookWriteData].items
+const addressBookWriteChangesNames = (write: AddressBookStorageWrite) => write[addressBookWriteData].policy === 'edit'
 export const prepareAddressBookWrite = (items: AddressBookStorageItems): AddressBookStorageWrite => ({ [addressBookWriteData]: { items, policy: 'edit' } })
+
+// Mixed settings writes commit atomically, but only this domain owner interprets name-edit policy and advances its revision.
+export async function commitSettingsWritesWithAddressBookRevision(writes: readonly (GeneralStorageItems | AddressBookStorageWrite)[]) {
+	if (writes.length === 0) return
+	const items = writes.reduce<LocalStorageItems>((items, write) => ({ ...items, ...(isAddressBookStorageWrite(write) ? getAddressBookWriteItems(write) : write) }), {})
+	const commit = async () => await commitBrowserStorageLocalWrite(items)
+	if (writes.some((write) => isAddressBookStorageWrite(write) && addressBookWriteChangesNames(write))) await recordAddressBookWrite(commit)
+	else await commit()
+}
 
 // A cache plan can only append one missing identification, never replace a name. The storage owner supplies entries read under the settings transaction lock.
 export function prepareAddressIdentificationInsertion(entries: AddressBookEntries, newEntry: AddressBookEntry): AddressBookStorageWrite | undefined {

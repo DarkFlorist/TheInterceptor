@@ -604,3 +604,26 @@ for (const replacement of ['new-run', 'same-run'] as const) {
 		assert.deepEqual(after.data.simulationState, before.data.simulationState)
 	})
 }
+
+
+for (const scenario of ['formed-without-chain', 'unformed-other-chain', 'legacy-unformed-without-chain'] as const) {
+	test(`failed preview relabel respects the recorded run network: ${ scenario }`, async () => {
+		await useInvoiceAddressBook()
+		await openUsdcTransferConfirmation(createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork))
+		const unformed = await createUnformedUsdcTransfer(7n)
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
+			if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated' || current.confirmationRun === undefined) throw new Error('Missing formed confirmation run')
+			if (scenario === 'formed-without-chain') return { ...current, transactionToSimulate: { ...current.transactionToSimulate, transaction: { ...current.transactionToSimulate.transaction, type: 'legacy', chainId: undefined, gasPrice: 1n } } }
+			if (unformed.success) throw new Error('Expected failed formation')
+			const { chainId: _chainId, ...legacyRun } = current.confirmationRun
+			return { ...current, transactionOrMessageCreationStatus: 'FailedToSimulate', transactionToSimulate: unformed, confirmationRun: scenario === 'legacy-unformed-without-chain' ? legacyRun : current.confirmationRun }
+		})
+		const before = await getPendingFailedTransactionVisualisation()
+		await modules.updateUserAddressBookEntries((entries) => entries.map((entry) => entry.address === recipientAddress ? { ...entry, name: 'Renamed supplier' } : entry))
+		const { relabelDisplayedConfirmationSimulation } = await import('../../app/ts/background/confirmationRelabel.js')
+		await relabelDisplayedConfirmationSimulation(scenario === 'unformed-other-chain' ? { ...previewRpcNetwork, chainId: 10n } : previewRpcNetwork)
+		const after = await getPendingFailedTransactionVisualisation()
+		if (scenario === 'formed-without-chain') assert.equal(after.data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === recipientAddress)?.name, 'Renamed supplier')
+		else assert.deepEqual(after, before)
+	})
+}
