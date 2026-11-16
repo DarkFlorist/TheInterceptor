@@ -26,14 +26,14 @@ export function getWebsiteOrigin(urlString: string): string | undefined {
 // Hostnames are a projection for metadata and DNR initiatorDomains, never a permission key. Imported legacy host-only settings still need this projection before startup migration.
 export function getWebsiteHostname(urlString: string): string | undefined {
 	const url = parseWebsiteUrl(urlString) ?? (urlString.includes('://') ? undefined : parseWebsiteUrl(`https://${ urlString }`))
-	return url?.hostname || undefined
+	return url?.protocol === 'http:' || url?.protocol === 'https:' ? url.hostname || undefined : undefined
 }
 
 // Preserve the Firefox network-blocking policy's same-host exception across schemes. This comparison must not authorize provider access.
 export function haveSameHostForNetworkBlocking(sourceUrl: string, destinationUrl: string): boolean {
 	const source = parseWebsiteUrl(sourceUrl)
 	const destination = parseWebsiteUrl(destinationUrl)
-	return source !== undefined && destination !== undefined && source.host === destination.host
+	return source !== undefined && destination !== undefined && source.protocol !== 'file:' && destination.protocol !== 'file:' && source.host === destination.host
 }
 
 // Network blocking is enforced per hostname across schemes and ports, so origins with the same key share one block setting. A file has no hostname and only shares it with itself.

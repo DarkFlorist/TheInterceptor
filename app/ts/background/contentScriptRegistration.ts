@@ -1,7 +1,8 @@
+import { getInterceptorDisabledSites } from '../utils/contentScriptInjectionConfiguration.js'
 import { getMetamaskCompatibilityMode } from './settings.js'
 import { getPageWorldScriptPaths, getManifestV2IsolatedWorldInjections } from '../utils/contentScriptInjectionArtifacts.js'
 import { getWebsiteAccess } from './settings.js'
-import { getInterceptorDisabledSites, getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
+import { getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
 import { Semaphore } from '../utils/semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']

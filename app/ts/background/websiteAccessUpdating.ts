@@ -1,25 +1,18 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { getInterceptorDisabledSites, hasSameContentScriptInjectionSitesConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
 import { reloadConnectedTabs } from './reloadConnectedTabs.js'
 import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { getInterceptorDisabledSites } from '../utils/contentScriptExclusions.js'
-import { updateWebsiteAccess } from './settings.js'
+import { runContentScriptConfigurationUpdate } from './contentScriptInjectionStrategy.js'
+import { updateWebsiteAccessWithSnapshots } from './settings.js'
 
-function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
-	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
-	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
-}
-
+// Persist desired exclusions before registration. A failed browser update remains retryable without rolling back permissions or losing concurrent edits.
 export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
-	let disabledSitesChanged = false
-	await updateWebsiteAccess((previousWebsiteAccess) => {
-		const nextWebsiteAccess = update(previousWebsiteAccess)
-		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
-		return nextWebsiteAccess
+	return await runContentScriptConfigurationUpdate(async () => {
+		const { previousWebsiteAccess, updatedWebsiteAccess } = await updateWebsiteAccessWithSnapshots(update)
+		const exclusionsChanged = !hasSameContentScriptInjectionSitesConfiguration({ interceptorDisabledSites: getInterceptorDisabledSites(previousWebsiteAccess) }, { interceptorDisabledSites: getInterceptorDisabledSites(updatedWebsiteAccess) })
+		const refreshed = await reconcileContentScriptRegistration({ exclusionsChanged })
+		if (refreshed) await reloadConnectedTabs(websiteTabConnections)
+		return refreshed
 	})
-	const refreshed = await reconcileContentScriptRegistration({ exclusionsChanged: disabledSitesChanged })
-	if (refreshed) await reloadConnectedTabs(websiteTabConnections)
-	return refreshed
-
 }

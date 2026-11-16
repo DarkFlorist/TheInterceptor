@@ -483,3 +483,30 @@ test('reimporting identical settings retries pending registration and reloads af
 	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 	assert.deepEqual(firefoxOperations, ['reload:9'])
 })
+
+test('website exclusions and settings bootstrap changes serialize their complete configuration workflows', async () => {
+	const { getRegisteredContentScripts } = installBrowserMock()
+	const { createDeferredValue } = await import('./backgroundEthAccountsTestHarness.js')
+	const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
+	const { updatePageWorldProviderBootstrapAfterSettingsChange } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+	const { persistMetamaskCompatibilityMode } = await import('../../app/ts/background/settings.js')
+	const started = createDeferredValue<void>()
+	const release = createDeferredValue<void>()
+	const registration = spyOn(browser.scripting, 'getRegisteredContentScripts').mockImplementationOnce(async () => { started.resolve(undefined); await release.promise; return [] })
+	const websiteUpdate = updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), () => [{ website: { websiteOrigin: 'https://disabled.example', icon: undefined, title: undefined }, interceptorDisabled: true }])
+	await started.promise
+	let settingsWritten = false
+	const settingsUpdate = updatePageWorldProviderBootstrapAfterSettingsChange(new Map(), async () => { settingsWritten = true; await persistMetamaskCompatibilityMode(true) })
+	try {
+		await Promise.resolve()
+		assert.equal(settingsWritten, false)
+	} finally {
+		release.resolve(undefined)
+		await Promise.all([websiteUpdate, settingsUpdate])
+		registration.mockRestore()
+	}
+	assert.equal(settingsWritten, true)
+	const pageWorld = getRegisteredContentScripts().find(({ id }) => id === 'inpage')
+	assert.deepEqual(pageWorld?.excludeMatches, ['https://disabled.example:443/*'])
+	assert.deepEqual(pageWorld?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+})

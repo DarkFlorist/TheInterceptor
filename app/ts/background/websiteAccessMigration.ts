@@ -22,7 +22,6 @@ function mergeOriginPermissions(previous: WebsiteAccess, incoming: WebsiteAccess
 export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): WebsiteAccessArray {
 	// Reserve every explicit URL destination before processing legacy hostnames, regardless of storage order.
 	const explicitOriginDestinations = new Set(entries.map((entry) => getWebsiteOrigin(entry.website.websiteOrigin)).filter((origin) => origin !== undefined))
-	const canonicalOrigins = new Set(entries.filter((entry) => getWebsiteOrigin(entry.website.websiteOrigin) === entry.website.websiteOrigin).map((entry) => entry.website.websiteOrigin))
 	const migrated = new Map<string, WebsiteAccess>()
 	const legacyBlockedHostnames = new Set<string>()
 	let changed = false
@@ -37,8 +36,7 @@ export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): Websit
 		}
 		changed = true
 		if (explicitDestination !== undefined) {
-			// An existing canonical record remains authoritative; aliases without one are merged, not discarded.
-			if (canonicalOrigins.has(explicitDestination)) continue
+			// Merge every explicit URL for this origin conservatively, including aliases of an already canonical record.
 			const canonicalEntry = { ...entry, website: { ...entry.website, websiteOrigin: explicitDestination } }
 			const previous = migrated.get(explicitDestination)
 			migrated.set(explicitDestination, previous === undefined ? canonicalEntry : mergeOriginPermissions(previous, canonicalEntry))

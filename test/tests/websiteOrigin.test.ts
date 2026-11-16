@@ -165,3 +165,20 @@ test('legacy blocks remain hostname scoped across schemes, ports and duplicate l
 		assert.deepEqual(migrated, [{ ...blockedLegacy, website: { ...legacy.website, websiteOrigin: 'https://example.test' }, access: undefined, addressAccess: undefined, interceptorDisabled: undefined }])
 	}
 })
+
+test('canonical grants cannot discard a URL alias denial or network block', () => {
+	const canonical = { website: { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }, access: true, addressAccess: [{ address: 1n, access: true }], interceptorDisabled: true }
+	const alias = { ...canonical, website: { ...canonical.website, websiteOrigin: 'https://example.test/path' }, access: false, addressAccess: [{ address: 1n, access: false }], interceptorDisabled: false, declarativeNetRequestBlockMode: 'block-all' as const }
+	for (const entries of [[canonical, alias], [alias, canonical]]) {
+		assert.deepEqual(migrateWebsiteAccessOrigins(entries), [{ ...alias, website: canonical.website }])
+	}
+})
+
+test('hosted file URLs keep a per-file blocking identity separate from web domains', async () => {
+	const { getNetworkBlockingKey, shareNetworkBlocking } = await import('../../app/ts/utils/websiteOrigin.js')
+	assert.equal(getWebsiteHostname('file://server/share/page.html'), undefined)
+	assert.equal(getNetworkBlockingKey('file://server/share/page.html'), 'origin:file://server/share/page.html')
+	assert.equal(shareNetworkBlocking('file://server/share/page.html', 'https://server'), false)
+	assert.equal(shareNetworkBlocking('file://server/share/page.html', 'file://server/share/other.html'), false)
+	assert.equal(haveSameHostForNetworkBlocking('file://server/share/page.html', 'https://server'), false)
+})
