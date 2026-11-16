@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { spyOn, test } from 'bun:test'
 import * as errorDecodingAbis from '../../app/ts/background/errorDecodingAbis.js'
-import { activeAddress, created, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, modules, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, created, fakeRequestHandler, fakeRpcNetwork, modules, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 import { encodeErrorString } from './errorDataFixtures.js'
 import { toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
