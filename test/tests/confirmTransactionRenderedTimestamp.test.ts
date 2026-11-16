@@ -635,7 +635,7 @@ describe('ConfirmTransaction', () => {
 			return {
 				...pending,
 				simulationMode: false,
-				safeTransaction: {
+				safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 					safeAddress: pending.activeAddress,
 					safeSignerAddress: pending.originalRequestParameters.params[0].to,
 					safeVersion: '1.4.1' as const,
@@ -644,7 +644,7 @@ describe('ConfirmTransaction', () => {
 					safeTxHash: BigInt(getSafeTxHash(safeTx)),
 					safeTx,
 					executionGasLimit: 21_000n,
-				},
+				} },
 			}
 		}
 		const isAddUnsignedEnabled = () => {

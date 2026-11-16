@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getReviewedResultId, stringifyCanonically } from '../../app/ts/background/reviewedResult.js'
-import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
 const reverted: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
@@ -102,7 +102,7 @@ test('the reviewed-result id ignores approval status, popup window and field ord
 	assert.notEqual(getReviewedResultId(makeReviewedTransaction(reverted, false)), reviewedId)
 	assert.notEqual(getReviewedResultId(makeReviewedTransaction(succeeded, true)), reviewedId)
 	assert.notEqual(getReviewedResultId({ ...reviewed, originalRequestParameters: { ...reviewed.originalRequestParameters, params: [{ ...reviewed.originalRequestParameters.params[0], value: 1n }] } }), reviewedId)
-	assert.notEqual(getReviewedResultId({ ...reviewed, safeExecutionSignerAddress: recipientAddress }), reviewedId)
+	assert.notEqual(getReviewedResultId({ ...reviewed, safeFlow: { kind: 'directExecution', safeExecutionSignerAddress: recipientAddress, safeExecutionOriginalRequestParameters: reviewed.originalRequestParameters } }), reviewedId)
 })
 
 test('the canonical encoding sorts nested keys, keeps array order, encodes bigints and bytes as hex and drops undefined object fields', () => {
@@ -117,7 +117,7 @@ test('the canonical encoding sorts nested keys, keeps array order, encodes bigin
 
 // Pinned so a change to the encoding is a deliberate one; update it only together with the fixture or the set of reviewed fields.
 test('the reviewed-result id of a fixed request does not change', () => {
-	assert.equal(getReviewedResultId(pendingTransaction), '0xd67bc1ad4cfd5bde6edd3e0d82df19f68e48a79f5387a2d7613be027a3fd676b')
+	assert.equal(getReviewedResultId(pendingTransaction), '0xb8e38d125804cc8c82b7f8514fd826a1424a03e08dc24afcfd509c8c73ba57d6')
 })
 
 test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Safe co-signing request', async () => {
@@ -298,7 +298,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...makeReviewedTransaction(succeeded, false),
-		safeTransaction: {
+		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: reviewedOwner,
 			safeVersion: '1.4.1',
@@ -307,7 +307,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 			safeTxHash: BigInt(getSafeTxHash(safeTx)),
 			safeTx,
 			executionGasLimit: 21_000n,
-		},
+		} },
 	}] })
 	const { websiteTabConnections, wasForwardedToSigner, getForwardedSigner } = createSignerConnection()
 	const acceptForReviewedOwner = await createAcceptConfirmation()
@@ -315,7 +315,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 	assert.equal(await resolveAccept(websiteTabConnections, acceptForReviewedOwner, selectedOwner), false)
 	assert.equal(wasForwardedToSigner(), false)
 	const refreshed = await getStoredRequest()
-	assert.equal(refreshed.type === 'Transaction' ? refreshed.safeTransaction?.safeSignerAddress : undefined, selectedOwner)
+	assert.equal(getPendingSafeProposal(refreshed)?.safeSignerAddress, selectedOwner)
 	assert.notEqual(getPopupReviewedResultId(refreshed), acceptForReviewedOwner.data.reviewedResultId)
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
