@@ -31,7 +31,7 @@ function stackTransaction(transactionIdentifier: bigint, requiredChainId: bigint
 		created: new Date('2026-07-31T00:00:00.000Z'),
 		originalRequestParameters: { method: 'eth_sendTransaction', params: [transactionRequest] },
 		transactionIdentifier,
-		simulationOptions: { requiredChainId, simulateWithZeroBaseFee: safeTx !== undefined },
+		simulationOptions: { requiredChainId },
 		...(safeTx === undefined ? {} : {
 			safeTransaction: {
 				safeTx,

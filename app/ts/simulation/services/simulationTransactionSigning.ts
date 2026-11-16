@@ -44,5 +44,5 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction, s:
 }
 
 export const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumTransaction) => (
-	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, authorizesExecutedCall(transactionToSimulate.simulationOptions) ? EXECUTED_CALL_MOCK_SIGNATURE_S : ORDINARY_MOCK_SIGNATURE_S)
+	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, authorizesExecutedCall(transactionToSimulate) ? EXECUTED_CALL_MOCK_SIGNATURE_S : ORDINARY_MOCK_SIGNATURE_S)
 )

@@ -1,6 +1,6 @@
 import type { BlockTimeManipulationWithNoDelay, MaybeSimulatedTransaction, ResolvedSimulationResults, SimulationAndVisualisationResults, TransactionVisualizationParameters } from '../../types/visualizer-types.js'
 import { SmallAddress } from '../subcomponents/address.js'
-import { authorizesExecutedCall, type NonSimulatedAndVisualizedTransaction, type SignedMessageTransaction, type TransactionSimulationOptions } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction } from '../../types/visualizer-types.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { TokenSymbol, TokenAmount, AllApproval } from '../subcomponents/coins.js'
 import type { LogAnalysisParams, NonLogAnalysisParams, RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -211,11 +211,12 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	return <ConnectedDelegationStack delegationNotice = { delegationNotice }>{ content }</ConnectedDelegationStack>
 }
 
-// Shown for a Gnosis Safe's own transaction that the simulation runs through the Safe (safe/safeExecutionSimulation.ts).
-export function SafeExecutionSimulationNotice({ simulationOptions }: { simulationOptions: TransactionSimulationOptions | undefined }) {
-	if (!authorizesExecutedCall(simulationOptions)) return <></>
+// Shown for every Gnosis Safe execution, which the simulation runs as its executor's execTransaction call (authorizesExecutedCall, safe/safeExecutionSimulation.ts). The simulation stack adds a Safe proposal's nonce and collected signatures as children.
+export function SafeExecutionSimulationNotice({ transaction, children }: { transaction: Pick<PreSimulationTransaction, 'safeTransaction' | 'simulationOptions'>, children?: ComponentChildren }) {
+	if (!authorizesExecutedCall(transaction)) return <></>
 	return <div class = 'notification is-info' style = 'margin-bottom: 10px;'>
 		<p class = 'paragraph'><strong>Gnosis Safe execution</strong></p>
+		{ children }
 		<p class = 'paragraph'>Simulated the way the Gnosis Safe runs it on-chain: an executor account calls the Safe's execTransaction and pays the network fees. The simulation assumes the Safe's owners approved the transaction.</p>
 	</div>
 }
@@ -282,13 +283,11 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				ariaExpanded = { param.collapsed === undefined ? undefined : !param.collapsed }
 			/>
 			{ param.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
-				{ param.simTx.safeTransaction === undefined ? <></> :
-					<div class = 'notification is-info' style = 'margin-bottom: 10px;'>
-						<p class = 'paragraph'><strong>Optimistic Gnosis Safe transaction</strong></p>
-						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates the Gnosis Safe calling the destination, but does not model Gnosis Safe guards, modules, events, nonce changes, executor-dependent behavior, or network gas. Nothing has necessarily been executed onchain.</p>
-					</div>
-				}
-				<SafeExecutionSimulationNotice simulationOptions = { param.simTx.simulationOptions }/>
+				<SafeExecutionSimulationNotice transaction = { param.simTx }>
+					{ param.simTx.safeTransaction === undefined ? <></> :
+						<p class = 'paragraph'>Optimistic Gnosis Safe transaction: nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. Nothing has necessarily been executed onchain.</p>
+					}
+				</SafeExecutionSimulationNotice>
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
