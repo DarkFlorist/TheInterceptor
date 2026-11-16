@@ -148,7 +148,7 @@ describe('simulation stack extraction', () => {
 			value: {
 				...simulationStateWithBalanceBelowBaseFee.value,
 				simulationOverrides: { [addressString(SENDER)]: { code: new Uint8Array() } },
-				simulatedBlocks: [{ ...firstBlock, stateOverrides: firstBlockOverrides }],
+				simulatedBlocks: [{ ...firstBlock, effectiveStateOverrides: firstBlockOverrides }],
 			},
 		}
 		assert.deepEqual(getSimulatedStackV2(stackWithDelegateClearing).stateOverrides, firstBlockOverrides)
