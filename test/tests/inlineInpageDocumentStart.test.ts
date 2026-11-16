@@ -1,16 +1,16 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import * as ts from 'typescript'
 import { getManifestV2DocumentStartScriptPath, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { metamaskCompatibilityModeAtPageLoadMarker, pageWorldProviderScriptPathMarker, pageWorldProviderSourceMarker } from '../../scripts/content-script-injection-markers.mts'
 import { generateInpageArtifacts, inlineDocumentStartPageWorldProvider, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 
-const compileClassicScript = async (sourcePath: string) => ts.transpileModule(await Bun.file(new URL(sourcePath, import.meta.url)).text(), {
-	compilerOptions: {
-		module: ts.ModuleKind.ESNext,
-		target: ts.ScriptTarget.ES2022,
-	},
-}).outputText
+// Use the production classic-script bundling mode so generated protocol imports are resolved too.
+const compileClassicScript = async (sourcePath: string) => {
+	const result = await Bun.build({ entrypoints: [new URL(sourcePath, import.meta.url).pathname], target: 'browser', format: 'iife', write: false })
+	const [output] = result.outputs
+	if (!result.success || output === undefined) throw new Error(`Failed to bundle ${ sourcePath }: ${ result.logs.join('\n') }`)
+	return await output.text()
+}
 
 const generateArtifactsFromSources = async () => generateInpageArtifacts(await compileClassicScript('../../app/inpage/ts/document_start.ts'), await compileClassicScript('../../app/inpage/ts/inpage.ts'))
 
@@ -65,7 +65,7 @@ test('page-world compatibility mode is embedded as a build-time boolean', async 
 	const compiledSource = await compileClassicScript('../../app/inpage/ts/inpage.ts')
 	for (const metamaskCompatibilityMode of [false, true]) {
 		const generatedPageWorldSource = inlineMetamaskCompatibilityModeAtPageLoad(compiledSource, metamaskCompatibilityMode)
-		assert.equal(generatedPageWorldSource.includes(`const metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
+		assert.equal(generatedPageWorldSource.includes(`metamaskCompatibilityModeAtPageLoadMarker = "${ metamaskCompatibilityMode }"`), true)
 		assert.equal(generatedPageWorldSource.includes(metamaskCompatibilityModeAtPageLoadMarker), false)
 		assert.equal(generatedPageWorldSource.includes('TheInterceptor.metamaskCompatibilityMode'), false)
 	}
@@ -77,12 +77,12 @@ test('MV2 document-start defines window.ethereum synchronously before its bootst
 		const documentStart = getArtifact(artifacts, getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode))
 		const { pageWindow, insertedScripts, contentScriptGlobal, errors } = runDocumentStart(documentStart.source, { pageCspBlocksInlineScripts: false })
 
-		assert.equal(isInterceptorProvider(Reflect.get(pageWindow, 'ethereum')), true, 'window.ethereum was not defined when document-start returned')
+		assert.equal(isInterceptorProvider(Reflect.get(pageWindow, 'ethereum')), true, `window.ethereum was not defined when document-start returned: ${ errors.flat().map(String).join('; ') }`)
 		assert.deepEqual(insertedScripts, [{ external: false, ranSynchronously: true, src: '' }])
 		assert.equal(contentScriptGlobal.interceptorInjected, true)
 		assert.deepEqual(errors, [])
-		assert.equal(documentStart.source.includes(`const metamaskCompatibilityModeAtPageLoad = ${ metamaskCompatibilityMode }`), true)
-		assert.equal(documentStart.source.includes(`const metamaskCompatibilityModeAtPageLoad = ${ !metamaskCompatibilityMode }`), false)
+		assert.equal(documentStart.source.includes(JSON.stringify(`metamaskCompatibilityModeAtPageLoadMarker = "${ metamaskCompatibilityMode }"`).slice(1, -1)), true)
+		assert.equal(documentStart.source.includes(JSON.stringify(`metamaskCompatibilityModeAtPageLoadMarker = "${ !metamaskCompatibilityMode }"`).slice(1, -1)), false)
 	}
 })
 

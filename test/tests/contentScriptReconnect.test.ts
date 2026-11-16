@@ -21,7 +21,7 @@ type ContentScriptMockState = {
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
 // A stand-in provider with the compatibility-mode marker the build fills in, so tests can tell which mode's provider document-start inlined.
-const stubPageWorldProviderSource = 'const metamaskCompatibilityModeAtPageLoad = false // [[metamaskCompatibilityModeAtPageLoad]]'
+const stubPageWorldProviderSource = `const metamaskCompatibilityModeAtPageLoadMarker = '[[metamaskCompatibilityModeAtPageLoad]]'; const metamaskCompatibilityModeAtPageLoad = metamaskCompatibilityModeAtPageLoadMarker === 'true'`
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
 async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, metamaskCompatibilityMode = false) {
@@ -502,7 +502,7 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		await withContentScriptMock('manifest-v2-document-start', async ({ injectedScripts }) => {
 			assert.equal(injectedScripts.length, 1)
 			assert.equal(injectedScripts[0]?.src, '')
-			assert.equal(injectedScripts[0]?.textContent.includes('const metamaskCompatibilityModeAtPageLoad = true'), true)
+			assert.equal(injectedScripts[0]?.textContent.includes('metamaskCompatibilityModeAtPageLoadMarker = "true"'), true)
 		}, undefined, true)
 	})
 

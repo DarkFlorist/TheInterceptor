@@ -552,7 +552,9 @@ type InpageWindow = Window & {
 
 const inpageWindow: InpageWindow = window
 // Build-time variant flag: scripts/inline-inpage-document-start.mts rewrites this literal per artifact; the source value false is the default inpage.js (non-compatibility) build.
-const metamaskCompatibilityModeAtPageLoad = false // [[metamaskCompatibilityModeAtPageLoad]]
+// A string marker survives classic-script bundling, which removes ordinary comments.
+const metamaskCompatibilityModeAtPageLoadMarker = '[[metamaskCompatibilityModeAtPageLoad]]'
+const metamaskCompatibilityModeAtPageLoad = metamaskCompatibilityModeAtPageLoadMarker === 'true'
 
 interface EIP6963ProviderInfo {
 	uuid: string

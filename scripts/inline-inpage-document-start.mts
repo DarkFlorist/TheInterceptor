@@ -9,11 +9,11 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 const quotedMarkerPattern = (marker: string) => new RegExp(`(['"])${ escapeRegExp(marker) }\\1`)
 const pageWorldProviderSourceMarkerPattern = quotedMarkerPattern(pageWorldProviderSourceMarker)
 const pageWorldProviderScriptPathMarkerPattern = quotedMarkerPattern(pageWorldProviderScriptPathMarker)
-const metamaskCompatibilityModeAtPageLoadMarkerPattern = new RegExp(`false;?\\s*//\\s*${ escapeRegExp(metamaskCompatibilityModeAtPageLoadMarker) }`)
+const metamaskCompatibilityModeAtPageLoadMarkerPattern = quotedMarkerPattern(metamaskCompatibilityModeAtPageLoadMarker)
 
 export function inlineMetamaskCompatibilityModeAtPageLoad(source: string, metamaskCompatibilityMode: boolean) {
 	if (!metamaskCompatibilityModeAtPageLoadMarkerPattern.test(source)) throw new Error('Could not find MetaMask compatibility mode at page load marker in inpage.js')
-	return source.replace(metamaskCompatibilityModeAtPageLoadMarkerPattern, JSON.stringify(metamaskCompatibilityMode))
+	return source.replace(metamaskCompatibilityModeAtPageLoadMarkerPattern, JSON.stringify(String(metamaskCompatibilityMode)))
 }
 
 function getPageWorldProviderScriptPath(metamaskCompatibilityMode: boolean) {
