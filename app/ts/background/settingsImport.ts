@@ -7,7 +7,7 @@ import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from '.
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previousEntries: AddressBookEntries) {
-	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || (exportedSettings.(version === '1.6' || version === '1.7') || exportedSettings.version === '1.7')) return exportedSettings.settings.addressBookEntries
+	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || (exportedSettings.version === '1.6' || exportedSettings.version === '1.7')) return exportedSettings.settings.addressBookEntries
 	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
 	return getUniqueItemsByProperties(previousEntries.concat(exportedSettings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSettings.settings.contacts ?? []), ['address'])
 }
@@ -15,7 +15,7 @@ function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previ
 function getImportedSimulationModeStorageWrite(exportedSettings: ExportedSettings, defaultActiveAddress: EthereumAddress) {
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	if (exportedSettings.version === '1.0') return simulationModeStorageWrite({ simulationMode: exportedSettings.settings.simulationMode, rpcNetwork: defaultRpcs[0], activeSimulationAddress: defaultActiveAddress, activeSigningAddress: undefined, activeSigningSafeAddress: undefined })
-	const hasIndependentAddresses = exportedSettings.version === '1.5' || (exportedSettings.(version === '1.6' || version === '1.7') || exportedSettings.version === '1.7')
+	const hasIndependentAddresses = exportedSettings.version === '1.5' || (exportedSettings.version === '1.6' || exportedSettings.version === '1.7')
 	return simulationModeStorageWrite({
 		simulationMode: exportedSettings.settings.simulationMode,
 		rpcNetwork: exportedSettings.settings.rpcNetwork,

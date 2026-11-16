@@ -282,7 +282,7 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
 }).And(funtypes.ReadonlyPartial({
-	// Canonical captured initial account state for replay, separate from live preferences; simulationStateInput omits it, simulatedBlocks[0].stateOverrides is derived from it, and older results mean no initial overrides.
+	// Persisted replay recipe: simulationStateInput is raw and must be paired with these captured initial overrides through getSimulationExecutionInputFromState. simulatedBlocks is the effective execution result, never an alternative replay input. Older recipes have no initial overrides.
 	simulationOverrides: StateOverrides,
 }))
 
@@ -341,7 +341,7 @@ export const ResolvedSimulationInput = funtypes.Union(
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
 export const createSimulatedExecutionInput = <TInput extends readonly (SimulationStateInputBlock | SimulationStateInputMinimalDataBlock)[]>(value: TInput, simulationOverrides: StateOverrides = {}): SimulatedExecutionInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
-// Reconstruct the exact captured input for a persisted result, independent of later preference changes.
+// The only conversion from a persisted raw replay recipe to an execution input. Effective result blocks must never be fed back here: their initial overrides are already applied.
 export const getSimulationExecutionInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationExecutionInput => createSimulatedExecutionInput(state.simulationStateInput, state.simulationOverrides)
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>

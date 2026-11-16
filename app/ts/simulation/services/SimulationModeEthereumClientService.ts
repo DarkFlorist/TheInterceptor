@@ -149,19 +149,9 @@ const createPreparedSimulationExecutionContext = async (
 	baseBlockTag: EthereumBlockTag = 'latest',
 ): Promise<PreparedSimulationExecutionContext | undefined> => {
 	if (executionInput === undefined || executionInput.kind === 'passthrough' || !hasSimulationContext(executionInput)) return undefined
-	const simulationStateInput = executionInput.value
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	if (!hasSimulationBlocks(simulationStateInput)) {
-		// Simulation-wide overrides can affect the next DApp call without an empty prefix RPC block, so this skips prepareEthSimulateV1Input, which would send them in a call-less block of their own.
-		return {
-			simulationInput: executionInput,
-			parentBlock,
-			prepared: { request: { method: 'eth_simulateV1', params: [{ blockStateCalls: [] }] }, inputBlocks: [], rpcBlocks: [], blockOverrides: [] },
-			executionBlocks: [],
-		}
-	}
-	const prepared = await ethereumClientService.prepareEthSimulateV1Input(executionInput, parentBlock.number, requestAbortController)
+	const prepared = await ethereumClientService.prepareEthSimulateV1Input(executionInput, parentBlock.number, requestAbortController, 'appendCall')
 	let previousBlockHash = parentBlock.hash
 	let previousGasUsed = parentBlock.gasUsed
 	let previousBaseFeePerGas = parentBlock.baseFeePerGas

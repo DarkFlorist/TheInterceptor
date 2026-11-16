@@ -352,7 +352,7 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (executionInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+	public readonly prepareEthSimulateV1Input = async (executionInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined, emptyInput: 'applyInitialState' | 'appendCall' = 'applyInitialState'): Promise<PreparedEthSimulateV1Input> => {
 		const simulationStateInput = toSimulationStateInputMinimalData(executionInput.value)
 		// This service applies caller-supplied initial account state; mode and preference selection happen upstream.
 		const simulationOverrides = executionInput.simulationOverrides
@@ -392,8 +392,8 @@ export class EthereumClientService {
 			return transactionChunks
 		}
 
-		// Initial account state reaches the node only through the first block, so an input without blocks sends it in one call-less block instead of dropping it.
-		const blocksToSend: SimulationStateInputMinimalData = simulationStateInput.length === 0 && Object.keys(simulationOverrides).length > 0
+		// A complete empty run needs a call-less block to apply initial state. A prefix for an appended call stays empty: that call will carry the initial state in its own first block. Both paths share this preparation owner.
+		const blocksToSend: SimulationStateInputMinimalData = emptyInput === 'applyInitialState' && simulationStateInput.length === 0 && Object.keys(simulationOverrides).length > 0
 			? [{ transactions: [], stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }]
 			: simulationStateInput
 		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas

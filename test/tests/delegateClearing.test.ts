@@ -998,6 +998,12 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(prepared.rpcBlocks.length, 1)
 		assert.equal(prepared.blockOverrides.length, 1)
 		assert.deepEqual(prepared.inputBlocks.map((block) => block.rpcBlockCount), [1])
+		// A prefix leaves the first block available for the caller's appended call.
+		const prefix = await ethereum.prepareEthSimulateV1Input({ kind: 'simulated', value: [], simulationOverrides }, 1n, undefined, 'appendCall')
+		assert.deepEqual(serialize(EthSimulateV1Params, prefix.request).params[0].blockStateCalls, [])
+		assert.deepEqual(prefix.rpcBlocks, [])
+		assert.deepEqual(prefix.inputBlocks, [])
+		assert.deepEqual(prefix.blockOverrides, [])
 		const withoutOverrides = await ethereum.prepareEthSimulateV1Input({ kind: 'simulated', value: [], simulationOverrides: {} }, 1n, undefined)
 		assert.deepEqual(serialize(EthSimulateV1Params, withoutOverrides.request).params[0].blockStateCalls, [])
 		assert.equal(withoutOverrides.rpcBlocks.length, 0)
