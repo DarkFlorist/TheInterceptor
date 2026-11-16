@@ -3,14 +3,17 @@ import { lookUpMetadataForRelabel } from './storedRunVisualisation.js'
 import { isSameConfirmationRun } from '../utils/confirmationRunId.js'
 import { getSettledAddressBookRevision } from './addressBookRevision.js'
 // Re-labels stored confirmation runs when the address book changes: addressBookChangePublication.ts requests a re-label of the displayed confirmation for each published change, and each confirmation workflow requests a re-label of the run it just stored when the address book changed during that run. See "Address-book re-labels" in docs/popup-simulation-refresh.md.
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { FailedTransactionPreview, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getStoredConfirmationRunId, type StoredConfirmationRun } from './confirmationRunStorage.js'
+import { storeConfirmationRun, getStoredConfirmationRunId, type StoredConfirmationRun } from './confirmationRunStorage.js'
 import { relabelReportingUnexpectedErrors, relabelStoredSimulation, type SimulationRunToRelabel } from './simulationRelabel.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
+
+// Preserve each status/data pairing while adding the same preview metadata to either visualisation shape.
+const withFailedPreview = <Visualisation extends { readonly data: object }>(visualisation: Visualisation, failedTransactionPreview: FailedTransactionPreview) => ({ ...visualisation, data: { ...visualisation.data, failedTransactionPreview } })
 
 // Only a successful simulation of a pending transaction on the services' chain can be re-labelled: failed or still pending simulations show no names to re-label, and a run stored without its run record by an older version cannot be told apart from a newer run.
 function getConfirmationRunToRelabel(pending: PendingTransactionOrSignableMessage, chainId: bigint): SimulationRunToRelabel<PendingTransactionOrSignableMessage> | undefined {
@@ -43,9 +46,7 @@ async function relabelStoredConfirmation(rpcNetwork: RpcNetwork, stored: Pending
 			await updatePendingTransactionOrMessage(stored.uniqueRequestIdentifier, async (current) => {
 				if (!isRunToRelabel(current) || current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
 				if (!isSameConfirmationRun(current.popupVisualisation.data.confirmationRunId, visualisation.data.confirmationRunId)) return current
-				const popupVisualisation = current.popupVisualisation.statusCode === 'failed'
-					? { ...current.popupVisualisation, data: { ...current.popupVisualisation.data, failedTransactionPreview: refreshedPreview } }
-					: { ...current.popupVisualisation, data: { ...current.popupVisualisation.data, failedTransactionPreview: refreshedPreview } }
+				const popupVisualisation = withFailedPreview(current.popupVisualisation, refreshedPreview)
 				return modifyObject(current, { popupVisualisation })
 			})
 			return
@@ -77,4 +78,11 @@ export async function relabelStoredRunIfAddressBookChangedDuringIt(rpcNetwork: R
 		if (stored === undefined) return
 		await relabelStoredConfirmation(rpcNetwork, stored, (pending) => isSameConfirmationRun(getStoredConfirmationRunId(pending), storedRun.confirmationRunId))
 	}))
+}
+
+// The single workflow for publishing a newly stored confirmation run: catch up edits made during that run before its caller updates the dialog.
+export async function storeConfirmationRunAndRelabel(rpcNetwork: RpcNetwork, uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof storeConfirmationRun>[1]) {
+	const storedRun = await storeConfirmationRun(uniqueRequestIdentifier, update)
+	await relabelStoredRunIfAddressBookChangedDuringIt(rpcNetwork, storedRun)
+	return storedRun
 }

@@ -1,4 +1,4 @@
-import { prepareAddressBookWrite, prepareIdentificationCacheWrite, writeAddressBookStorage } from './addressBookRevision.js'
+import { prepareAddressBookWrite, prepareAddressIdentificationInsertion, writeAddressBookStorage, persistAddressBookReadRepair, persistEnsNodeHashCache, persistEnsLabelHashCache } from './addressBookRevision.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -8,7 +8,7 @@ import { type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, Stor
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -300,12 +300,12 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
 	if (repairedEntries !== undefined) {
-		await writeAddressBookStorage({ userAddressBookEntriesV3: repairedEntries })
+		await persistAddressBookReadRepair(repairedEntries)
 		return repairedEntries
 	}
 	console.warn('userAddressBookEntriesV3 was corrupt:')
 	console.warn(rawEntries)
-	await writeAddressBookStorage({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
+	await persistAddressBookReadRepair(DEFAULT_ACTIVE_ADDRESSES)
 	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
@@ -328,8 +328,8 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 export async function cacheIdentifiedAddressBookEntry(newEntry: AddressBookEntry) {
 	await runSettingsStorageTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		return { writes: existingEntry === undefined ? [prepareIdentificationCacheWrite({ userAddressBookEntriesV3: entries.concat(newEntry) })] : [], result: undefined }
+		const insertion = prepareAddressIdentificationInsertion(entries, newEntry)
+		return { writes: insertion === undefined ? [] : [insertion], result: undefined }
 	})
 }
 
@@ -389,6 +389,12 @@ export async function addEnsNodeHash(name: string) {
 	})
 }
 
+// RPC lookups fill their own cache without announcing a user edit; shared hash locks keep them ordered with explicit name writes.
+export async function cacheEnsNodeHash(name: string) {
+	if (!isValidEnsName(name)) return
+	await ensNodeHashesSemaphore.execute(async () => await persistEnsNodeHashCache(await getEnsNodeHashes(), name))
+}
+
 export const getEnsLabelHashes = async () => (await browserStorageLocalGet('ensLabelHashes'))?.ensLabelHashes ?? []
 
 const ensLabelHashesSemaphore = new Semaphore(1)
@@ -399,6 +405,10 @@ export async function addEnsLabelHash(label: string) {
 		if (oldEntries.find((old) => old.labelHash === entry.labelHash)) return
 		await writeAddressBookStorage({ ensLabelHashes: [...oldEntries, entry] })
 	})
+}
+
+export async function cacheEnsLabelHash(label: string) {
+	await ensLabelHashesSemaphore.execute(async () => await persistEnsLabelHashCache(await getEnsLabelHashes(), label))
 }
 
 const transactionStateSemaphore = new Semaphore(1)

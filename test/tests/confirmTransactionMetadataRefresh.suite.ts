@@ -1662,7 +1662,7 @@ test('storing a confirmation run only stores it and returns it, leaving the catc
 	assert.equal(await getStoredConfirmationRecipientName(), recipientContact.name)
 })
 
-test('every write of the names a lookup reads advances the address-book revision, and a write that stores nothing does not', async () => {
+test('explicit name edits advance the address-book revision, and a write that stores nothing does not', async () => {
 	await storeSimulationModeSettings([senderAddressBookEntry])
 	const writes = [
 		{ description: 'an address-book update', write: async () => await modules.updateUserAddressBookEntries((entries) => entries) },
@@ -1674,10 +1674,7 @@ test('every write of the names a lookup reads advances the address-book revision
 		} },
 		{ description: 'an ENS name', write: async () => await addEnsNodeHash('revision.eth') },
 		{ description: 'an ENS label', write: async () => await addEnsLabelHash('revision') },
-		{ description: 'an unreadable address book reset when read', write: async () => {
-			await browser.storage.local.set({ userAddressBookEntriesV3: 'unreadable' })
-			await withSilencedConsole(async () => await getUserAddressBookEntries())
-		} },
+
 	]
 	for (const { description, write } of writes) {
 		const revisionBefore = getAddressBookRevision()
@@ -2213,4 +2210,20 @@ test('the shared re-label still propagates an unrelated lookup error', async () 
 	} finally {
 		browserMock.setStorageGetHandler(undefined)
 	}
+})
+
+
+test('ENS lookup cache fills and repair-on-read do not masquerade as edited names', async () => {
+	const { cacheEnsNodeHash, cacheEnsLabelHash, getEnsNodeHashes, getEnsLabelHashes } = await import('../../app/ts/background/storageVariables.js')
+	const revisionBefore = getAddressBookRevision()
+	await cacheEnsNodeHash('lookup-only.eth')
+	await cacheEnsLabelHash('lookup-only')
+	assert.equal((await getEnsNodeHashes()).some((entry) => entry.name === 'lookup-only.eth'), true)
+	assert.equal((await getEnsLabelHashes()).some((entry) => entry.label === 'lookup-only'), true)
+	await browser.storage.local.set({ userAddressBookEntriesV3: 'unreadable' })
+	await withSilencedConsole(async () => await getUserAddressBookEntries())
+	assert.equal(getAddressBookRevision(), revisionBefore)
+	await addEnsNodeHash('manually-edited.eth')
+	await addEnsLabelHash('manually-edited')
+	assert.equal(getAddressBookRevision(), revisionBefore + 2)
 })

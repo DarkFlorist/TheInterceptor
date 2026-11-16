@@ -12,8 +12,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { storeConfirmationRun } from '../confirmationRunStorage.js'
-import { relabelStoredRunIfAddressBookChangedDuringIt } from '../confirmationRelabel.js'
+import { storeConfirmationRunAndRelabel } from '../confirmationRelabel.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
@@ -959,7 +958,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			// Preserve the retryable failure from main when a run ends without a result; interrupted runs have no metadata record to relabel.
 			const popupVisualisation = run?.popupVisualisation ?? createInterruptedConfirmTransactionSimulation(transactionExecutor, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate, signerTabState.signerName, simulationStartedTimestamp)
 			const confirmationRun = run?.confirmationRun
-			const storedRun = await storeConfirmationRun(pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
+			await storeConfirmationRunAndRelabel(ethereumClientService.getRpcEntry(), pendingTransaction.uniqueRequestIdentifier, async (transaction) => {
 				if (transaction.type !== 'Transaction') return transaction
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
 					// A result another run stored meanwhile is kept over this run's interruption.
@@ -969,7 +968,6 @@ export async function openConfirmTransactionDialogForTransaction(
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, confirmationRun, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, confirmationRun, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 			})
-			await relabelStoredRunIfAddressBookChangedDuringIt(ethereumClientService.getRpcEntry(), storedRun)
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 			await tryFocusingTabOrWindow(openedDialog)
 			return { success: true }

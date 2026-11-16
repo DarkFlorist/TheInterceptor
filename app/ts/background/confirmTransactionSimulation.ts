@@ -60,7 +60,7 @@ export function createInterruptedConfirmTransactionSimulation(
 // A confirmation run's visualisation, which the dialog is sent, and its record, which background storage keeps beside it.
 export type SimulatedConfirmationRun = { readonly popupVisualisation: ConfirmTransactionTransactionSingleVisualization, readonly confirmationRun: ConfirmationRunRecord }
 
-// Returns the run without storing it; the confirmation workflows store it with storeConfirmationRun in confirmationRunStorage.ts and then catch it up on address-book changes made during it (relabelStoredRunIfAddressBookChangedDuringIt in confirmationRelabel.ts).
+// Returns the run without storing it; the confirmation workflows pass it to storeConfirmationRunAndRelabel in confirmationRelabel.ts, which stores it and catches up address-book edits made during it.
 export async function refreshConfirmTransactionSimulation(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,

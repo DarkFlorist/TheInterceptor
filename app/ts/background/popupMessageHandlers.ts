@@ -1,6 +1,5 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { storeConfirmationRun } from './confirmationRunStorage.js'
-import { relabelStoredRunIfAddressBookChangedDuringIt } from './confirmationRelabel.js'
+import { storeConfirmationRunAndRelabel } from './confirmationRelabel.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -613,7 +612,7 @@ async function simulateAndStoreRefreshedTransaction(
 	)
 	if (run === undefined) return
 	const { popupVisualisation, confirmationRun } = run
-	const storedRun = await storeConfirmationRun(pending.uniqueRequestIdentifier, async (transactionOrMessage) => {
+	await storeConfirmationRunAndRelabel(ethereum.getRpcEntry(), pending.uniqueRequestIdentifier, async (transactionOrMessage) => {
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
@@ -646,7 +645,6 @@ async function simulateAndStoreRefreshedTransaction(
 			default: assertNever(transactionOrMessage)
 		}
 	})
-	await relabelStoredRunIfAddressBookChangedDuringIt(ethereum.getRpcEntry(), storedRun)
 	await updateConfirmTransactionView(ethereum, tokenPriceService, true)
 }
 

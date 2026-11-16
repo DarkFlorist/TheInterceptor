@@ -132,8 +132,8 @@ test('popup method guards reject inherited object keys', () => {
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
-	// A refreshed direct Safe execution carries a new confirmation run, so the refresh persists through the confirmation-run writer.
-	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?storeConfirmationRun\(/u)
+	// A refreshed direct Safe execution persists through the same store-and-relabel workflow as other confirmations.
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?storeConfirmationRunAndRelabel\(/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
@@ -153,18 +153,12 @@ test('the simulation and utils layers take the metadata lookup types from types/
 	assert.deepEqual(offendingFiles, [])
 })
 
-test('the confirmation-run writer only stores, and each confirmation workflow catches the run it stored up on address-book changes made during it', () => {
-	// The writer depends on pending-confirmation storage and pure run-identity comparison: no re-label, publication or address-book revision.
-	assert.deepEqual([...confirmationRunStorageSource.matchAll(/^import .* from '([^']+)'$/gmu)].map(([, module]) => module), ['../utils/confirmationRunId.js', '../types/accessRequest.js', '../utils/requests.js', './storageVariables.js'])
+test('confirmation workflows use the store-and-relabel operation while the storage writer remains independent', () => {
 	assert.doesNotMatch(confirmationRunStorageSource, /[Rr]elabel\w*\(|AddressBookRevision/u)
-	// The publication starts its re-labels and knows nothing of runs in flight; the address-book write itself advances the revision.
 	assert.doesNotMatch(addressBookChangePublicationSource, /confirmationRunStorage\.js|AddressBookRevision/u)
-	// Every workflow that stores a confirmation run stores it with the writer and then requests the catch-up for the run the writer returned.
 	for (const [name, source] of [['windows/confirmTransaction.ts', confirmTransactionSource], ['safeSignerSelectionRefresh.ts', safeSignerSelectionRefreshSource], ['popupMessageHandlers.ts', popupMessageHandlersSource]] as const) {
-		const storeCalls = [...source.matchAll(/const (\w+) = await storeConfirmationRun\(/gu)].map(([, storedRun]) => storedRun)
-		assert.notDeepEqual(storeCalls, [], name)
-		assert.equal(storeCalls.length, [...source.matchAll(/storeConfirmationRun\(/gu)].length, name)
-		for (const storedRun of storeCalls) assert.match(source, new RegExp(`await relabelStoredRunIfAddressBookChangedDuringIt\\([^,]+, ${ storedRun }\\)`, 'u'), name)
+		assert.match(source, /await storeConfirmationRunAndRelabel\(/u, name)
+		assert.doesNotMatch(source, /\bstoreConfirmationRun\(|relabelStoredRunIfAddressBookChangedDuringIt/u, name)
 	}
 })
 
