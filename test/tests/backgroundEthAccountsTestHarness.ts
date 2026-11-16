@@ -30,6 +30,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
+	const removedWindowIds: number[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
@@ -79,6 +80,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, active: true } },
 			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
 			async update() { return undefined },
+			async reload() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -87,7 +89,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, focused: true } },
 			async get(windowId: number) { return { id: windowId, focused: true } },
 			async update() { return undefined },
-			async remove() { return undefined },
+			async remove(windowId: number) {
+				removedWindowIds.push(windowId)
+				return undefined
+			},
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 		},
 		action: {
@@ -132,6 +137,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
 		runtimeMessages,
+		removedWindowIds,
 		readStoredValue: (key: string) => storageState[key],
 	}
 }
@@ -205,12 +211,14 @@ export function createEthereumWithGetBlockCounter(
 		getCodeResult,
 		getStorageAtResult,
 		rpcEntry = DEFAULT_ACTIVE_RPC,
+		getBlockNumberResult,
 	}: {
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
 		// A network read pairs this client with the settings only if it serves them, so the default is the network settings default to, and tests that select another pass the network the client serves.
 		readonly rpcEntry?: RpcEntry
+		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
 	let blockPolling = initialBlockPolling
@@ -238,6 +246,7 @@ export function createEthereumWithGetBlockCounter(
 				}
 				if (property === 'getCode' && getCodeResult !== undefined) return async () => getCodeResult
 				if (property === 'getStorageAt' && getStorageAtResult !== undefined) return async () => getStorageAtResult
+				if (property === 'getBlockNumber' && getBlockNumberResult !== undefined) return async () => getBlockNumberResult
 				return Reflect.get(target, property, receiver)
 			},
 		},
