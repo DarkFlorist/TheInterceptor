@@ -1,3 +1,4 @@
+import { storeAddressBookRevision } from './addressBookRevision.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -98,7 +99,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
@@ -190,7 +191,9 @@ export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalSto
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
 export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+	const write = async () => await browser.storage.local.set(serialize(LocalStorageItems, items))
+	if ('userAddressBookEntriesV3' in items || 'ensNameHashes' in items || 'ensLabelHashes' in items) return await storeAddressBookRevision(write)
+	return await write()
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
