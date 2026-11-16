@@ -9,25 +9,20 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import { getErrorMessage, reportUnexpectedError } from '../utils/errors.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { reloadConnectedTabs } from './reloadConnectedTabs.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
-import { updateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
-import { withWebsiteAccessRollback } from './settingsTransactions.js'
 
-export { reloadConnectedTabs } from './reloadConnectedTabs.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -150,17 +145,6 @@ function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: st
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
-}
-
-export const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => {
-	const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-	const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined
-	if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
-	return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
-}
-
-export async function setInterceptorDisabledForWebsite(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, withInterceptorDisabledForWebsite(website, interceptorDisabled))
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
@@ -498,58 +482,4 @@ export async function persistWebsiteAccessChange(
 		await getSettings(),
 		promptForAccessesIfNeeded,
 	)
-}
-
-type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
-type StepFailure = { readonly name: string, readonly error: unknown }
-export type WebsiteAccessMutation = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
-type ConnectedTabsReloadPolicy = 'alsoWhenInjectionUnchanged' | 'whenInjectionChanges'
-
-const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
-	name: 'reloading connected tabs',
-	run: async () => await reloadConnectedTabs(websiteTabConnections),
-})
-
-// The message names every failure because reports keep only the outer message, e.g. "Reloading connected tabs failed (a) and reconciling website approvals failed (b)".
-function describeStepFailures(failures: readonly StepFailure[]) {
-	const sentence = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(failures.map(({ name, error }) => `${ name } failed (${ getErrorMessage(error) ?? 'unknown error' })`))
-	return `${ sentence.charAt(0).toUpperCase() }${ sentence.slice(1) }`
-}
-
-// Call this once a website-access change is saved. Steps run in order and a failing step does not stop the later ones, so the saved change always reaches open connections. Reload before reconciling so outgoing pages drop their connections before reconciliation can re-prompt them. One failure is rethrown as is; several are thrown together in step order so none hides another.
-async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: StepFailure[] = []) {
-	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
-		name: 'reconciling website approvals',
-		run: async () => { await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true) },
-	}
-	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
-		try {
-			await step.run()
-		} catch (error) {
-			failures.push({ name: step.name, error })
-		}
-	}
-	const [firstFailure, ...laterFailures] = failures
-	if (firstFailure === undefined) return
-	if (laterFailures.length === 0) throw firstFailure.error
-	throw new AggregateError(failures.map(({ error }) => error), describeStepFailures(failures))
-}
-
-// Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
-export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
-	let saved = false
-	let reloadHandled = false
-	const failures: StepFailure[] = []
-	try {
-		await updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, mutation, async (update, refresh) => await withWebsiteAccessRollback(update, async (websiteAccess) => {
-			saved = true
-			await refresh(websiteAccess)
-		}), () => { reloadHandled = true })
-	} catch (error) {
-		if (!saved) throw error
-		failures.push({ name: 'updating website access and content script injection', error })
-	}
-	// The injection layer reports whether it handled the reload; only an unchanged configuration can need this workflow's additional reload.
-	const steps = reloadPolicy === 'alsoWhenInjectionUnchanged' && !reloadHandled ? [reloadConnectedTabsStep(websiteTabConnections)] : []
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures)
 }

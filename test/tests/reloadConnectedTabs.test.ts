@@ -82,7 +82,7 @@ function installBrowserMock(options: BrowserMockOptions) {
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/background/reloadConnectedTabs.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
 }

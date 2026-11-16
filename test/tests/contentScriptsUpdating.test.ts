@@ -559,13 +559,13 @@ describe('content script injection strategy', () => {
 		assert.equal((await getLatestUnexpectedError())?.data.code, 'website_access_content_script_refresh_failed')
 	})
 
-	test('a website access update whose own storage write fails propagates the failure unreported', async () => {
+	test('a website access update whose own storage write fails returns the failure unreported', async () => {
 		installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'], websiteAccess: disabledWebsiteAccess })
 		const { updateContentScriptInjectionSitesAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { getInterceptorErrorDiagnostics } = await loadModules()
 		const storageWriteError = new Error('website access could not be stored')
 
-		await assert.rejects(updateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], async () => { throw storageWriteError }), storageWriteError)
+		assert.deepEqual(await updateContentScriptInjectionSitesAndReloadTabsIfChanged(new Map(), () => [], async () => { throw storageWriteError }), { status: 'failed', reload: 'not-needed', error: storageWriteError })
 
 		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
 	})
@@ -668,9 +668,11 @@ describe('content script injection strategy', () => {
 			interceptorDisabled: false,
 		}]
 		const { getStorageState } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'inpage2'], websiteAccess: storedWebsiteAccess })
-		const { setInterceptorDisabledForWebsite } = await import('../../app/ts/background/accessManagement.js')
+		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
+		const { withInterceptorDisabledForWebsite } = await import('../../app/ts/background/websiteAccessMutations.js')
 
-		await setInterceptorDisabledForWebsite(new Map(), { websiteOrigin: 'disabled.test', title: undefined, icon: undefined }, true)
+		const outcome = await updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), withInterceptorDisabledForWebsite({ websiteOrigin: 'disabled.test', title: undefined, icon: undefined }, true))
+		assert.equal(outcome.status, 'completed')
 
 		assert.deepEqual(getStorageState().websiteAccess, [{ ...storedWebsiteAccess[0], interceptorDisabled: true }])
 	})

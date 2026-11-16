@@ -161,11 +161,11 @@ describe('website access registration and reconciliation', () => {
 
 	test('uses the injection layer reload decision without predicting which settings require it', async () => {
 		const { handlers, connectedTabIds, reloadedTabIds } = await setUpApprovedConnectionAndOtherTab()
-		spyOn(injectionStrategy, 'updateContentScriptInjectionSitesAndReloadTabsIfChanged').mockImplementation(async (connections, update, transaction, onReloadHandled) => {
+		spyOn(injectionStrategy, 'updateContentScriptInjectionSitesAndReloadTabsIfChanged').mockImplementation(async (connections, update, transaction) => {
 			await transaction(update, async () => {
-				onReloadHandled?.()
 				for (const tabId of connections.keys()) await browser.tabs.reload(tabId)
 			})
+			return { status: 'completed', reload: 'handled' }
 		})
 		// This mutation changes no disabled sites. The coordinator still honors the injection owner's decision to reload.
 		await handlers.blockExternalRequests()
@@ -202,17 +202,18 @@ describe('website access registration and reconciliation', () => {
 		assert.equal((await modules.getLatestUnexpectedError())?.data.code, 'website_access_content_script_refresh_failed')
 	})
 
-	test('still reconciles restored permissions if reporting a registration failure rejects', async () => {
-		const { handlers, assertConnectionStillApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
+	test.each(['denyAccessAndDisableInterceptorInAccessEditor', 'disableInterceptor'] as const)('still reconciles restored permissions if reporting a registration failure rejects (%s)', async (handler) => {
+		const { handlers, reloadedTabIds, assertConnectionStillApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
 		const reportingError = new Error('report failed')
 		spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingError })
 		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
 
-		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => error === reportingError)
+		await assert.rejects(handlers[handler](), (error) => error === reportingError)
 
 		assert.equal(reconcile.mock.calls.length, 1)
 		assertConnectionStillApproved()
+		assert.deepEqual(reloadedTabIds, [])
 		assert.equal(sentPopupMessageMethods().includes('popup_interceptor_access_changed'), false)
 	})
 
