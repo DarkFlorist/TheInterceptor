@@ -309,7 +309,7 @@ describe('import simulation stack', () => {
 		let exportedSimulationInput: unknown
 		const { activeRpcNetwork } = await (await import('../../app/ts/background/settings.js')).getSettings()
 		const ethereum = {
-			getRpcEntry: () => activeRpcNetwork,
+			isRetired: () => false, getRpcEntry: () => activeRpcNetwork,
 			async getBlockNumber() { return 1n },
 			async ethSimulateV1Input(simulationInput: unknown) {
 				exportedSimulationInput = simulationInput

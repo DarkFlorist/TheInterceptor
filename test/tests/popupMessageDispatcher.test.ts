@@ -161,6 +161,7 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
 	let currentRpcNetwork = settings.activeRpcNetwork
+	Object.defineProperty(ethereum, 'isRetired', { value: () => false })
 	Object.defineProperty(ethereum, 'getRpcEntry', { configurable: true, value: () => currentRpcNetwork })
 	Object.defineProperty(ethereum, 'updateRpcEntryMetadata', { configurable: true, value: (network: RpcNetwork) => { currentRpcNetwork = network } })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)

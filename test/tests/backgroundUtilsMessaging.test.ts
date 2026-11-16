@@ -225,6 +225,7 @@ describe('backgroundUtils messaging', () => {
 			import('../../app/ts/simulation/services/priceEstimator.js'),
 		])
 		const ethereum: import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService = Object.create(EthereumClientService.prototype)
+		Object.defineProperty(ethereum, 'isRetired', { value: () => false })
 		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
 		const reply = await withSilencedConsole(async () => await popupMessageHandler(
 			new Map(),

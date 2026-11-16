@@ -4,7 +4,7 @@ export async function readActiveSimulationInput() {
 	const { getSettings } = await import('../../app/ts/background/settings.js')
 	const { requireSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 	const { activeRpcNetwork } = await getSettings()
-	return requireSimulationSnapshot((await readNetworkSnapshot({ getCurrent: () => ({ ethereum: { getRpcEntry: () => activeRpcNetwork }, tokenPriceService: {} }) })).simulation).simulationStateInput
+	return requireSimulationSnapshot((await readNetworkSnapshot({ getCurrent: () => ({ ethereum: { isRetired: () => false, getRpcEntry: () => activeRpcNetwork }, tokenPriceService: {} }) })).simulation).simulationStateInput
 }
 
 // Fixtures that keep their selected network require a coherent snapshot; a replaced client is a setup failure rather than a usable snapshot.

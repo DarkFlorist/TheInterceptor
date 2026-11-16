@@ -294,6 +294,7 @@ function createFakeEthereum(rpcNetwork: TestModules['defaultRpcs'][number]) {
 				gasLimit: 30_000_000n,
 			}
 		},
+		isRetired: () => false,
 		getRpcEntry() {
 			return rpcNetwork
 		},
