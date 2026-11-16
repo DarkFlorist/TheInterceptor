@@ -1,4 +1,6 @@
 import * as assert from 'assert'
+import { ADDRESS_IDENTIFICATION_STORAGE_KEYS } from '../../app/ts/utils/addressBookRevision.js'
+import { hasOwnKey } from '../../app/ts/utils/typescript.js'
 import { spyOn, test } from 'bun:test'
 import { publishFailedPopupVisualisation, relabelPopupVisualisation, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import type { SimulationRunToRelabel } from '../../app/ts/background/simulationRelabel.js'
@@ -2135,4 +2137,27 @@ test('failed name writes and unrelated settings writes do not advance the addres
 	} finally {
 		write.mockRestore()
 	}
+})
+
+// The key policy and its tests share one list; a new name store needs a valid fixture here as well as a codec entry.
+test('every revision-owned name store advances after success, not failure, and a combined commit advances once', async () => {
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const fixtures = { userAddressBookEntriesV3: [], ensNameHashes: [], ensLabelHashes: [] }
+	const failure = new Error('Name storage unavailable')
+	for (const key of ADDRESS_IDENTIFICATION_STORAGE_KEYS) {
+		if (!hasOwnKey(fixtures, key)) throw new Error(`Missing valid name-store fixture for ${ key }`)
+		const revisionBefore = getAddressBookRevision()
+		const write = spyOn(browser.storage.local, 'set').mockImplementationOnce(async () => { throw failure })
+		try {
+			await assert.rejects(browserStorageLocalSet({ [key]: fixtures[key] }), (error) => error === failure)
+			assert.equal(getAddressBookRevision(), revisionBefore, key)
+		} finally {
+			write.mockRestore()
+		}
+		await browserStorageLocalSet({ [key]: fixtures[key] })
+		assert.equal(getAddressBookRevision(), revisionBefore + 1, key)
+	}
+	const revisionBeforeBatch = getAddressBookRevision()
+	await browserStorageLocalSet(fixtures)
+	assert.equal(getAddressBookRevision(), revisionBeforeBatch + 1)
 })

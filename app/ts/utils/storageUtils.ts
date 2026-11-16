@@ -1,4 +1,4 @@
-import { withAddressBookRevisionUpdate } from './addressBookRevision.js'
+import { ADDRESS_IDENTIFICATION_STORAGE_KEYS, withAddressBookRevisionUpdate } from './addressBookRevision.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -102,7 +102,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
-type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
+export type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSigningSafeAddress'),
@@ -190,10 +190,10 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-// All persisted names used by address identification pass this boundary, including atomic settings imports. Extend this key list when adding a name store, and keep those writes here so they advance the revision only after a successful commit. See docs/popup-simulation-refresh.md, Confirmation runs in flight.
+// The revision module owns which name stores affect address identification; this shared boundary also covers atomic settings imports.
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	const write = async () => await browser.storage.local.set(serialize(LocalStorageItems, items))
-	if ('userAddressBookEntriesV3' in items || 'ensNameHashes' in items || 'ensLabelHashes' in items) return await withAddressBookRevisionUpdate(write)
+	if (ADDRESS_IDENTIFICATION_STORAGE_KEYS.some((key) => hasOwnKey(items, key))) return await withAddressBookRevisionUpdate(write)
 	await write()
 }
 

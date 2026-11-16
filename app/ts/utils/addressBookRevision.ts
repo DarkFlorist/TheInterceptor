@@ -1,6 +1,10 @@
 import { Semaphore } from './semaphore.js'
+import type { LocalStorageKey } from './storageUtils.js'
 
-// Tracks persisted address-book and ENS names in this background lifetime. The storage setter owns revision updates, including atomic settings imports, repairs and cached identifications.
+// Name stores read by address identification. Add new stores here and write them through browserStorageLocalSet, including imports and repairs, so an in-flight confirmation catches up after the commit.
+export const ADDRESS_IDENTIFICATION_STORAGE_KEYS: readonly LocalStorageKey[] = ['userAddressBookEntriesV3', 'ensNameHashes', 'ensLabelHashes']
+
+// Tracks persisted address-book and ENS names in this background lifetime. The shared storage setter applies this module's key policy to revision updates, including atomic settings imports, repairs and cached identifications.
 let addressBookRevision = 0
 const addressBookRevisionSemaphore = new Semaphore(1)
 
