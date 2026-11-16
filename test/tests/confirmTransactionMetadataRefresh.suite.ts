@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { spyOn, test } from 'bun:test'
 import { publishFailedPopupVisualisation, relabelPopupVisualisation, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import type { SimulationRunToRelabel } from '../../app/ts/background/simulationRelabel.js'
 import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getAddressBookRevision, getPopupVisualisationState, getUserAddressBookEntries, removePendingTransactionOrMessage, setUserAddressBookEntries, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
@@ -1648,6 +1648,11 @@ test('every write of the names a lookup reads advances the address-book revision
 		{ description: 'an address-book update', write: async () => await modules.updateUserAddressBookEntries((entries) => entries) },
 		{ description: 'an entry cached by an identification', write: async () => await addUserAddressBookEntryIfItDoesNotExist(recipientContact) },
 		{ description: 'an address book replaced by the migration', write: async () => await setUserAddressBookEntries([senderAddressBookEntry]) },
+		{ description: 'an atomic settings import', write: async () => {
+			const { runSettingsStorageTransaction } = await import('../../app/ts/background/settingsStorageTransaction.js')
+			const { userAddressBookEntriesStorageWrite } = await import('../../app/ts/background/storageVariables.js')
+			await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite([senderAddressBookEntry]), { useTabsInsteadOfPopup: true }], result: undefined }))
+		} },
 		{ description: 'an ENS name', write: async () => await addEnsNodeHash('revision.eth') },
 		{ description: 'an ENS label', write: async () => await addEnsLabelHash('revision') },
 		{ description: 'an unreadable address book reset when read', write: async () => {
@@ -2094,4 +2099,20 @@ test('a block-time manipulation change during a running stack simulation is skip
 	const { stored: storedAfter } = await getStoredStackVisualisation()
 	assert.equal(storedAfter.simulationId, storedBefore.simulationId + 1)
 	assert.equal(storedAfter.simulationUpdatingState, 'done')
+})
+
+// Settings imports and individual name writes share the storage setter's revision boundary.
+test('failed name writes and unrelated settings writes do not advance the address-book revision', async () => {
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const revisionBefore = getAddressBookRevision()
+	await browserStorageLocalSet({ useTabsInsteadOfPopup: false })
+	assert.equal(getAddressBookRevision(), revisionBefore)
+	const failure = new Error('name storage unavailable')
+	const write = spyOn(browser.storage.local, 'set').mockImplementationOnce(async () => { throw failure })
+	try {
+		await assert.rejects(browserStorageLocalSet({ ensNameHashes: [] }), (error) => error === failure)
+		assert.equal(getAddressBookRevision(), revisionBefore)
+	} finally {
+		write.mockRestore()
+	}
 })
