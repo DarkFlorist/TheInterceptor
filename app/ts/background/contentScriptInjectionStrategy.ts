@@ -54,7 +54,12 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 		const refreshIfChanged = async () => {
 			try {
 				const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
-				if (hasSameConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return
+				if (hasSameConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) {
+					// A previous failed import can leave registration pending even when storage already matches this file.
+					if (!await reconcileContentScriptRegistration({ exclusionsChanged: false })) return
+					await reloadTabs(await getConnectedTabIdsToReload(websiteTabConnections))
+					return
+				}
 				await applyConfigurationAndReloadConnectedTabs(websiteTabConnections, update.onRefreshFailure)
 			} catch (error: unknown) {
 				refreshErrors.add(error)

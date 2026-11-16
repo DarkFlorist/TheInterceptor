@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 
 type RegisteredScript = { readonly id: string, readonly excludeMatches?: readonly string[], readonly js?: readonly string[] }
@@ -457,4 +457,29 @@ test('replaces the page-world registration when compatibility mode changes its s
 	await reconcileContentScriptRegistration()
 	assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'update'])
 	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+})
+
+
+test('reimporting identical settings retries pending registration and reloads after recovery', async () => {
+	const { storageState, getRegisteredContentScripts, firefoxOperations } = installBrowserMock()
+	const { exportSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { importSettings } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+	const { serialize } = await import('../../app/ts/types/wire-types.js')
+	const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	storageState.metamaskCompatibilityMode = true
+	const exported = await exportSettingsAndAddressBook()
+	storageState.metamaskCompatibilityMode = false
+	const request: Parameters<typeof importSettings>[0] = { method: 'popup_import_settings', data: { fileContents: JSON.stringify(serialize(ExportedSettings, exported)) } }
+	const connections = new Map([[9, { connections: {} }]])
+	const registration = spyOn(browser.scripting, 'registerContentScripts').mockImplementationOnce(async () => { throw new Error('temporary registration failure') })
+	try {
+		assert.equal((await importSettings(request, connections)).data.success, true)
+		assert.equal(storageState.metamaskCompatibilityMode, true)
+		assert.deepEqual(getRegisteredContentScripts(), [])
+	} finally {
+		registration.mockRestore()
+	}
+	assert.equal((await importSettings(request, connections)).data.success, true)
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+	assert.deepEqual(firefoxOperations, ['reload:9'])
 })
