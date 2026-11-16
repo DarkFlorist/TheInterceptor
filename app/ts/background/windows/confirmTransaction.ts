@@ -894,22 +894,26 @@ async function formPreparedTransaction(
 
 // A refresh of a Gnosis Safe proposal whose transaction did not form when its confirmation opened (getPendingTransactionRefresh): prepares the confirmation again as opening it did, which forms the transaction and creates the proposal from it, and returns the flow and approval status to store with it. Returns undefined, keeping the pending transaction as it is, if the request is no longer a proposal of a configured Gnosis Safe. Run it with runWithPendingConfirmationLock, holding the lock until the proposal is stored.
 export async function prepareUnformedSafeProposalAgain(
-	simulation: SimulationSnapshot,
+	requestNetwork: NetworkSnapshot,
 	pending: SimulatedPendingTransaction,
 	safeRequestContext: SafeTransactionRequestContext | undefined,
 ) {
 	const tabId = pending.uniqueRequestIdentifier.requestSocket.tabId
 	const safePreparation = await prepareSafeTransactionConfirmation(
-		simulation.services.ethereum,
+		requestNetwork.services.ethereum,
 		{ kind: 'transaction', parameters: pending.originalRequestParameters, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
 		pending.simulationMode,
 		pending.activeAddress,
 		getWalletSelectedAccount(await getTabState(tabId)),
 	)
 	if (safePreparation.rejection !== undefined || safePreparation.flowKind !== 'proposal') return undefined
+	// Reconciliation can remove executed operations; rebuild from that committed stack on the same network.
+	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkSnapshotForServices(requestNetwork.services) : requestNetwork
+	if (!readsShareNetworkAndStackContext(requestNetwork, network)) return undefined
+	const simulation = requireSimulationSnapshot(network.simulation)
 	const formedTransaction = await formPreparedTransaction(simulation, safePreparation, pending.website, pending.created, pending.transactionIdentifier, pending.simulationMode)
 	const { transactionToSimulate, safeFlow, approvalStatus } = await safePreparation.finalize(formedTransaction, tabId)
-	return { transactionToSimulate, preparedSafeProposal: { safeFlow, approvalStatus: approvalStatus ?? { status: 'WaitingForUser' as const } } }
+	return { network, transactionToSimulate, preparedSafeProposal: { safeFlow, approvalStatus: approvalStatus ?? { status: 'WaitingForUser' as const } } }
 }
 
 export async function openConfirmTransactionDialogForTransaction(

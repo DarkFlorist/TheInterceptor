@@ -640,9 +640,9 @@ export async function refreshPopupConfirmTransactionSimulation(network: NetworkS
 	switch (refresh.kind) {
 		case 'keepFailure': return
 		case 'prepareSafeProposal': return await runWithPendingConfirmationLock(async () => {
-			const prepared = await prepareUnformedSafeProposalAgain(simulation, firstTxn, refresh.safeRequestContext)
+			const prepared = await prepareUnformedSafeProposalAgain(network, firstTxn, refresh.safeRequestContext)
 			if (prepared === undefined) return
-			await simulateAndStoreRefreshedTransaction(network, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal)
+			await simulateAndStoreRefreshedTransaction(prepared.network, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal)
 		})
 		case 'formTransaction': return await simulateAndStoreRefreshedTransaction(network, firstTxn, await formPendingTransactionAgain(simulation, firstTxn), undefined)
 		default: return assertNever(refresh)
