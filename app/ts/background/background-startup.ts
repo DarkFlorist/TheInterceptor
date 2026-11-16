@@ -20,7 +20,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
+import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -129,7 +129,7 @@ const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
 if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
+	silenceChromeUnCaughtPromise(refreshContentScriptInjectionStrategy())
 }
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
