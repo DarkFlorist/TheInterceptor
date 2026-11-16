@@ -152,7 +152,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 })
 
-test('reconciles executed Safe operations before simulating the next proposal', async () => {
+test.each(['opening', 'retry'])('reconciles executed Safe operations before simulating the next proposal (%s)', async (formation) => {
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [recipientAddress],
@@ -233,6 +233,24 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 		value: 2n,
 		input: new Uint8Array(),
 	}, 2n)))
+	if (formation === 'retry') {
+		const { prepareUnformedSafeProposalAgain } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const admittedNetwork = await readNetworkState()
+		const prepared = await prepareUnformedSafeProposalAgain(admittedNetwork, {
+			...pendingTransaction,
+			originalRequestParameters: transactionParams,
+			simulationMode: false,
+			safeFlow: { kind: 'proposal', state: 'unformed' },
+		}, undefined)
+		if (prepared === undefined) throw new Error('Expected the Safe proposal retry to prepare')
+		const identifiers = prepared.network.simulation.kind === 'loaded'
+			? prepared.network.simulation.interceptorTransactionStack.operations.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.transactionIdentifier : undefined)
+			: []
+		assert.deepEqual(identifiers, [81n])
+		assert.notEqual(prepared.network, admittedNetwork)
+		assert.equal(getCreatedSafeProposal(prepared.preparedSafeProposal.safeFlow)?.safeTx.message.nonce, 2n)
+		return
+	}
 	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, [])
 	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
 		connections: {
