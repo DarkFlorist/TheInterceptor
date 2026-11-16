@@ -265,4 +265,18 @@ describe('narrow text layout CSS', () => {
 		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-entry-media\s*\{[\s\S]*?flex-direction\s*:\s*column\s*;/)
 		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-entry-actions\s*\{[\s\S]*?flex-direction\s*:\s*row\s*;/)
 	})
+
+	test('wraps transaction card footers and long gas fee labels instead of truncating them', async () => {
+		const css = await readInterceptorAppCss()
+
+		const footer = expectRule(css, '.transaction-card-footer')
+		assert.match(footer, /display\s*:\s*flex\s*;/)
+		assert.match(footer, /flex-wrap\s*:\s*wrap\s*;/)
+
+		const gasFeeLabel = expectRule(css, '.log-cell.gas-fee-label')
+		assert.match(gasFeeLabel, /white-space\s*:\s*normal\s*;/)
+
+		const gasFeeValue = expectRule(css, '.log-cell.gas-fee-value')
+		assert.match(gasFeeValue, /flex-shrink\s*:\s*0\s*;/)
+	})
 })

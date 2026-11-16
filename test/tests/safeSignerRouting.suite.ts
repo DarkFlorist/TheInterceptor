@@ -3,7 +3,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
@@ -99,7 +99,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
-			safeTransaction: {
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,
 				safeVersion: '1.4.1',
@@ -112,7 +112,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 				},
 				safeTxHash,
 				safeTx,
-			},
+			} },
 		}],
 	})
 
@@ -145,7 +145,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 		code: -32603,
 		message: 'Keyring Controller signTypedMessage: Error: Scan cancelled',
 	})
-	assert.equal(retryableTransaction?.safeTransaction?.safeTxHash, safeTxHash)
+	assert.equal(getPendingSafeProposal(retryableTransaction)?.safeTxHash, safeTxHash)
 })
 
 test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 typed data', async () => {
@@ -181,7 +181,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			simulationMode: false,
-			safeTransaction: {
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,
 				safeVersion: '1.4.1',
@@ -194,7 +194,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 				},
 				safeTxHash: BigInt(getSafeTxHash(safeTx)),
 				safeTx,
-			},
+			} },
 		}],
 	})
 
@@ -343,7 +343,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 			/Unexpected Safe owner decoder failure/u,
 		)
 		await assert.rejects(
-			modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, reviewedCoSignRequest, '0x1234'),
+			modules.resolveSafeSignerReply(simulator.ethereum, reviewedCoSignRequest, '0x1234'),
 			/Unexpected Safe owner decoder failure/u,
 		)
 	} finally {
@@ -577,7 +577,7 @@ test('shows Safe transaction context failures in the co-signing dialog without r
 	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(pendingMessage?.approvalStatus.status, 'SignerError')
 	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe context validation error')
-	assert.match(pendingMessage.approvalStatus.message, /chain ID does not match/u)
+	assert.match(pendingMessage.approvalStatus.message, /prepared for chain 1338, but the connected network is chain 1337\./u)
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
@@ -773,7 +773,7 @@ test('signs Safe transaction typed data normally when the active signing address
 		pendingChanged: false,
 		signerFacingRequest: undefined,
 	})
-	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pendingMessage, '0x1234'), { status: 'not-safe' })
+	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, pendingMessage, '0x1234'), { status: 'not-safe' })
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
@@ -1131,10 +1131,10 @@ test('routes a completed active Safe execution through its configured signer and
 	const [disconnectedExecution] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(disconnectedExecution?.type, 'Transaction')
 	if (disconnectedExecution?.type !== 'Transaction') throw new Error('Missing disconnected direct Safe execution request')
-	assert.deepEqual(disconnectedExecution.safeExecutionOriginalRequestParameters, transactionParams)
-	assert.equal(disconnectedExecution.safeExecutionSignerAddress, undefined)
-	assert.notEqual(disconnectedExecution.safeExecutionReviewedSafeState, undefined)
-	assert.equal(disconnectedExecution.safeTransaction, undefined)
+	if (disconnectedExecution.safeFlow.kind !== 'directExecution') throw new Error('Expected a direct Safe execution flow')
+	assert.deepEqual(disconnectedExecution.safeFlow.safeExecutionOriginalRequestParameters, transactionParams)
+	assert.equal(disconnectedExecution.safeFlow.safeExecutionSignerAddress, undefined)
+	assert.notEqual(disconnectedExecution.safeFlow.safeExecutionReviewedSafeState, undefined)
 	assert.equal(disconnectedExecution.approvalStatus.status, 'SignerError')
 
 	await modules.updateTabState(socket.tabId, (state) => ({
@@ -1152,9 +1152,9 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(pendingExecution?.type, 'Transaction')
 	if (pendingExecution?.type !== 'Transaction') throw new Error('Missing direct Safe execution request')
 	assert.equal(pendingExecution.transactionOrMessageCreationStatus, 'Simulated')
-	assert.equal(pendingExecution.safeTransaction, undefined)
-	assert.equal(pendingExecution.safeExecutionSignerAddress, safeSignerAddress)
-	assert.deepEqual(pendingExecution.safeExecutionOriginalRequestParameters, transactionParams)
+	if (pendingExecution.safeFlow.kind !== 'directExecution') throw new Error('Expected a direct Safe execution flow')
+	assert.equal(pendingExecution.safeFlow.safeExecutionSignerAddress, safeSignerAddress)
+	assert.deepEqual(pendingExecution.safeFlow.safeExecutionOriginalRequestParameters, transactionParams)
 	assert.equal(pendingExecution.activeAddress, safeSignerAddress)
 	assert.equal(pendingExecution.originalRequestParameters.method, 'eth_sendTransaction')
 	if (pendingExecution.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Unexpected direct Safe execution method')
@@ -1234,7 +1234,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedExecution?.approvalStatus.status, 'WaitingForUser')
-	assert.equal(refreshedExecution?.type === 'Transaction' ? refreshedExecution.safeExecutionSignerAddress : undefined, alternateSignerAddress)
+	assert.equal(refreshedExecution?.type === 'Transaction' && refreshedExecution.safeFlow.kind === 'directExecution' ? refreshedExecution.safeFlow.safeExecutionSignerAddress : undefined, alternateSignerAddress)
 	assert.equal(refreshedExecution?.originalRequestParameters.method === 'eth_sendTransaction' ? refreshedExecution.originalRequestParameters.params[0].from : undefined, alternateSignerAddress)
 
 	await modules.updateTabState(socket.tabId, (state) => ({

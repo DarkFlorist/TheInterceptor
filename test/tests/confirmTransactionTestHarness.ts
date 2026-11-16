@@ -13,6 +13,8 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -49,6 +51,10 @@ export function createBrowserMock() {
 	let tabMessageHandler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
 	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
+	let tabUpdateHandler: ((tabId: number) => Promise<void>) | undefined
+	let windowRemoveHandler: ((windowId: number) => Promise<void>) | undefined
+	let windowCreateHandler: (() => Promise<void>) | undefined
+	let runtimeSendMessageHandler: ((message: RuntimeMessage) => Promise<void>) | undefined
 
 	const getItems = (keys?: StorageKeys) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -67,6 +73,7 @@ export function createBrowserMock() {
 			lastError: null as browser.runtime._LastError | undefined | null,
 			async sendMessage(message: RuntimeMessage) {
 				sentMessages.push(message)
+				await runtimeSendMessageHandler?.(message)
 				if (message.method === 'popup_isMainPopupWindowOpen') {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
 				}
@@ -100,7 +107,10 @@ export function createBrowserMock() {
 				if (!liveTabIds.has(tabId)) throw new Error(`No tab with id: ${ tabId }`)
 				return { id: tabId }
 			},
-			async update() { return undefined },
+			async update(tabId: number) {
+				await tabUpdateHandler?.(tabId)
+				return undefined
+			},
 			async remove() { return undefined },
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
@@ -111,8 +121,14 @@ export function createBrowserMock() {
 				return { id: windowId }
 			},
 			async update() { return undefined },
-			async create() { return { id: 99 } },
-			async remove() { return undefined },
+			async create() {
+				await windowCreateHandler?.()
+				return { id: 99 }
+			},
+			async remove(windowId: number) {
+				await windowRemoveHandler?.(windowId)
+				return undefined
+			},
 		},
 		action: {
 			async setIcon() { return undefined },
@@ -146,6 +162,10 @@ export function createBrowserMock() {
 		setStorageGetHandler(handler: typeof storageGetHandler) { storageGetHandler = handler },
 		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
+		setTabUpdateHandler(handler: typeof tabUpdateHandler) { tabUpdateHandler = handler },
+		setWindowRemoveHandler(handler: typeof windowRemoveHandler) { windowRemoveHandler = handler },
+		setWindowCreateHandler(handler: typeof windowCreateHandler) { windowCreateHandler = handler },
+		setRuntimeSendMessageHandler(handler: typeof runtimeSendMessageHandler) { runtimeSendMessageHandler = handler },
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
 			sentMessages.length = 0
@@ -156,6 +176,10 @@ export function createBrowserMock() {
 			tabMessageHandler = undefined
 			storageGetHandler = undefined
 			storageSetHandler = undefined
+			tabUpdateHandler = undefined
+			windowRemoveHandler = undefined
+			windowCreateHandler = undefined
+			runtimeSendMessageHandler = undefined
 		},
 	}
 }
@@ -336,6 +360,12 @@ export const fakeRpcNetwork = {
 }
 
 export const fakeBlock = makeFakeBlock()
+const isSafeNonceCall = (call: unknown) => {
+	if (!isRecord(call)) return false
+	const input = call.input instanceof Uint8Array ? call.input : call.data
+	return input instanceof Uint8Array && `0x${ Buffer.from(input).toString('hex').slice(0, 8) }` === encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10)
+}
+
 export const safeSelectors = {
 	messageHash: encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', ['0x']).slice(0, 10),
 	messageSignature: encodeFunctionCall(SAFE_MESSAGE_ABI, 'isValidSignature', [`0x${ '00'.repeat(32) }`, '0x']).slice(0, 10),
@@ -437,9 +467,12 @@ export const fakeRequestHandler = {
 				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
 				return modules.serialize(
 					modules.EthSimulateV1Result,
-					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) =>
-						makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0),
-					),
+					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => {
+						const calls: readonly unknown[] = Array.isArray(blockStateCall.calls) ? blockStateCall.calls : []
+						const result = makeFakeEthSimulateResult(0n, modules.Multicall3ABI, calls.length)
+						// The simulation reads a Gnosis Safe's nonce with a nonce() call after the input before an execution; the fake Safe executes nothing, so its nonce stays fakeSafeContract.nonce.
+						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])) } : callResult) }
+					}),
 				)
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
@@ -565,9 +598,13 @@ export const pendingTransaction = {
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
 		popupVisualisation,
+		safeFlow: { kind: 'ordinary' },
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
 	} as const
+
+// The Gnosis Safe transaction of a pending transaction that is a created Safe proposal.
+export const getPendingSafeProposal = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' ? getCreatedSafeProposal(pending.safeFlow) : undefined
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
