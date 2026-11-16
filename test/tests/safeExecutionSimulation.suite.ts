@@ -834,7 +834,7 @@ function createRecordingSimulator(contractCreationSimulationOutcome: SimulationO
 				if (outcome === 'network-error') throw new Error('fetch failed')
 				if (outcome === 'revert') {
 					return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
-						...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+						...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, []),
 						calls: blockStateCall.calls.map(() => ({ status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: 3, message: 'execution reverted' } })),
 					})))
 				}

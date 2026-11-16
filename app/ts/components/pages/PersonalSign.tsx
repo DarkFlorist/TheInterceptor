@@ -26,7 +26,7 @@ import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
 import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import type { ReadonlySignal } from '@preact/signals'
-import type { ShownPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { ShownPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 
 type SignatureCardParams = {
@@ -508,7 +508,7 @@ export function SignatureCard(params: SignatureCardParams) {
 	</div>
 }
 
-export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined> }) {
+export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined> }) {
 	const current = pendingTransactionOrSignableMessage.value
 	if (current?.type !== 'SignableMessage') return <></>
 	if (current.transactionOrMessageCreationStatus !== 'Simulated') return <></>

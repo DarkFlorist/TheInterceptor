@@ -233,6 +233,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 				error: {
 					code: -32000,
 					message: 'simulation failed',
@@ -333,6 +334,7 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 				uniqueRequestIdentifier: failed.uniqueRequestIdentifier,
 				transactionToSimulate,
 				signerName: 'NoSignerDetected' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: 2 },
 				addressBookEntries: [safeEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
 				tokenPriceEstimates: [],
 				namedTokenIds: [],
@@ -551,7 +553,7 @@ function makeBootstrapReply(stored: PendingTransactionOrSignableMessage) {
 }
 
 // The separate first handshake plus every attempt of the retry loop.
-const MAX_READY_HANDSHAKES = CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS + 1
+const MAX_READY_HANDSHAKES = CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS
 
 const showsBootstrapError = (dom: RenderedDom) => dom.document.body.textContent?.includes('could not be loaded from the background') === true
 
@@ -903,6 +905,63 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
+	test('names failed transaction addresses and shows calldata parsed with the recipient ABI', async () => {
+		const dom = installDomMock()
+		const clock = installDateMock('2024-01-01T00:00:10.000Z')
+		const browser = createBrowserMock()
+		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const { from: senderAddress, to: tokenAddress } = pending.originalRequestParameters.params[0]
+		const supplierAddress = 0x3333333333333333333333333333333333333333n
+		const failedTransactionPreview = {
+			addressBookEntries: [
+				{ type: 'contact' as const, name: 'Invoice Payer', address: senderAddress, entrySource: 'User' as const },
+				{ type: 'ERC20' as const, name: 'USD Coin', symbol: 'USDC', decimals: 6n, address: tokenAddress, entrySource: 'DarkFloristMetadata' as const },
+				{ type: 'contact' as const, name: 'Supplier', address: supplierAddress, entrySource: 'User' as const },
+			],
+			parsedInputData: {
+				type: 'Parsed' as const,
+				input: new Uint8Array(),
+				name: 'transfer',
+				args: [
+					{ paramName: 'dst', typeValue: { type: 'address' as const, value: supplierAddress } },
+					{ paramName: 'wad', typeValue: { type: 'unsignedInteger' as const, value: 2_500_000n } },
+				],
+			},
+		}
+		const pendingWithPreview = {
+			...pending,
+			popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, failedTransactionPreview } },
+		}
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(pendingWithPreview)],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		const renderedText = dom.document.body.textContent ?? ''
+		assert.equal(renderedText.includes('Invoice Payer'), true, renderedText)
+		assert.equal(renderedText.includes('USD Coin'), true, renderedText)
+		assert.equal(renderedText.includes('transfer('), true, renderedText)
+		assert.equal(renderedText.includes('Supplier'), true, renderedText)
+		assert.equal(renderedText.includes('No ABI available'), false, renderedText)
+
+		await unmountConfirmTransaction(dom)
+		clock.restore()
+		dom.restore()
+	})
+
 	test('updates the simulation age when the real refresh flow runs', { timeout: 15_000 }, async () => {
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')
@@ -1016,11 +1075,12 @@ describe('ConfirmTransaction', () => {
 		const timers = runTimersImmediately()
 		try {
 			const stored = await storeSignatureRequest(browser)
-			// Twenty handshakes, past the rapid retries plus the initial one and several retries at the backoff cap, find the background not ready; later ones carry its copy. Signature requests get no block-triggered push to fall back on.
+			// Empty replies run past the rapid retries and several attempts at the cap; the final allowed attempt delivers the background copy. Signatures have no block-triggered push to fall back on.
+			const emptyHandshakesBeforeReady = CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS - 1
 			let readyHandshakes = 0
 			browser.setReadyAndListeningReply((withoutBootstrap) => {
 				readyHandshakes += 1
-				return readyHandshakes <= 20 ? withoutBootstrap : makeBootstrapReply(stored)
+				return readyHandshakes <= emptyHandshakesBeforeReady ? withoutBootstrap : makeBootstrapReply(stored)
 			})
 
 			await renderConfirmTransaction(dom)
@@ -1028,7 +1088,7 @@ describe('ConfirmTransaction', () => {
 			assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request is shown')
 			await settleUntil(() => isConfirmEnabled(dom))
 
-			assert.equal(readyHandshakes, 21, 'the handshake is retried past the rapid attempts until the background copy arrives')
+			assert.equal(readyHandshakes, emptyHandshakesBeforeReady + 1, 'the handshake is retried past the rapid attempts until the background copy arrives')
 			assert.equal(isConfirmEnabled(dom), true, 'the bootstrapped background copy makes the request confirmable without a push update')
 			const retryDelays = timers.requestedDelays.filter((delay) => delay >= CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay !== CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS)
 			assert.equal(retryDelays.some((delay) => delay > CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS && delay < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS), true, 'later retries back off')
