@@ -1,9 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole, getPendingInstanceId } from './confirmTransactionTestHarness.js'
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
@@ -69,7 +69,7 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 
 test('shows stale local Safe stack failures in the transaction confirmation', async () => {
 	fakeSafeContract.nonce = 1n
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [{
 		chainId: fakeRpcNetwork.chainId,
 		safeAddress: activeAddress,
@@ -133,12 +133,12 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.transactionOrMessageCreationStatus, 'FailedToSimulate')
 
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 })
@@ -169,7 +169,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 		transactionIdentifier: 80n + BigInt(index),
 		signatures: [],
 	}))
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			uniqueRequestIdentifier: { requestId: 404, requestSocket: uniqueRequestIdentifier.requestSocket },
@@ -370,7 +370,7 @@ test('does not show simulation-mode stack setup in a Safe signing confirmation',
 		makeCurrentAddressRich: true,
 		independentActiveSimulationAddress: activeAddress,
 	})
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			simulationMode: false,
@@ -615,7 +615,7 @@ test('reserves proposal nonces without counting overlapping direct Safe executio
 		safeTx,
 		executionGasLimit: 21_000n,
 	})
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 401 },
@@ -663,7 +663,7 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 		input: hexToBytes('0xa9059cbb'),
 	}, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			originalRequestParameters: transactionParams,
@@ -727,7 +727,7 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 		value: 1n,
 		input: hexToBytes('0x1234'),
 	}, 7n)
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			activeAddress: recipientAddress,
@@ -774,7 +774,7 @@ test('atomic Safe batch preparation and simulation preserve one nonce and delega
 	const { dataStringWith0xStart } = await import('../../app/ts/utils/bigint.js')
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	fakeSafeContract.owners = [recipientAddress]
 	const input = encodeSafeBatch([{ to: recipientAddress, value: 0n, data: new Uint8Array([1]) }, { to: recipientAddress, value: 5n, data: new Uint8Array([2]) }])
@@ -805,7 +805,7 @@ test('on-chain Safe message review context is bound to calldata and stays outsid
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	fakeSafeContract.owners = [recipientAddress]
 	const review = { text: 'Approve this Safe message', isTypedData: false }

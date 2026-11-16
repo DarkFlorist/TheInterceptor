@@ -300,11 +300,13 @@ describe('popup header markup', () => {
 		await act(() => {
 			render(h(CheckBoxes, {
 				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
-				forceSend: new Signal(false),
+				approvalAcknowledgement: new Signal(undefined),
+				acknowledgedApprovalKey: new Signal<string | undefined>(undefined),
 			}), dom.document.body)
 		})
 
 		assert.match(dom.document.body.textContent ?? '', /request reached your wallet/)
+		assert.equal(findFirstByClass(dom.document.body, 'safe-signer-error-details'), undefined)
 		dom.restore()
 	})
 
@@ -339,7 +341,8 @@ describe('popup header markup', () => {
 		await act(() => {
 			render(h(CheckBoxes, {
 				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
-				forceSend: new Signal(false),
+				approvalAcknowledgement: new Signal(undefined),
+				acknowledgedApprovalKey: new Signal<string | undefined>(undefined),
 				addressBookEntries: [fromEntry],
 			}), dom.document.body)
 		})
@@ -377,7 +380,8 @@ describe('popup header markup', () => {
 		await act(() => {
 			render(h(CheckBoxes, {
 				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
-				forceSend: new Signal(false),
+				approvalAcknowledgement: new Signal(undefined),
+				acknowledgedApprovalKey: new Signal<string | undefined>(undefined),
 				addressBookEntries: [fromEntry, toEntry],
 			}), dom.document.body)
 		})

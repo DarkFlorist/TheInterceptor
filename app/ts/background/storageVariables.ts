@@ -1,17 +1,17 @@
+import * as funtypes from 'funtypes'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet, type PendingTerminalRepliesWrite, StoredPendingTerminalReplies } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
-import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
-import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { type PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { serialize } from '../types/wire-types.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -37,11 +37,41 @@ const idsOfOpenedTabsRepository = createStoredValueRepository({
 export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
+// This module owns the pending-requests key: the key, its codec and its lock are private, so every write of it goes through the functions below.
+const StoredPendingRequestsRuntype: funtypes.Partial<{
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray<typeof PendingTransactionOrSignableMessage>
+}, true> = funtypes.ReadonlyPartial({
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
+})
+type StoredPendingRequests = funtypes.Static<typeof StoredPendingRequestsRuntype>
+const StoredPendingRequests: typeof StoredPendingRequestsRuntype = StoredPendingRequestsRuntype
+
+// The innermost lock: its holder only reads the pending requests, applies a synchronous function and makes one storage write, so it never waits on another lock and nothing run under it can reach back into pending requests. updatePendingRequests takes a synchronous function to keep it so. The lock order is terminalReplySemaphore, pendingTerminalRepliesSemaphore, then this lock.
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
-	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
-	if (!result.success) return result
-	return { success: true as const, value: result.value.pendingTransactionsAndMessages ?? [] }
+	const storedItems = await browser.storage.local.get(['pendingTransactionsAndMessages'])
+	try {
+		return { success: true as const, value: StoredPendingRequests.parse(storedItems).pendingTransactionsAndMessages ?? [] }
+	} catch (error) {
+		if (!(error instanceof funtypes.ValidationError)) throw error
+		return { success: false as const, error }
+	}
+}
+
+// The pending requests and the reply outbox under their own declared keys, for the one storage write that stores both.
+const StoredPendingRequestsWithTerminalReplies = funtypes.ReadonlyObject({
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
+	pendingTerminalReplies: StoredPendingTerminalReplies,
+})
+
+// Stores the pending requests, and when given the reply outbox, both in one storage.local.set call, which Chromium applies as one leveldb write batch and Firefox as one IndexedDB transaction, so a crash or a failed write stores both or neither.
+async function writePendingRequests(pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[], terminalReplies?: PendingTerminalRepliesWrite) {
+	if (terminalReplies === undefined) {
+		const items: StoredPendingRequests = { pendingTransactionsAndMessages }
+		await browser.storage.local.set(serialize(StoredPendingRequests, items))
+		return
+	}
+	await browser.storage.local.set(serialize(StoredPendingRequestsWithTerminalReplies, { pendingTransactionsAndMessages, pendingTerminalReplies: terminalReplies.pendingTerminalReplies }))
 }
 
 async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonly PendingTransactionOrSignableMessage[]> {
@@ -49,7 +79,7 @@ async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonl
 	if (result.success) return result.value
 	console.warn('Pending transactions were corrupt:')
 	console.warn(result.error)
-	await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await writePendingRequests([])
 	return []
 }
 
@@ -59,37 +89,17 @@ export async function getPendingTransactionsAndMessages(): Promise<readonly Pend
 	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
-export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
-async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
+// Reads the pending requests and writes update's result under the pending-request lock, with the reply outbox in the same storage write when one is given. update is synchronous, so nothing else runs under the lock, and returns undefined to write nothing. Returns the list written, or undefined when nothing was written.
+export async function updatePendingRequests(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[] | undefined, terminalReplies?: PendingTerminalRepliesWrite) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
+		const pendingTransactionsAndMessages = update(await readPendingTransactionsAndMessagesWithRecovery())
+		if (pendingTransactionsAndMessages === undefined) return undefined
+		await writePendingRequests(pendingTransactionsAndMessages, terminalReplies)
+		return pendingTransactionsAndMessages
 	})
 }
 
-export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (match < 0) return pendingTransactionsOrMessages
-		const found = pendingTransactionsOrMessages[match]
-		if (found === undefined) return pendingTransactionsOrMessages
-		const updated = await update(found)
-		if (updated === undefined) return pendingTransactionsOrMessages
-		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
-	})
-}
-
-export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
-}
-
-export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise === undefined) return pendingTransactionsOrMessages
-		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
-	})
-}
+export const clearPendingTransactions = async () => { await updatePendingRequests(() => []) }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
 export async function setChainChangeConfirmationPromise(chainChangeConfirmationPromise: PendingChainChangeConfirmationPromise | undefined) {

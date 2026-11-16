@@ -1,5 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
+import { join } from 'node:path'
+import ts from 'typescript'
 import * as simulationFacade from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import * as simulationPersonalSigning from '../../app/ts/simulation/services/simulationPersonalSigning.js'
 import * as simulationTransactionSigning from '../../app/ts/simulation/services/simulationTransactionSigning.js'
@@ -19,6 +21,8 @@ const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/b
 const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
 const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
+const personalSignPopupSource = await Bun.file(new URL('../../app/ts/background/windows/personalSign.ts', import.meta.url)).text()
+const simulationPersonalSigningSource = await Bun.file(new URL('../../app/ts/simulation/services/simulationPersonalSigning.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
@@ -73,6 +77,14 @@ test('simulation service keeps compatibility exports backed by focused signing m
 	assert.equal(simulationFacade.simulatePersonalSign, simulationPersonalSigning.simulatePersonalSign)
 })
 
+// The personal_sign hash the popup shows and the one the simulation signs must come from one function, so neither may hash a personal_sign message itself.
+test('personal_sign popup and simulated signing share getPersonalSignMessageHash', () => {
+	for (const source of [personalSignPopupSource, simulationPersonalSigningSource]) {
+		assert.match(source, /\bgetPersonalSignMessageHash\(/u)
+		assert.doesNotMatch(source, /\bhashMessage\b/u)
+	}
+})
+
 test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
 	assert.match(safeAppsCompatibilityCoordinatorSource, /function createSafeAppsCompatibilityCoordinator/u)
 	assert.match(websiteTabConnectionsSource, /from '\.\/websiteLifecycle\.js'/u)
@@ -123,6 +135,138 @@ test('historical popup wire spellings are explicit protocol exceptions', () => {
 test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('toString'), false)
 	assert.equal(isPopupMessageMethod('__proto__'), false)
+})
+
+const appSourceDirectory = new URL('../../app/ts/', import.meta.url).pathname
+const parseAppSource = async (path: string) => ts.createSourceFile(path, await Bun.file(join(appSourceDirectory, path)).text(), ts.ScriptTarget.Latest, false, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+
+const repositoryRoot = new URL('../../', import.meta.url).pathname
+
+// The project's compiler options, so the import guard resolves modules exactly as tsc does.
+function readProjectCompilerOptions() {
+	const configPath = join(repositoryRoot, 'tsconfig.json')
+	const configFile = ts.readConfigFile(configPath, ts.sys.readFile)
+	if (configFile.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(configFile.error.messageText, '\n'))
+	return ts.parseJsonConfigFileContent(configFile.config, ts.sys, repositoryRoot, undefined, configPath).options
+}
+
+type ModuleSourceHost = Pick<ts.ModuleResolutionHost, 'fileExists' | 'readFile'>
+
+// Every module a source file depends on, type-only ones included: import and export declarations, inline import('...') types, and dynamic import() calls.
+function collectModuleSpecifiers(sourceFile: ts.SourceFile) {
+	const specifiers: string[] = []
+	const visit = (node: ts.Node) => {
+		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) specifiers.push(node.moduleSpecifier.text)
+		if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) specifiers.push(node.argument.literal.text)
+		const firstArgument = ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined
+		if (firstArgument !== undefined && ts.isStringLiteralLike(firstArgument)) specifiers.push(firstArgument.text)
+		ts.forEachChild(node, visit)
+	}
+	visit(sourceFile)
+	return specifiers
+}
+
+// The project modules reachable from the entry files, each with the project modules it depends on, resolved by TypeScript's own resolver. Library modules are left out.
+function buildImportGraph(entryPaths: readonly string[], host: ModuleSourceHost, compilerOptions: ts.CompilerOptions) {
+	const graph = new Map<string, ReadonlySet<string>>()
+	const pending = [...entryPaths]
+	for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+		if (graph.has(path)) continue
+		const text = host.readFile(path)
+		if (text === undefined) throw new Error(`Cannot read ${ path }`)
+		const imported = new Set<string>()
+		for (const specifier of collectModuleSpecifiers(ts.createSourceFile(path, text, ts.ScriptTarget.Latest, false, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS))) {
+			const resolved = ts.resolveModuleName(specifier, path, compilerOptions, host).resolvedModule
+			if (resolved === undefined || resolved.isExternalLibraryImport === true) continue
+			imported.add(resolved.resolvedFileName)
+			pending.push(resolved.resolvedFileName)
+		}
+		graph.set(path, imported)
+	}
+	return graph
+}
+
+const findReachableModules = (graph: ReadonlyMap<string, ReadonlySet<string>>, start: string) => {
+	const reached = new Set<string>()
+	const pending = [start]
+	for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+		for (const imported of graph.get(path) ?? []) {
+			if (reached.has(imported)) continue
+			reached.add(imported)
+			pending.push(imported)
+		}
+	}
+	return reached
+}
+
+// Fails when each module reaches the other through the import graph.
+function assertNoImportCycle(graph: ReadonlyMap<string, ReadonlySet<string>>, first: string, second: string) {
+	if (findReachableModules(graph, first).has(second) && findReachableModules(graph, second).has(first)) throw new Error(`Import cycle between ${ first } and ${ second }`)
+}
+
+test('the pending-request storage, decision and outbox modules import in one direction only, so none of them has an import cycle', () => {
+	const [storageVariables, pendingRequestDecisions, pendingTerminalReplies] = ['background/storageVariables.ts', 'background/pendingRequestDecisions.ts', 'background/pendingTerminalReplies.ts'].map((path) => join(appSourceDirectory, path))
+	if (storageVariables === undefined || pendingRequestDecisions === undefined || pendingTerminalReplies === undefined) throw new Error('Expected three module paths')
+	const graph = buildImportGraph([storageVariables, pendingRequestDecisions, pendingTerminalReplies], ts.sys, readProjectCompilerOptions())
+	// The outbox decides through the decision module, which writes through the storage module.
+	assert.equal(graph.get(pendingTerminalReplies)?.has(pendingRequestDecisions), true)
+	assert.equal(graph.get(pendingRequestDecisions)?.has(storageVariables), true)
+	// The storage module stays a leaf of the three, and the decision module never reaches the outbox, not even through a type.
+	const reachedFromStorage = findReachableModules(graph, storageVariables)
+	assert.equal(reachedFromStorage.has(pendingRequestDecisions) || reachedFromStorage.has(pendingTerminalReplies), false)
+	assert.equal(findReachableModules(graph, pendingRequestDecisions).has(pendingTerminalReplies), false)
+	assertNoImportCycle(graph, storageVariables, pendingRequestDecisions)
+	assertNoImportCycle(graph, storageVariables, pendingTerminalReplies)
+	assertNoImportCycle(graph, pendingRequestDecisions, pendingTerminalReplies)
+})
+
+// In-memory modules where outbox.ts imports storage.ts, and storage.ts reaches back in each way the guard has to see.
+const importCycleFixtures = {
+	'an extensionless import': { '/fixture/storage.ts': `import type { Write } from './outbox'\nexport type Stored = Write` },
+	'an index import': { '/fixture/storage.ts': `import type { Write } from './outbox/index.js'\nexport type Stored = Write`, '/fixture/outbox/index.ts': `import { stored } from '../storage.js'\nexport type Write = typeof stored` },
+	'a directory import that resolves to its index': { '/fixture/storage.ts': `import type { Write } from './outbox'\nexport type Stored = Write`, '/fixture/outbox/index.ts': `import { stored } from '../storage.js'\nexport type Write = typeof stored` },
+	'an inline import() type': { '/fixture/storage.ts': `export type Stored = import('./outbox.js').Write` },
+	'a transitive import': { '/fixture/storage.ts': `import type { Write } from './middle.js'\nexport type Stored = Write`, '/fixture/middle.ts': `export type { Write } from './outbox.js'` },
+} as const
+
+const importFixtureHost = (files: Readonly<Record<string, string>>): ModuleSourceHost => ({
+	fileExists: (path) => path in files,
+	readFile: (path) => files[path],
+})
+
+for (const [kind, files] of Object.entries(importCycleFixtures)) {
+	test(`the import cycle guard sees ${ kind }`, () => {
+		// Fixtures with an outbox directory get no outbox.ts beside it, so './outbox' can only resolve to the directory's index.
+		const outbox = '/fixture/outbox/index.ts' in files ? '/fixture/outbox/index.ts' : '/fixture/outbox.ts'
+		const modules = outbox === '/fixture/outbox.ts' ? { '/fixture/outbox.ts': `import { stored } from './storage.js'\nexport type Write = typeof stored`, ...files } : files
+		const graph = buildImportGraph(['/fixture/storage.ts', outbox], importFixtureHost(modules), readProjectCompilerOptions())
+		assert.throws(() => assertNoImportCycle(graph, '/fixture/storage.ts', outbox), /Import cycle/u)
+	})
+}
+
+test('the import cycle guard passes modules that import in one direction only', () => {
+	const modules = { '/fixture/outbox.ts': `import { stored } from './storage.js'\nexport type Write = typeof stored`, '/fixture/storage.ts': 'export const stored = 1' }
+	const graph = buildImportGraph(['/fixture/storage.ts', '/fixture/outbox.ts'], importFixtureHost(modules), readProjectCompilerOptions())
+	assertNoImportCycle(graph, '/fixture/storage.ts', '/fixture/outbox.ts')
+})
+
+// Building a PendingTerminalRepliesWrite needs this symbol's value, so limiting who names it limits who can build one. Comments do not count.
+test('only the outbox module and its declaration name the pending terminal replies write brand', async () => {
+	const filesNamingBrand = new Set<string>()
+	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) {
+		const visit = (node: ts.Node) => {
+			if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text === 'pendingTerminalRepliesWriteBrand') filesNamingBrand.add(path)
+			ts.forEachChild(node, visit)
+		}
+		visit(await parseAppSource(path))
+	}
+	assert.deepEqual([...filesNamingBrand].sort(), ['background/pendingTerminalReplies.ts', 'utils/storageUtils.ts'])
+})
+
+// The background owns the confirmation queue and sends it over the message protocol, so the window neither reads browser storage nor imports the background's storage module.
+test('the confirmation page gets its queue over the message protocol, never from storage', () => {
+	assert.doesNotMatch(confirmTransactionPageSource, /browser\.storage|storageVariables|pendingTransactionsAndMessages|storageUtils/u)
+	assert.match(confirmTransactionPageSource, /popup_requestConfirmTransactionQueue/u)
 })
 
 test('Safe signer refresh persistence is isolated from confirmation resolution', () => {

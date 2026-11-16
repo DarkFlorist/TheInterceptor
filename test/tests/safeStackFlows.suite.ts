@@ -26,7 +26,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 			},
 		}],
 	}))
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const importedStack = {
 		...localStack,
 		transactions: [{

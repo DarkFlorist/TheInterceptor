@@ -9,6 +9,7 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
@@ -576,7 +577,6 @@ describe('ConfirmTransaction', () => {
 		const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 		const { updateInterceptorTransactionStack, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
 		const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 
 		const fakeRpcNetwork = {
 			name: 'Test Chain',
@@ -665,7 +665,7 @@ describe('ConfirmTransaction', () => {
 			},
 		}
 
-		await browserStorageLocalSet2({
+		await seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [olderPendingTransaction],
 		})
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))

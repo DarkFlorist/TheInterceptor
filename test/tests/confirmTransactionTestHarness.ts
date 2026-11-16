@@ -5,6 +5,7 @@ import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
@@ -13,6 +14,7 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -198,6 +200,7 @@ export async function loadModules() {
 		ethSimulateTypes,
 		messageSending,
 		pendingTerminalReplies,
+		pendingRequestDecisions,
 		terminalReplyDelivery,
 		providerMessageHandlers,
 		safeExecutionRouting,
@@ -220,6 +223,7 @@ export async function loadModules() {
 		import('../../app/ts/types/ethSimulate-types.js'),
 		import('../../app/ts/background/messageSending.js'),
 		import('../../app/ts/background/pendingTerminalReplies.js'),
+		import('../../app/ts/background/pendingRequestDecisions.js'),
 		import('../../app/ts/background/terminalReplyDelivery.js'),
 		import('../../app/ts/background/providerMessageHandlers.js'),
 		import('../../app/ts/safe/safeExecutionRouting.js'),
@@ -237,6 +241,8 @@ export async function loadModules() {
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
+		requestConfirmTransactionQueue: popupMessageHandlers.requestConfirmTransactionQueue,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
@@ -263,11 +269,18 @@ export async function loadModules() {
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
-		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
+		appendPendingTransactionOrMessage: pendingRequestDecisions.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
+		updatePendingTransactionOrMessageInstance: pendingRequestDecisions.updatePendingTransactionOrMessageInstance,
+		removePendingTransactionOrMessageInstance: pendingRequestDecisions.removePendingTransactionOrMessageInstance,
+		// Test setup names a request by id, so it reads the instance stored under that id first.
+		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof pendingRequestDecisions.updatePendingTransactionOrMessageInstance>[1]) => {
+			const stored = (await storageVariables.getPendingTransactionsAndMessages()).find((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+			if (stored === undefined) throw new Error('Expected a pending request under the test request id')
+			return await pendingRequestDecisions.updatePendingTransactionOrMessageInstance(stored, update)
+		},
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
@@ -279,12 +292,11 @@ export async function loadModules() {
 		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
-		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
+		queueTerminalReplyWithPendingRequestDecision: terminalReplyDelivery.queueTerminalReplyWithPendingRequestDecision,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
-		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		signerReply: providerMessageHandlers.signerReply,
 		ethAccountsReply: providerMessageHandlers.ethAccountsReply,
-		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		seedPendingRequestStorage,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
@@ -594,7 +606,7 @@ export const pendingTransaction = {
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }
 export function createDisconnectedPort() {
@@ -642,6 +654,14 @@ export function createWebsitePort(socket: { readonly tabId: number, readonly con
 			onPostMessage?.(message)
 		},
 	}
+}
+
+// Popup decisions name the pending request instance they decide on, so tests read it from the pending list like the popup does.
+export async function getPendingInstanceId(uniqueRequestIdentifier: { readonly requestId: number, readonly requestSocket: { readonly tabId: number, readonly connectionName: bigint } }) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
+		&& entry.uniqueRequestIdentifier.requestSocket.tabId === uniqueRequestIdentifier.requestSocket.tabId
+		&& entry.uniqueRequestIdentifier.requestSocket.connectionName === uniqueRequestIdentifier.requestSocket.connectionName)
+	return pending?.instanceId ?? 'no pending request'
 }
 
 export async function waitForPendingTransactionsToClear() {
