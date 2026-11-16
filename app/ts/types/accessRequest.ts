@@ -162,7 +162,7 @@ const PopupSimulatedPendingTransaction = funtypes.Intersect(
 )
 
 // A simulated pending transaction as background storage keeps it: what the dialog is sent, with the record of the run that produced its visualisation beside it. Confirmations stored by older versions, or by builds that kept the record inside the visualisation, decode without it, as funtypes drops fields its codec does not declare.
-type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
+export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 const SimulatedPendingTransaction = funtypes.Intersect(
 	PopupSimulatedPendingTransaction,
 	funtypes.ReadonlyPartial({ confirmationRun: ConfirmationRunRecord }),

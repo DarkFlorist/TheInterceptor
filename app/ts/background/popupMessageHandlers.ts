@@ -21,7 +21,7 @@ import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress, ide
 import { lookUpMetadataForRelabel } from './storedRunVisualisation.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { authorizesExecutedCall, type CompleteVisualizedSimulation, StoredCompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughtype CompleteVisualizedSimulation, StoredCompleteVisualizedSimulation, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
+import { authorizesExecutedCall, type CompleteVisualizedSimulation, StoredCompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, type WebsiteCreatedEthereumTransactionOrFailed, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
