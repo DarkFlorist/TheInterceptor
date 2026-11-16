@@ -386,7 +386,7 @@ describe('background eth_accounts', () => {
 
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
 		installBrowserMock()
-		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+		const { repairFeesAndNoncesAndProjectSafeCallsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 		const address = 0x1111111111111111111111111111111111111111n
 		const socket = { tabId: 1, connectionName: 0n }
 		const website = { websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' }
@@ -415,7 +415,7 @@ describe('background eth_accounts', () => {
 		const getBlockCalls = { count: 0 }
 		const { ethereum } = createEthereumWithGetBlockCounter(getBlockCalls)
 
-		const prepared = await prepareSimulationInputForRpc({ kind: 'simulated', value: simulationInput, simulationOverrides: {} }, ethereum)
+		const prepared = await repairFeesAndNoncesAndProjectSafeCallsForRpc({ kind: 'simulated', value: simulationInput, simulationOverrides: {} }, ethereum)
 
 		assert.strictEqual(prepared.value, simulationInput)
 		assert.deepEqual(prepared.simulationOverrides, {})

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPreview, prepareSimulationInputForRpc, visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
+import { captureSimulationSnapshotForPreview, captureSimulationStackSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSimulationInputForPreview, repairFeesAndNoncesAndProjectSafeCallsForRpc, visualizeSimulatorState } from '../../app/ts/background/simulationUpdating.js'
 import { getSimulationOverridesForPreview, type SimulationPreviewContext } from '../../app/ts/background/delegateClearingPolicy.js'
 import { createEthereumClientService, createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
@@ -259,7 +259,7 @@ describe('delegate clearing in simulation', () => {
 		}, async () => undefined, async () => undefined, rpcEntry)
 		// Mirrors the website eth_getCode path: background.ts builds the RPC input this way and the getCode handler calls getSimulatedCodeFromInput.
 		const websiteGetCode = async () => {
-			const simulationInput = await prepareSimulationInputForRpc(await getSimulationInputForPreview(SIMULATION_STACK, await getSettings()), ethereum)
+			const simulationInput = await repairFeesAndNoncesAndProjectSafeCallsForRpc(await getSimulationInputForPreview(SIMULATION_STACK, await getSettings()), ethereum)
 			return await getSimulatedCodeFromInput(ethereum, undefined, simulationInput, activeAddress, 'latest')
 		}
 
@@ -357,7 +357,7 @@ describe('delegate clearing in simulation', () => {
 				},
 			}, async () => undefined, async () => undefined, rpcEntry)
 			const input = [{ stateOverrides: {}, transactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }]
-			await assert.rejects(prepareSimulationInputForRpc({ kind: 'simulated', value: input, simulationOverrides }, ethereum), /Captured preparation request/)
+			await assert.rejects(repairFeesAndNoncesAndProjectSafeCallsForRpc({ kind: 'simulated', value: input, simulationOverrides }, ethereum), /Captured preparation request/)
 			assert.equal(requests.length, 1)
 			const request = serialize(EthSimulateV1Params, requests[0])
 			assert.equal(request.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
@@ -788,13 +788,16 @@ describe('delegate clearing in simulation', () => {
 		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
 		if (parentBlock === null) throw new Error('Expected a parent block')
 		const codeReads: { readonly account: bigint, readonly prefixCallCount: number }[] = []
+		let codeReplayRequests = 0
 		const nonceLookups: bigint[] = []
 		const callResult = (returnData: string) => ({ returnData, logs: [], gasUsed: '0x5208', status: '0x1' })
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
-				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
+				if (request.method === 'eth_getBlockByNumber') return typeof request.params[0] === 'bigint'
+					? EthereumBlockHeader.serialize({ ...parentBlock, number: request.params[0], hash: parentBlock.hash + request.params[0] })
+					: parentBlockResponse.result
 				if (request.method === 'eth_blockNumber') return `0x${ parentBlock.number.toString(16) }`
 				if (request.method === 'eth_getTransactionCount') {
 					nonceLookups.push(request.params[0])
@@ -803,20 +806,23 @@ describe('delegate clearing in simulation', () => {
 				if (request.method === 'eth_getCode') return request.params[0] === delegatedAccount ? delegationDesignator(onChainDelegate) : '0x'
 				if (request.method === 'eth_simulateV1') {
 					const blockStateCalls = request.params[0].blockStateCalls
-					const readerCall = blockStateCalls.at(-1)?.calls[0]
-					if (readerCall?.to !== codeReaderAddress || readerCall.input === undefined) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } })
-					const account = BigInt(`0x${ dataStringWith0xStart(readerCall.input).slice(-40) }`)
+					const readerCalls = blockStateCalls.at(-1)?.calls ?? []
+					const accounts = readerCalls.map((readerCall) => {
+						if (readerCall.to !== codeReaderAddress || readerCall.input === undefined) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } })
+						return BigInt(`0x${ dataStringWith0xStart(readerCall.input).slice(-40) }`)
+					})
 					const prefixCalls = blockStateCalls.slice(0, -1).flatMap((block) => block.calls)
-					codeReads.push({ account, prefixCallCount: prefixCalls.length })
+					codeReplayRequests += 1
+					for (const account of accounts) codeReads.push({ account, prefixCallCount: prefixCalls.length })
 					return blockStateCalls.map((block, blockIndex) => ({
 						...simulatedBlockTemplate,
-						calls: blockIndex === blockStateCalls.length - 1 ? [callResult(encodeFunctionReturn(codeReaderAbi, 'at', [nodeCode(prefixCalls, account)]))] : block.calls.map(() => callResult('0x')),
+						calls: blockIndex === blockStateCalls.length - 1 ? accounts.map((account) => callResult(encodeFunctionReturn(codeReaderAbi, 'at', [nodeCode(prefixCalls, account)]))) : block.calls.map(() => callResult('0x')),
 					}))
 				}
 				throw new Error(`Unexpected RPC method ${ request.method }`)
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		return { ethereum, codeReads, nonceLookups }
+		return { ethereum, codeReads, nonceLookups, getCodeReplayRequests: () => codeReplayRequests }
 	}
 	const stateBase = {
 		blockNumber: 1n,
@@ -831,7 +837,7 @@ describe('delegate clearing in simulation', () => {
 		simulationStateInput: [blockOf(transactions)],
 		simulationOverrides,
 		simulatedBlocks: [{
-			stateOverrides: simulationOverrides,
+			effectiveStateOverrides: simulationOverrides,
 			simulatedTransactions: transactions.map((preSimulationTransaction) => ({
 				realizedGasPrice: 1n,
 				preSimulationTransaction,
@@ -844,7 +850,7 @@ describe('delegate clearing in simulation', () => {
 			blockBaseFeePerGas: 1n,
 		}],
 	})
-	const visualizedDelegatesOf = async (simulationState: SimulationState, nodeCode: (prefixCalls: readonly PrefixCall[], account: bigint) => string) => {
+	const visualizedDelegatesOf = async (simulationState: SimulationState, nodeCode: (prefixCalls: readonly PrefixCall[], account: bigint) => string, subsequentStates: readonly SimulationState[] = []) => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		const fakeNode = createFakeNode(nodeCode)
@@ -854,14 +860,16 @@ describe('delegate clearing in simulation', () => {
 		console.error = () => undefined
 		const visualized = await (async () => {
 			try {
-				return await visualizeSimulatorState(simulationState, fakeNode.ethereum, new TokenPriceService(fakeNode.ethereum, 60000), undefined)
+				let visualized = await visualizeSimulatorState(simulationState, fakeNode.ethereum, new TokenPriceService(fakeNode.ethereum, 60000), undefined)
+				for (const next of subsequentStates) visualized = await visualizeSimulatorState(next, fakeNode.ethereum, new TokenPriceService(fakeNode.ethereum, 60000), undefined)
+				return visualized
 			} finally {
 				console.warn = originalConsole.warn
 				console.error = originalConsole.error
 			}
 		})()
 		const delegates = visualized.visualizedSimulationState.visualizedBlocks.flatMap((block) => block.simulatedAndVisualizedTransactions.map((visualizedTransaction) => visualizedTransaction.transaction.delegationAddress?.address))
-		return { delegates, codeReads: fakeNode.codeReads, nonceLookups: fakeNode.nonceLookups }
+		return { delegates, codeReads: fakeNode.codeReads, nonceLookups: fakeNode.nonceLookups, codeReplayRequests: fakeNode.getCodeReplayRequests() }
 	}
 	// Reads run in parallel, so they are compared in account order.
 	const sortedReads = (reads: readonly { readonly account: bigint, readonly prefixCallCount: number }[]) => [...reads].sort((first, second) => first.account < second.account ? -1 : first.account > second.account ? 1 : 0)
@@ -883,6 +891,27 @@ describe('delegate clearing in simulation', () => {
 		const result = await visualizedDelegatesOf(successfulStateOf([delegatedAccountCall(1n), delegatedAccountCall(2n, [signAuthorization(restoredDelegate, 2n)]), delegatedAccountCall(3n)], clearedDelegatedAccount), (_prefixCalls, account) => account === delegatedAccount ? delegationDesignator(restoredDelegate) : '0x')
 		assert.deepEqual(result.delegates, [undefined, restoredDelegate, restoredDelegate])
 		assert.deepEqual(result.codeReads, [{ account: delegatedAccount, prefixCallCount: 2 }])
+	})
+
+	test('batches account observations by authorization prefix and reuses them across identical metadata renders', async () => {
+		const state = successfulStateOf([delegatedAccountCall(1n), sponsoredTransaction(2n, [signAuthorization(restoredDelegate, 2n)]), delegatedAccountCall(3n)], {})
+		const result = await visualizedDelegatesOf(state, (_prefix, account) => account === delegatedAccount ? delegationDesignator(restoredDelegate) : '0x', [structuredClone(state)])
+		assert.deepEqual(result.delegates, [onChainDelegate, undefined, restoredDelegate])
+		assert.equal(result.codeReplayRequests, 1, 'both senders share one prefix replay, and a repeated render makes none')
+		assert.equal(result.codeReads.length, 2)
+	})
+
+	test('a different captured override does not reuse a previous account-code observation', async () => {
+		const state = successfulStateOf([delegatedAccountCall(1n), delegatedAccountCall(2n, [signAuthorization(restoredDelegate, 2n)])], {})
+		const changed = { ...state, simulationOverrides: clearedDelegatedAccount }
+		const result = await visualizedDelegatesOf(state, () => delegationDesignator(restoredDelegate), [changed])
+		assert.equal(result.codeReplayRequests, 2)
+	})
+
+	test('account-code observations are not reused on a different parent block', async () => {
+		const state = successfulStateOf([delegatedAccountCall(1n), delegatedAccountCall(2n, [signAuthorization(restoredDelegate, 2n)])], {})
+		const result = await visualizedDelegatesOf(state, () => delegationDesignator(restoredDelegate), [{ ...state, blockNumber: state.blockNumber + 1n }])
+		assert.equal(result.codeReplayRequests, 2)
 	})
 
 	test('without any authorization in the stack nothing is read: a cleared account shows no delegate and an uncleared one its on-chain delegate', async () => {
@@ -1009,4 +1038,24 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(withoutOverrides.rpcBlocks.length, 0)
 		assert.equal(withoutOverrides.inputBlocks.length, 0)
 	})
+})
+
+test('legacy result-block overrides decode as effective state while replay inputs keep their raw overrides', async () => {
+	const { SimulationStateBlock } = await import('../../app/ts/types/visualizer-types.js')
+	const raw = { [addressString(activeAddress)]: { balance: 1n } }
+	const block = SimulationStateBlock.parse({
+		stateOverrides: { [addressString(activeAddress)]: { code: '0x' } },
+		simulatedTransactions: [],
+		signedMessages: [],
+		blockTimestamp: '0x1',
+		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0x0', deltaUnit: 'Seconds' },
+		blockBaseFeePerGas: '0x1',
+	})
+	assert.deepEqual(block.effectiveStateOverrides, { [addressString(activeAddress)]: { code: new Uint8Array() } })
+	assert.equal('stateOverrides' in block, false)
+	const serialized = SimulationStateBlock.serialize(block)
+	assert.equal('effectiveStateOverrides' in serialized, true)
+	assert.equal('stateOverrides' in serialized, false)
+	const input = createSimulatedExecutionInput([{ stateOverrides: raw, transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }], { [addressString(activeAddress)]: { code: new Uint8Array() } })
+	assert.deepEqual(input.value[0]?.stateOverrides, raw)
 })

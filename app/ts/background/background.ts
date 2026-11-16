@@ -21,7 +21,7 @@ import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { buildExecutionSimulationStateFromPreparedInput, getSimulationInputForPreview, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
+import { buildExecutionSimulationStateFromPreparedInput, getSimulationInputForPreview, getUpdatedSimulationStackSnapshot, repairFeesAndNoncesAndProjectSafeCallsForRpc } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
@@ -78,7 +78,7 @@ async function handleRPCRequest(
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 		if (simulationInputPromise === undefined) simulationInputPromise = (async () => {
-			return await prepareSimulationInputForRpc(await getSimulationInputForPreview({ kind: 'simulation-stack' }, settings), ethereum)
+			return await repairFeesAndNoncesAndProjectSafeCallsForRpc(await getSimulationInputForPreview({ kind: 'simulation-stack' }, settings), ethereum)
 		})()
 		return await simulationInputPromise
 	}

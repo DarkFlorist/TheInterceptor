@@ -5,7 +5,7 @@ import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_
 import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
 import { createSafeExecutionCallFormation, createSafeNonceAfterInputReader, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import { type EthereumClientService, getDelegateFromCode, getExecutedTransaction } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getSimulatedCodeFromInput, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getSimulatedCodesAfterInput, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
@@ -263,7 +263,7 @@ async function withDelegationLookupReporting<T>(address: bigint, lookup: () => P
 	}
 }
 
-// The delegate each transaction's sender runs with, read from executed state rather than re-derived from EIP-7702's rules. Code only changes through authorizations, so before the stack's first transaction that carries any, a sender has its initial delegate: what the first block's effective overrides (including delegate clearing) set, else its on-chain one. From such a transaction on, the sender's code is read by re-running the stack up to and including that transaction with the code reader appended in its own block (getSimulatedCodeFromInput), so the stack's own blocks run exactly as simulated. A failed read shows no delegate.
+// The delegate each transaction's sender runs with, read from executed state rather than re-derived from EIP-7702's rules. Accounts at each authorization prefix share one batched replay, cached by exact input and parent hash for repeated visualisations. Code only changes through authorizations, so before the stack's first transaction that carries any, a sender has its initial delegate: what the first block's effective overrides (including delegate clearing) set, else its on-chain one. From such a transaction on, the sender's code is read by re-running the stack up to and including that transaction with the code reader appended in its own block (getSimulatedCodeFromInput), so the stack's own blocks run exactly as simulated. A failed read shows no delegate.
 async function getDelegationEntriesForTransactions(
 	simulationState: SimulationState,
 	ethereum: EthereumClientService,
@@ -282,19 +282,32 @@ async function getDelegationEntriesForTransactions(
 	}))
 	const getSourceKey = ({ sender, readAfter }: DelegateSource) => readAfter === undefined ? `initial:${ addressString(sender) }` : `${ readAfter.blockIndex }:${ readAfter.transactionIndex }:${ addressString(sender) }`
 	const uniqueSources = Array.from(new Map(sources.flat().map((source) => [getSourceKey(source), source] as const)).values())
-	const readDelegate = async ({ sender, readAfter }: DelegateSource): Promise<bigint | undefined> => {
-		if (readAfter === undefined) {
-			const overriddenCode = firstBlockOverrides[addressString(sender)]?.code
-			if (overriddenCode !== undefined) return getDelegateFromCode(overriddenCode)
-			return await withDelegationLookupReporting(sender, async () => await ethereum.getDelegation(sender, 'latest', requestAbortController))
-		}
-		const block = blocks[readAfter.blockIndex]
-		if (block === undefined) throw new Error('Delegate read block index overflow')
-		const prefix = [...blocks.slice(0, readAfter.blockIndex), modifyObject(block, { transactions: block.transactions.slice(0, readAfter.transactionIndex + 1) })]
-		const code = await withDelegationLookupReporting(sender, async () => await getSimulatedCodeFromInput(ethereum, requestAbortController, createSimulatedExecutionInput(prefix, executionInput.simulationOverrides), sender))
-		return code?.statusCode === 'success' ? getDelegateFromCode(code.getCodeReturn) : undefined
+	const initialSources = uniqueSources.filter((source) => source.readAfter === undefined)
+	const initialDelegates = await promiseAllMapAbortSafe(initialSources, async (source) => {
+		const overriddenCode = firstBlockOverrides[addressString(source.sender)]?.code
+		const delegate = overriddenCode !== undefined ? getDelegateFromCode(overriddenCode) : await withDelegationLookupReporting(source.sender, async () => await ethereum.getDelegation(source.sender, simulationState.blockNumber, requestAbortController))
+		return [getSourceKey(source), delegate] as const
+	})
+	const replayGroups = new Map<string, { readonly blockIndex: number, readonly transactionIndex: number, readonly sources: [DelegateSource, ...DelegateSource[]] }>()
+	for (const source of uniqueSources) {
+		if (source.readAfter === undefined) continue
+		const { blockIndex, transactionIndex } = source.readAfter
+		const key = `${ blockIndex }:${ transactionIndex }`
+		const group = replayGroups.get(key)
+		if (group === undefined) replayGroups.set(key, { blockIndex, transactionIndex, sources: [source] })
+		else group.sources.push(source)
 	}
-	const delegatesBySource = new Map(await promiseAllMapAbortSafe(uniqueSources, async (source) => [getSourceKey(source), await readDelegate(source)] as const))
+	const replayedDelegates = await promiseAllMapAbortSafe([...replayGroups.values()], async ({ blockIndex, transactionIndex, sources }) => {
+		const block = blocks[blockIndex]
+		if (block === undefined) throw new Error('Delegate read block index overflow')
+		const prefix = [...blocks.slice(0, blockIndex), modifyObject(block, { transactions: block.transactions.slice(0, transactionIndex + 1) })]
+		const codes = await withDelegationLookupReporting(sources[0].sender, async () => await getSimulatedCodesAfterInput(ethereum, requestAbortController, createSimulatedExecutionInput(prefix, executionInput.simulationOverrides), sources.map((source) => source.sender), simulationState.blockNumber))
+		return sources.map((source, index) => {
+			const code = codes?.[index]
+			return [getSourceKey(source), code?.statusCode === 'success' ? getDelegateFromCode(code.getCodeReturn) : undefined] as const
+		})
+	})
+	const delegatesBySource = new Map([...initialDelegates, ...replayedDelegates.flat()])
 	const delegates = Array.from(new Set(Array.from(delegatesBySource.values()).filter((delegate): delegate is bigint => delegate !== undefined)))
 	const delegateEntries = new Map(await promiseAllMapAbortSafe(delegates, async (delegate) =>
 		[addressString(delegate), await withDelegationLookupReporting(delegate, async () => await identifyAddress(ethereum, requestAbortController, delegate))] as const))
@@ -330,7 +343,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
 		// The execution preview continues the vote's own preview, so it shares its what-if state: the opt-in delegate clearing applies only in simulation mode, where nothing is signed, and getSimulationOverridesForPreview returns no override in signing mode.
-		const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc(await getSimulationInputForPreview({ kind: 'governance-execution-on-stack' }, settingsSnapshot), ethereum)
+		const simulationInput = await projectSafeCallsForRpcWithoutRepair(await getSimulationInputForPreview({ kind: 'governance-execution-on-stack' }, settingsSnapshot), ethereum)
 		const executionTransactionMetadata = {
 			website: pendingTransaction.transactionToSimulate.website,
 			created: new Date(),
@@ -368,7 +381,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		const signingSnapshot = await captureSimulationSnapshotForPreview({ kind: 'safe-transaction-signature' })
-		const simulationInput = await prepareSafeExecutionsOfSimulationInputForRpc(signingSnapshot.simulationInput, ethereumClientService)
+		const simulationInput = await projectSafeCallsForRpcWithoutRepair(signingSnapshot.simulationInput, ethereumClientService)
 		await assertSafeTxPreviewAllowed(ethereumClientService, gnosisSafeMessage.verifyingContract.address, gnosisSafeMessage.activeAddress.address, gnosisSafeMessage.message.domain.chainId)
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
@@ -467,7 +480,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through repairFeesAndNoncesAndProjectSafeCallsForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
 export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
@@ -477,12 +490,12 @@ export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationSta
 }
 
 // prepareSafeExecutionsForRpc for a captured simulation input. The Safe executions' approvals and executor funding go into the first block's stateOverrides, while the captured initial account state (such as delegate clearing) stays in simulationOverrides; prepareEthSimulateV1Input merges both per account into the first block, so neither replaces the other.
-export const prepareSafeExecutionsOfSimulationInputForRpc = async (simulationInput: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => ({ ...simulationInput, value: await prepareSafeExecutionsForRpc(simulationInput.value, ethereum, simulationInput.simulationOverrides) })
+export const projectSafeCallsForRpcWithoutRepair = async (simulationInput: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => ({ ...simulationInput, value: await prepareSafeExecutionsForRpc(simulationInput.value, ethereum, simulationInput.simulationOverrides) })
 
 // The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Safe layer owns it (createSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Safe execution simulation.
 export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment) => gasPayment === 'simulated-safe-executor' ? createSafeExecutionCallFormation(ethereum) : undefined
 
-export const prepareSimulationInputForRpc = async (input: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => {
+export const repairFeesAndNoncesAndProjectSafeCallsForRpc = async (input: SimulationExecutionInput, ethereum: EthereumClientService): Promise<SimulationExecutionInput> => {
 	let simulationInput = input.value
 	const { simulationOverrides } = input
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) await validateSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
@@ -514,7 +527,7 @@ export const buildExecutionSimulationStateFromPreparedInput = async (preparedSim
 }
 
 export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationExecutionInput, ethereum: EthereumClientService) => {
-	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
+	return await buildSimulationStateFromPreparedInput(await repairFeesAndNoncesAndProjectSafeCallsForRpc(simulationInput, ethereum), ethereum)
 }
 
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {

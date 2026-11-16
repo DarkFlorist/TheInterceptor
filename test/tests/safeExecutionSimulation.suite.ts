@@ -927,10 +927,10 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const [stackedOperation] = (await modules.getInterceptorTransactionStack()).operations
 	if (stackedOperation?.type !== 'Transaction') throw new Error('Expected the Safe transaction on the simulation stack')
 	assert.deepEqual(stackedOperation.preSimulationTransaction.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
-	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const { getCurrentSimulationInput, repairFeesAndNoncesAndProjectSafeCallsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 	const stackInput = await getCurrentSimulationInput()
 	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
-	const preparedStackInput = await prepareSimulationInputForRpc(createSimulatedExecutionInput(stackInput), simulator.ethereum)
+	const preparedStackInput = await repairFeesAndNoncesAndProjectSafeCallsForRpc(createSimulatedExecutionInput(stackInput), simulator.ethereum)
 	assert.equal(preparedStackInput.value.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the stacked transaction keeps running through the Safe')
 	const { requestInterceptorSimulationInput } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const simulationExport = await requestInterceptorSimulationInput(simulator.ethereum)
@@ -971,8 +971,8 @@ async function startSafeExecutionStack() {
 // Checks that every stacked transaction is found by its own hash, both as a transaction and as a receipt.
 async function assertEachFoundByOwnHash(simulator: ReturnType<typeof createRecordingSimulator>, stackedTransactions: readonly PreSimulationTransaction[]) {
 	assert.equal(new Set(stackedTransactions.map((transaction) => transaction.signedTransaction.hash)).size, stackedTransactions.length, 'every stacked transaction has its own hash')
-	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
-	const preparedInput = await prepareSimulationInputForRpc(createSimulatedExecutionInput(await getCurrentSimulationInput()), simulator.ethereum)
+	const { getCurrentSimulationInput, repairFeesAndNoncesAndProjectSafeCallsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const preparedInput = await repairFeesAndNoncesAndProjectSafeCallsForRpc(createSimulatedExecutionInput(await getCurrentSimulationInput()), simulator.ethereum)
 	const executionState = await createExecutionSimulationState(simulator.ethereum, undefined, preparedInput)
 	for (const stacked of stackedTransactions) {
 		const lookedUp = await getSimulatedTransactionByHashFromInput(simulator.ethereum, undefined, preparedInput, stacked.signedTransaction.hash)

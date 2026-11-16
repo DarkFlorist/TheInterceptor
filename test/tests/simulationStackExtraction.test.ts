@@ -18,7 +18,7 @@ const simulationStateWithBalanceBelowBaseFee: ResolvedSimulationState = {
 		simulationOverrides: {},
 		simulationStateInput: [],
 		simulatedBlocks: [{
-			stateOverrides: {},
+			effectiveStateOverrides: {},
 			simulatedTransactions: [{
 				realizedGasPrice: 2n,
 				preSimulationTransaction: {

@@ -47,7 +47,7 @@ export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState): G
 	// The first simulated block already contains the captured initial overrides (such as the opt-in, simulation-mode-only delegate clearing that the option text tells users connected websites see), so listing them first only matters when the stack has no simulated blocks.
 	const initialOverrides = simulationState.value.simulationOverrides ?? {}
 	return {
-		stateOverrides: mergeSimulationOverrides([initialOverrides, ...simulationState.value.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)]),
+		stateOverrides: mergeSimulationOverrides([initialOverrides, ...simulationState.value.simulatedBlocks.map((simulatedBlock) => simulatedBlock.effectiveStateOverrides)]),
 		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulatedTransaction), simulatedTransaction }))
 	}
 }

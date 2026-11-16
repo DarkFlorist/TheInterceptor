@@ -143,7 +143,7 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 }))
 
 /**
- * A transaction of a simulation input, which prepareSimulationInputForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
+ * A transaction of a simulation input, which repairFeesAndNoncesAndProjectSafeCallsForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
  * Only the preparation sets executedTransaction. The simulation stack, its imports and pending transactions hold PreSimulationTransaction, whose parser drops the field, so no stored or imported transaction can run a call other than the one it shows.
  */
 export type SimulationInputTransaction = funtypes.Static<typeof SimulationInputTransaction>
@@ -256,10 +256,8 @@ export const toSimulationStateInputMinimalData = (simulationStateInput: readonly
 	simulateWithZeroBaseFee: block.simulateWithZeroBaseFee,
 }))
 
-export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
-export const SimulationStateBlock = funtypes.Intersect(
+const SimulationStateBlockFields = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		stateOverrides: StateOverrides,
 		simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 		signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 		blockTimestamp: EthereumTimestamp,
@@ -270,6 +268,18 @@ export const SimulationStateBlock = funtypes.Intersect(
 		blockHeader: EthSimulateV1BlockHeader,
 	}),
 )
+
+const CurrentSimulationStateBlock = SimulationStateBlockFields.And(funtypes.ReadonlyObject({ effectiveStateOverrides: StateOverrides }))
+export type SimulationStateBlock = funtypes.Static<typeof CurrentSimulationStateBlock>
+
+// Result blocks carry effective overrides; raw replay inputs retain stateOverrides. Older persisted results used the ambiguous field name.
+export const SimulationStateBlock = funtypes.Union(CurrentSimulationStateBlock, SimulationStateBlockFields.And(funtypes.ReadonlyObject({ stateOverrides: StateOverrides })).withParser({
+	parse: ({ stateOverrides, ...block }) => ({ success: true, value: { ...block, effectiveStateOverrides: stateOverrides } }),
+	serialize: (block: SimulationStateBlock) => {
+		const { effectiveStateOverrides, ...fields } = block
+		return { success: true, value: { ...fields, stateOverrides: effectiveStateOverrides } }
+	},
+}))
 
 type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
 const SimulationStateSuccess = funtypes.ReadonlyObject({

@@ -496,10 +496,10 @@ const FEE_VALIDATING_BASE_FEE_PER_GAS = 100_000_000_000n
 export const TOO_LITTLE_ETH_FOR_FEES = 1_000_000_000_000n
 
 // Like geth's eth_simulateV1 without validation, a call that pays fees must cover the block base fee while a zero-fee call skips the check. Every account holds the given balance.
-export function createFeeValidatingSimulator(accountBalance: bigint) {
+export function createFeeValidatingSimulator(accountBalance: bigint, rpcNetwork = fakeRpcNetwork) {
 	const block = { ...fakeBlock, baseFeePerGas: FEE_VALIDATING_BASE_FEE_PER_GAS }
 	const requestHandler = {
-		rpcUrl: fakeRpcNetwork.httpsRpc,
+		rpcUrl: rpcNetwork.httpsRpc,
 		clearCache() { return undefined },
 		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
 			switch (rpcRequest.method) {
@@ -525,7 +525,7 @@ export function createFeeValidatingSimulator(accountBalance: bigint) {
 			}
 		},
 	}
-	const feeValidatingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const feeValidatingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
 	return {
 		ethereum: feeValidatingEthereum,
 		tokenPriceService: new modules.TokenPriceService(feeValidatingEthereum, 60_000),

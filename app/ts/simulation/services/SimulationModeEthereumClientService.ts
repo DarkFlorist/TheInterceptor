@@ -2,8 +2,8 @@ import type { Settings } from '../../types/interceptor-messages.js'
 import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
-import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
+import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringifyJSONWithBigInts, stringToUint8Array } from '../../utils/bigint.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB, NEW_BLOCK_ABORT } from '../../utils/constants.js'
 import { authorizesExecutedCall, type SimulatedTransaction, type SimulationState, type TokenBalancesAfter, type PreSimulationTransaction, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, toSimulationStateInputMinimalData, toSimulationStateInputMinimalTransaction, type SimulationExecutionInput, type SimulatedExecutionInput, createSimulatedExecutionInput, getSimulationExecutionInputFromState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -342,11 +342,11 @@ const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBloc
 	}
 }
 
-const simulateBlockCallWithPreparedInputContext = async (
+const simulateBlockCallsWithPreparedInputContext = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	context: PreparedSimulationExecutionContext | undefined,
-	transaction: SimulatedBlockCall,
+	transactions: readonly SimulatedBlockCall[],
 	options: SimulateBlockCallOptions,
 ) => {
 	const extraOverrides = options.extraOverrides ?? {}
@@ -362,7 +362,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{
-			calls: [createSimulatedBlockCall(transaction)],
+			calls: transactions.map(createSimulatedBlockCall),
 			blockOverrides: {
 				...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
@@ -374,8 +374,16 @@ const simulateBlockCallWithPreparedInputContext = async (
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
 	const lastBlock = simulationResult[simulationResult.length - 1]
-	return lastBlock?.calls[0]
+	return lastBlock?.calls
 }
+
+const simulateBlockCallWithPreparedInputContext = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	context: PreparedSimulationExecutionContext | undefined,
+	transaction: SimulatedBlockCall,
+	options: SimulateBlockCallOptions,
+) => (await simulateBlockCallsWithPreparedInputContext(ethereumClientService, requestAbortController, context, [transaction], options))?.[0]
 
 const simulateBlockCallOnTopOfSimulationInput = async (
 	ethereumClientService: EthereumClientService,
@@ -509,7 +517,7 @@ const inspectSimulationInput = async (
 
 const getExecutionSimulationStateBlockBase = (callResult: GroupedEthSimulateV1BlockResult, effectiveStateOverrides: StateOverrides) => ({
 	signedMessages: callResult.inputBlock.signedMessages || [],
-	stateOverrides: effectiveStateOverrides,
+	effectiveStateOverrides,
 	blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 	blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 	blockBaseFeePerGas: callResult.baseFeePerGas,
@@ -566,7 +574,7 @@ export const createSimulationState = async (ethereumClientService: EthereumClien
 		requestAbortController,
 		executionSimulationState.simulatedBlocks.map((block) => ({
 			inputBlock: {
-				stateOverrides: block.stateOverrides,
+				stateOverrides: block.effectiveStateOverrides,
 				transactions: block.simulatedTransactions.map((transaction) => toSimulationStateInputMinimalTransaction(transaction.preSimulationTransaction)),
 				signedMessages: block.signedMessages,
 				blockTimeManipulation: block.blockTimeManipulation,
@@ -930,7 +938,7 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 	const ethBalances = new Map<bigint, bigint>()
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
 	for (const block of currentState.simulatedBlocks) {
-		for (const [overrideAddress, override] of Object.entries(block.stateOverrides)) {
+		for (const [overrideAddress, override] of Object.entries(block.effectiveStateOverrides)) {
 			if (override?.balance !== undefined) ethBalances.set(EthereumQuantity.parse(overrideAddress), override.balance)
 		}
 		for (const transaction of block.simulatedTransactions) {
@@ -1917,4 +1925,56 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 		? { ...request, params: [request.params[0], clampedBlockTag] }
 		: { ...request, params: [request.params[0], clampedBlockTag, request.params[2]] }
 	return await ethereumClientService.getFeeHistory(clampedRequest, requestAbortController)
+}
+
+
+type SimulatedAccountCode = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure' }
+const accountCodeReads = new WeakMap<EthereumClientService, Map<string, readonly SimulatedAccountCode[]>>()
+const MAX_ACCOUNT_CODE_READS_PER_CLIENT = 64
+
+// All accounts observed after one authorization prefix share one replay and one reader block. Cache only successful observations, scoped to the client, exact prepared prefix, queried accounts and parent block hash: metadata re-renders reuse them, while a new block, reorg, input or override does not.
+export async function getSimulatedCodesAfterInput(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, input: SimulationExecutionInput, addresses: readonly bigint[], parentBlockNumber: bigint): Promise<readonly SimulatedAccountCode[]> {
+	if (requestAbortController?.signal.aborted) throw new Error(NEW_BLOCK_ABORT)
+	if (addresses.length === 0) return []
+	const context = await createPreparedSimulationExecutionContext(ethereum, requestAbortController, input, parentBlockNumber)
+	if (context === undefined) throw new Error('Account code replay requires a simulation prefix')
+	if (requestAbortController?.signal.aborted) throw new Error(NEW_BLOCK_ABORT)
+	const key = stringifyJSONWithBigInts([context.parentBlock.hash, context.prepared.request, addresses])
+	const cache = accountCodeReads.get(ethereum) ?? new Map<string, readonly SimulatedAccountCode[]>()
+	accountCodeReads.set(ethereum, cache)
+	const cached = cache.get(key)
+	if (cached !== undefined) return cached
+	const nonce = await getSimulatedTransactionCountFromPreparedInputContext(ethereum, requestAbortController, context, MOCK_ADDRESS, 'latest')
+	const calls = addresses.map((address, index) => ({
+		type: '1559' as const,
+		from: MOCK_ADDRESS,
+		nonce: nonce + BigInt(index),
+		chainId: ethereum.getChainId(),
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		to: GET_CODE_CONTRACT,
+		value: 0n,
+		input: stringToUint8Array(encodeFunctionCall(getCodeAbi, 'at', [addressString(address)])),
+		accessList: [],
+	}))
+	try {
+		const results = await simulateBlockCallsWithPreparedInputContext(ethereum, requestAbortController, context, calls, { extraOverrides: getCodeStateOverrides() })
+		if (requestAbortController?.signal.aborted) throw new Error(NEW_BLOCK_ABORT)
+		const codes: readonly SimulatedAccountCode[] = addresses.map((_, index) => {
+			const result = results?.[index]
+			if (result?.status !== 'success') return { statusCode: 'failure' }
+			return { statusCode: 'success', getCodeReturn: EthereumData.parse(decodeFunctionOutput(getCodeAbi, 'at', result.returnData)) }
+		})
+		if (codes.every((code) => code.statusCode === 'success')) {
+			if (cache.size >= MAX_ACCOUNT_CODE_READS_PER_CLIENT) {
+				const oldest = cache.keys().next().value
+				if (oldest !== undefined) cache.delete(oldest)
+			}
+			cache.set(key, codes)
+		}
+		return codes
+	} catch (error: unknown) {
+		if (error instanceof JsonRpcResponseError) return addresses.map(() => ({ statusCode: 'failure' }))
+		throw error
+	}
 }
