@@ -2694,6 +2694,48 @@ describe('network transition snapshot', () => {
 		}
 	})
 
+	test.each([false, true])('a gas edit admitted before a network switch cannot mutate the new stack (switchBack=%s)', async (switchBack) => {
+		installBrowserMock()
+		const modules = await loadModules()
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkA })
+		const { owner, retireAll } = createRecordingServicesOwner(networkA)
+		try {
+			const admitted = await modules.readNetworkSnapshot(owner)
+			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkB, promptForAccessesIfNeeded: false })
+			if (switchBack) await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
+			const operations = [createStackedTransaction(1n, switchBack ? networkA.chainId : networkB.chainId, STACKED_ON_A_RECIPIENT)]
+			await modules.updateInterceptorTransactionStack(() => ({ operations }))
+			await modules.forceSetGasLimitForTransaction(admitted, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: 1n, gasLimit: 25_000n } })
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, operations)
+		} finally {
+			retireAll()
+		}
+	})
+
+	test('a gas edit admitted with unavailable restart cleanup cannot write even after cleanup recovers', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		await modules.changeSimulationMode({ simulationMode: true, rpcNetwork: networkB })
+		await browserStorageLocalSet({ simulationStackChainId: networkA.chainId })
+		const operations = [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT)]
+		await modules.updateInterceptorTransactionStack(() => ({ operations }))
+		const { owner, retireAll } = createRecordingServicesOwner(networkB)
+		try {
+			failNextStorageWrite('interceptorTransactionStack', new Error('Restart cleanup is unavailable'))
+			const admitted = await modules.readNetworkSnapshot(owner)
+			assert.equal(admitted.simulation.kind, 'unavailable')
+			assert.equal((await modules.readNetworkSnapshot(owner)).simulation.kind, 'loaded')
+			const recoveredOperations = [createStackedTransaction(1n, networkB.chainId, STACKED_ON_A_RECIPIENT)]
+			await modules.updateInterceptorTransactionStack(() => ({ operations: recoveredOperations }))
+			await assert.rejects(modules.forceSetGasLimitForTransaction(admitted, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: 1n, gasLimit: 25_000n } }), /Restart cleanup is unavailable/u)
+			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, recoveredOperations)
+		} finally {
+			await modules.readNetworkSnapshot(owner)
+			retireAll()
+		}
+	})
+
 	test.each(['import', 'delay', 'gas', 'reset', 'remove'])('%s stack writes finish before a waiting network switch can commit', async (mutation) => {
 		installBrowserMock()
 		const modules = await loadModules()
@@ -2717,7 +2759,7 @@ describe('network transition snapshot', () => {
 			switch (mutation) {
 				case 'import': return await modules.importSimulationStack(admitted, stackImportRequest)
 				case 'delay': return await modules.setTransactionOrMessageBlockTimeManipulator(admitted, { method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: 1n }, blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 15n, deltaUnit: 'Seconds' } } })
-				case 'gas': return await modules.forceSetGasLimitForTransaction(owner, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: 1n, gasLimit: 25_000n } })
+				case 'gas': return await modules.forceSetGasLimitForTransaction(admitted, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: 1n, gasLimit: 25_000n } })
 				case 'reset': return await modules.resetSimulationStateFromConfig(owner)
 				case 'remove': return await modules.removeTransactionOrSignedMessage(admitted, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
 				default: throw new Error('Unexpected mutation')

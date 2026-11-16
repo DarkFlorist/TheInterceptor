@@ -47,7 +47,7 @@ const popupMessageHandlers = {
 	popup_openWebPage: popupMessageHandler('popup_openWebPage', async (_context, request) => await openWebPage(request)),
 	popup_clearUnexpectedError: popupMessageHandler('popup_clearUnexpectedError', async () => await setLatestUnexpectedError(undefined)),
 	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)),
-	popup_forceSetGasLimitForTransaction: popupMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => await forceSetGasLimitForTransaction(context.simulationServicesOwner, request)),
+	popup_forceSetGasLimitForTransaction: popupSnapshotMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => await forceSetGasLimitForTransaction(context.network, request)),
 	popup_changePreSimulationBlockTimeManipulation: popupSnapshotMessageHandler('popup_changePreSimulationBlockTimeManipulation', async (context, request) => {
 		return await changePreSimulationBlockTimeManipulation(context.network, request)
 	}),

@@ -2,7 +2,7 @@ import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
-import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, runNetworkTransition, runSimulationStackMutation, runStackIndependentNetworkTask, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
+import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest, runSimulationStackMutation, runStackIndependentNetworkTask, type NetworkRead, type NetworkSnapshot } from './networkTransitionLock.js'
 
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, requireSimulationSnapshot, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
@@ -1082,14 +1082,12 @@ export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function forceSetGasLimitForTransaction(simulationServicesOwner: SimulationServicesReader, parsedRequest: ForceSetGasLimitForTransaction) {
-	const network = await runNetworkTransition(async (reads) => {
-		await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit)
-		return await reads.captureNetworkSnapshot(simulationServicesOwner.getCurrent)
-	})
-	const { ethereum, tokenPriceService } = network.services
+export async function forceSetGasLimitForTransaction(network: NetworkSnapshot, parsedRequest: ForceSetGasLimitForTransaction) {
+	const committed = await runSimulationStackMutation(network, async () => await setGasLimitForTransaction(parsedRequest.data.transactionIdentifier, parsedRequest.data.gasLimit))
+	if (committed === undefined) return
+	const { ethereum, tokenPriceService } = committed.network.services
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await refreshPopupConfirmTransactionSimulation(network)
+	await refreshPopupConfirmTransactionSimulation(committed.network)
 }
 
 export async function changePreSimulationBlockTimeManipulation(network: NetworkSnapshot, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
