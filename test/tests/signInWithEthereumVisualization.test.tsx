@@ -121,15 +121,18 @@ async function visualizeSignIn(message: string, requester?: Requester) {
 }
 
 describe('Sign-In with Ethereum personal_sign visualization', () => {
-	test('reads the request origin from the same content script port URL as the connection website origin', () => {
+	test('reads the captured origin only for the website owning the connection', () => {
 		const socket = { tabId: 7, connectionName: 3n }
 		const port = { name: '0x3', sender: { url: 'http://localhost:3000/login?next=%2F' } }
 		// The connection is registered the way onContentScriptConnected does it, with its website origin from getFrameOrigins.
-		const { websiteOrigin } = getFrameOrigins(port.sender.url)
-		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: false } } }]])
+		const frameOrigins = getFrameOrigins(port.sender.url)
+		const { websiteOrigin } = frameOrigins
+		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, ...frameOrigins, approved: true, wantsToConnect: false } } }]])
 		assert.equal(websiteOrigin, 'localhost:3000')
-		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket), `http://${ websiteOrigin }`)
-		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }), undefined)
+		port.sender.url = 'https://attacker.example/'
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, 'attacker.example'), undefined)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, websiteOrigin), `http://${ websiteOrigin }`)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }, websiteOrigin), undefined)
 	})
 
 	test('visualizes a sign-in message from the website it names without quarantine', async () => {
