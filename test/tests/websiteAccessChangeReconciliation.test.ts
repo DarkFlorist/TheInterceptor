@@ -81,7 +81,7 @@ function makeReloadStepReject(reloadStepError: Error) {
 	spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reloadStepError })
 }
 
-const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategy').mockImplementation(async () => {
+const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => {
 	if (contentScriptUpdateError !== undefined) throw contentScriptUpdateError
 })
 
@@ -140,31 +140,16 @@ describe('removeWebsiteAddressAccess', () => {
 	})
 })
 
-describe('removeWebsiteAccess', () => {
-	test('still de-approves the connection and rethrows without notifying the popup when the content script injection update rejects', async () => {
-		const { modules, handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled: true })
-		const contentScriptUpdateError = new Error('content script update failed')
-		const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate(contentScriptUpdateError)
-
-		await assert.rejects(handlers.removeWebsiteAccess(), (error) => error === contentScriptUpdateError)
-
-		assert.equal(contentScriptInjectionUpdate.mock.calls.length, 1)
-		assert.deepEqual((await modules.getSettings()).websiteAccess, [])
-		assertConnectionDeApproved()
-		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
-	})
-})
-
-describe('changeInterceptorAccess', () => {
-	test('updates the content scripts, then reloads the connected tabs, then reconciles, then notifies the popup', async () => {
+describe('website access registration and reconciliation', () => {
+	test('registers and reloads before reconciling and notifying the popup', async () => {
 		const { handlers, sentPopupMessageMethods, sideEffectOrder } = await setUpApprovedConnectionAndOtherTab()
-		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategy').mockImplementation(async () => { sideEffectOrder.push('content script update') })
+		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
 		const reconcileApprovals = accessManagement.updateWebsiteApprovalAccesses
-		spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementation(async (...reconcileArguments) => {
+		spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementation(async (...args) => {
 			sideEffectOrder.push('reconcile')
-			return await reconcileApprovals(...reconcileArguments)
+			return await reconcileApprovals(...args)
 		})
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
@@ -173,106 +158,68 @@ describe('changeInterceptorAccess', () => {
 		assert.equal(sentPopupMessageMethods().at(-1), 'popup_interceptor_access_changed')
 	})
 
-	test('throws without updating the content scripts, reloading tabs, reconciling or notifying the popup when the website access write rejects', async () => {
-		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
-		const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate()
+	test('does not run follow-ups when the initial storage write fails', async () => {
+		const { reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
+		const registration = mockContentScriptInjectionUpdate()
 		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
 		const writeError = new Error('storage write failed')
 		spyOn(browser.storage.local, 'set').mockImplementation(async () => { throw writeError })
 
 		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => error === writeError)
 
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.access, true)
-		assert.equal(contentScriptInjectionUpdate.mock.calls.length, 0)
+		assert.equal(registration.mock.calls.length, 0)
 		assert.deepEqual(reloadedTabIds, [])
 		assert.equal(reconcile.mock.calls.length, 0)
+		assertConnectionStillApproved()
+	})
+
+	test('rolls back a failed registration and reconciles the restored permissions', async () => {
+		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
+		mockContentScriptInjectionUpdate(new Error('registration failed'))
+		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+
+		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
+
+		assert.equal((await modules.getSettings()).websiteAccess[0]?.access, true)
+		assert.equal((await modules.getSettings()).websiteAccess[0]?.interceptorDisabled, false)
+		assert.deepEqual(reloadedTabIds, [])
+		assert.equal(reconcile.mock.calls.length, 1)
+		assertConnectionStillApproved()
+		assert.equal((await modules.getLatestUnexpectedError())?.data.code, 'website_access_content_script_refresh_failed')
+	})
+
+	test('still reconciles restored permissions if reporting a registration failure rejects', async () => {
+		const { handlers, assertConnectionStillApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
+		mockContentScriptInjectionUpdate(new Error('registration failed'))
+		const reportingError = new Error('report failed')
+		spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingError })
+		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+
+		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => error === reportingError)
+
+		assert.equal(reconcile.mock.calls.length, 1)
 		assertConnectionStillApproved()
 		assert.equal(sentPopupMessageMethods().includes('popup_interceptor_access_changed'), false)
 	})
 
-	test('still de-approves the connection and rethrows without notifying the popup when the reload step rejects', async () => {
-		const { handlers, assertConnectionDeApproved, sentPopupMessageMethods } = await setUpApprovedConnectionAndOtherTab()
-		const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate()
-		const reloadStepError = new Error('reload failure report failed')
-		makeReloadStepReject(reloadStepError)
-
-		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => error === reloadStepError)
-
-		assert.equal(contentScriptInjectionUpdate.mock.calls.length, 1)
-		assertConnectionDeApproved()
-		assert.equal(sentPopupMessageMethods().includes('popup_interceptor_access_changed'), false)
-	})
-
-	test('still attempts the reload and de-approves the connection, then rejects with both errors in step order, when the content script update and the reload step reject', async () => {
-		const { handlers, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab()
-		const contentScriptUpdateError = new Error('content script update failed')
-		const reloadStepError = new Error('reload failure report failed')
-		mockContentScriptInjectionUpdate(contentScriptUpdateError)
-		makeReloadStepReject(reloadStepError)
-
-		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => {
-			assert.ok(error instanceof AggregateError)
-			assert.deepEqual(error.errors, [contentScriptUpdateError, reloadStepError])
-			assert.equal(error.message, 'Updating the content script injection failed (content script update failed) and reloading connected tabs failed (reload failure report failed)')
-			return true
-		})
-
-		assertConnectionDeApproved()
-	})
-
-	test('names every failure in step order when the content script update, the reload step and reconciliation all reject', async () => {
-		const { handlers } = await setUpApprovedConnectionAndOtherTab()
-		const contentScriptUpdateError = new Error('content script update failed')
-		const reloadStepError = new Error('reload failure report failed')
-		const reconcileError = new Error('reconciliation failed')
-		mockContentScriptInjectionUpdate(contentScriptUpdateError)
-		makeReloadStepReject(reloadStepError)
-		await makeReconciliationReject(reconcileError)
-
-		await assert.rejects(handlers.denyAccessAndDisableInterceptorInAccessEditor(), (error) => {
-			assert.ok(error instanceof AggregateError)
-			assert.deepEqual(error.errors, [contentScriptUpdateError, reloadStepError, reconcileError])
-			assert.equal(error.message, 'Updating the content script injection failed (content script update failed), reloading connected tabs failed (reload failure report failed), and reconciling website approvals failed (reconciliation failed)')
-			return true
-		})
-	})
-})
-
-describe('disableInterceptor', () => {
-	test('still reloads connected tabs, de-approves the connection and rethrows when the content script injection update rejects', async () => {
-		const { modules, reloadedTabIds, connectedTabIds, handlers, assertConnectionDeApproved } = await setUpApprovedConnectionAndOtherTab()
-		const contentScriptUpdateError = new Error('content script update failed')
-		mockContentScriptInjectionUpdate(contentScriptUpdateError)
-
-		await assert.rejects(handlers.disableInterceptor(), (error) => error === contentScriptUpdateError)
-
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.interceptorDisabled, true)
-		assert.deepEqual(reloadedTabIds, connectedTabIds)
-		assertConnectionDeApproved()
-	})
-})
-
-describe('applyWebsiteAccessUpdate follow-up steps', () => {
-	const followUpCases = [
+	for (const { handler, interceptorDisabled, updatesContentScripts, reloadsTabs } of [
 		{ handler: 'removeWebsiteAccess', interceptorDisabled: false, updatesContentScripts: false, reloadsTabs: false },
-		{ handler: 'removeWebsiteAccess', interceptorDisabled: true, updatesContentScripts: true, reloadsTabs: false },
+		{ handler: 'removeWebsiteAccess', interceptorDisabled: true, updatesContentScripts: true, reloadsTabs: true },
 		{ handler: 'denyAccessInAccessEditor', interceptorDisabled: false, updatesContentScripts: false, reloadsTabs: false },
 		{ handler: 'denyAccessAndDisableInterceptorInAccessEditor', interceptorDisabled: false, updatesContentScripts: true, reloadsTabs: true },
 		{ handler: 'disableInterceptor', interceptorDisabled: false, updatesContentScripts: true, reloadsTabs: true },
 		{ handler: 'disableInterceptor', interceptorDisabled: true, updatesContentScripts: false, reloadsTabs: true },
 		{ handler: 'removeWebsiteAddressAccess', interceptorDisabled: true, updatesContentScripts: false, reloadsTabs: true },
 		{ handler: 'blockExternalRequests', interceptorDisabled: true, updatesContentScripts: false, reloadsTabs: true },
-	] as const
-
-	for (const { handler, interceptorDisabled, updatesContentScripts, reloadsTabs } of followUpCases) {
-		test(`${ handler } on a site with the Interceptor ${ interceptorDisabled ? 'disabled' : 'enabled' } ${ updatesContentScripts ? 'updates' : 'leaves' } the content scripts, ${ reloadsTabs ? 'reloads' : 'does not reload' } the connected tabs and reconciles once`, async () => {
+	] as const) {
+		test(`${ handler } (disabled: ${ interceptorDisabled }) refreshes registration if needed and reconciles once`, async () => {
 			const { reloadedTabIds, connectedTabIds, handlers } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled })
-			const contentScriptInjectionUpdate = mockContentScriptInjectionUpdate()
+			const registration = mockContentScriptInjectionUpdate()
 			const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
 
 			await handlers[handler]()
 
-			assert.equal(contentScriptInjectionUpdate.mock.calls.length, updatesContentScripts ? 1 : 0)
+			assert.equal(registration.mock.calls.length, updatesContentScripts ? 1 : 0)
 			assert.deepEqual(reloadedTabIds, reloadsTabs ? connectedTabIds : [])
 			assert.equal(reconcile.mock.calls.length, 1)
 		})

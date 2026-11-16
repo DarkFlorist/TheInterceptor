@@ -2,21 +2,13 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { replaceElementInReadonlyArray } from '../../utils/typed-arrays.js'
 import { modifyObject } from '../../utils/typescript.js'
-import { applyWebsiteAccessUpdate, type WebsiteAccessMutation } from '../accessManagement.js'
+import { applyWebsiteAccessUpdate, withInterceptorDisabledForWebsite, type WebsiteAccessMutation } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getSettings } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
-
-const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => {
-	const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-	const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined
-	if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
-	return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
-}
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
 	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'always', withInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled))
@@ -63,6 +55,6 @@ export async function allowOrPreventAddressAccessForWebsite(simulationServicesOw
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'never', (previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'whenDisabledSitesChange', (previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

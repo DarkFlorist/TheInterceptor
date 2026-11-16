@@ -6,10 +6,10 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, checkAndThrowRuntimeLastError, getHostWithPort } from '../utils/requests.js'
+import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
+import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -22,8 +22,13 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { getInterceptorDisabledSites, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
-import { getLastKnownCurrentTabId } from './currentTab.js'
+import { getInterceptorDisabledSites } from '../utils/contentScriptInjectionConfiguration.js'
+import { reloadConnectedTabs } from './reloadConnectedTabs.js'
+import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+import { updateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
+import { withWebsiteAccessRollback } from './settingsTransactions.js'
+
+export { reloadConnectedTabs } from './reloadConnectedTabs.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -146,6 +151,17 @@ function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: st
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
+}
+
+export const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => {
+	const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+	const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined
+	if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
+	return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
+}
+
+export async function setInterceptorDisabledForWebsite(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
+	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, withInterceptorDisabledForWebsite(website, interceptorDisabled))
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
@@ -485,45 +501,10 @@ export async function persistWebsiteAccessChange(
 	)
 }
 
-const isMissingTabReloadError = (error: unknown) => {
-	const message = getErrorMessage(error)
-	return message !== undefined && (message.startsWith('No tab with id') || message.includes('Invalid tab ID'))
-}
-
-// A failed current-tab lookup is handled like a per-tab reload failure: reported, not thrown. That is safe because the connected tabs still reload and reconciliation still runs, and missing the current tab is the same outcome as one failed tab reload. runStepsThenReconcileApprovals rethrows only failures that escape reloadConnectedTabs.
-const getCurrentTabIdToReload = async () => {
-	try {
-		return await getLastKnownCurrentTabId()
-	} catch (error) {
-		await reportUnexpectedError(error, { code: 'connected_tab_reload_current_tab_lookup_failed' })
-		return undefined
-	}
-}
-
-export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefresh = Array.from(websiteTabConnections.keys())
-	const currentTabId = await getCurrentTabIdToReload()
-	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
-	for (const tabId of new Set(withCurrentTabId)) {
-		try {
-			await browser.tabs.reload(tabId)
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			if (isMissingTabReloadError(error)) continue
-			await reportUnexpectedError(error, { code: 'connected_tab_reload_failed' })
-		}
-	}
-}
-
 type WebsiteAccessFollowUpStep = { readonly name: string, readonly run: () => Promise<void> }
 type StepFailure = { readonly name: string, readonly error: unknown }
 export type WebsiteAccessMutation = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
-type ConnectedTabsReloadPolicy = 'always' | 'whenDisabledSitesChange' | 'never'
-
-const updateContentScriptInjectionStep: WebsiteAccessFollowUpStep = {
-	name: 'updating the content script injection',
-	run: async () => await updateContentScriptInjectionStrategy(),
-}
+type ConnectedTabsReloadPolicy = 'always' | 'whenDisabledSitesChange'
 
 const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): WebsiteAccessFollowUpStep => ({
 	name: 'reloading connected tabs',
@@ -537,12 +518,11 @@ function describeStepFailures(failures: readonly StepFailure[]) {
 }
 
 // Call this once a website-access change is saved. Steps run in order and a failing step does not stop the later ones, so the saved change always reaches open connections. Reload before reconciling so outgoing pages drop their connections before reconciliation can re-prompt them. One failure is rethrown as is; several are thrown together in step order so none hides another.
-async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[]) {
+async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: StepFailure[] = []) {
 	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
 		name: 'reconciling website approvals',
 		run: async () => { await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true) },
 	}
-	const failures: StepFailure[] = []
 	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
 		try {
 			await step.run()
@@ -562,17 +542,25 @@ function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWe
 	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
 }
 
-// Detecting a disabled sites change and updating the content script injection stay together here, so a caller only states its mutation and reload policy and cannot leave the injection stale. A failed save throws with no follow-up because nothing was stored. finalizeWebsiteAccessChange is not reused because it always sends popup_websiteAccess_changed, while each caller here sends its own popup message and only after every step succeeded.
+// Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
+	let saved = false
 	let disabledSitesChanged = false
-	await updateWebsiteAccess((previousWebsiteAccess) => {
-		const nextWebsiteAccess = mutation(previousWebsiteAccess)
-		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
-		return nextWebsiteAccess
-	})
-	const shouldReloadConnectedTabs = reloadPolicy === 'always' || (reloadPolicy === 'whenDisabledSitesChange' && disabledSitesChanged)
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, [
-		...(disabledSitesChanged ? [updateContentScriptInjectionStep] : []),
-		...(shouldReloadConnectedTabs ? [reloadConnectedTabsStep(websiteTabConnections)] : []),
-	])
+	const failures: StepFailure[] = []
+	try {
+		await updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, (previousWebsiteAccess) => {
+			const nextWebsiteAccess = mutation(previousWebsiteAccess)
+			disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
+			return nextWebsiteAccess
+		}, async (update, refresh) => await withWebsiteAccessRollback(update, async (websiteAccess) => {
+			saved = true
+			await refresh(websiteAccess)
+		}))
+	} catch (error) {
+		if (!saved) throw error
+		failures.push({ name: 'updating website access and content script injection', error })
+	}
+	// Injection-site changes already reload connected tabs inside the registration transaction.
+	const steps = reloadPolicy === 'always' && !disabledSitesChanged ? [reloadConnectedTabsStep(websiteTabConnections)] : []
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures)
 }
