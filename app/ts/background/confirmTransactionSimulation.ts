@@ -5,6 +5,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmationRunRecord, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
 import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
@@ -19,6 +20,31 @@ import { getAddressBookRevision, getInterceptorTransactionStack, getTabState } f
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
+
+// The result stored for a confirmation's first simulation when the run ended without one (refreshConfirmTransactionSimulation returned undefined because it was aborted or its RPC fetch failed). A failed result is what confirmation refreshes simulate again, and the window shows it as "Failed to simulate. Retrying...".
+export function createInterruptedConfirmTransactionSimulation(
+	activeAddress: bigint,
+	simulationMode: boolean,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	signerName: SignerName,
+	simulationStartedTimestamp: Date,
+): ConfirmTransactionTransactionSingleVisualization {
+	const message = 'The simulation was interrupted before it finished.'
+	return { statusCode: 'failed', data: {
+		uniqueRequestIdentifier,
+		transactionToSimulate,
+		simulationMode,
+		activeAddress,
+		signerName,
+		simulationStartedTimestamp,
+		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
+		simulationState: {
+			blockNumber: 0n,
+			simulationConductedTimestamp: new Date(),
+		},
+	} }
+}
 
 let latestConfirmationRunId = 0
 // Every confirmation simulation run gets a new id, which relabelStoredSimulation uses to tell a re-labelled run from a newer one. The id is the millisecond clock bumped past the previous id, so ids increase within a background session. Unlike the popup refresh generation it is not persisted, so ids stored before a background restart are not handed out again only as long as the system clock has not gone backwards.
@@ -79,7 +105,7 @@ export async function refreshConfirmTransactionSimulation(
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput
-				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
+				: appendTransactionsToInput(simulationInput, [preSimulationTransaction])
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
 			return await visualizeSimulatorStateAndRecordLookups(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
