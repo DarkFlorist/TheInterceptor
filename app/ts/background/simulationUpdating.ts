@@ -1,3 +1,4 @@
+import { buildSimulationStateInput } from './simulationInputBuilding.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
@@ -9,7 +10,6 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
@@ -17,10 +17,10 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
-import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
+import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
@@ -36,17 +36,7 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
-	if (addressesToMakeRich.length === 0) return {}
-	return Object.fromEntries(
-		addressesToMakeRich.map(currentAddress => {
-			const addressKey = addressString(currentAddress)
-			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
-		})
-	)
-}
+import { getActiveStackContext } from '../utils/activeStackContext.js'
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()
@@ -63,66 +53,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
 	const stack = await getInterceptorTransactionStack()
-	const inputBlocks: SimulationStateInputBlock[] = []
-	let currentBlockTransactions: PreSimulationTransaction[] = []
-	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
-	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-
-	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
-		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
-			transactions: currentBlockTransactions,
-			signedMessages: currentBlockSignedMessages,
-			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: false,
-		})
-		previousBlockTimeManipulation = blockTimeManipulation
-		currentBlockSignedMessages = []
-		currentBlockStateOverrides = {}
-		currentBlockTransactions = []
-	}
-
-	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
-	for (const operation of operations) {
-		switch(operation.type) {
-			case 'Transaction': {
-				const simulationOptions = operation.preSimulationTransaction.simulationOptions
-				if (
-					simulationOptions?.requiredChainId !== undefined
-					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
-				) break
-				currentBlockTransactions.push(operation.preSimulationTransaction)
-				break
-			}
-			case 'Message': {
-				if (currentBlockTransactions.length > 0) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSignedMessages.push(operation.signedMessageTransaction)
-				break
-			}
-			case 'TimeManipulation': {
-				pushBlock(operation.blockTimeManipulation)
-				break
-			}
-			default: assertNever(operation)
-		}
-	}
-	if (
-		currentBlockTransactions.length > 0
-		|| currentBlockSignedMessages.length > 0
-		|| Object.keys(currentBlockStateOverrides).length > 0
-	) {
-		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
-			transactions: currentBlockTransactions,
-			signedMessages: currentBlockSignedMessages,
-			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: false,
-		})
-	}
-	return inputBlocks
+	return buildSimulationStateInput(settings, { richAddresses: await richListPromise, preSimulationBlockTimeManipulation }, stack)
 }
 
 export type SimulationSnapshot = {
