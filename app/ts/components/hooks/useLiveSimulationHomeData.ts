@@ -14,6 +14,7 @@ import { DEFAULT_TAB_CONNECTION } from '../../utils/constants.js'
 import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../../utils/activeStackContext.js'
+import { subscribeToSimulationStatePublications } from '../simulationStatePublications.js'
 
 type LiveSimulationHomeDataOptions = {
 	answerMainPopupOpen: boolean
@@ -292,18 +293,19 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					rpcConnectionStatus.value = parsed.data.rpcConnectionStatus
 					currentBlockNumber.value = parsed.data.rpcConnectionStatus?.latestBlock?.number
 					return undefined
-				case 'popup_simulation_state_changed':
-					if (!visualizedStateInvalidated) updateVisualizedState(parsed.data.visualizedSimulatorState)
-					if (options.requestHomeDataOnSimulationStateChange === true) void requestHomeDataForLiveUpdate('simulation-state')
-					return undefined
 			}
 			if (parsed.method !== 'popup_UpdateHomePage') return undefined
 			updateHomePage(parsed)
 			return undefined
 		}
 
+		const unsubscribeFromSimulationStatePublications = subscribeToSimulationStatePublications((visualizedSimulatorState) => {
+			if (!visualizedStateInvalidated) updateVisualizedState(visualizedSimulatorState)
+			if (options.requestHomeDataOnSimulationStateChange === true) void requestHomeDataForLiveUpdate('simulation-state')
+		})
 		browser.runtime.onMessage.addListener(replyPopupMessageListener)
 		return () => {
+			unsubscribeFromSimulationStatePublications()
 			browser.runtime.onMessage.removeListener(replyPopupMessageListener)
 		}
 	}, [])
