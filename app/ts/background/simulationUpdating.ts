@@ -209,8 +209,8 @@ export async function getFailedTransactionPreview(ethereum: EthereumClientServic
 	return await getFailedTransactionPreviewWithLookups(identifyAddressWith(ethereum, requestAbortController), transactionToSimulate)
 }
 
-// Parses calldata and names the addresses shown in the failure preview with the supplied lookup.
-async function getFailedTransactionPreviewWithLookups(identify: IdentifyAddress, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
+// Shared by live previews and address-book-only re-labels of their recorded entries.
+export async function getFailedTransactionPreviewWithLookups(identify: IdentifyAddress, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
 	const fields = getFailedTransactionFields(transactionToSimulate)
 	if (fields === undefined) return { addressBookEntries: [], parsedInputData: { type: 'NonParsed', input: new Uint8Array() } }
 	const parsedInputData = await parseInputData(fields.call, identify)
@@ -475,7 +475,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 	}
 }
 
-// Partial refresh of top-level metadata; it does not replay the stored visualization.
+// Partial refresh used by refreshHomeData: recomputes only the stored visualisation's top-level address-book entries, named token ids and ENS hashes, not the names, parsed input or warnings inside visualised transactions. Address-book edits use publishAddressBookChangeAndRelabelSimulations, which re-labels everything.
 export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState.simulationState.kind === 'passthrough') return prevState

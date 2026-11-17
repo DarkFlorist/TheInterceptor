@@ -57,23 +57,24 @@ async function getStoredRequest() {
 	return stored
 }
 
-const refreshConfirmMetadata = async () => await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
-const getConfirmDialogUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog' || message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+const refreshConfirmMetadata = async () => await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum)
+const getConfirmDialogUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_metadata')
 
-// Refreshes once as a control, then again with the request resolved right after the refresh persists its result, which is during its awaits and before it reads the queue back.
+// Refresh once as a control, then resolve the request after the initial capture and before the publication reads the queue again.
 async function assertMetadataRefreshSendsNothingOnceRequestIsResolved() {
 	await refreshConfirmMetadata()
-	assert.equal(getConfirmDialogUpdates().length, 2, 'an unresolved request gets both dialog updates')
+	assert.equal(getConfirmDialogUpdates().length, 1, 'an unresolved request gets its metadata update')
 
 	browserMock.sentMessages.length = 0
-	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		writeStoredItems()
-		if ('pendingTransactionsAndMessages' in items) browserMock.storageState.pendingTransactionsAndMessages = []
+	let pendingReads = 0
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if ((keys === 'pendingTransactionsAndMessages' || (Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages'))) && ++pendingReads === 2) browserMock.storageState.pendingTransactionsAndMessages = []
+		return readStoredItems()
 	})
 	try {
 		await refreshConfirmMetadata()
 	} finally {
-		browserMock.setStorageSetHandler(undefined)
+		browserMock.setStorageGetHandler(undefined)
 	}
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.deepEqual(getConfirmDialogUpdates(), [], 'the popup rejects an empty queue, so nothing is sent')

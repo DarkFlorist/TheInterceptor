@@ -228,20 +228,3 @@ async function getCurrentSimulationStateInput(ethereum: EthereumClientService, s
 		blockNumber: await ethereum.getBlockNumber(undefined),
 	}
 }
-
-export type OpenConsumerVisualisationDependencies = {
-	readonly update?: typeof updatePopupVisualisationState
-	readonly getStored?: typeof getPopupVisualisationState
-	readonly reportError?: typeof reportUnexpectedError
-}
-
-// Bootstrap already knows a consumer is open; refresh without the visibility probe and retain the stored fallback on reported errors.
-export async function refreshPopupVisualisationForOpenConsumer(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, dependencies: OpenConsumerVisualisationDependencies = {}) {
-	try {
-		await (dependencies.update ?? updatePopupVisualisationState)(ethereum, tokenPriceService, undefined, true)
-	} catch (error) {
-		if (!isExpectedInfrastructureError(error)) await (dependencies.reportError ?? reportUnexpectedError)(error)
-	}
-	return await (dependencies.getStored ?? getPopupVisualisationState)()
-}
-

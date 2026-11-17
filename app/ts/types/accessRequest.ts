@@ -4,7 +4,7 @@ import { AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
+import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, RecordedVisualisationLookups, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
@@ -77,23 +77,44 @@ const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
 	data: ConfirmTransactionDialogState
 })
 
+type ConfirmTransactionSimulationFailedData = funtypes.Static<typeof ConfirmTransactionSimulationFailedData>
+const ConfirmTransactionSimulationFailedData = funtypes.Intersect(
+	ConfirmTransactionSimulationBaseData,
+	funtypes.ReadonlyObject({
+		error: DecodedError,
+		simulationState: funtypes.ReadonlyObject({
+			blockNumber: EthereumQuantity,
+			simulationConductedTimestamp: EthereumTimestamp,
+		})
+	})
+)
+
 type ConfirmTransactionSimulationFailed = funtypes.Static<typeof ConfirmTransactionSimulationFailed>
 const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 	statusCode: funtypes.Literal('failed'),
-	data: funtypes.Intersect(
-		ConfirmTransactionSimulationBaseData,
-		funtypes.ReadonlyObject({
-			error: DecodedError,
-			simulationState: funtypes.ReadonlyObject({
-				blockNumber: EthereumQuantity,
-				simulationConductedTimestamp: EthereumTimestamp,
-			})
-		})
-	)
+	data: ConfirmTransactionSimulationFailedData
 }).asReadonly()
 
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
+
+// What background storage keeps of a confirmation run beside its visualisation, as the stored stack keeps its recordedVisualisationLookups beside its result. It is a sibling of popupVisualisation, never part of it, so the stored visualisation is exactly what the dialog is sent, and a popup projection only drops this one field (toPopupPendingTransactionOrSignableMessage in confirmTransaction.ts).
+export type ConfirmationRunRecord = funtypes.Static<typeof ConfirmationRunRecord>
+const ConfirmationRunRecord = funtypes.ReadonlyObject({
+	// Identifies the confirmation simulation run that produced the visualisation beside it.
+	confirmationRunId: funtypes.Union(ConfirmationRunIdWithoutStandIn, funtypes.Number.withParser({
+		// Numeric records from before restart-safe ids remain readable, but cannot match a run of a new lifetime.
+		parse: (sequence) => ({ success: true, value: { lifetime: '', sequence } }),
+		serialize: (value: ConfirmationRunId) => ({ success: true, value: value.sequence }),
+	})),
+	// The address-book revision (getAddressBookRevision in background/addressBookRevision.ts) the run read when it started, before its first lookup; only the workflow that stores the run compares it, within the same background session.
+	addressBookRevisionBeforeLookups: funtypes.Number,
+}).And(funtypes.ReadonlyPartial({
+	// The network that produced this run, including failed transaction formation. Absent on legacy records.
+	chainId: EthereumQuantity,
+	// Recorded lookups let a successful simulation be visualised again without the node.
+	recordedVisualisationLookups: RecordedVisualisationLookups,
+}))
 
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
 const PendingTransactionApprovalStatus = funtypes.Union(
@@ -144,20 +165,31 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	safeFlow: PendingTransactionSafeFlow,
 })
 
-export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
-export const SimulatedPendingTransaction = funtypes.Intersect(
+type SimulatedPendingTransactionStatus = funtypes.Static<typeof SimulatedPendingTransactionStatus>
+const SimulatedPendingTransactionStatus = funtypes.Union(
+	funtypes.ReadonlyObject({
+		transactionOrMessageCreationStatus: funtypes.Literal('Simulated'),
+		transactionToSimulate: WebsiteCreatedEthereumTransaction,
+	}),
+	funtypes.ReadonlyObject({
+		transactionOrMessageCreationStatus: funtypes.Literal('FailedToSimulate'),
+		transactionToSimulate: FailedToCreateWebsiteCreatedEthereumTransaction,
+	}),
+)
+
+// A simulated pending transaction as the confirmation dialog is sent it, without the run's record.
+export type PopupSimulatedPendingTransaction = funtypes.Static<typeof PopupSimulatedPendingTransaction>
+const PopupSimulatedPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
 	funtypes.ReadonlyObject({ popupVisualisation: ConfirmTransactionTransactionSingleVisualization }),
-	funtypes.Union(
-		funtypes.ReadonlyObject({
-			transactionOrMessageCreationStatus: funtypes.Literal('Simulated'),
-				transactionToSimulate: WebsiteCreatedEthereumTransaction,
-		}),
-		funtypes.ReadonlyObject({
-			transactionOrMessageCreationStatus: funtypes.Literal('FailedToSimulate'),
-				transactionToSimulate: FailedToCreateWebsiteCreatedEthereumTransaction,
-		}),
-	)
+	SimulatedPendingTransactionStatus,
+)
+
+// A simulated pending transaction as background storage keeps it: what the dialog is sent, with the record of the run that produced its visualisation beside it. Confirmations stored by older versions, or by builds that kept the record inside the visualisation, decode without it, as funtypes drops fields its codec does not declare.
+export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
+const SimulatedPendingTransaction = funtypes.Intersect(
+	PopupSimulatedPendingTransaction,
+	funtypes.ReadonlyPartial({ confirmationRun: ConfirmationRunRecord }),
 )
 
 type CraftingTransactionPendingTransaction = funtypes.Static<typeof CraftingTransactionPendingTransaction>
@@ -175,8 +207,13 @@ const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 	})
 )
 
+// A pending transaction as background storage keeps it.
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
+
+// A pending transaction as popups are sent it, without its confirmation run's record.
+type PopupTransactionDisplay = funtypes.Static<typeof PopupTransactionDisplay>
+const PopupTransactionDisplay = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, PopupSimulatedPendingTransaction)
 
 type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
 const PendingSignableMessage = funtypes.Intersect(
@@ -193,7 +230,10 @@ const PendingSignableMessage = funtypes.Intersect(
 		approvalStatus: PendingTransactionApprovalStatus,
 	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
 	funtypes.Union(
-		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
+		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }).And(funtypes.ReadonlyPartial({
+			// Every entry the visualisation's address lookups resolved, so a dialog refresh after an address-book change can visualise the message again without identifying addresses on chain.
+			identifiedAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+		})),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })
 	)
 )
@@ -202,7 +242,7 @@ const PendingSignableMessage = funtypes.Intersect(
 const PopupReviewedResultId = funtypes.String
 
 export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
-export const PopupPendingTransaction = funtypes.Intersect(PendingTransaction, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
+export const PopupPendingTransaction = funtypes.Intersect(PopupTransactionDisplay, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
 
 type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
