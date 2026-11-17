@@ -2978,3 +2978,26 @@ test('returning to an endpoint never admits a retired client from its previous i
 		retireAll()
 	}
 })
+
+
+test('a rejected settings write runs no transition callback or repair effects', async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	await modules.changeSimulationMode({ simulationMode: false, rpcNetwork: networkA })
+	const { owner, getInstalled, retireAll } = createRecordingServicesOwner(networkA)
+	const installed = getInstalled()
+	const failure = new Error('Settings persistence failed')
+	let callbacks = 0
+	try {
+		await assert.rejects(modules.runSettingsTransition(owner, new Map(), {
+			writeSettings: async () => { throw failure },
+			afterNetworkApplied: async () => { callbacks += 1 },
+		}), (error) => error === failure)
+		await modules.readNetworkSnapshot(owner)
+		assert.equal(callbacks, 0)
+		assert.equal(getInstalled(), installed)
+		assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, networkA.chainId)
+	} finally {
+		retireAll()
+	}
+})

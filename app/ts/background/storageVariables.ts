@@ -1,4 +1,3 @@
-import { operationBelongsToActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -415,18 +414,8 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 	})
 }
 
-// Called under the network transition lock before settings can change and before stack-dependent work. The chain identity survives a worker restart; legacy installations adopt their current chain without discarding their stack.
-export async function reconcileSimulationStackChain(chainId: bigint) {
-	const { simulationStackChainId } = await browserStorageLocalGet('simulationStackChainId')
-	if (simulationStackChainId === chainId) return
-	if (simulationStackChainId !== undefined) {
-		await updateInterceptorTransactionStack((stack) => ({
-			operations: stack.operations.filter((operation) => !operationBelongsToActiveStackContext(operation, SIMULATION_STACK_CONTEXT)),
-		}))
-	}
-	// Advance only after clearing succeeds. A restart between these writes repeats the harmless cleanup; no new simulation operations are admitted until both writes succeed. Chain-keyed Safe stacks are untouched.
-	await browserStorageLocalSet({ simulationStackChainId: chainId })
-}
+export const getSimulationStackChainId = async () => (await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId
+export const setSimulationStackChainId = async (simulationStackChainId: bigint) => await browserStorageLocalSet({ simulationStackChainId })
 
 export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
 

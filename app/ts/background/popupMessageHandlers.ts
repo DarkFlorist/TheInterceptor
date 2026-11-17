@@ -895,7 +895,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 }
 
 // A refresh's services and settings serve one network only while no network change commits after its snapshot was read. The generation tells the networks apart even when a change keeps the client, as a signer-only network does, or returns to the same endpoint; reading it waits for a transition in progress, so settings the refresh read meanwhile are covered.
-const snapshotNetworkIsStillActive = async (snapshot: NetworkSnapshot) => await readCommittedNetworkChangeGeneration() === snapshot.simulation.networkChangeGeneration
+const waitForTransitionsAndCheckSnapshotGeneration = async (snapshot: NetworkSnapshot) => await readCommittedNetworkChangeGeneration() === snapshot.simulation.networkChangeGeneration
 
 // How many snapshots one home page request tries. Each retry follows a committed network change, and each such change broadcasts its settings, after which the popup asks for the page again; a request that runs out of attempts therefore publishes nothing and leaves the page to that later request.
 const HOME_PAGE_ATTEMPTS = 3
@@ -913,12 +913,12 @@ async function publishHomePageOnCurrentNetwork(simulationServicesOwner: Simulati
 		const { network: snapshot, richSettings } = await captureRichListSnapshot(simulationServicesOwner)
 		if (prepare !== undefined) {
 			await prepare(snapshot)
-			if (!await snapshotNetworkIsStillActive(snapshot)) continue
+			if (!await waitForTransitionsAndCheckSnapshotGeneration(snapshot)) continue
 		}
 		await onCurrentNetwork?.(snapshot)
 		const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() }, richSettings)
 		// Nothing is awaited between this check and the broadcast, so no network change commits in between.
-		if (!await snapshotNetworkIsStillActive(snapshot)) continue
+		if (!await waitForTransitionsAndCheckSnapshotGeneration(snapshot)) continue
 		await sendPopupMessageToOpenWindows(updatedPage)
 		return 'published'
 	}

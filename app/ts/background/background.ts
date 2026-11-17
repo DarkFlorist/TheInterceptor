@@ -175,7 +175,7 @@ async function handleRPCRequest(admitted: AdmittedRpcRequest, liveNetworkFlows: 
 	}
 	const signMessage = async (signRequest: SignMessageParams) => await liveNetworkFlows.signMessage(signRequest, !forwardToSigner)
 	const sendEthereumTransaction = async (transactionRequest: Extract<ParsedRpcRequest, { readonly method: 'eth_sendRawTransaction' | 'eth_sendTransaction' }>) => {
-		if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(transactionRequest)
+		if (bypassInterceptorOnNetworkWithoutRpc) return getForwardingMessage(transactionRequest)
 		return await liveNetworkFlows.sendTransaction(transactionRequest, !forwardToSigner)
 	}
 	const rpcRequestHandlers = {

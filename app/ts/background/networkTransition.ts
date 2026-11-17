@@ -1,3 +1,4 @@
+import { reconcileSimulationStackChain } from './simulationStackChain.js'
 import { importSettingsAndAddressBook } from './settingsImport.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from './contentScriptInjectionStrategy.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
@@ -14,7 +15,7 @@ import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGener
 import { changeSimulationMode, getSettings } from './settings.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
-import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack, reconcileSimulationStackChain } from './storageVariables.js'
+import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack } from './storageVariables.js'
 import { readSimulationInputSources } from './simulationInputBuilding.js'
 import { completeUnfinishedNetworkChange, type LockedNetworkReads, type NetworkSnapshot, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask, type SimulationRead } from './networkTransitionLock.js'
 import { assertNever } from '../utils/typescript.js'
@@ -165,8 +166,9 @@ export async function runSettingsTransition(simulationServicesOwner: SimulationS
 
 		const settingsBeforeTransition = await getSettings()
 		const change: CommittedNetworkChange = { simulationServicesOwner, websiteTabConnections, settingsBeforeTransition, completedEffects: new Set(), notifiedWebsitePorts: new Set(), afterNetworkApplied: transition.afterNetworkApplied, committedSettings: undefined }
+		// A rejected settings write has not admitted a committed change or any of its effects.
+		if (await transition.writeSettings(settingsBeforeTransition) === 'unchanged') return undefined
 		try {
-			if (await transition.writeSettings(settingsBeforeTransition) === 'unchanged') return undefined
 			const committedSettings = await getSettings()
 			change.committedSettings = committedSettings
 			try {

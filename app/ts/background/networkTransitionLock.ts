@@ -1,3 +1,4 @@
+import { reconcileSimulationStackChain } from './simulationStackChain.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../utils/activeStackContext.js'
@@ -5,7 +6,7 @@ import type { Settings } from '../types/interceptor-messages.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import type { SimulationServices, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { getSettings } from './settings.js'
-import { getInterceptorTransactionStack, reconcileSimulationStackChain } from './storageVariables.js'
+import { getInterceptorTransactionStack } from './storageVariables.js'
 import { getCommittedNetworkChangeGeneration, snapshotNetworkIsActive } from './networkChangeGeneration.js'
 
 import { buildSimulationStateInput, readSimulationInputSources, type SimulationSnapshotSources } from './simulationInputBuilding.js'
