@@ -1,12 +1,14 @@
+import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, simulator, type StorageKeys, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, simulator, type StorageKeys, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const SIMULATION_MODE_ENABLED_AFTER_REQUEST_MESSAGE = 'The Interceptor switched to simulation mode after this request was made. Reject this request and send it again.'
 const socket = uniqueRequestIdentifier.requestSocket
-const signingModeTransaction = { ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForUser' } } as const
+const signingModeTransaction = withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false }, { transactionStatus: 'Transaction Succeeded' })
 
 const websiteTabConnection = (port: browser.runtime.Port) => ({ connections: {
 	[modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
@@ -36,8 +38,16 @@ async function setUpSigningModeMessage() {
 	return { postedMessages, websiteTabConnections }
 }
 
+// Read the already-rendered fixture synchronously so a storage hook switches mode during approval, after its guard was captured.
+function acceptReviewedFixture() {
+	const stored = browserMock.storageState.pendingTransactionsAndMessages
+	if (!Array.isArray(stored)) throw new Error('Expected stored confirmation fixtures')
+	const pending = PendingTransactionOrSignableMessage.parse(stored[0])
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier, reviewedResultId: getReviewedResultId(pending), forceSend: false } }
+}
+
 async function resolve(websiteTabConnections: ReturnType<typeof connectWebsite>, action: 'accept' | 'reject') {
-	const data = action === 'accept' ? { action, uniqueRequestIdentifier } : { action, errorString: undefined, uniqueRequestIdentifier }
+	const data = action === 'accept' ? acceptReviewedFixture().data : { action, errorString: undefined, uniqueRequestIdentifier }
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data })
 }
 
@@ -173,7 +183,7 @@ async function switchSimulationModeOnAndOff() {
 const readsPendingRequests = (keys: StorageKeys) => Array.isArray(keys) ? keys.includes('pendingTransactionsAndMessages') : keys === 'pendingTransactionsAndMessages'
 
 async function approveInPopup(websiteTabConnections: WebsiteTabConnections) {
-	await modules.confirmDialog(createTestSimulationServicesOwner(simulator), websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+	await modules.confirmDialog(createTestSimulationServicesOwner(simulator), websiteTabConnections, acceptReviewedFixture())
 }
 
 // After a refused approval the user can either reject the request or, back in signing mode, approve it again and have it forwarded.
@@ -211,7 +221,7 @@ async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
 		...signingModeTransaction,
-		safeTransaction: {
+		safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: recipientAddress,
 			safeVersion: '1.4.1',
@@ -219,7 +229,7 @@ async function setUpSigningModeSafeProposal(onAccountRequest: () => Promise<void
 			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [], threshold: 2n },
 			safeTxHash: BigInt(getSafeTxHash(safeTx)),
 			safeTx,
-		},
+		} },
 	}] })
 	const postedMessages: unknown[] = []
 	const accountReplies: Promise<unknown>[] = []

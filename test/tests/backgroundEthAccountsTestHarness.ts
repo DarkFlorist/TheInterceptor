@@ -19,7 +19,7 @@ type StorageHooks = {
 	// Runs after a write is applied and before it resolves, so a hook can expose the written values while withholding write completion.
 	readonly afterSet?: (items: Record<string, unknown>) => Promise<void>
 }
-type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 export function createDeferredSignal() {
@@ -34,14 +34,24 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+const requestsStorageKey = (keys: string | string[] | Record<string, unknown> | null | undefined, key: string) => {
+	if (keys === undefined || keys === null) return true
+	if (typeof keys === 'string') return keys === key
+	if (Array.isArray(keys)) return keys.includes(key)
+	return key in keys
+}
+
+export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, firstCurrentTabIdReadError }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly firstCurrentTabIdReadError?: Error } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	let storageHooks: StorageHooks = {}
 	const runtimeMessages: unknown[] = []
+	const removedWindowIds: number[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	let currentTabIdReadFailed = false
+	const reloadedTabIds: number[] = []
 	const requestBlockingCalls = {
 		declarativeNetRequestUpdates: 0,
 		webRequestListenerAdds: 0,
@@ -62,6 +72,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			onChanged: { addListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.add(listener), removeListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.delete(listener) },
 			local: {
 				async get(keys?: StorageGetKeys) {
+					if (firstCurrentTabIdReadError !== undefined && !currentTabIdReadFailed && requestsStorageKey(keys, 'currentTabId')) {
+						currentTabIdReadFailed = true
+						throw firstCurrentTabIdReadError
+					}
 					const readStorage = () => {
 						if (keys === undefined || keys === null) return { ...storageState }
 						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
@@ -95,6 +109,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, active: true } },
 			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
 			async update() { return undefined },
+			async reload(tabId: number) { reloadedTabIds.push(tabId) },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -103,7 +118,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, focused: true } },
 			async get(windowId: number) { return { id: windowId, focused: true } },
 			async update() { return undefined },
-			async remove() { return undefined },
+			async remove(windowId: number) {
+				removedWindowIds.push(windowId)
+				return undefined
+			},
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 		},
 		action: {
@@ -148,6 +166,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
 		runtimeMessages,
+		reloadedTabIds,
+		removedWindowIds,
 		readStoredValue: (key: string) => storageState[key],
 		setStorageHooks: (hooks: StorageHooks) => { storageHooks = hooks },
 	}
@@ -169,7 +189,8 @@ export async function loadModules() {
 		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/simulationModeGuard.js'),
+		...await import('../../app/ts/background/settingsImport.js'),
+		...await import('../../app/ts/utils/simulationModeGuard.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
@@ -218,10 +239,12 @@ export function createEthereumWithGetBlockCounter(
 		initialBlockPolling = true,
 		getCodeResult,
 		getStorageAtResult,
+		getBlockNumberResult,
 	}: {
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
+		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
 	const rpcEntry: RpcEntry = {
@@ -255,6 +278,7 @@ export function createEthereumWithGetBlockCounter(
 				}
 				if (property === 'getCode' && getCodeResult !== undefined) return async () => getCodeResult
 				if (property === 'getStorageAt' && getStorageAtResult !== undefined) return async () => getStorageAtResult
+				if (property === 'getBlockNumber' && getBlockNumberResult !== undefined) return async () => getBlockNumberResult
 				return Reflect.get(target, property, receiver)
 			},
 		},

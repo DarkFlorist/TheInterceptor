@@ -314,23 +314,31 @@ describe('simulation mode forward guard', () => {
 		assert.equal(posts, 1)
 	})
 
-	test.each(GUARD_WRITE_CASES)('a guard write with $description stores its keys as browserStorageLocalSet does', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
+	test('a multi-key write through the canonical setter cannot bypass the forwarding guard', async () => {
 		installBrowserMock()
-		const { writeSimulationModeChanges } = await loadModules()
+		const { captureSimulationModeGuard } = await loadModules()
 		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
-		const writtenKeys = ['activeRpcNetwork', 'independentActiveSimulationAddress', 'activeSigningAddress', 'activeSigningSafeAddress', 'signingAddressPreferences']
-		await browserStorageLocalSet({ activeRpcNetwork: GUARD_WRITTEN_RPC_NETWORK, independentActiveSimulationAddress: activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress, signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
-		const storedByGenericSetter = await browser.storage.local.get(writtenKeys)
-		await browser.storage.local.remove(writtenKeys)
-		await writeSimulationModeChanges({ simulationMode, rpcNetwork: GUARD_WRITTEN_RPC_NETWORK, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }, { signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
-		assert.deepStrictEqual(await browser.storage.local.get(writtenKeys), storedByGenericSetter)
+		const guard = captureSimulationModeGuard()
+		const enabling = browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: GUARD_WRITTEN_RPC_NETWORK })
+		assert.equal(guard.allowsSignerForward(), false, 'the write is tracked before storage is called')
+		await enabling
+		assert.equal(guard.allowsSignerForward(), false, 'completion still invalidates the older decision')
 	})
 
-	test.each(GUARD_WRITE_CASES)('a guard write with $description reads back through getSettings', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
+	test('tracking an enabling write preserves storage-call order with a following disabling write', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		const enable = browserStorageLocalSet({ simulationMode: true })
+		const disable = browserStorageLocalSet({ simulationMode: false })
+		await Promise.all([enable, disable])
+		assert.equal(readStoredValue('simulationMode'), false)
+	})
+
+	test.each(GUARD_WRITE_CASES)('a mode write with $description reads back through the canonical settings schema', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
 		installBrowserMock()
-		const { getSettings, getSigningAddressPreferences, writeSimulationModeChanges } = await loadModules()
-		const { browserStorageLocalGet } = await import('../../app/ts/utils/storageUtils.js')
-		await writeSimulationModeChanges({ simulationMode, rpcNetwork: GUARD_WRITTEN_RPC_NETWORK, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }, { signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
+		const { getSettings, getSigningAddressPreferences } = await loadModules()
+		const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		await browserStorageLocalSet({ simulationMode, activeRpcNetwork: GUARD_WRITTEN_RPC_NETWORK, independentActiveSimulationAddress: activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress, signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
 		const settings = await getSettings()
 		assert.equal(settings.simulationMode, simulationMode)
 		assert.deepEqual(settings.activeRpcNetwork, GUARD_WRITTEN_RPC_NETWORK)
@@ -340,10 +348,10 @@ describe('simulation mode forward guard', () => {
 		assert.deepEqual(await getSigningAddressPreferences(), GUARD_WRITTEN_SIGNING_PREFERENCES)
 	})
 
-	test('raw storage writes stay in the storage modules and only the guard module writes simulationMode', async () => {
+	test('raw storage writes stay in the canonical storage modules', async () => {
 		const rawWrites = (await readAppSources()).flatMap(({ path, source }) => getRawStorageWriteArguments(source).map((writtenItems) => ({ path, writtenItems })))
-		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['background/simulationModeGuard.ts', 'utils/largeStateStore.ts', 'utils/storageUtils.ts'])
-		assert.deepEqual(rawWrites.filter(({ path, writtenItems }) => path !== 'background/simulationModeGuard.ts' && writtenItems.includes('simulationMode')), [])
+		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['utils/largeStateStore.ts', 'utils/storageUtils.ts'])
+		assert.deepEqual(rawWrites.filter(({ path, writtenItems }) => path !== 'utils/storageUtils.ts' && writtenItems.includes('simulationMode')), [])
 	})
 
 	test('browserStorageLocalSet2 cannot write simulationMode because the key is not in its runtype', async () => {

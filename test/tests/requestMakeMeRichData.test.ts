@@ -67,7 +67,6 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
-		...await import('../../app/ts/background/simulationModeGuard.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
@@ -337,7 +336,7 @@ describe('startup storage recovery', () => {
 
 		assert.equal(reply.method, 'popup_requestSimulationMode')
 		assert.equal(reply.simulationMode, true)
-		// Settings reads never write simulationMode (see getParsedStorageValueOrDefaultFromItems); the next mode change replaces the corrupt value.
+		// Settings reads never write simulationMode (see getStartupStorageValueOrDefault); the next mode change replaces the corrupt value.
 		assert.equal(storageState.simulationMode, 'invalid')
 	})
 

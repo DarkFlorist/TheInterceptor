@@ -1,11 +1,10 @@
+import { captureSimulationModeGuard, waitForSimulationModeEnablingWrites } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
-import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
-import { captureSimulationModeGuard, waitForSimulationModeEnablingWrites } from './simulationModeGuard.js'
-import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
+import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, syncing, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
@@ -30,19 +29,14 @@ import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequest
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
-import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
+import { handleWatchAssetRequest } from './windows/watchAsset.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
+import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
-
-if (initializeWatchAssetWindowListeners()) {
-	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
-		await reportUnexpectedError(error, { code: 'watch_asset_startup_recovery_failed' })
-	})
-}
 
 const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
@@ -58,6 +52,12 @@ const INTERNAL_PROVIDER_METHODS = [
 
 const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
 
+// A reply plus optional work that may only run once the page has it, e.g. notifications for a subscription id the reply carries; keeping the work beside the reply keeps RPCReply plain, serializable wire data. Only handleContentScriptMessage delivers these, right after handling: replies sent later (confirmation windows, MV2 reconnect retries, persisted terminal replies) answer requests whose handler returned doNotReply, so they never have follow-up work.
+type HandledRpcRequest = { readonly reply: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
+// May be async, so its failures are caught whether it throws or rejects.
+type AfterReplyDelivered = () => void | Promise<void>
+const replyWithoutFollowUp = (reply: RPCReply): HandledRpcRequest => ({ reply, afterReplyDelivered: undefined })
+
 async function handleRPCRequest(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -70,7 +70,7 @@ async function handleRPCRequest(
 	simulationOverlayEnabled: boolean,
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
-): Promise<RPCReply> {
+): Promise<HandledRpcRequest> {
 	// Select one execution pair after admission; lazy simulation preparation uses this same pair.
 	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
@@ -93,7 +93,9 @@ async function handleRPCRequest(
 	const maybeParsedRequest = confirmation === undefined
 		? EthereumJsonRpcRequest.safeParse(request)
 		: { success: true as const, value: confirmation.parameters }
-	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
+	const requestRoutingState = { simulationMode: settings.simulationMode, signerAvailable: !request.usingInterceptorWithoutSigner }
+	const forwardToSigner = isForwardingRequestsToSigner(requestRoutingState)
+	const bypassInterceptorOnNetworkWithoutRpc = isBypassingInterceptorOnNetworkWithoutRpc(settings.activeRpcNetwork, requestRoutingState)
 	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		return { type: 'forwardToSigner' as const, ...request }
@@ -102,7 +104,7 @@ async function handleRPCRequest(
 	if (maybeParsedRequest.success === false) {
 		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
 			const methodSpecificReply = getMethodSpecificReply(request)
-			if (methodSpecificReply !== undefined) return methodSpecificReply
+			if (methodSpecificReply !== undefined) return replyWithoutFollowUp(methodSpecificReply)
 		}
 		const safePolicyReply = getSafeModeRpcPolicyReply({
 			rawRequest: request,
@@ -114,20 +116,20 @@ async function handleRPCRequest(
 			chainId: settings.activeRpcNetwork.chainId,
 			hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined,
 		})
-		if (safePolicyReply !== undefined) return safePolicyReply
+		if (safePolicyReply !== undefined) return replyWithoutFollowUp(safePolicyReply)
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
-		return {
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })
+		return replyWithoutFollowUp({
 			type: 'result' as const,
 			method: request.method,
 			error: {
 				message: `Failed to parse RPC request: ${ JSON.stringify(serialize(InterceptedRequest, request)) }`,
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
-		}
+		})
 	}
 	const parsedRequest = maybeParsedRequest.value
 	const safePolicyReply = getSafeModeRpcPolicyReply({
@@ -140,21 +142,25 @@ async function handleRPCRequest(
 		chainId: settings.activeRpcNetwork.chainId,
 		hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined,
 	})
-	if (safePolicyReply !== undefined) return safePolicyReply
+	if (safePolicyReply !== undefined) return replyWithoutFollowUp(safePolicyReply)
 	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
-	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
+	if (bypassInterceptorOnNetworkWithoutRpc && !accountOnlyMethod) {
 		// we are using network that is not supported by us
-		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
+		return replyWithoutFollowUp({ type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request })
 	}
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
 	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 	type ParsedRpcRequest = typeof parsedRequest
-	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<RPCReply>
-	const rpcRequestHandler = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<RPCReply>>()
+	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<HandledRpcRequest>
+	// Handlers whose reply needs follow-up work return a HandledRpcRequest; all others return their plain reply.
+	const rpcRequestHandlerWithFollowUp = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<HandledRpcRequest>>()
+	const rpcRequestHandler = <Method extends ParsedRpcRequest['method']>(method: Method, handler: (context: undefined, request: Extract<ParsedRpcRequest, { readonly method: Method }>) => Promise<RPCReply>) => {
+		return rpcRequestHandlerWithFollowUp(method, async (context, rpcRequest) => replyWithoutFollowUp(await handler(context, rpcRequest)))
+	}
 	const signMessage = async (signRequest: Extract<ParsedRpcRequest, { readonly method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v2' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4' }>) => await personalSign(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'message' ? confirmation : { kind: 'message', parameters: signRequest }, request, website, websiteTabConnections, !forwardToSigner)
 	const sendEthereumTransaction = async (transactionRequest: Extract<ParsedRpcRequest, { readonly method: 'eth_sendRawTransaction' | 'eth_sendTransaction' }>) => {
-		if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(transactionRequest)
+		if (bypassInterceptorOnNetworkWithoutRpc) return getForwardingMessage(transactionRequest)
 		return await sendTransaction(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'transaction' ? confirmation : { kind: 'transaction', parameters: transactionRequest }, request, website, websiteTabConnections, !forwardToSigner)
 	}
 	const rpcRequestHandlers = {
@@ -166,7 +172,7 @@ async function handleRPCRequest(
 		eth_getTransactionReceipt: rpcRequestHandler('eth_getTransactionReceipt', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getTransactionReceipt(ethereum, simulationState, rpcRequest))),
 		eth_call: rpcRequestHandler('eth_call', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => call(ethereum, simulationInput, rpcRequest))),
 		eth_blockNumber: rpcRequestHandler('eth_blockNumber', async () => await withSimulationInput((simulationInput) => blockNumber(ethereum, simulationInput))),
-		eth_subscribe: rpcRequestHandler('eth_subscribe', async (_context, rpcRequest) => await subscribe(socket, rpcRequest)),
+		eth_subscribe: rpcRequestHandlerWithFollowUp('eth_subscribe', async (_context, rpcRequest) => await subscribe(websiteTabConnections, socket, rpcRequest)),
 		eth_unsubscribe: rpcRequestHandler('eth_unsubscribe', async (_context, rpcRequest) => await unsubscribe(socket, rpcRequest)),
 		eth_chainId: rpcRequestHandler('eth_chainId', async () => await chainId(ethereum)),
 		net_version: rpcRequestHandler('net_version', async () => await netVersion(ethereum)),
@@ -193,6 +199,7 @@ async function handleRPCRequest(
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
+		eth_syncing: rpcRequestHandler('eth_syncing', async () => await syncing(ethereum)),
 		eth_getTransactionCount: rpcRequestHandler('eth_getTransactionCount', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getTransactionCount(ethereum, simulationInput, rpcRequest))),
 		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), simulationOverlayEnabled, websiteTabConnections, rpcRequest, website, request, socket)),
 		eth_simulateV1: rpcRequestHandler('eth_simulateV1', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => ethSimulateV1(ethereum, simulationInput, rpcRequest))),
@@ -502,12 +509,31 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 }
 
+async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	const { replyDelivered, afterReplyDelivered } = await replyToContentScriptMessage(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
+	// Follow-up messages, such as notifications for a subscription id the reply carries, only make sense to a page that received the reply.
+	if (replyDelivered === true && afterReplyDelivered !== undefined) await runAfterReplyDelivered(afterReplyDelivered)
+	return replyDelivered
+}
+
+// Runs outside replyToContentScriptMessage's error boundary, like block-driven subscription notifications: the request is already answered, so a failure here is only reported and never becomes a second reply.
+export async function runAfterReplyDelivered(afterReplyDelivered: AfterReplyDelivered) {
+	try {
+		await afterReplyDelivered()
+	} catch (error: unknown) {
+		await reportUnexpectedError(error)
+	}
+}
+
+type ContentScriptMessageReply = { readonly replyDelivered: boolean | undefined, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
+const replyDeliveredWithoutFollowUp = (replyDelivered: boolean | undefined): ContentScriptMessageReply => ({ replyDelivered, afterReplyDelivered: undefined })
+
 // The first route plus the re-routes allowed when simulation mode keeps being enabled before the signer forward is posted.
 const MAX_REQUEST_ROUTING_ATTEMPTS = 3
 
 type RequestRouting =
 	| { readonly kind: 'answeredAtAdmission', readonly reply: InterceptedRequestForward }
-	| { readonly kind: 'resolved', readonly resolved: RPCReply }
+	| { readonly kind: 'resolved', readonly resolved: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
 
 // One routing decision on the given settings. A re-route repeats all of it because every step depends on the mode: the Safe signing state, Safe Apps admission and rpcContext, the simulation overlay, and the services handleRPCRequest selects.
 async function routeRequest(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<RequestRouting> {
@@ -524,7 +550,8 @@ async function routeRequest(simulationServicesOwner: SimulationServicesOwner, we
 	// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
 	const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 	const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
-	return { kind: 'resolved', resolved: await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner) }
+	const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+	return { kind: 'resolved', resolved, afterReplyDelivered }
 }
 
 // Website access itself does not change with the mode, but the mode selects the active address and access is granted per address. So a re-route keeps the earlier access decision only for the address that decision covered; any other address needs its own stored grant. Undefined means the website has no address to be routed on.
@@ -534,21 +561,21 @@ async function getActiveAddressForReroute(websiteTabConnections: WebsiteTabConne
 	return getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, activeAddress) === 'hasAccess' ? activeAddress : undefined
 }
 
-// verifiedActiveAddress is the address the caller's access decision covered. A signer forward refused by the guard has not been answered and nothing has acted on it, so only the routing is repeated on fresh settings, never the caller's discovery and access steps.
-async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, verifiedActiveAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+// Sends the request's only reply, turning handling failures into an error reply. Follow-up work is returned instead of run, so its failures cannot reach this catch and send a second reply.
+async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddressInitiallyVerified: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		for (let routingAttempt = 1; routingAttempt <= MAX_REQUEST_ROUTING_ATTEMPTS; routingAttempt++) {
 			const simulationModeGuard = captureSimulationModeGuard()
 			const settings = await getSettings()
-			const activeAddress = routingAttempt === 1 ? verifiedActiveAddress : await getActiveAddressForReroute(websiteTabConnections, request, website, verifiedActiveAddress, settings)
-			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
+			const activeAddress = routingAttempt === 1 ? activeAddressInitiallyVerified : await getActiveAddressForReroute(websiteTabConnections, request, website, activeAddressInitiallyVerified, settings)
+			if (activeAddress === undefined) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
 			const routing = await routeRequest(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, settings, publishRpcConnectionStatus)
-			if (routing.kind === 'answeredAtAdmission') return replyToInterceptedRequest(websiteTabConnections, routing.reply)
-			const { resolved } = routing
+			if (routing.kind === 'answeredAtAdmission') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, routing.reply))
+			const { resolved, afterReplyDelivered } = routing
 			if (resolved.type === 'forwardToSigner') {
 				const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
-				if (forward.posted) return forward.result
+				if (forward.posted) return { replyDelivered: forward.result, afterReplyDelivered }
 				await waitForSimulationModeEnablingWrites()
 				continue
 			}
@@ -562,25 +589,25 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 				activeAddress.address,
 			)
 			replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-			return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
+			return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
 		}
-		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST })
+		return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
+			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))
 		}
 		if (error instanceof JsonRpcResponseError) {
-			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() })
+			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...error.serialize() }))
 		}
 		await reportUnexpectedError(error)
-		return replyToInterceptedRequest(websiteTabConnections, {
+		return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, {
 			type: 'result',
 			...getRequestWithDefinedParams(request),
 			error: {
 				code: 123456,
 				message: 'Unknown error'
 			},
-		})
+		}))
 	}
 }
 
