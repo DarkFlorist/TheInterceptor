@@ -698,6 +698,8 @@ describe('Gnosis Safe stack simulation', () => {
 					case 'eth_getTransactionCount': return serializeForRpc(EthereumQuantity, 0n)
 					case 'eth_getBalance': return serializeForRpc(EthereumQuantity, 0n)
 					case 'eth_getCode': return '0x6000'
+					// The preview guard checks on-chain ownership before the stack-based signature requirement read.
+					case 'eth_call': return getNamedSafeCallReply(rpcRequest.params?.[0], [connectedUser.address, demoAccount.address])
 					case 'eth_gasPrice': return serializeForRpc(EthereumQuantity, 1n)
 					case 'eth_simulateV1': {
 						const firstParam = rpcRequest.params?.[0]
