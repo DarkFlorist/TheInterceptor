@@ -140,20 +140,7 @@ export type PreparedEthSimulateV1Input = {
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }
-export type SimulatedAccountCode = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure' }
-
 export class EthereumClientService {
-	private readonly simulatedAccountCodeReads = new Map<string, readonly SimulatedAccountCode[]>()
-	public readonly getSimulatedAccountCodeObservation = (key: string) => this.simulatedAccountCodeReads.get(key)
-	public readonly rememberSimulatedAccountCodeObservation = (key: string, codes: readonly SimulatedAccountCode[]) => {
-		if (!codes.every((code) => code.statusCode === 'success')) return
-		if (this.simulatedAccountCodeReads.size >= 64) {
-			const oldest = this.simulatedAccountCodeReads.keys().next().value
-			if (oldest !== undefined) this.simulatedAccountCodeReads.delete(oldest)
-		}
-		this.simulatedAccountCodeReads.set(key, codes)
-	}
-
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
@@ -183,7 +170,6 @@ export class EthereumClientService {
 		return this.cachedBlock
 	}
 	public cleanup = () => {
-		this.simulatedAccountCodeReads.clear()
 		this.setBlockPolling(false)
 	}
 
@@ -368,7 +354,11 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (executionInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined, emptyInput: 'applyInitialState' | 'appendCall' = 'applyInitialState'): Promise<PreparedEthSimulateV1Input> => {
+	// A complete run materializes initial state even without calls; a prefix leaves that state for the appended first call. Both use the same planner.
+	public readonly prepareEthSimulateV1Input = async (input: SimulatedExecutionInput, blockNumber: bigint, abort: AbortController | undefined) => await this.prepareSimulationBlocksForRpc(input, blockNumber, abort, true)
+	public readonly prepareSimulationPrefixForRpc = async (input: SimulatedExecutionInput, blockNumber: bigint, abort: AbortController | undefined) => await this.prepareSimulationBlocksForRpc(input, blockNumber, abort, false)
+
+	private readonly prepareSimulationBlocksForRpc = async (executionInput: SimulatedExecutionInput, blockNumber: bigint, requestAbortController: AbortController | undefined, includeInitialStateBlock: boolean): Promise<PreparedEthSimulateV1Input> => {
 		const simulationStateInput = toSimulationStateInputMinimalData(executionInput.value)
 		// This service applies caller-supplied initial account state; mode and preference selection happen upstream.
 		const simulationOverrides = executionInput.simulationOverrides
@@ -409,7 +399,7 @@ export class EthereumClientService {
 		}
 
 		// A complete empty run needs a call-less block to apply initial state. A prefix for an appended call stays empty: that call will carry the initial state in its own first block. Both paths share this preparation owner.
-		const blocksToSend: SimulationStateInputMinimalData = emptyInput === 'applyInitialState' && simulationStateInput.length === 0 && Object.keys(simulationOverrides).length > 0
+		const blocksToSend: SimulationStateInputMinimalData = includeInitialStateBlock && simulationStateInput.length === 0 && Object.keys(simulationOverrides).length > 0
 			? [{ transactions: [], stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }]
 			: simulationStateInput
 		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas

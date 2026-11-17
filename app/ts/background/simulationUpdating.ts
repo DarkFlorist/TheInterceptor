@@ -263,7 +263,7 @@ async function withDelegationLookupReporting<T>(address: bigint, lookup: () => P
 	}
 }
 
-// The delegate each transaction's sender runs with, read from executed state rather than re-derived from EIP-7702's rules. Accounts at each authorization prefix share one batched replay, cached by exact input and parent hash for repeated visualisations. Code only changes through authorizations, so before the stack's first transaction that carries any, a sender has its initial delegate: what the first block's effective overrides (including delegate clearing) set, else its on-chain one. From such a transaction on, the sender's code is read by re-running the stack up to and including that transaction with the code reader appended in its own block (getSimulatedCodeFromInput), so the stack's own blocks run exactly as simulated. A failed read shows no delegate.
+// The delegate each transaction's sender runs with, read from executed state rather than re-derived from EIP-7702's rules. Accounts at each authorization prefix share one batched replay, with response reuse owned by the existing RPC request cache. Code only changes through authorizations, so before the stack's first transaction that carries any, a sender has its initial delegate: what the first block's effective overrides (including delegate clearing) set, else its on-chain one. From such a transaction on, the sender's code is read by re-running the stack up to and including that transaction with the code reader appended in its own block (getSimulatedCodeFromInput), so the stack's own blocks run exactly as simulated. A failed read shows no delegate.
 async function getDelegationEntriesForTransactions(
 	simulationState: SimulationState,
 	ethereum: EthereumClientService,

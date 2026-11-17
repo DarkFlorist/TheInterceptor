@@ -896,12 +896,12 @@ describe('delegate clearing in simulation', () => {
 		assert.deepEqual(result.codeReads, [{ account: delegatedAccount, prefixCallCount: 2 }])
 	})
 
-	test('batches account observations by authorization prefix and reuses them across identical metadata renders', async () => {
+	test('batches account observations by authorization prefix without a separate render cache', async () => {
 		const state = successfulStateOf([delegatedAccountCall(1n), sponsoredTransaction(2n, [signAuthorization(restoredDelegate, 2n)]), delegatedAccountCall(3n)], {})
 		const result = await visualizedDelegatesOf(state, (_prefix, account) => account === delegatedAccount ? delegationDesignator(restoredDelegate) : '0x', [structuredClone(state)])
 		assert.deepEqual(result.delegates, [onChainDelegate, undefined, restoredDelegate])
-		assert.equal(result.codeReplayRequests, 1, 'both senders share one prefix replay, and a repeated render makes none')
-		assert.equal(result.codeReads.length, 2)
+		assert.equal(result.codeReplayRequests, 2, 'both senders share one prefix replay per render; the transport owns response reuse')
+		assert.equal(result.codeReads.length, 4)
 	})
 
 	test('client cleanup releases account-code observations before a later render', async () => {
@@ -1037,7 +1037,7 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(prepared.blockOverrides.length, 1)
 		assert.deepEqual(prepared.inputBlocks.map((block) => block.rpcBlockCount), [1])
 		// A prefix leaves the first block available for the caller's appended call.
-		const prefix = await ethereum.prepareEthSimulateV1Input({ kind: 'simulated', value: [], simulationOverrides }, 1n, undefined, 'appendCall')
+		const prefix = await ethereum.prepareSimulationPrefixForRpc({ kind: 'simulated', value: [], simulationOverrides }, 1n, undefined)
 		assert.deepEqual(serialize(EthSimulateV1Params, prefix.request).params[0].blockStateCalls, [])
 		assert.deepEqual(prefix.rpcBlocks, [])
 		assert.deepEqual(prefix.inputBlocks, [])
@@ -1049,7 +1049,7 @@ describe('delegate clearing in simulation', () => {
 	})
 })
 
-test('legacy result-block overrides decode as effective state while replay inputs keep their raw overrides', async () => {
+test('legacy result-block copies are discarded while the captured recipe retains account overrides', async () => {
 	const { SimulationStateBlock } = await import('../../app/ts/types/visualizer-types.js')
 	const raw = { [addressString(activeAddress)]: { balance: 1n } }
 	const block = SimulationStateBlock.parse({
@@ -1060,11 +1060,23 @@ test('legacy result-block overrides decode as effective state while replay input
 		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0x0', deltaUnit: 'Seconds' },
 		blockBaseFeePerGas: '0x1',
 	})
-	assert.deepEqual(block.effectiveStateOverrides, { [addressString(activeAddress)]: { code: new Uint8Array() } })
+	assert.equal('effectiveStateOverrides' in block, false)
 	assert.equal('stateOverrides' in block, false)
 	const serialized = SimulationStateBlock.serialize(block)
-	assert.equal('effectiveStateOverrides' in serialized, true)
+	assert.equal('effectiveStateOverrides' in serialized, false)
 	assert.equal('stateOverrides' in serialized, false)
 	const input = createSimulatedExecutionInput([{ stateOverrides: raw, transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }], { [addressString(activeAddress)]: { code: new Uint8Array() } })
+	assert.deepEqual(input.value[0]?.stateOverrides, raw)
+})
+
+
+test('effective account views derive from the recipe identically for empty and non-empty stacks', async () => {
+	const { getEffectiveSimulationOverrides } = await import('../../app/ts/utils/simulationStateOverrides.js')
+	const initial = { [addressString(activeAddress)]: { code: new Uint8Array() } }
+	const raw = { [addressString(activeAddress)]: { balance: 1n } }
+	const block = { stateOverrides: raw, transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false }
+	assert.deepEqual(getEffectiveSimulationOverrides(createSimulatedExecutionInput([], initial)), [initial])
+	const input = createSimulatedExecutionInput([block, block], initial)
+	assert.deepEqual(getEffectiveSimulationOverrides(input), [{ [addressString(activeAddress)]: { balance: 1n, code: new Uint8Array() } }, raw])
 	assert.deepEqual(input.value[0]?.stateOverrides, raw)
 })

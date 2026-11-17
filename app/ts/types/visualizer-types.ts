@@ -269,17 +269,9 @@ const SimulationStateBlockFields = funtypes.Intersect(
 	}),
 )
 
-const CurrentSimulationStateBlock = SimulationStateBlockFields.And(funtypes.ReadonlyObject({ effectiveStateOverrides: StateOverrides }))
-export type SimulationStateBlock = funtypes.Static<typeof CurrentSimulationStateBlock>
-
-// Result blocks carry effective overrides; raw replay inputs retain stateOverrides. Older persisted results used the ambiguous field name.
-export const SimulationStateBlock = funtypes.Union(CurrentSimulationStateBlock, SimulationStateBlockFields.And(funtypes.ReadonlyObject({ stateOverrides: StateOverrides })).withParser({
-	parse: ({ stateOverrides, ...block }) => ({ success: true, value: { ...block, effectiveStateOverrides: stateOverrides } }),
-	serialize: (block: SimulationStateBlock) => {
-		const { effectiveStateOverrides, ...fields } = block
-		return { success: true, value: { ...fields, stateOverrides: effectiveStateOverrides } }
-	},
-}))
+// Account overrides belong only to the captured replay recipe. Legacy result fields are ignored when decoding.
+export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlockFields>
+export const SimulationStateBlock = SimulationStateBlockFields
 
 type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
 const SimulationStateSuccess = funtypes.ReadonlyObject({
@@ -292,7 +284,7 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
 }).And(funtypes.ReadonlyPartial({
-	// Persisted replay recipe: simulationStateInput is raw and must be paired with these captured initial overrides through getSimulationExecutionInputFromState. simulatedBlocks is the effective execution result, never an alternative replay input. Older recipes have no initial overrides.
+	// Persisted replay recipe: simulationStateInput is raw and must be paired with these captured initial overrides through getSimulationExecutionInputFromState. simulatedBlocks contains execution observations only and never duplicates account overrides. Older recipes have no initial overrides.
 	simulationOverrides: StateOverrides,
 }))
 

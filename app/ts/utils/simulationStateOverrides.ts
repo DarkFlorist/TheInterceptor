@@ -1,3 +1,4 @@
+import type { SimulationExecutionInput } from '../types/visualizer-types.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 
 /** Merge account fields, letting the second set win when both specify the same field. */
@@ -29,4 +30,14 @@ export function mapBlocksWithEffectiveStateOverrides<TBlock, TResult>(
 	mapBlock: (block: TBlock, effectiveStateOverrides: StateOverrides, blockIndex: number) => TResult,
 ): TResult[] {
 	return blocks.map((block, blockIndex) => mapBlock(block, getStateOverridesForBlockAt(blockIndex, getBlockOverrides(block), initialOverrides), blockIndex))
+}
+
+
+// Uniform derived account-state views, including a stack with no executed blocks. Nothing stores a second copy of the initial state.
+export function getEffectiveSimulationOverrides(input: SimulationExecutionInput): readonly StateOverrides[] {
+	return input.value.length === 0 ? [input.simulationOverrides] : input.value.map((block, index) => getStateOverridesForBlockAt(index, block.stateOverrides, input.simulationOverrides))
+}
+
+export function getEffectiveSimulationBlockOverrides(input: SimulationExecutionInput, index: number): StateOverrides {
+	return getStateOverridesForBlockAt(index, input.value[index]?.stateOverrides ?? {}, input.simulationOverrides)
 }
