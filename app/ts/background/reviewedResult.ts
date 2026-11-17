@@ -26,6 +26,8 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	uniqueRequestIdentifier: false,
 	popupOrTabId: false,
 	approvalStatus: false,
+	// Resolution inputs do not change reviewed content.
+	resolutionInputs: false,
 	// Bind the visualization and its signing inputs together, including the simulated signer and Safe message review.
 	signedMessageTransaction: true,
 }

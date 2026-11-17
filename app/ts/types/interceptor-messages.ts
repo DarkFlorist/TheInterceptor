@@ -8,7 +8,7 @@ import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
-import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
+import { Website, WebsiteAccess, WebsiteAccessArray, PopupOrTabId } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcEntries, RpcNetwork } from './rpc.js'
@@ -254,6 +254,10 @@ export const InterceptedRequestForward = funtypes.Intersect(
 	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
+// A terminal reply in the durable terminal-reply queue: the commitment to the reply until its request is finished. delivered is set once it is posted; an entry stored before the field existed counts as not delivered. confirmationWindow is the window that showed the request, kept until the window is updated after the request is removed.
+export type StoredTerminalReply = funtypes.Static<typeof StoredTerminalReply>
+export const StoredTerminalReply = funtypes.Intersect(InterceptedRequestForward, funtypes.ReadonlyPartial({ delivered: funtypes.Literal(true), confirmationWindow: PopupOrTabId }))
+
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
 const InterceptorApproval = funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) })
 // Background senders know whether they are sending a reply or a callback. Keep separate codecs so hot paths do not construct failures for unrelated message shapes.
@@ -478,7 +482,6 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 	params: funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
 }).asReadonly()
 
-
 type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
@@ -643,7 +646,6 @@ export const InterceptorAccess = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_interceptorAccess'),
 	data: InterceptorAccessReply,
 }).asReadonly()
-
 
 type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 const InterceptorAccessDialog = funtypes.ReadonlyObject({

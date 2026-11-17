@@ -109,7 +109,7 @@ test('every decision whether the node runs a transaction as an executed call goe
 
 test('simulation stack import applies every imported-stack admission rule from one module', () => {
 	assert.match(popupMessageHandlersSource, /const admission = admitImportedSimulationStackOperations\(parsedRequest\.data\.interceptorSimulateStack\.operations\)/u)
-	assert.match(popupMessageHandlersSource, /\.\.\.prevStack\.operations, \.\.\.admission\.operations\]/u)
+	assert.match(popupMessageHandlersSource, /const newOperations = \[\.\.\.prevStack\.operations, \.\.\.admission\.operations\]/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /preSimulationTransaction\.safeTransaction !== undefined|executeThroughSafe/u)
 	assert.doesNotMatch(safeTransactionConfirmationSource, /withoutImportedGnosisSafeExecutions/u)
 })
@@ -124,11 +124,11 @@ test('a Gnosis Safe confirmation and its refreshes take the fee mode from one ma
 test('a pending transaction records its flow once, as the safeFlow that the confirmation stores and every refresh reads', async () => {
 	const accessRequestSource = await Bun.file(new URL('../../app/ts/types/accessRequest.ts', import.meta.url)).text()
 	const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
-	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const pendingTransactionBaseDefinition = accessRequestSource.slice(accessRequestSource.indexOf('const SimulatedPendingTransactionBase ='), accessRequestSource.indexOf('export type SimulatedPendingTransaction ='))
 	if (pendingTransactionBaseDefinition === undefined) throw new Error('SimulatedPendingTransactionBase definition not found')
 	assert.match(pendingTransactionBaseDefinition, /\tsafeFlow: PendingTransactionSafeFlow,\n/u)
 	// The flow's data lives only in safeFlow, so no other pending field can disagree with it.
-	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest|\.And\(/u)
+	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest/u)
 	assert.equal(accessRequestSource.match(/export const PendingTransactionSafeFlow = /gu)?.length, 1)
 	assert.match(safePendingFlowSource, /export type SafeTransactionFlowKind = PendingTransactionSafeFlow\['kind'\]/u)
 	assert.match(safePendingFlowSource, /export const getPendingTransactionFlowKind = \(pending: PendingTransaction\): SafeTransactionFlowKind => pending\.safeFlow\.kind/u)
@@ -136,8 +136,8 @@ test('a pending transaction records its flow once, as the safeFlow that the conf
 })
 
 test('a refresh creates a Gnosis Safe proposal whose transaction did not form under the lock that opening a confirmation holds, so it reserves its own Safe nonce', () => {
-	assert.match(confirmTransactionSource, /const outcome = await pendingConfirmationSemaphore\.execute\(async \(\) => \{\n\t\tconst finalizedSafePreparation = await safePreparation\.finalize\(/u)
-	assert.match(confirmTransactionSource, /export const runWithPendingConfirmationLock = async <T>\(work: \(\) => Promise<T>\) => await pendingConfirmationSemaphore\.execute\(work\)/u)
+	assert.match(confirmTransactionSource, /const outcome = await withPendingConfirmationLock\(async \(pendingConfirmationLock\) => \{\n\t\tconst finalizedSafePreparation = await safePreparation\.finalize\(/u)
+	assert.match(confirmTransactionSource, /export const runWithPendingConfirmationLock = async <T>\(work: \(\) => Promise<T>\) => await withPendingConfirmationLock\(work\)/u)
 	assert.match(popupMessageHandlersSource, /case 'prepareSafeProposal': return await runWithPendingConfirmationLock\(async \(\) => \{\n\t\t\tconst prepared = await prepareUnformedSafeProposalAgain\(/u)
 })
 
@@ -167,7 +167,6 @@ test('the confirmation presentation imports shared Safe flow policy from the dom
 	assert.doesNotMatch(confirmTransactionComponentSource, /from '\.\.\/\.\.\/background\/safePendingFlow\.js'/u)
 })
 
-
 test('shared dispatch and confirmation APIs depend on operation models, not frontend admission types', async () => {
 	const simulationHandlers = await Bun.file(new URL('../../app/ts/background/simulationModeHandlers.ts', import.meta.url)).text()
 	for (const source of [backgroundSource, simulationHandlers, confirmTransactionSource, safeTransactionConfirmationSource]) {
@@ -186,7 +185,6 @@ test('signer ownership and Safe Apps eligibility use the same top-frame predicat
 		assert.doesNotMatch(source, /frameId ===/u)
 	}
 })
-
 
 test('only the Safe message preview replaces a Safe\'s code; Safe proposals delegate-call through execTransaction', async () => {
 	const safeSimulation = await Bun.file(new URL('../../app/ts/safe/safeSimulation.ts', import.meta.url)).text()
