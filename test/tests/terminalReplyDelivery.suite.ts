@@ -603,6 +603,8 @@ test('terminal replies are delivered and simulation stays refused while a networ
 		const snapshot = await readNetworkSnapshot(owner)
 		assert.equal(snapshot.settings.activeRpcNetwork.chainId, fakeRpcNetwork.chainId + 1n)
 		assert.equal(snapshot.simulation.kind, 'unavailable')
+		const { appendToActiveSimulationStack } = await import('../../app/ts/background/networkTransition.js')
+		await assert.rejects(appendToActiveSimulationStack(owner, stackedOperation, undefined), /An earlier network change committed its settings/u)
 	} finally {
 		restoreStackWrites()
 	}

@@ -1,8 +1,9 @@
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { activeStackContextsEqual, getActiveStackContext } from '../utils/activeStackContext.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { getRpcEntryIdentityKey, getRpcNetworkChange, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
@@ -10,14 +11,15 @@ import { assertNever } from '../utils/typescript.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from './contentScriptInjectionStrategy.js'
 import { advanceCommittedNetworkChangeGeneration, getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
-import { completeUnfinishedNetworkChange, type LockedNetworkReads, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask, type SimulationRead } from './networkTransitionLock.js'
+import { completeUnfinishedNetworkChange, type LockedNetworkReads, type NetworkSnapshot, recordUnfinishedNetworkChange, runNetworkTransition, runStackIndependentNetworkTask, type SimulationRead } from './networkTransitionLock.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { changeSimulationMode, getSettings } from './settings.js'
 import { importSettingsAndAddressBook } from './settingsImport.js'
+import { readSimulationInputSources } from './simulationInputBuilding.js'
 import { reconcileSimulationStackChain } from './simulationStackChain.js'
-import { getPrimaryRpcForChain, getRpcList } from './storageVariables.js'
+import { getPrimaryRpcForChain, getRpcList, updateInterceptorTransactionStack } from './storageVariables.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './websiteConnectionEvents.js'
 
 // The effects a committed network change owes, run under the lock of networkTransitionLock.ts, and the network snapshots that requests read under the same lock. activeSettings.ts builds address and chain changes on top of it.
@@ -88,6 +90,30 @@ async function completeNetworkChangeEffects(change: CommittedNetworkChange) {
 // The committed network change generation once any transition in progress has finished, so settings read before this call belong to the returned generation or an earlier one.
 export async function readCommittedNetworkChangeGeneration() {
 	return await runStackIndependentNetworkTask(async () => getCommittedNetworkChangeGeneration())
+}
+
+const isSameStackOperation = (stacked: InterceptorStackOperation, operation: InterceptorStackOperation) => {
+	if (stacked.type === 'Transaction' && operation.type === 'Transaction') return stacked.preSimulationTransaction.transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier
+	if (stacked.type === 'Message' && operation.type === 'Message') return stacked.signedMessageTransaction.messageIdentifier === operation.signedMessageTransaction.messageIdentifier
+	return false
+}
+
+// A confirmed simulation operation joins the stack only while the chain it was simulated on is still active in simulation mode. Returns the stacked operation with the settings, stack snapshot and services read under the same lock, or undefined if that network went away.
+export async function appendToActiveSimulationStack(simulationServicesOwner: SimulationServicesReader, operation: InterceptorStackOperation, simulatedChainId: bigint | undefined): Promise<({ readonly network: NetworkSnapshot, readonly stackedOperation: InterceptorStackOperation }) | undefined> {
+	return await runNetworkTransition(async (reads) => {
+		const settings = await getSettings()
+		if (!settings.simulationMode) return undefined
+		if (simulatedChainId !== undefined && simulatedChainId !== settings.activeRpcNetwork.chainId) return undefined
+		// Everything the resulting snapshot needs is read before the write, so a failed read cannot leave the operation stacked behind an unfinished confirmation.
+		const sources = await readSimulationInputSources(settings)
+		// An operation already on the stack was appended by an earlier attempt of this confirmation, which may now finish.
+		const interceptorTransactionStack = await updateInterceptorTransactionStack((previousStack) => previousStack.operations.some((stacked) => isSameStackOperation(stacked, operation))
+			? previousStack
+			: { operations: [...previousStack.operations, operation] })
+		// The confirmation reports the stacked operation, which an earlier attempt may have prepared differently.
+		const stackedOperation = interceptorTransactionStack.operations.find((stacked) => isSameStackOperation(stacked, operation)) ?? operation
+		return { network: reads.buildNetworkSnapshot(settings, sources, interceptorTransactionStack, simulationServicesOwner.getCurrent()), stackedOperation }
+	})
 }
 
 // Compares with the installed client rather than the previous settings, so a transition that failed part-way is repaired by its retry. A signer-only network keeps the previous provider because it has no endpoint to install.

@@ -39,6 +39,7 @@ import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindo
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { identifyAddress } from '../metadataUtils.js'
+import { appendToActiveSimulationStack } from '../networkTransition.js'
 import { readNetworkSnapshotForPendingRequest, type NetworkRead, type NetworkSnapshot, type SimulationSnapshot } from '../networkTransitionLock.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { computeConfirmationVisualisation, updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
@@ -514,19 +515,37 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
 	// Like a request that can no longer reach its wallet, a confirmation whose network went away stays pending with an error, so the user can switch back or reject it.
+	const keepPendingAfterNetworkChange = async () => {
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
+			approvalStatus: {
+				status: 'SignerError',
+				code: METAMASK_ERROR_BLANKET_ERROR,
+				message: 'The active network changed after this request was simulated. Switch back to its network to add it to the simulation, or reject it.',
+			}
+		}))
+		await updateViewOnCurrentSnapshot()
+		return false
+	}
 	switch (pendingTransactionOrMessage.type) {
 		case 'SignableMessage': {
-			await updateInterceptorTransactionStack((previousStack) => ({ operations: [...previousStack.operations, { type: 'Message', signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }] }))
-			current = await readNetworkSnapshotForPendingRequest(simulationServicesOwner)
+			const appended = await appendToActiveSimulationStack(
+				simulationServicesOwner,
+				{ type: 'Message', signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction },
+				pendingTransactionOrMessage.simulationChainId,
+			)
+			if (appended === undefined) return await keepPendingAfterNetworkChange()
+			current = appended.network
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
 		}
 		case 'Transaction': {
 			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
-			await updateInterceptorTransactionStack((previousStack) => ({ operations: [...previousStack.operations, { type: 'Transaction', preSimulationTransaction: transaction }] }))
-			current = await readNetworkSnapshotForPendingRequest(simulationServicesOwner)
+			const appended = await appendToActiveSimulationStack(simulationServicesOwner, { type: 'Transaction', preSimulationTransaction: transaction }, pendingTransactionOrMessage.simulationChainId)
+			if (appended === undefined) return await keepPendingAfterNetworkChange()
+			if (appended.stackedOperation.type !== 'Transaction') throw new Error('The stacked operation of this transaction is not a transaction.')
+			current = appended.network
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
-			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) }, 'changed')
+			return reply({ type: 'result', result: EthereumBytes32.serialize(appended.stackedOperation.preSimulationTransaction.signedTransaction.hash) }, 'changed')
 		}
 		default: assertNever(pendingTransactionOrMessage)
 	}
