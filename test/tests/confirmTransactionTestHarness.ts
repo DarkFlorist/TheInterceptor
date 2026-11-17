@@ -2,7 +2,7 @@ import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
-import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
+import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType, CommittedRequestFinisher } from '../../app/ts/background/terminalReplyDelivery.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
@@ -15,8 +15,10 @@ import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
+import type { WebsiteSocket } from '../../app/ts/utils/requests.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -234,7 +236,13 @@ export async function loadModules() {
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
 		import('../../app/ts/utils/errors.js'),
 	])
-	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
+	// As the background composes it (background-startup.ts): a reconnect flush finishes the requests whose replies it delivered, here with the test simulator's services.
+	const finishCommittedRequest: CommittedRequestFinisher = async (uniqueRequestIdentifier, websiteTabConnections) => {
+		const { resumeRequest } = await import('../../app/ts/background/requestResolution.js')
+		return await resumeRequest(uniqueRequestIdentifier, confirmTransaction.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections), { automatic: true })
+	}
+	const flushPendingTerminalRepliesWithFinisher: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
+	const flushPendingTerminalRepliesForSocket = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => await flushPendingTerminalRepliesWithFinisher(websiteTabConnections, socket, finishCommittedRequest)
 
 	return {
 		EthereumClientService: ethereumClientService.EthereumClientService,
@@ -244,6 +252,7 @@ export async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
@@ -259,6 +268,7 @@ export async function loadModules() {
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
 		openConfirmTransactionDialogForTransaction: confirmTransaction.openConfirmTransactionDialogForTransaction,
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
+		createResolutionContext: confirmTransaction.createResolutionContext,
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
@@ -273,9 +283,9 @@ export async function loadModules() {
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
-		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
+		updateOwnedPendingRequestField: storageVariables.updateOwnedPendingRequestField,
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
@@ -286,10 +296,13 @@ export async function loadModules() {
 		updateTabState: storageVariables.updateTabState,
 		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
 		flushPendingTerminalRepliesForSocket,
-		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
+		flushPendingTerminalRepliesForConnectedPortWithRetry: async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, port: browser.runtime.Port) => await terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port, finishCommittedRequest),
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
-		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
+		queueTerminalReplyAndAttemptDelivery: async (...[websiteTabConnections, message]: Parameters<typeof terminalReplyDelivery.attemptQueuedTerminalReplyDelivery>) => {
+			await terminalReplyDelivery.queueTerminalReply(message)
+			return await terminalReplyDelivery.attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
+		},
 		signerReply: providerMessageHandlers.signerReply,
 		ethAccountsReply: providerMessageHandlers.ethAccountsReply,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
@@ -540,6 +553,8 @@ export function createFeeValidatingSimulator(accountBalance: bigint, rpcNetwork 
 		tokenPriceService: new modules.TokenPriceService(feeValidatingEthereum, 60_000),
 	}
 }
+// The resolution context the background gives a resolution, with the test simulator's services.
+export const testResolutionContext = (websiteTabConnections: WebsiteTabConnections) => modules.createResolutionContext(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
 
 export const activeAddress = modules.defaultActiveAddresses[0]?.address
 export const recipientAddress = modules.defaultActiveAddresses[1]?.address
@@ -722,6 +737,8 @@ export const getPendingSafeProposal = (pending: PendingTransactionOrSignableMess
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
+	// The requesting tab is open unless a test closes it.
+	browserMock.setLiveTabIds([uniqueRequestIdentifier.requestSocket.tabId])
 	resetFakeSafeContractState()
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
@@ -781,7 +798,7 @@ export async function waitForPendingTransactionsToClear() {
 	}
 }
 
-export { addressString, bytes32String, createSafeTx, EIP712Message, getSafeTxHash, privateKeyToAccount, SAFE_ABI, SAFE_EXECUTION_ABI, safeTxToTypedDataJson, withSilencedConsole }
+export { EIP712Message,SAFE_ABI,SAFE_EXECUTION_ABI,addressString,bytes32String,createSafeTx,getSafeTxHash,privateKeyToAccount,safeTxToTypedDataJson,withSilencedConsole }
 
 // Replayed accepts may arrive after cleanup; the resolver must finish or ignore them before inspecting consent.
 export async function createReplayableAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier) {

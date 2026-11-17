@@ -4516,3 +4516,35 @@ test('Safe SDK settings belong to the page and survive background connection rei
 		assert.equal(proposalCount, 2)
 	})
 })
+
+// A restart between posting and marking a reply delivered may replay it; the provider settles once.
+test('settles a transaction once when its successful terminal reply is replayed', async () => {
+		let capturedRequest: InpageRequest | undefined
+		const { fakeWindow, interceptorErrorPayloads, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method !== 'eth_sendTransaction') return false
+				capturedRequest = request
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?terminal-reply-success-replay', async () => {
+			const provider = fakeWindow.ethereum
+			let settlements = 0
+			const requestPromise = provider.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] }).then((result) => {
+				settlements += 1
+				return result
+			})
+			await waitFor(() => capturedRequest !== undefined)
+			const request = capturedRequest
+			if (request === undefined) throw new Error('request was not captured')
+			const transactionHash = `0x${ '12'.repeat(32) }`
+			const success = { interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: transactionHash }
+			sendBackgroundMessage(success)
+			sendBackgroundMessage(success)
+			assert.equal(await requestPromise, transactionHash)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(settlements, 1)
+			assert.deepEqual(interceptorErrorPayloads, [])
+		})
+	})

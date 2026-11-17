@@ -1,4 +1,4 @@
-import { authorizesExecutedCall, type WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import { EthereumQuantity, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction7702, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature } from '../../utils/eip7702Authorization.js'
@@ -46,3 +46,13 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction, s:
 export const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumTransaction) => (
 	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, authorizesExecutedCall(transactionToSimulate) ? EXECUTED_CALL_MOCK_SIGNATURE_S : ORDINARY_MOCK_SIGNATURE_S)
 )
+
+// Projects the formed request into the stack representation, shared by acceptance and recovery tests.
+export const toPreSimulationTransaction = (transactionToSimulate: WebsiteCreatedEthereumTransaction): PreSimulationTransaction => ({
+	signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
+	website: transactionToSimulate.website,
+	created: transactionToSimulate.created,
+	originalRequestParameters: transactionToSimulate.originalRequestParameters,
+	transactionIdentifier: transactionToSimulate.transactionIdentifier,
+	...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
+})

@@ -1,5 +1,5 @@
 import * as assert from 'assert'
-
+import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { addressString, browserMock, createReplayableAcceptConfirmation, createWebsitePort, fakeRpcNetwork, isRecord, modules, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 export const SENDER = 0x7100000000000000000000000000000000000071n
@@ -69,9 +69,55 @@ export async function acceptConfirmation(uniqueRequestIdentifier: Awaited<Return
 
 export const getStackedTransactions = async () => (await modules.getInterceptorTransactionStack()).operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction] : [])
 
+export const hashesOf = (transactions: readonly PreSimulationTransaction[]) => transactions.map((transaction) => transaction.signedTransaction.hash)
+
+export const asOperation = (preSimulationTransaction: PreSimulationTransaction) => ({ type: 'Transaction' as const, preSimulationTransaction })
+
+export const getReplyHashes = (postedMessages: readonly unknown[], requestId: number) => postedMessages.flatMap((message) => isRecord(message) && message.requestId === requestId && typeof message.result === 'string' ? [BigInt(message.result)] : [])
+
 export const getPageResponses = (postedMessages: readonly unknown[], requestId: number) => postedMessages.flatMap((message) => {
 	if (!isRecord(message) || message.requestId !== requestId) return []
 	if (typeof message.result === 'string') return [{ result: BigInt(message.result) }]
 	if (isRecord(message.error) && typeof message.error.code === 'number') return [{ error: message.error.code }]
 	return []
 })
+
+export const pauseNextStackReadThen = () => {
+	let signalPaused = () => undefined
+	const paused = new Promise<void>((resolve) => { signalPaused = () => { resolve() } })
+	let release: (fail: boolean) => void = () => undefined
+	const released = new Promise<boolean>((resolve) => { release = resolve })
+	let armed = true
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!armed || !Array.isArray(keys) || !keys.includes('interceptorTransactionStack')) return readStoredItems()
+		armed = false
+		signalPaused()
+		if (await released) throw new Error('transient stack read failure')
+		return readStoredItems()
+	})
+	return { paused, release: (fail: boolean) => { browserMock.setStorageGetHandler(undefined); release(fail) } }
+}
+
+export const waitUntilNothingPending = async () => {
+	const deadline = Date.now() + 2_000
+	while ((await modules.getPendingTransactionsAndMessages()).length > 0) {
+		if (Date.now() > deadline) throw new Error('The request stayed pending')
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+}
+
+export const readsKey = (keys: unknown, key: string) => keys === key || (Array.isArray(keys) && keys.includes(key))
+
+export const waitForCondition = async (condition: () => Promise<boolean>) => {
+	const deadline = Date.now() + 2_000
+	while (!(await condition())) {
+		if (Date.now() > deadline) throw new Error('Timed out waiting for the condition')
+		await new Promise((resolve) => setTimeout(resolve, 10))
+	}
+}
+
+export const assertNoResolutionBookkeeping = async () => {
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
+	assert.equal(getResolutionActivitySize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
+}
