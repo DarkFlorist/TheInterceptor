@@ -26,7 +26,7 @@ for (const manifestVersion of [2, 3] as const) {
 	async function createEditorHarness() {
 		const mock = installBrowserMock({ manifestVersion })
 		const m = await loadModules()
-		const { getNetworkBlockDecisions } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const { getNetworkBlockDecisions } = await import('../../app/ts/background/websiteAccessMutations.js')
 		const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const connections = new Map()

@@ -10,7 +10,7 @@ import type { WebsiteSocket } from '../utils/requests.js'
 import { getWebsiteHostname, haveSameHostForNetworkBlocking } from '../utils/websiteOrigin.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -23,7 +23,7 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -146,16 +146,6 @@ function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: st
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
-}
-
-export async function setInterceptorDisabledForWebsite(websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousWebsiteAccess) => {
-		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
-		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		const accessWithUpdatedDisabledState = { ...previousAccess, interceptorDisabled }
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, accessWithUpdatedDisabledState)
-	})
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
