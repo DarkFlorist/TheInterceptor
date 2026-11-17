@@ -17,9 +17,13 @@ export const DecodedError = funtypes.Intersect(
 	funtypes.ReadonlyObject({ decodedErrorMessage: funtypes.String })
 )
 
-// Keeps the raw RPC error because getFailureReasonForDisplay derives the displayed reason when the confirmation visualisation is built, where the ABIs are known. insufficientBalanceMessage (balance shortfalls) and safeCallRevertedMessage (a Gnosis Safe's GS013) are deliberate overrides of that reason, written by the code that diagnosed the failure, and are optional so failures stored before they existed still parse.
-export type TransactionCreationError = funtypes.Static<typeof TransactionCreationError>
-export const TransactionCreationError = funtypes.Intersect(
+// Errors displayed by the Interceptor retain their raw RPC data and may carry a deliberate explanation from the code that diagnosed the failure. Plain RPC/simulation errors carry no explanation; creation failures can carry balance-shortfall or Safe GS013 explanations. Optional fields keep older stored errors compatible.
+export type ErrorWithOptionalExplanation = funtypes.Static<typeof ErrorWithOptionalExplanation>
+export const ErrorWithOptionalExplanation = funtypes.Intersect(
 	ErrorWithCodeAndOptionalData,
 	funtypes.ReadonlyPartial({ insufficientBalanceMessage: funtypes.String, safeCallRevertedMessage: funtypes.String })
 )
+
+// Transaction creation uses the same error contract as the shared display policy, with no second schema or conversion.
+export type TransactionCreationError = ErrorWithOptionalExplanation
+export const TransactionCreationError = ErrorWithOptionalExplanation

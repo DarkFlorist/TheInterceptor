@@ -3,7 +3,7 @@ import { appendTransactionsToInput } from '../simulation/services/SimulationMode
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
-import { getFailureReasonForDisplay, getInterceptorTransactionCreationExplanation } from '../simulation/failureReasons.js'
+import { getFailureReasonForDisplay, getInterceptorErrorExplanation } from '../simulation/failureReasons.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
@@ -82,7 +82,7 @@ export async function refreshConfirmTransactionSimulation(
 	const simulationStartedTimestamp = new Date()
 	const transactionCreationError = transactionToSimulate.success ? undefined : transactionToSimulate.error
 	// getFailureReasonForDisplay shows an Interceptor explanation instead of the decoded reason, so its revert data is never decoded.
-	const transactionCreationErrorDataToDecode = transactionCreationError === undefined || getInterceptorTransactionCreationExplanation(transactionCreationError) !== undefined ? undefined : transactionCreationError.data
+	const transactionCreationErrorDataToDecode = transactionCreationError === undefined || getInterceptorErrorExplanation(transactionCreationError) !== undefined ? undefined : transactionCreationError.data
 	// The errors decoded in this function (the transaction creation error, plus the thrown simulation error in the catch path) use the recipient's ABI, a best-effort guess for a simulation error that may come from another stacked transaction, so they share a single lookup that is skipped unless one is a custom error selector.
 	const getRecipientErrorAbis = async (errorDataToDecode: readonly (string | undefined)[]): Promise<readonly string[]> => {
 		const params = transactionToSimulate.originalRequestParameters.params[0]
