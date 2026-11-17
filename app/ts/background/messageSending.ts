@@ -1,15 +1,18 @@
-import { type InterceptedRequestForward, InterceptorMessageToInpage, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
+import { type InterceptedRequestForward, serializeInpageReply, serializeInpageCallback, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTargetError } from '../utils/requests.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
-import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 
-function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
+type OutboundInpageMessage =
+	| { readonly kind: 'reply', readonly value: Parameters<typeof serializeInpageReply>[0] }
+	| { readonly kind: 'callback', readonly value: Parameters<typeof serializeInpageCallback>[0] }
+
+function postMessageToPortIfConnected(port: browser.runtime.Port, message: OutboundInpageMessage) {
 	try {
 		checkAndThrowRuntimeLastError()
-		port.postMessage(serialize(InterceptorMessageToInpage, message) as Object)
+		port.postMessage(message.kind === 'reply' ? serializeInpageReply(message.value) : serializeInpageCallback(message.value))
 		checkAndThrowRuntimeLastError()
 		return true
 	} catch (error) {
@@ -22,12 +25,12 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Inter
 // Also used for rejected ports that must never be registered as an authorized website connection.
 export function replyToInterceptedRequestOnPort(port: browser.runtime.Port, message: InterceptedRequestForward) {
 	if (message.type === 'doNotReply') return
-	return postMessageToPortIfConnected(port, {
+	return postMessageToPortIfConnected(port, { kind: 'reply', value: {
 		...message,
 		interceptorApproved: true,
 		requestId: message.uniqueRequestIdentifier.requestId,
 		...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
-	})
+	} })
 }
 
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
@@ -49,7 +52,7 @@ export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteT
 }
 
 export function sendSubscriptionReplyOrCallBackToPort(port: browser.runtime.Port, message: SubscriptionReplyOrCallBack) {
-	return postMessageToPortIfConnected(port, {...message, interceptorApproved: true })
+	return postMessageToPortIfConnected(port, { kind: 'callback', value: { ...message, interceptorApproved: true } })
 }
 
 export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, message: SubscriptionReplyOrCallBack) {
@@ -60,7 +63,7 @@ export function sendSubscriptionReplyOrCallBack(websiteTabConnections: WebsiteTa
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		return postMessageToPortIfConnected(connection.port, { ...message, interceptorApproved: true })
+		return sendSubscriptionReplyOrCallBackToPort(connection.port, message)
 	}
 	return false
 }
