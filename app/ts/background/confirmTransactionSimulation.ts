@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
+import { type SimulationHashReservation, toPreSimulationTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
@@ -63,12 +63,17 @@ export async function refreshConfirmTransactionSimulation(
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
-	safeSigningRequest?: SafeTransactionSigningRequest,
+	options: {
+		readonly safeSigningRequest?: SafeTransactionSigningRequest
+		// The confirmation's reserved salt and hash (allocateSimulationHashReservation): the preview shows the hash and accepting stacks it.
+		readonly simulationHashReservation?: SimulationHashReservation
+	} = {},
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
 	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
 	const thisConfirmTransactionAbortController = confirmTransactionAbortController
+	const { safeSigningRequest, simulationHashReservation } = options
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -87,14 +92,7 @@ export async function refreshConfirmTransactionSimulation(
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
 				? safeSigningRequest === undefined
-					? {
-						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
-						website: transactionToSimulate.website,
-						created: transactionToSimulate.created,
-						originalRequestParameters: transactionToSimulate.originalRequestParameters,
-						transactionIdentifier: transactionToSimulate.transactionIdentifier,
-						...(transactionToSimulate.simulationOptions === undefined ? {} : { simulationOptions: transactionToSimulate.simulationOptions }),
-					}
+					? toPreSimulationTransaction(transactionToSimulate, simulationHashReservation)
 					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined

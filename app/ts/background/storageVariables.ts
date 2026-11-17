@@ -419,6 +419,7 @@ export async function updateInterceptorTransactionStackWithResult<Result>(update
 		const prevStack = await getInterceptorTransactionStack()
 		const { stack: interceptorTransactionStack, result } = updateFunc(prevStack)
 		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
+		assertNoAddedDuplicateTransactionHash(prevStack, interceptorTransactionStack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
 		return result
 	})
@@ -440,6 +441,21 @@ function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: Inte
 	if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
 }
 
+// An update may keep duplicate hashes a stack stored before #1713 holds, but every transaction it adds (one whose identifier the previous stack lacks) needs a hash of its own, which appending through appendOperationsToStack gives it.
+function assertNoAddedDuplicateTransactionHash(previousStack: InterceptorTransactionStack, nextStack: InterceptorTransactionStack) {
+	const previousIdentifiers = new Set(previousStack.operations.flatMap((operation) => operation.type === 'Transaction' ? [operation.preSimulationTransaction.transactionIdentifier] : []))
+	const hashCounts = new Map<bigint, number>()
+	for (const operation of nextStack.operations) {
+		if (operation.type !== 'Transaction') continue
+		const hash = operation.preSimulationTransaction.signedTransaction.hash
+		hashCounts.set(hash, (hashCounts.get(hash) ?? 0) + 1)
+	}
+	const addsDuplicate = nextStack.operations.some((operation) => operation.type === 'Transaction'
+		&& !previousIdentifiers.has(operation.preSimulationTransaction.transactionIdentifier)
+		&& (hashCounts.get(operation.preSimulationTransaction.signedTransaction.hash) ?? 0) > 1)
+	if (addsDuplicate) throw new Error('duplicated transaction hashes')
+}
+
 type TransactionState = {
 	readonly interceptorTransactionStack: InterceptorTransactionStack
 	readonly safeTransactionStacks: SafeTransactionStacks
@@ -453,6 +469,7 @@ export async function updateTransactionState(updateFunc: (previousState: Transac
 		}
 		const updatedState = updateFunc(previousState)
 		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
+		assertNoAddedDuplicateTransactionHash(previousState.interceptorTransactionStack, updatedState.interceptorTransactionStack)
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),
 			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, updatedState.safeTransactionStacks),
