@@ -2,7 +2,7 @@ import { Fragment } from 'preact'
 import { MAX_DATE_SECONDS, bigintSecondsToDate } from '../../utils/bigint.js'
 import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
-import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
+import { getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
 import { TokenApprovalsVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
@@ -27,7 +27,7 @@ import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { type ReadonlySignal, useSignal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import type { ShownPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { SignInWithEthereumVisualizer } from '../simulationExplaining/customExplainers/SignInWithEthereumVisualizer.js'
 import { getSiweValidityWarnings } from '../../utils/siwe.js'
@@ -481,7 +481,7 @@ function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, r
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
-// A sign-in message can expire or become valid while its confirmation is open, and a pending request is not re-crafted as time passes, so its validity window is checked against the clock every second here instead of being stored in `quarantineReasons`. The confirm button is gated by shouldDisableSignableMessageConfirm, which reads neither these warnings nor `quarantine`. `quarantine`, fixed when the request was crafted, only decides whether ConfirmTransaction offers the force-send acknowledgement, and it offers it only for a message the active address can sign, where the button is enabled regardless of that acknowledgement. A warning that appears or expires while the dialog is open therefore changes what is shown, not whether the signature can be approved, so keeping the shown warning current is all that an approval-time recheck could add.
+// Sign-in validity warnings follow the clock while the confirmation is open. They are advisory and do not change the stored quarantine reasons or the send-anyway consent; those are checked separately when approving the reviewed result.
 function SiweValidityWarnings({ message }: { message: SiweMessage }) {
 	const now = useSignal(Date.now())
 	useEffect(() => {
@@ -518,11 +518,7 @@ export function SignatureCard(params: SignatureCardParams) {
 	</div>
 }
 
-export function isPossibleToSignMessage(visualizedPersonalSignRequest: VisualizedPersonalSignRequest, activeAddress: bigint) {
-	return !(visualizedPersonalSignRequest.simulationMode && (activeAddress !== MOCK_PRIVATE_KEYS_ADDRESS || visualizedPersonalSignRequest.method !== 'personal_sign'))
-}
-
-export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined> }) {
+export function InvalidMessage({ pendingTransactionOrSignableMessage } : { pendingTransactionOrSignableMessage: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined> }) {
 	const current = pendingTransactionOrSignableMessage.value
 	if (current?.type !== 'SignableMessage') return <></>
 	if (current.transactionOrMessageCreationStatus !== 'Simulated') return <></>
