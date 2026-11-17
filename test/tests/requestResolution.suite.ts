@@ -1166,10 +1166,15 @@ test('closes a resolved request\'s window when the next request, choosing its wi
 	const first = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const windowChoice = createGate()
 	await withBrowserWindows({}, async ({ liveWindows, createdWindows }) => {
-		// The next request's window choice reads the pending requests under the pending-confirmation lock; that read is held, and returns what is stored once released.
+		// Admission reads the pending store before preparation. Hold the following read, which chooses the window under the pending-confirmation lock, and return the store as it stands once released.
+		let admissionRead = true
 		let armed = true
 		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 			if (!armed || !readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+			if (admissionRead) {
+				admissionRead = false
+				return readStoredItems()
+			}
 			armed = false
 			await windowChoice.pass()
 			return readStoredItems()
@@ -1185,6 +1190,7 @@ test('closes a resolved request\'s window when the next request, choosing its wi
 			windowChoice.open()
 			await Promise.all([opening, rejecting])
 		} finally {
+			windowChoice.open()
 			browserMock.setStorageGetHandler(undefined)
 		}
 		const [second] = await modules.getPendingTransactionsAndMessages()
