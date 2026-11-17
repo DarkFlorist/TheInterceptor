@@ -200,7 +200,7 @@ export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: W
 	})
 }
 
-// Last-write-wins: applies the update to the latest stored value; see withWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
+// Last-write-wins: applies the update to the latest stored value; see tryWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
 }
