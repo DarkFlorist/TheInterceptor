@@ -4,7 +4,23 @@ import { closePopupOrTabById, tryFocusingTabOrWindow } from '../utils/popupOrTab
 import { Semaphore } from '../utils/semaphore.js'
 import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
-// Lock order for confirmation resolution: pending confirmation, then per-task locks, then storage. A caller already holding this lock passes its scoped token to avoid reacquiring it. Serializes choosing a confirmation window and registering a request in it with deciding to close a window after its last request (updateConfirmationWindowAfterRemoving).
+/**
+ * The lock order of the background, the one place that defines it, for every lock there is. A lock may only be taken while holding locks of an earlier rank:
+ * 1. pendingRequestLimiter (background-startup.ts): admission of website requests, a count of 40 rather than an exclusive lock.
+ * 2. serializeSignerAccountRequest (interceptorAccess.ts), held while waiting for a signer's reply, which is handled under the next lock.
+ * 3. serializeSignerStateOperation (signerStateOwnership.ts): a signer's reply resolves its request and changes the active address under it, so it comes before every lock below.
+ * 4. pendingInterceptorAccessSemaphore (interceptorAccess.ts), then changeActiveAddressAndChainSemaphore (activeSettings.ts). Neither reaches the pending-confirmation lock, which reaches neither: intercepted requests are replayed, and access updates finished, after they are released.
+ * 5. pendingConfirmationSemaphore (this module).
+ * 6. simulationHashSemaphore (simulationStackHashes.ts).
+ * 7. The locks of one task, never two together: terminalReplySemaphore (terminalReplyDelivery.ts), inputLogSemaphore (requestResolution.ts), updateSimulationVisualisationSemaphore (popupVisualisationUpdater.ts), contentScriptInjectionConfigurationSemaphore (contentScriptInjectionStrategy.ts), queueProcessingSemaphore (watchAsset.ts), updateDeclarativeNetRequestBlocksSemaphore (accessManagement.ts), publishSemaphore (rpcSlowRequestTracking.ts), runTabIconUpdate (iconHandler.ts), runFilterChangeSerially (EthereumSubscriptionService.ts).
+ * 8. simulationResultsSemaphore (storageVariables.ts), whose update fetches metadata while held.
+ * 9. The locks of one stored value, whose updates only compute the value, never two together: pendingTransactionsSemaphore, tabStateSemaphore, ensNodeHashesSemaphore, ensLabelHashesSemaphore and transactionStateSemaphore (storageVariables.ts), pendingTerminalRepliesSemaphore (pendingTerminalReplies.ts), makeMeRichSettingsSemaphore (settings.ts), settingsStorageLock (settingsStorageTransaction.ts), and each stored value repository's updateSemaphore (storedValue.ts).
+ * 10. The leaves, each taking nothing else: interceptorErrorDiagnosticsSemaphore (storageVariables.ts), which recovering corrupt pending terminal replies takes while holding pendingTerminalRepliesSemaphore to report it, and largeStateSemaphore (largeStateStore.ts).
+ * test/tests/lockOrderBoundaries.test.ts fails on a lock this list does not name, and pins which module may take the main locks and that the locks below rank 5 cannot reach it.
+ * It is not asserted at runtime: checking it needs to know which locks the current async call holds, and the extension's browser contexts have no async-context tracking, so a check would mean passing lock tokens through every call.
+ * A resolution claim is not a lock: a resolution run while the pending-confirmation lock is held (the orphans of getPendingTransactionWindow) is given the lock's token (PendingConfirmationLock) and does not take it again, and scheduled retries run without it.
+ */
+// Serializes choosing a confirmation window and registering a request in it with deciding to close a window after its last request (updateConfirmationWindowAfterRemoving).
 const pendingConfirmationSemaphore = new Semaphore(1)
 
 // Proof of holding the pending-confirmation lock, valid only for the scope that took it: a copy that outlives that scope no longer counts, and its holder takes the lock normally.
