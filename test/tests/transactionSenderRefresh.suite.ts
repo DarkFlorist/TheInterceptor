@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { Future } from '../../app/ts/utils/future.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import { activeAddress, addressString, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, recipientAddress, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, createWebsitePort, createAcceptConfirmation, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, recipientAddress, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 for (const { explicitSender, switchAccount, refreshOutcome } of [
 	{ explicitSender: false, switchAccount: false, refreshOutcome: 'not-started' },
@@ -71,7 +71,7 @@ for (const { explicitSender, switchAccount, refreshOutcome } of [
 			// A skipped, failed, or still-running refresh leaves this snapshot stale; the signer must receive the persisted edit.
 			assert.equal(edited.originalRequestParameters.params[0].gas, 45_000n)
 			await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections,
-				{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+				await createAcceptConfirmation())
 			const forwarded = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 			assert.ok(isRecord(forwarded))
 			assert.equal(forwarded.authorizedRequestMethods, undefined)
