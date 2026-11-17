@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
@@ -90,7 +91,7 @@ const createNode = (answerOwnerRead: OwnerReadAnswer) => {
 			}
 		},
 	}
-	return new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Test', chainId: CHAIN_ID, httpsRpc: handler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
+	return new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Test', chainId: CHAIN_ID, httpsRpc: handler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true }, alwaysLive)
 }
 
 // A stack holding one transaction from the user, standing in for the deployment of a Safe the chain does not have.

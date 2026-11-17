@@ -379,7 +379,7 @@ describe('import simulation stack', () => {
 		assert.equal('requestOrigin' in importedOperation.signedMessageTransaction, false)
 
 		const rpcEntry = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: false }
-		const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async () => { throw new Error('RPC should not be called') } }, async () => undefined, async () => undefined, rpcEntry)
+		const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async () => { throw new Error('RPC should not be called') } }, async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 		const visualized = await modules.craftPersonalSignPopupMessage(ethereum, undefined, importedOperation.signedMessageTransaction, rpcEntry)
 		assert.equal(visualized.type, 'SignInWithEthereum')
 		assert.equal(visualized.quarantine, true)
