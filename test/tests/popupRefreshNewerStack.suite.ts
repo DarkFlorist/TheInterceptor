@@ -685,3 +685,44 @@ test('a refresh invalidated before switching to ordinary signer mode publishes a
 		fixture.releaseAll()
 	}
 })
+
+
+test('a failed observer queued behind execution cannot publish after its services are replaced', async () => {
+	const fixture = createNetworkSwitchFixture({ refreshReplacements: false })
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const snapshot = await captureSimulationSnapshot()
+	const before = await getPopupVisualisationState()
+	const publicationsBefore = getPublications().length
+	const blocked = new Future<void>()
+	const release = new Future<void>()
+	let held = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!held && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+			held = true
+			blocked.resolve(undefined)
+			await release
+		}
+		return readStoredItems()
+	})
+	const executing = updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { snapshot })
+	let failure: Promise<void> | undefined
+	try {
+		await blocked
+		const { refreshAfterSimulationServicesUpdate } = await import('../../app/ts/background/simulationServiceRefresh.js')
+		failure = refreshAfterSimulationServicesUpdate(fixture.firstEndpointServices, { status: 'failed', error: new Error('Old update failed') })
+		await fixture.simulationServicesOwner.update(async ({ reset }) => {
+			await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined, activeRpcNetwork: otherEndpointNetwork })
+			reset(otherEndpointNetwork)
+		})
+		release.resolve(undefined)
+		await executing
+		await failure
+		assert.deepEqual(await getPopupVisualisationState(), before)
+		assert.equal(getPublications().length, publicationsBefore)
+	} finally {
+		release.resolve(undefined)
+		browserMock.setStorageGetHandler(undefined)
+		await Promise.all([executing, failure])
+		fixture.releaseAll()
+	}
+})

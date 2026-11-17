@@ -133,10 +133,12 @@ export async function refreshPopupVisualisationForOpenConsumer(ethereum: Ethereu
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
 // Failed provider preparation must retire old results without executing the retained provider.
-export async function publishFailedPopupVisualisation() {
+export async function publishFailedPopupVisualisation({ isCurrent = () => true }: { readonly isCurrent?: () => boolean } = {}) {
+	if (!isCurrent()) return
 	abortController.abort(NEW_BLOCK_ABORT)
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const previous = await getPopupVisualisationState()
+		if (!isCurrent()) return
 		const failed = await setPopupVisualisationState({
 			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
 			simulationUpdatingState: 'failed',

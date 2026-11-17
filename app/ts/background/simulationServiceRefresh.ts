@@ -8,7 +8,7 @@ import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 export const refreshAfterSimulationServicesUpdate: SimulationServicesUpdateObserver = async (services, outcome) => {
 	if (!services.ethereum.isCurrent()) return
 	if (outcome.status === 'failed') {
-		await publishFailedPopupVisualisation()
+		await publishFailedPopupVisualisation({ isCurrent: services.ethereum.isCurrent })
 		return
 	}
 	if (selectionShowsStack(await getSettings())) await queuePopupSimulationRefresh({ ...services, invalidateOldState: outcome.invalidateOldState })
