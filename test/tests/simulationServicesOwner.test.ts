@@ -21,6 +21,20 @@ test('the service owner publishes the exact pair returned by every reset', () =>
 })
 
 
+test('a reset permanently retires the replaced client', () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async () => undefined)
+	const replaced = owner.getCurrent()
+	try {
+		owner.reset({ ...rpc, chainId: 10n, httpsRpc: 'https://replacement.invalid' })
+		replaced.ethereum.setBlockPolling(true)
+		assert.equal(replaced.ethereum.isBlockPolling(), false)
+	} finally {
+		replaced.ethereum.cleanup()
+		owner.getCurrent().ethereum.cleanup()
+	}
+})
+
 test('a captured client can execute RPC work after the owner installs its replacement', async () => {
 	const paths: string[] = []
 	const server = Bun.serve({
