@@ -730,7 +730,7 @@ test('refreshes the selected signer and uses services installed during the walle
 
 	const confirmation = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation())
 	await accountRequestEntered.promise
-	owner.reset(fakeRpcNetwork)
+	owner.ensureNetwork(fakeRpcNetwork)
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply

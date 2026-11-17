@@ -264,11 +264,11 @@ describe('popup message dispatcher seams', () => {
 			observed.push(snapshot.services)
 		})
 		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
-		context.simulationServicesOwner.reset(network)
+		context.simulationServicesOwner.ensureNetwork(network)
 		const pending = handler(context, { method: 'popup_requestSimulationMetadata' })
 		await entered.promise
 		next = last
-		context.simulationServicesOwner.reset(network)
+		context.simulationServicesOwner.ensureNetwork({ ...network, httpsRpc: 'https://last-snapshot.example' })
 		release.resolve(undefined)
 		await pending
 		await handler(context, { method: 'popup_requestSimulationMetadata' })

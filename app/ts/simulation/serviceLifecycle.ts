@@ -66,7 +66,6 @@ export function resetSimulationServices(
 
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
-	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 	// Reconcile a selected network with the installed endpoint, retaining fallback services for signer-only selections.
 	readonly ensureNetwork: (rpcNetwork: RpcNetwork) => void
 }
@@ -79,17 +78,14 @@ export function createSimulationServicesOwner(
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
 	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
-	let installedNetwork = rpcNetwork
 	const reset = (nextRpc: RpcEntry): SimulationServices => {
 		current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-		installedNetwork = nextRpc
 		return current
 	}
 	return {
 		getCurrent: () => current,
-		reset,
 		ensureNetwork: (nextNetwork: RpcNetwork): void => {
-			if (nextNetwork.httpsRpc !== undefined && getRpcNetworkChange(installedNetwork, nextNetwork).endpointChanged) reset(nextNetwork)
+			if (nextNetwork.httpsRpc !== undefined && getRpcNetworkChange(current.ethereum.getRpcEntry(), nextNetwork).endpointChanged) reset(nextNetwork)
 		},
 	}
 }

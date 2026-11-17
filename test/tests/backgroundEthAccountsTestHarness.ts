@@ -280,7 +280,7 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset'], installedNetwork?: RpcNetwork): SimulationServicesOwner {
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, installedNetwork?: RpcNetwork): SimulationServicesOwner {
 	let current = initial
 	const replace = (network: RpcEntry) => {
 		current = reset === undefined ? current : reset(network)
@@ -289,7 +289,6 @@ export function createTestSimulationServicesOwner(initial: { ethereum: EthereumC
 	}
 	return {
 		getCurrent: () => current,
-		reset: replace,
 		// Callers can seed the installed endpoint when their fake services already represent a selected network.
 		ensureNetwork: network => { if (network.httpsRpc !== undefined && getRpcNetworkChange(installedNetwork, network).endpointChanged) replace(network) },
 	}

@@ -3,15 +3,15 @@ import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { test } from 'bun:test'
 import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 
-test('the service owner publishes the exact pair returned by every reset', () => {
+test('the service owner publishes each installed pair and retains captured snapshots', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
 	const original = owner.getCurrent()
 	try {
 		for (const chainId of [2n, 3n]) {
 			const network = { ...rpc, chainId, httpsRpc: `https://chain${ chainId }.invalid` }
-			const replacement = owner.reset(network)
-			assert.equal(owner.getCurrent(), replacement)
+			owner.ensureNetwork(network)
+			const replacement = owner.getCurrent()
 			assert.notEqual(replacement.ethereum, original.ethereum)
 			assert.deepEqual(replacement.ethereum.getRpcEntry(), network)
 		}
@@ -37,7 +37,7 @@ test('a captured client can execute RPC work after the owner installs its replac
 	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
 	const snapshot = owner.getCurrent()
 	try {
-		owner.reset({ ...rpc, httpsRpc: `${ server.url }replacement` })
+		owner.ensureNetwork({ ...rpc, httpsRpc: `${ server.url }replacement` })
 		assert.deepEqual(await snapshot.ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
 		assert.deepEqual(await owner.getCurrent().ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
 		assert.deepEqual(paths, ['/initial', '/replacement'])
@@ -47,7 +47,7 @@ test('a captured client can execute RPC work after the owner installs its replac
 	}
 })
 
-test('reconciles selected networks against installed services, including after a direct reset', () => {
+test('reconciles selected networks against the installed client', () => {
 	const initialNetwork = DEFAULT_RPCS[0]
 	if (initialNetwork === undefined) throw new Error('Expected a default RPC endpoint')
 	const owner = createSimulationServicesOwner(initialNetwork, async () => undefined, async (_ethereum, error) => { throw error })
@@ -63,9 +63,10 @@ test('reconciles selected networks against installed services, including after a
 		owner.ensureNetwork({ ...nextNetwork, httpsRpc: undefined })
 		owner.ensureNetwork(nextNetwork)
 		assert.equal(owner.getCurrent(), replacementServices, 'Signer-only selections retain the installed fallback endpoint')
-		const resetServices = owner.reset(initialNetwork)
 		owner.ensureNetwork(initialNetwork)
-		assert.equal(owner.getCurrent(), resetServices, 'Direct resets update the reconciliation baseline')
+		const resetServices = owner.getCurrent()
+		owner.ensureNetwork(initialNetwork)
+		assert.equal(owner.getCurrent(), resetServices, 'Repeated selections preserve the installed services')
 		owner.ensureNetwork({ ...initialNetwork, chainId: initialNetwork.chainId + 1n })
 		assert.notEqual(owner.getCurrent(), resetServices, 'A different chain needs new services even at the same URL')
 	} finally {

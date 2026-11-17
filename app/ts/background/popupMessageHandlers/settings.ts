@@ -9,6 +9,7 @@ import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariabl
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
@@ -46,6 +47,17 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 
+// Import commits settings before reconciling services. Keep reconciliation and its dependent refresh in one workflow.
+export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
+	const reply = await importSettings(request, websiteTabConnections)
+	await sendPopupMessageToOpenWindows(reply)
+	if (!reply.data.success) return
+	const settings = await getSettings()
+	simulationServicesOwner.ensureNetwork(settings.activeRpcNetwork)
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settings, true)
+	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })
+}
+
 export async function exportSettings() {
 	const exportedSettings = await exportSettingsAndAddressBook()
 	await sendPopupMessageToOpenWindows({
@@ -58,5 +70,5 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	if (primary !== undefined) simulationServicesOwner.ensureNetwork(primary)
 }

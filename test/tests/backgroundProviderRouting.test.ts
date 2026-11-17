@@ -50,7 +50,7 @@ describe('background eth_accounts', () => {
 		}, address, await getSettings(), address, noopPublishRpcConnectionStatus)
 		const pending = (await getPendingAccessRequests())[0]
 		assert.ok(pending !== undefined)
-		owner.reset(installed.ethereum.getRpcEntry())
+		owner.ensureNetwork(installed.ethereum.getRpcEntry())
 		await resolveInterceptorAccess(owner, connections, { userReply: 'Approved', requestAccessToAddress: account, originalRequestAccessToAddress: account, accessRequestId: pending.accessRequestId }, noopPublishRpcConnectionStatus)
 		assert.equal(oldReads, 0)
 		assert.ok(newReads > 0)
@@ -84,7 +84,7 @@ describe('background eth_accounts', () => {
 			interceptorRequest: true, usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 991, requestSocket: socket }, method: 'eth_chainId', params: [],
 		}, connections, noopPublishRpcConnectionStatus)
-		owner.reset(installed.ethereum.getRpcEntry())
+		owner.ensureNetwork(installed.ethereum.getRpcEntry())
 		metadata.resolve(website)
 		await pending
 		assert.equal(originalReads, 0)
