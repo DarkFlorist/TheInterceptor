@@ -289,7 +289,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	}
-	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent())
+	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 }
 
 export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
@@ -337,7 +337,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 		})
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
 		// The save is replied to without waiting for address-book listeners or the background re-label.
-		void publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent())
+		void publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {
@@ -416,7 +416,7 @@ export async function setSafeSimulationSigner(
 	if (updatedEntry.useAsActiveAddress) {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	}
-	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent())
+	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
 
@@ -975,7 +975,7 @@ export async function setEnsNameForHash(simulationServicesOwner: SimulationServi
 	} else {
 		await addEnsNodeHash(parsedRequest.data.name)
 	}
-	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent())
+	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 }
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {

@@ -17,7 +17,7 @@ export const settingsPopupMessageHandlers = {
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 		// An import replaces or extends the address book, so it is published as any address-book change is, with the services the imported settings left current.
-		await publishAddressBookChangeAndRelabelSimulations(context.simulationServicesOwner.getCurrent())
+		await publishAddressBookChangeAndRelabelSimulations(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
 	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.simulationServicesOwner, request, context.settings)),

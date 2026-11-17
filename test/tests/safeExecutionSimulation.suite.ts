@@ -943,7 +943,7 @@ test('re-labels a simulation-mode Gnosis Safe execution in the confirmation and 
 	simulator.simulatedCalls.length = 0
 	fakeSafeContract.requestedRpcMethods.length = 0
 	browserMock.sentMessages.length = 0
-	await publishAddressBookChangeAndRelabelSimulations(simulator)
+	await publishAddressBookChangeAndRelabelSimulations(simulator.ethereum.getRpcEntry())
 	const deadline = Date.now() + 2_000
 	while (!browserMock.sentMessages.some((message) => message.method === 'popup_simulationsRelabelled')) {
 		if (Date.now() > deadline) throw new Error('Timed out waiting for the re-label notification')

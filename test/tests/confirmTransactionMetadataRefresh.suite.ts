@@ -220,7 +220,7 @@ const countSentMessages = (method: string) => browserMock.sentMessages.filter((m
 
 // popup_simulationsRelabelled is sent once the background re-label has settled.
 async function publishAddressBookChangeAndWaitForRelabel() {
-	await publishAddressBookChangeAndRelabelSimulations(simulator)
+	await publishAddressBookChangeAndRelabelSimulations(simulator.ethereum.getRpcEntry())
 	await waitUntil(() => countSentMessages('popup_simulationsRelabelled') >= 1, 'the re-label notification')
 }
 
@@ -1529,7 +1529,7 @@ async function simulateAndStoreRunningDuringLastLookup(simulateAndStore: () => P
 async function changeAddressBookAndWaitForItsRelabel(change: () => Promise<unknown>) {
 	const relabelsBefore = countSentMessages('popup_simulationsRelabelled')
 	await change()
-	await publishAddressBookChangeAndRelabelSimulations(simulator)
+	await publishAddressBookChangeAndRelabelSimulations(simulator.ethereum.getRpcEntry())
 	await waitUntil(() => countSentMessages('popup_simulationsRelabelled') > relabelsBefore, 'the re-label notification')
 }
 
@@ -1555,7 +1555,7 @@ for (const { kind, open, simulateAndStore } of storedConfirmationRuns) {
 
 		await simulateAndStoreRunningDuringLastLookup(simulateAndStore, async () => {
 			await addRecipientContactWithoutBroadcast()
-			publication = publishAddressBookChangeAndRelabelSimulations(simulator)
+			publication = publishAddressBookChangeAndRelabelSimulations(simulator.ethereum.getRpcEntry())
 		})
 
 		try {

@@ -1,22 +1,22 @@
-import type { SimulationServices } from '../simulation/serviceLifecycle.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { relabelDisplayedConfirmationSimulation } from './confirmationRelabel.js'
 import { relabelPopupVisualisation } from './popupVisualisationUpdater.js'
 import { relabelReportingUnexpectedErrors } from './simulationRelabel.js'
 
 // Notifies even when there was nothing to re-label, so the notification always marks the end of the re-label.
-async function relabelStoredSimulationsAndNotify({ ethereum }: SimulationServices, displayedConfirmationRelabel: Promise<void>) {
+async function relabelStoredSimulationsAndNotify(rpcNetwork: RpcNetwork, displayedConfirmationRelabel: Promise<void>) {
 	await Promise.all([
-		relabelReportingUnexpectedErrors(relabelPopupVisualisation(ethereum.getRpcEntry())),
+		relabelReportingUnexpectedErrors(relabelPopupVisualisation(rpcNetwork)),
 		relabelReportingUnexpectedErrors(displayedConfirmationRelabel),
 	])
 	await sendPopupMessageToOpenWindows({ method: 'popup_simulationsRelabelled' })
 }
 
 // Publishes an address-book change that is already stored, whose write advanced the address-book revision, so a confirmation run still in flight catches up on it once stored. Callers wait only for the address-book change broadcast, never for the background re-label; see "Address-book re-labels" in docs/popup-simulation-refresh.md.
-export async function publishAddressBookChangeAndRelabelSimulations(services: SimulationServices) {
-	const displayedConfirmationRelabel = relabelDisplayedConfirmationSimulation(services.ethereum.getRpcEntry())
+export async function publishAddressBookChangeAndRelabelSimulations(rpcNetwork: RpcNetwork) {
+	const displayedConfirmationRelabel = relabelDisplayedConfirmationSimulation(rpcNetwork)
 	const addressBookChangeBroadcast = sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-	void relabelStoredSimulationsAndNotify(services, displayedConfirmationRelabel)
+	void relabelStoredSimulationsAndNotify(rpcNetwork, displayedConfirmationRelabel)
 	await addressBookChangeBroadcast
 }

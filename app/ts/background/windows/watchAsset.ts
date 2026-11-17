@@ -255,7 +255,7 @@ export function createWatchAssetResolutionDependencies(simulationServicesOwner: 
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
 		updateAddressBook: updateUserAddressBookEntries,
-		publishAddressBookChanged: async () => await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent()),
+		publishAddressBookChanged: async () => await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
 		processQueue: async (connections) => await processWatchAssetQueue(connections),
