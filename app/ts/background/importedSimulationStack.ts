@@ -15,11 +15,18 @@ const withoutImportedGnosisSafeExecutions = (operations: readonly InterceptorSta
 	return modifyObject(operation, { preSimulationTransaction: modifyObject(transaction, { simulationOptions: ordinarySimulationOptions }) })
 })
 
+// The extension never saw the frame that requested an imported message, so the request origin claimed by the export file is dropped; getSiweQuarantineReasons then flags an imported sign-in message as having no recorded origin instead of trusting the file. Messages already in the stack keep the origin recorded when they were requested.
+const withoutImportedMessageRequestOrigins = (operations: readonly InterceptorStackOperation[]): readonly InterceptorStackOperation[] => operations.map((operation) => {
+	if (operation.type !== 'Message') return operation
+	const { requestOrigin: _unobservedRequestOrigin, ...signedMessageTransaction } = operation.signedMessageTransaction
+	return modifyObject(operation, { signedMessageTransaction })
+})
+
 // Every rule deciding which operations of an imported simulation stack may enter the simulation stack, and in what form.
 export function admitImportedSimulationStackOperations(operations: readonly InterceptorStackOperation[]): ImportedSimulationStackAdmission {
 	// Gnosis Safe proposals carry signatures that must stay synchronized with the Safe stack, which only Import Gnosis Safe keeps.
 	if (operations.some((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction !== undefined)) {
 		return { admitted: false, rejection: 'Gnosis Safe transactions cannot be imported through simulation stack import. Use Import Gnosis Safe so Gnosis Safe proposals and signatures remain synchronized.' }
 	}
-	return { admitted: true, operations: withoutImportedGnosisSafeExecutions(operations) }
+	return { admitted: true, operations: withoutImportedMessageRequestOrigins(withoutImportedGnosisSafeExecutions(operations)) }
 }

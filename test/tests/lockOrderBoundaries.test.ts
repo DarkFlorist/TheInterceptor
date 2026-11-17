@@ -23,10 +23,10 @@ const TERMINAL_REPLY_LOCK = /\bterminalReplySemaphore\b/u
 const INPUT_LOG_LOCK = /\binputLogSemaphore\b/u
 
 test('each lock is taken only by the modules that the lock order lists', () => {
-	assert.deepEqual(filesMatching(PENDING_CONFIRMATION_LOCK), ['background/confirmationWindowLifecycle.ts', 'background/windows/confirmTransaction.ts'])
+	assert.deepEqual(filesMatching(PENDING_CONFIRMATION_LOCK), ['background/confirmationWindowLifecycle.ts', 'background/popupMessageHandlers.ts', 'background/windows/confirmTransaction.ts'])
 	assert.deepEqual(filesMatching(SIMULATION_HASH_LOCK), ['background/popupMessageHandlers.ts', 'background/simulationStackHashes.ts', 'background/windows/confirmTransaction.ts'])
 	assert.deepEqual(filesMatching(TERMINAL_REPLY_LOCK), ['background/terminalReplyDelivery.ts'])
-	assert.deepEqual(filesMatching(INPUT_LOG_LOCK), ['background/requestResolution.ts'])
+	assert.deepEqual(filesMatching(INPUT_LOG_LOCK), ['background/requestResolutionInputs.ts'])
 })
 
 test('the modules of the inner locks take no outer lock', () => {

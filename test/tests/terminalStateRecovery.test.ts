@@ -54,3 +54,46 @@ test('startup terminal recovery stops retrying a pass that keeps failing, with b
 	assert.deepEqual(failures, [true, true, true, true, true, false], 'the last failure gives up')
 	assert.deepEqual(delays, [100, 200, 400, 800, 1600], 'with backoff')
 })
+
+test('startup recovery coalesces overlapping attempts and cancels a retry after early success', async () => {
+	let attempts = 0
+	let fail = true
+	let releaseRecovery: (() => void) | undefined
+	let retry: (() => void) | undefined
+	let timer: ReturnType<typeof setTimeout> | undefined
+	const runRecovery = createRetriableTerminalStateRecovery({
+		recover: async () => {
+			attempts += 1
+			await new Promise<void>((resolve) => { releaseRecovery = resolve })
+			if (fail) throw new Error('storage unavailable')
+		},
+		onFailure: () => undefined,
+		scheduleRetry: (callback, delayMs) => {
+			assert.equal(delayMs, 100)
+			retry = callback
+			timer = setTimeout(() => undefined, 60_000)
+			return timer
+		},
+	})
+	try {
+		const first = runRecovery()
+		const overlapping = runRecovery()
+		assert.equal(first, overlapping)
+		await Promise.resolve()
+		assert.ok(releaseRecovery)
+		releaseRecovery()
+		await first
+		assert.equal(attempts, 1)
+		assert.ok(retry)
+		fail = false
+		const successful = runRecovery()
+		await Promise.resolve()
+		releaseRecovery()
+		await successful
+		retry()
+		await Promise.resolve()
+		assert.equal(attempts, 2, 'A stale timer must not restart completed recovery')
+	} finally {
+		if (timer !== undefined) clearTimeout(timer)
+	}
+})

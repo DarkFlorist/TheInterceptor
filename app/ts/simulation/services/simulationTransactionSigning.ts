@@ -1,4 +1,4 @@
-import { authorizesExecutedCall, type PreSimulationTransaction, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import { authorizesExecutedCall, type PreSimulationTransaction, type WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import { EthereumQuantity, type EthereumSendableSignedTransaction, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction7702, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
 import { hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature } from '../../utils/eip7702Authorization.js'
@@ -21,7 +21,7 @@ const mockSign7702Authorization = (authorization: Unsigned7702Authorization): Si
 const ORDINARY_MOCK_SIGNATURE_S = 0n
 const EXECUTED_CALL_MOCK_SIGNATURE_S = 1n
 type MockSignatureS = typeof ORDINARY_MOCK_SIGNATURE_S | typeof EXECUTED_CALL_MOCK_SIGNATURE_S
-const getMockSignatureS = (simulationOptions: TransactionSimulationOptions | undefined): MockSignatureS => authorizesExecutedCall(simulationOptions) ? EXECUTED_CALL_MOCK_SIGNATURE_S : ORDINARY_MOCK_SIGNATURE_S
+const getMockSignatureS = (transaction: Pick<PreSimulationTransaction, 'simulationOptions'>): MockSignatureS => authorizesExecutedCall(transaction) ? EXECUTED_CALL_MOCK_SIGNATURE_S : ORDINARY_MOCK_SIGNATURE_S
 
 // The r of a mock signature: the sender's 160-bit address, so identical transactions from different senders get different hashes, with a uniqueness salt above it (withUniqueSimulationHash). Nothing recovers a sender from a mock signature, and the node simulates without validating signatures.
 const ADDRESS_BITS = 160n
@@ -50,7 +50,7 @@ export const mockSignTransaction = (transaction: EthereumUnsignedTransaction, s:
 }
 
 export const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumTransaction) => (
-	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, getMockSignatureS(transactionToSimulate.simulationOptions))
+	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction, authorizesExecutedCall(transactionToSimulate) ? EXECUTED_CALL_MOCK_SIGNATURE_S : ORDINARY_MOCK_SIGNATURE_S)
 )
 
 // The salt a simulation-mode confirmation's transaction is signed with and the hash that gives it, reserved once when the confirmation is formed.
@@ -87,14 +87,14 @@ export const createSaltSearch = (): SaltSearch => ({ nextSaltByUnsaltedHash: new
 // The transaction mock-signed again from its own fields with the salt, keeping its Gnosis Safe execution marker; salt 0 keeps it as it is signed. A Gnosis Safe proposal is never re-signed (withUniqueSimulationHash).
 export const withSimulationSalt = (transaction: PreSimulationTransaction, salt: bigint): PreSimulationTransaction => {
 	if (salt === 0n || transaction.safeTransaction !== undefined) return transaction
-	return { ...transaction, signedTransaction: mockSignTransaction(withoutSignature(transaction.signedTransaction), getMockSignatureS(transaction.simulationOptions), salt) }
+	return { ...transaction, signedTransaction: mockSignTransaction(withoutSignature(transaction.signedTransaction), getMockSignatureS(transaction), salt) }
 }
 
 // The lowest salt that gives the transaction a hash outside takenHashes (withSimulationSalt), 0 if its own hash is free.
 export const findFreeSimulationSalt = (transaction: PreSimulationTransaction, takenHashes: ReadonlySet<bigint>, saltSearch: SaltSearch = createSaltSearch()): bigint => {
 	if (transaction.safeTransaction !== undefined) return 0n
 	if (!takenHashes.has(transaction.signedTransaction.hash)) return 0n
-	const s = getMockSignatureS(transaction.simulationOptions)
+	const s = getMockSignatureS(transaction)
 	const unsignedTransaction = withoutSignature(transaction.signedTransaction)
 	const unsaltedHash = mockSignTransaction(unsignedTransaction, s).hash
 	for (let salt = saltSearch.nextSaltByUnsaltedHash.get(unsaltedHash) ?? 1n; ; salt++) {

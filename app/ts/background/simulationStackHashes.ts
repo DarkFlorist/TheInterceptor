@@ -33,7 +33,7 @@ const simulationHashSemaphore = new Semaphore(1)
 export const withSimulationHashLock = async <Result>(allocateAndCommit: () => Promise<Result>) => await simulationHashSemaphore.execute(allocateAndCommit)
 
 // Whether accepting the request stacks its transaction, so it needs a reserved hash: a simulation-mode transaction other than a Gnosis Safe proposal, which is stacked under its safeTxHash.
-export const stacksTransactionOnAccept = (request: { readonly simulationMode: boolean, readonly safeTransaction?: unknown }) => request.simulationMode && request.safeTransaction === undefined
+export const stacksTransactionOnAccept = (request: Pick<Extract<PendingTransactionOrSignableMessage, { readonly type: 'Transaction' }>, 'simulationMode' | 'safeFlow'>) => request.simulationMode && request.safeFlow.kind !== 'proposal'
 
 // The hashes pending confirmations other than except hold: their reservations, and for one pending from before reservations, the hash accepting it would take. No other transaction may take them.
 export const getReservedTransactionHashes = (pending: readonly PendingTransactionOrSignableMessage[], except?: UniqueRequestIdentifier): ReadonlySet<bigint> => new Set(pending.flatMap((request) => {

@@ -7,7 +7,7 @@ import { appendOperationsToStack } from '../../app/ts/background/simulationStack
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
-import { addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, simulator, testResolutionContext, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { createAcceptConfirmation, addressString, browserMock, createSafeStackTransactionFixture, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, simulator, testResolutionContext, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 // Regression tests for #1713: no two transactions on the simulation stack share a hash, so transaction and receipt lookups by hash find the right one.
 const SENDER = 0x7100000000000000000000000000000000000071n
@@ -67,10 +67,8 @@ async function openConfirmation(requestId: number, from: bigint, value: bigint, 
 async function acceptConfirmation(uniqueRequestIdentifier: Awaited<ReturnType<typeof openConfirmation>>, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>, postedMessages: unknown[]) {
 	const pending = (await modules.getPendingTransactionsAndMessages()).find((request) => request.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId)
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error(`Expected a simulated pending transaction, got ${ pending?.transactionOrMessageCreationStatus }`)
-	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}))
+	// Hash ownership tests explicitly acknowledge this mock RPC's failing previews; they still require a reviewable result and its current approval stamp.
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier, true)))
 	const stacked = (await modules.getInterceptorTransactionStack()).operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pending.transactionIdentifier)
 	if (stacked?.type !== 'Transaction') throw new Error('Expected the accepted transaction on the simulation stack')
 	const reply = postedMessages.find((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message)
@@ -105,10 +103,7 @@ for (const requestId of [-7, 7]) {
 		const first = await openConfirmation(requestId, SENDER, 1n, websiteTabConnections)
 		await acceptConfirmation(first, websiteTabConnections, postedMessages)
 		const second = await openConfirmation(requestId, SENDER, 2n, websiteTabConnections)
-		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier: second },
-		}))
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(second, true)))
 		const stacked = await getStackedTransactions()
 		assert.equal(stacked.length, 2)
 		assert.deepEqual(getPageResponses(postedMessages, requestId), stacked.map((transaction) => ({ result: transaction.signedTransaction.hash })))
@@ -251,10 +246,7 @@ test('fails accepting a confirmation, as a handled error, when its reserved hash
 	if (previewedHash === undefined) throw new Error('Expected a previewed hash')
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation({ ...createStackedTransaction(99n, 7n), signedTransaction: { ...createStackedTransaction(99n, 7n).signedTransaction, hash: previewedHash } })] }))
 	const stackBefore = await modules.getInterceptorTransactionStack()
-	const resolved = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: request },
-	}))
+	const resolved = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 	assert.equal(resolved, false)
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(pending?.approvalStatus.status, 'SignerError')
@@ -452,7 +444,7 @@ test('keeps the Gnosis Safe execution marker of a transaction that needs a new h
 		transactionIdentifier: 1n,
 		success: true as const,
 		transaction: { type: '1559' as const, from: SENDER, chainId: fakeRpcNetwork.chainId, nonce: 0n, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, gas: 21_000n, to: RECIPIENT, value: 1n, input: new Uint8Array(), accessList: [] },
-		simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: false, executeThroughSafe: true },
+		simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, executeThroughSafe: true },
 	}
 	const safeExecution = { ...formed, signedTransaction: getSignedTransactionForSimulation(formed) }
 	assert.equal(safeExecution.signedTransaction.s, 1n)
@@ -640,7 +632,7 @@ for (const reserved of [false, true]) {
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 		if (!reserved) await withoutReservations([1])
-		const accept = async () => await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		const accept = async () => await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 		const outcomes = await Promise.allSettled([accept(), accept()])
 		assert.deepEqual(outcomes.map((outcome) => outcome.status), ['fulfilled', 'fulfilled'], 'no accept rejects')
 		const stacked = await getStackedTransactions()
@@ -663,7 +655,7 @@ test('replies with the stacked hash again when an unreserved confirmation\'s acc
 	const first = await acceptConfirmation(request, websiteTabConnections, postedMessages)
 	// The request is pending again, as if the first accept stacked the transaction but stopped before resolving it.
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [unreserved] })
-	const retried = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	const retried = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 	assert.notEqual(retried, false)
 	assert.equal((await getStackedTransactions()).length, 1, 'the retry stacks nothing more')
 	assert.deepEqual([...new Set(getReplyHashes(postedMessages, request.requestId))], [first.pageHash], 'the retry replies with the same hash')
@@ -679,7 +671,7 @@ test('stops an accept whose request was resolved while it waited', async () => {
 	let releaseLock = () => undefined
 	const lockReleased = new Promise<void>((resolve) => { releaseLock = () => { resolve() } })
 	const holdingLock = withSimulationHashLock(async () => await lockReleased)
-	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 	await new Promise((resolve) => setTimeout(resolve, 20))
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	releaseLock()
@@ -722,7 +714,7 @@ for (const competitor of ['reject', 'popup close'] as const) {
 		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 		await withoutReservations([1])
 		const pause = pauseNextStackRead()
-		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 		await pause.paused
 		try {
 			const competing = competitor === 'reject'
@@ -745,8 +737,9 @@ test('stacks nothing for an accept that comes after a reject resolved the reques
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+	const accept = await createAcceptConfirmation(request, true)
 	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'reject', uniqueRequestIdentifier: request } }))
-	const accepted = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	const accepted = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept))
 	assert.notEqual(accepted, true)
 	assert.deepEqual(await getStackedTransactions(), [])
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }], 'the page gets only the rejection')
@@ -757,7 +750,7 @@ test('lets a reject that claimed the request first win over an accept that start
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-	const resolve = (action: 'accept' | 'reject') => withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier: request } }))
+	const resolve = (action: 'accept' | 'reject') => withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, action === 'accept' ? await createAcceptConfirmation(request, true) : { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier: request } }))
 	const outcomes = await Promise.allSettled([resolve('reject'), resolve('accept')])
 	assert.deepEqual(outcomes.map((outcome) => outcome.status), ['fulfilled', 'fulfilled'])
 	assert.deepEqual(await getStackedTransactions(), [])
@@ -805,7 +798,7 @@ for (const failure of ['throws before stacking', 'finds its hash taken', 'throws
 		const { setLargeStateValue } = await import('../../app/ts/utils/largeStateStore.js')
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stackBefore)
 		const pause = pauseNextStackReadThen()
-		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 		await pause.paused
 		try {
 			await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
@@ -848,7 +841,7 @@ const pauseNextPendingWriteThen = () => {
 	const released = new Promise<boolean>((resolve) => { release = resolve })
 	let armed = true
 	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		if (!armed || !('pendingTransactionsAndMessages' in items)) return writeStoredItems()
+		if (!armed || !Array.isArray(items.pendingTransactionsAndMessages) || items.pendingTransactionsAndMessages.length !== 0) return writeStoredItems()
 		armed = false
 		signalPaused()
 		if (await released) throw new Error('transient pending request write failure')
@@ -873,7 +866,7 @@ test('delivers the accepted hash, never a rejection, when the removal after stac
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const pause = pauseNextPendingWriteThen()
-	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } })).then(() => undefined, () => undefined)
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true))).then(() => undefined, () => undefined)
 	await pause.paused
 	try {
 		assert.equal((await getStackedTransactions()).length, 1, 'the accept stacked the transaction before removing the request')
@@ -895,7 +888,7 @@ test('rejects a request once when the removal after a deferred close\'s rejectio
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const pause = pauseNextStackReadThen()
-	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } })).then(() => undefined, () => undefined)
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true))).then(() => undefined, () => undefined)
 	await pause.paused
 	try {
 		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
@@ -1047,7 +1040,7 @@ for (const flushFirst of [true, false]) {
 		if (pending === undefined) throw new Error('Expected the pending request')
 		const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
 		await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
-		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 		const closedWindows = await countingClosedWindows(async () => {
 			if (flushFirst) await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
@@ -1071,7 +1064,7 @@ test('closes the live window of a request whose reply was queued before windows 
 	if (pending === undefined) throw new Error('Expected the pending request')
 	const { commitPendingTerminalReply } = await import('../../app/ts/background/pendingTerminalReplies.js')
 	await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', error: { code: 4001, message: 'User denied transaction signature' }, uniqueRequestIdentifier: pending.uniqueRequestIdentifier })
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 	// The first startup removes the request but cannot close the window, until its retries give up.
 	const windows = Reflect.get(globalThis, 'browser').windows
@@ -1280,6 +1273,7 @@ for (const action of ['accept', 'reject', 'close'] as const) {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 		await openMessageConfirmation(websiteTabConnections)
+		const accept = await createAcceptConfirmation({ requestId: 1, requestSocket: REQUEST_SOCKET }, true)
 		await seedCommittedReply(1, { error: { code: 4001, message: 'User denied transaction signature' } })
 		// The window is still open, so startup recovery leaves the request alone; the page reconnects and gets the queued rejection.
 		await withSilencedConsole(async () => await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
@@ -1289,7 +1283,7 @@ for (const action of ['accept', 'reject', 'close'] as const) {
 		const request = { requestId: 1, requestSocket: REQUEST_SOCKET }
 		await withSilencedConsole(async () => action === 'close'
 			? await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
-			: await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier: request } }))
+			: await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, action === 'accept' ? accept : { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier: request } }))
 		await waitUntilNothingPending()
 		assert.deepEqual(getAllPageResponses(postedMessages, 1), [{ error: 4001 }], 'no second reply')
 		assert.deepEqual(await getStackedMessages(), [], 'the rejected message is not stacked')
@@ -1317,7 +1311,7 @@ test('stacks a message an earlier accept already stacked only once when accepted
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const { operation, signature } = await openMessageConfirmation(websiteTabConnections)
 	await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, operation] }))
-	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: { requestId: 1, requestSocket: REQUEST_SOCKET } } }))
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation({ requestId: 1, requestSocket: REQUEST_SOCKET }, true)))
 	assert.equal((await getStackedMessages()).length, 1)
 	assert.deepEqual(getAllPageResponses(postedMessages, 1), [{ result: signature }])
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
@@ -1366,8 +1360,8 @@ for (const state of restartStates) {
 				const expectedNewReplies = state.entry === 'delivered' ? [] : [{ result: modules.EthereumBytes32.serialize(stacked.signedTransaction.hash) }]
 
 				browserMock.setLiveWindowIds(windowSurvived ? [CONFIRMATION_WINDOW_ID] : [])
-				const { resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
-				const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+				const { resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
+				const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 				const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 				const startUp = async () => await withSilencedConsole(async () => {
 					await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
@@ -1382,7 +1376,7 @@ for (const state of restartStates) {
 					// An uncommitted request whose window survived waits for the user, whose accept answers with the stacked hash.
 					assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 					assert.deepEqual(getAllPageResponses(postedMessages, 1), [])
-					await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: { requestId: 1, requestSocket: REQUEST_SOCKET } } }))
+					await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation({ requestId: 1, requestSocket: REQUEST_SOCKET }, true)))
 				}
 				assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], 'the request completes')
 				assert.deepEqual(getAllPageResponses(postedMessages, 1), expectedNewReplies, 'exactly the original reply, once')
@@ -1441,7 +1435,7 @@ test('deletes a finished request\'s delivered reply when the first delete fails'
 })
 
 const assertNoResolutionBookkeeping = async () => {
-	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 	assert.equal(getResolutionActivitySize() + getTerminalReplyBookkeepingSize(), 0, 'no bookkeeping is left')
 }
@@ -1525,7 +1519,7 @@ test('retries an explicit reject whose commitment write failed, keeping the reje
 	assert.equal(failedCommits, 1)
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'the request waits for the retried commitment')
 	// An accept meanwhile does not change the chosen outcome.
-	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 	await withSilencedConsole(async () => await waitUntilNothingPending())
 	browserMock.setStorageSetHandler(undefined)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
@@ -1547,7 +1541,7 @@ for (const requestCount of [1, 2]) {
 		windows.remove = async (windowId: number) => { removedWindows.push(windowId); return await removeWindow(windowId) }
 		browserMock.sentMessages.length = 0
 		try {
-			await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: { requestId: 1, requestSocket: REQUEST_SOCKET } } }))
+			await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation({ requestId: 1, requestSocket: REQUEST_SOCKET }, true)))
 		} finally {
 			windows.remove = removeWindow
 		}
@@ -1618,7 +1612,7 @@ for (const trigger of ['startup', 'the requesting tab closing'] as const) {
 		await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 		await seedCommittedRejection({ delivered: false, withWindow: true })
 		browserMock.setLiveTabIds([])
-		const requestResolution = await import('../../app/ts/background/requestResolution.js')
+		const requestResolution = await import('../../app/ts/background/requestResolutionLifecycle.js')
 		const removalAttempts = await failingFirstWindowRemoval(async () => await withSilencedConsole(async () => {
 			if (trigger === 'startup') await requestResolution.resumeCommittedRequests(testResolutionContext(new Map()))
 			else await requestResolution.finishCommittedRequestsOfClosedTab(REQUEST_SOCKET.tabId, testResolutionContext(new Map()))
@@ -1651,7 +1645,7 @@ test('finishes a request once when a reconnect flush overlaps its finishing, clo
 		await flushReadReleased
 		return readStoredItems()
 	})
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 	const removalAttempts = await failingFirstWindowRemoval(async () => await withSilencedConsole(async () => {
 		const flushing = modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, REQUEST_SOCKET)
@@ -1675,7 +1669,7 @@ for (const closeDeferred of [false, true]) {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
-		const requestResolution = await import('../../app/ts/background/requestResolution.js')
+		const requestResolution = await import('../../app/ts/background/requestResolutionLifecycle.js')
 		// A popup close arriving while the reject holds the claim, before its reply is committed, is deferred.
 		let closesDeferred = 0
 		browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
@@ -1727,7 +1721,7 @@ test('retries listing a closed tab\'s committed replies when the first listing f
 		failedListings += 1
 		throw new Error('transient terminal reply queue read failure')
 	})
-	const { finishCommittedRequestsOfClosedTab } = await import('../../app/ts/background/requestResolution.js')
+	const { finishCommittedRequestsOfClosedTab } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	await withSilencedConsole(async () => {
 		await finishCommittedRequestsOfClosedTab(REQUEST_SOCKET.tabId, testResolutionContext(new Map()))
 		await waitForCondition(async () => (await modules.getPendingTerminalReplies()).length === 0)
@@ -1780,10 +1774,12 @@ const createGate = () => {
 const pausingRegistrationAfterWindowPick = (gate: ReturnType<typeof createGate>) => {
 	const windows = Reflect.get(globalThis, 'browser').windows
 	const getWindow = windows.get
+	let windowLookups = 0
 	let pickedWindow = false
 	windows.get = async (windowId: number) => {
 		const window = await getWindow(windowId)
-		pickedWindow = true
+		windowLookups += 1
+		pickedWindow = windowLookups >= 2
 		return window
 	}
 	let armed = true
@@ -1880,14 +1876,14 @@ test('rejects a request once when the user closes a window whose programmatic cl
 	await assertNoResolutionBookkeeping()
 })
 
-test('runs a popup close deferred behind an orphan rejection in the claim holder\'s context, so registration under the pending-confirmation lock completes', async () => {
+test('resolves a popup close deferred behind orphan rejection before admission completes', async () => {
 	await startSimulationStack(SENDER)
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const orphan = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const orphanStackRead = createGate()
 	await withBrowserWindows({}, async ({ createdWindows }) => {
-		// The orphan's window is gone, so the next registration rejects it under the pending-confirmation lock.
+		// The orphan's window is gone, so the next registration resolves it before taking the admission lock.
 		browserMock.setLiveWindowIds([])
 		const windows = Reflect.get(globalThis, 'browser').windows
 		const getWindow = windows.get
@@ -1923,7 +1919,7 @@ test('runs a popup close deferred behind an orphan rejection in the claim holder
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map((pending) => pending.uniqueRequestIdentifier.requestId), [2, 3])
 	assert.deepEqual(getPageResponses(postedMessages, orphan.requestId), [{ error: 4001 }], 'the orphan is rejected once')
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 		return getResolutionActivitySize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
@@ -1938,8 +1934,11 @@ test('closes a resolved request\'s window when the next request, choosing its wi
 	await withBrowserWindows({}, async ({ liveWindows, createdWindows }) => {
 		// The next request's window choice reads the pending requests under the pending-confirmation lock; that read is held, and returns what is stored once released.
 		let armed = true
+		let pendingReads = 0
 		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 			if (!armed || !readsKey(keys, 'pendingTransactionsAndMessages')) return readStoredItems()
+			pendingReads += 1
+			if (pendingReads === 1) return readStoredItems() // The first read is orphan preflight, outside admission.
 			armed = false
 			await windowChoice.pass()
 			return readStoredItems()
@@ -2022,7 +2021,7 @@ test('rejects a request once when its window closes and the finishing first fail
 	assert.equal(failures(), 1)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 		return getResolutionActivitySize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
@@ -2034,7 +2033,7 @@ test('rejects a request once when a close deferred behind a failed accept first 
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const pause = pauseNextStackReadThen()
-	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 	await pause.paused
 	try {
 		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
@@ -2052,14 +2051,14 @@ test('rejects a request once when a close deferred behind a failed accept first 
 	assert.equal(failures(), 1)
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [{ error: 4001 }])
 	await withSilencedConsole(async () => await waitForCondition(async () => {
-		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 		return getResolutionActivitySize() === 0
 	}))
 	await assertNoResolutionBookkeeping()
 })
 
 const waitForNoResolutionBookkeeping = async () => await withSilencedConsole(async () => await waitForCondition(async () => {
-	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 	const { getTerminalReplyBookkeepingSize } = await import('../../app/ts/background/terminalReplyDelivery.js')
 	return getResolutionActivitySize() + getTerminalReplyBookkeepingSize() === 0
 }))
@@ -2121,7 +2120,7 @@ for (const acceptOutcome of ['succeeds', 'fails'] as const) {
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 		const pause = pauseNextStackReadThen()
-		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 		await pause.paused
 		try {
 			// The reject finds the request claimed by the accept, so its decline waits for the accept.
@@ -2148,7 +2147,7 @@ for (const acceptOutcome of ['succeeds', 'fails'] as const) {
 }
 
 const waitForNoResolutionBookkeepingWhileFailing = async () => {
-	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 	const deadline = Date.now() + 10_000
 	while (getResolutionActivitySize() > 0) {
 		if (Date.now() > deadline) throw new Error('The retries did not stop')
@@ -2212,7 +2211,7 @@ test('stops a reject\'s retries at one budget when every committed-reply read is
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 	// The reject was stored with the request before its failing lookups, so startup with the window open finishes it.
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0]?.resolutionInputs, [{ kind: 'decline', reason: 'reject' }])
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 	await withSilencedConsole(async () => {
 		await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
@@ -2245,7 +2244,7 @@ test('finishes a reject whose retries ran out before committing at startup, whil
 	assert.deepEqual(pending?.resolutionInputs, [{ kind: 'decline', reason: 'reject' }], 'the reject is stored with the request')
 	assert.deepEqual(getPageResponses(postedMessages, request.requestId), [])
 	// After a restart with the window open, startup finishes it.
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 	await withSilencedConsole(async () => {
 		await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
@@ -2303,7 +2302,7 @@ test('stops the startup recovery composition when its committed-reply reads keep
 		throw new Error('persistent read failure')
 	})
 	const { createRetriableTerminalStateRecovery } = await import('../../app/ts/background/terminalStateRecovery.js')
-	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+	const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 	const recoveryFailures: boolean[] = []
 	// As the background composes it at startup.
@@ -2359,7 +2358,7 @@ for (const acceptStackedBeforeRestart of [false, true]) {
 		const firstSessionConnections = createWebsiteTabConnections(firstSessionMessages)
 		const request = await openConfirmation(1, SENDER, 1n, firstSessionConnections)
 		const pause = pauseNextStackReadThen()
-		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, firstSessionConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, firstSessionConnections, await createAcceptConfirmation(request, true)))
 		await pause.paused
 		let storedPending: Awaited<ReturnType<typeof modules.getPendingTransactionsAndMessages>>
 		try {
@@ -2381,7 +2380,7 @@ for (const acceptStackedBeforeRestart of [false, true]) {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: storedPending })
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
-		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+		const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 	beginStartupRecovery()
 		await withSilencedConsole(async () => {
 			await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
@@ -2444,7 +2443,7 @@ test('counts concurrent failures of one request against its one retry budget, wi
 	const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 	const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const pause = pauseNextStackReadThen()
-	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: request } }))
+	const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(request, true)))
 	await pause.paused
 	// Every write storing the reject on the request fails, as their reports are written slowly.
 	let failedIntentWrites = 0
@@ -2457,7 +2456,7 @@ test('counts concurrent failures of one request against its one retry budget, wi
 		if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 30))
 		writeStoredItems()
 	})
-	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+	const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 	try {
 		await withSilencedConsole(async () => {
 			// Two rejects at once, each deferred behind the accept's claim with a failing intent write.
@@ -2499,7 +2498,7 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 			if ('interceptorErrorDiagnostics' in items) await new Promise((resolve) => setTimeout(resolve, 1_800))
 			writeStoredItems()
 		})
-		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionState.js')
+		const { getResolutionActivitySize } = await import('../../app/ts/background/requestResolutionObservability.js')
 		try {
 			await withSilencedConsole(async () => {
 				await rejectRequest(request, websiteTabConnections)
@@ -2523,7 +2522,7 @@ for (const recovery of ['a new reject', 'startup'] as const) {
 		await withSilencedConsole(async () => {
 			if (recovery === 'a new reject') await rejectRequest(request, websiteTabConnections)
 			else {
-				const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolution.js')
+				const { beginStartupRecovery, resumeCommittedRequests } = await import('../../app/ts/background/requestResolutionLifecycle.js')
 				beginStartupRecovery()
 				await resumeCommittedRequests(testResolutionContext(websiteTabConnections))
 			}

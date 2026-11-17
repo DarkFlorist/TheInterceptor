@@ -12,27 +12,27 @@ import { getPendingTransactionsAndMessages } from './storageVariables.js'
  * 4. pendingInterceptorAccessSemaphore (interceptorAccess.ts), then changeActiveAddressAndChainSemaphore (activeSettings.ts). Neither reaches the pending-confirmation lock, which reaches neither: intercepted requests are replayed, and access updates finished, after they are released.
  * 5. pendingConfirmationSemaphore (this module).
  * 6. simulationHashSemaphore (simulationStackHashes.ts).
- * 7. The locks of one task, never two together: terminalReplySemaphore (terminalReplyDelivery.ts), inputLogSemaphore (requestResolution.ts), updateSimulationVisualisationSemaphore (popupVisualisationUpdater.ts), queueProcessingSemaphore (watchAsset.ts), updateDeclarativeNetRequestBlocksSemaphore (accessManagement.ts), publishSemaphore (rpcSlowRequestTracking.ts), runTabIconUpdate (iconHandler.ts), runFilterChangeSerially (EthereumSubscriptionService.ts).
+ * 7. The locks of one task, never two together: terminalReplySemaphore (terminalReplyDelivery.ts), inputLogSemaphore (requestResolutionInputs.ts), updateSimulationVisualisationSemaphore (popupVisualisationUpdater.ts), queueProcessingSemaphore (watchAsset.ts), updateDeclarativeNetRequestBlocksSemaphore (accessManagement.ts), publishSemaphore (rpcSlowRequestTracking.ts), runTabIconUpdate (iconHandler.ts), runFilterChangeSerially (EthereumSubscriptionService.ts).
  * 8. simulationResultsSemaphore (storageVariables.ts), whose update fetches metadata while held.
- * 9. The locks of one stored value, whose updates only compute the value, never two together: pendingTransactionsSemaphore, tabStateSemaphore, userAddressBookEntriesSemaphore, ensNodeHashesSemaphore, ensLabelHashesSemaphore and transactionStateSemaphore (storageVariables.ts), pendingTerminalRepliesSemaphore (pendingTerminalReplies.ts), signingAddressPreferencesSemaphore, makeMeRichSettingsSemaphore and websiteAccessSemaphore (settings.ts), and each stored value repository's updateSemaphore (storedValue.ts).
+ * 9. The locks of one stored value, whose updates only compute the value, never two together: pendingTransactionsSemaphore, tabStateSemaphore, ensNodeHashesSemaphore, ensLabelHashesSemaphore and transactionStateSemaphore (storageVariables.ts), pendingTerminalRepliesSemaphore (pendingTerminalReplies.ts), makeMeRichSettingsSemaphore (settings.ts), settingsStorageLock (settingsStorageTransaction.ts), contentScriptInjectionConfigurationSemaphore (contentScriptInjectionStrategy.ts), and each stored value repository's updateSemaphore (storedValue.ts).
  * 10. The leaves, each taking nothing else: interceptorErrorDiagnosticsSemaphore (storageVariables.ts), which recovering corrupt pending terminal replies takes while holding pendingTerminalRepliesSemaphore to report it, and largeStateSemaphore (largeStateStore.ts).
  * test/tests/lockOrderBoundaries.test.ts fails on a lock this list does not name, and pins which module may take the main locks and that the locks below rank 5 cannot reach it.
- * It is not asserted at runtime: checking it needs to know which locks the current async call holds, and the extension's browser contexts have no async-context tracking, so a check would mean passing lock tokens through every call.
- * A resolution claim is not a lock: a resolution run while the pending-confirmation lock is held (the orphans of getPendingTransactionWindow) is given the lock's token (PendingConfirmationLock) and does not take it again, and scheduled retries run without it.
+ * This catalog covers the background locks; it does not claim to infer async acquisition order. Runtime tests cover admission versus cleanup, window registration versus closure, and failed-admission cleanup.
+ * Orphan resolution runs before admission; failed-admission window cleanup runs after release. Resolution never runs while admission holds this lock, and no re-entrancy token crosses the resolution layer.
  */
 // Serializes choosing a confirmation window and registering a request in it with deciding to close a window after its last request (updateConfirmationWindowAfterRemoving).
 const pendingConfirmationSemaphore = new Semaphore(1)
 
-// Proof of holding the pending-confirmation lock, valid only for the scope that took it: a copy that outlives that scope no longer counts, and its holder takes the lock normally.
-export type PendingConfirmationLock = { held: boolean }
-export const withPendingConfirmationLock = async <Result>(work: (lock: PendingConfirmationLock) => Promise<Result>) => await pendingConfirmationSemaphore.execute(async () => {
-	const lock = { held: true }
+// Admission owns the whole locked phase. Cleanup that can acquire this lock is registered here and awaited only after release, so resolution never needs re-entrancy tokens.
+export type ConfirmationAdmission = { readonly afterRelease: (work: () => Promise<unknown>) => void }
+export async function withPendingConfirmationLock<Result>(work: (admission: ConfirmationAdmission) => Promise<Result>): Promise<Result> {
+	const afterRelease: (() => Promise<unknown>)[] = []
 	try {
-		return await work(lock)
+		return await pendingConfirmationSemaphore.execute(async () => await work({ afterRelease: (cleanup) => { afterRelease.push(cleanup) } }))
 	} finally {
-		lock.held = false
+		for (const cleanup of afterRelease) await runConfirmationViewStep(cleanup)
 	}
-})
+}
 
 // Runs one step of the confirmation window work done after a request is resolved. A failing step is reported and does not skip the steps after it, so the window is still updated and closed.
 export async function runConfirmationViewStep(step: () => Promise<unknown>) {
@@ -45,11 +45,8 @@ export async function runConfirmationViewStep(step: () => Promise<unknown>) {
 
 // How a window update reaches the window: refreshConfirmationWindow shows the confirmation queue in it, and is the only step that needs the simulation services.
 export type ConfirmationWindowAccess = { readonly refreshConfirmationWindow: () => Promise<boolean> }
-// The lock a call runs under: the token of a caller that already holds the pending-confirmation lock.
-export type LockScope = { readonly pendingConfirmationLock?: PendingConfirmationLock }
-
-// Updates the confirmation window that showed a removed request: it moves to the next of its own requests, or closes after its last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. A caller that holds the lock (pendingConfirmationLock) does not take it again.
-export async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, access: ConfirmationWindowAccess, scope: LockScope) {
+// Updates the confirmation window that showed a removed request: it moves to the next of its own requests, or closes after its last. A window the user already closed counts as closed; any other failure throws, for the finishing to retry. Deciding and closing hold the pending-confirmation lock, as choosing a window and registering a new request in it do, so a request never registers in a window that is being closed: it either registers first, and the window moves to it, or chooses its window after the close and opens a new one. Admission defers resolution until after release, so this operation always takes the lock itself.
+export async function updateConfirmationWindowAfterRemoving(confirmationWindow: PopupOrTabId, tabId: number, access: ConfirmationWindowAccess) {
 	const decideAndUpdate = async () => {
 		const pendingRequests = await getPendingTransactionsAndMessages()
 		// Decided for this window: requests in another window never keep it open.
@@ -61,6 +58,5 @@ export async function updateConfirmationWindowAfterRemoving(confirmationWindow: 
 		if (pendingRequests.length === 0) await runConfirmationViewStep(async () => await tryFocusingTabOrWindow({ type: 'tab', id: tabId }))
 		await closePopupOrTabById(confirmationWindow)
 	}
-	if (scope.pendingConfirmationLock?.held === true) await decideAndUpdate()
-	else await withPendingConfirmationLock(decideAndUpdate)
+	await withPendingConfirmationLock(decideAndUpdate)
 }
