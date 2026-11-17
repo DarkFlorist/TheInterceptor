@@ -212,8 +212,8 @@ export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
 
 // A pending transaction as popups are sent it, without its confirmation run's record.
-type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
-const PopupPendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, PopupSimulatedPendingTransaction)
+type PopupTransactionDisplay = funtypes.Static<typeof PopupTransactionDisplay>
+const PopupTransactionDisplay = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, PopupSimulatedPendingTransaction)
 
 type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
 const PendingSignableMessage = funtypes.Intersect(
@@ -238,6 +238,12 @@ const PendingSignableMessage = funtypes.Intersect(
 	)
 )
 
+// Stamped by the background on each popup copy from the stored request (getReviewedResultId); the popup returns it unchanged with an accept and never computes it.
+const PopupReviewedResultId = funtypes.String
+
+export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
+export const PopupPendingTransaction = funtypes.Intersect(PopupTransactionDisplay, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
+
 type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('SignableMessage'),
@@ -249,6 +255,7 @@ const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	website: Website,
 	activeAddress: EthereumAddress,
 	approvalStatus: PendingTransactionApprovalStatus,
+	reviewedResultId: PopupReviewedResultId,
 })
 
 export type PopupPendingSignableMessage = funtypes.Static<typeof PopupPendingSignableMessage>
@@ -267,3 +274,7 @@ export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSig
 export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PopupPendingTransaction
 const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PopupPendingTransaction)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype
+
+// Popup-local provenance, never persisted or sent over the wire. The disjoint source tags prevent storage first paint from being treated as a background-reviewed, confirmable request.
+export type BackgroundPendingTransactionOrSignableMessage = PopupPendingTransactionOrSignableMessage & { readonly source: 'background' }
+export type ShownPendingTransactionOrSignableMessage = BackgroundPendingTransactionOrSignableMessage | (PendingTransactionOrSignableMessage & { readonly source: 'storage' })
