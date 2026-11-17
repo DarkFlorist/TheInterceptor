@@ -1,62 +1,53 @@
 import { describe, expect, test } from 'bun:test'
-import { acknowledgeAndTrackBridgeRequest, isHandledBridgeRequestId } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { acknowledgeAndTrackBridgeRequest } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { classifyRequestId, INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../app/ts/utils/requests.js'
+
+const pageRequest = (requestId: number) => ({ requestId, method: 'eth_sendTransaction' })
 
 describe('bridge request delivery', () => {
-	test('acknowledges each delivery and handles ordered request IDs only once', () => {
-		const latestReceivedRequestIds = new Map<string, number>()
-		const acknowledgements: number[] = []
-		const acknowledge = (requestId: number) => () => acknowledgements.push(requestId)
-
-		expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 1, acknowledge(1))).toBeTrue()
-		expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 1, acknowledge(1))).toBeFalse()
-		expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 2, acknowledge(2))).toBeTrue()
-
-		expect(acknowledgements).toEqual([1, 1, 2])
-		expect(latestReceivedRequestIds.get('socket')).toBe(2)
+	test('acknowledges every delivery and distinguishes a new ordered request from its replay', () => {
+		const watermark = new Map<string, number>()
+		const acknowledged: number[] = []
+		const deliver = (requestId: number) => acknowledgeAndTrackBridgeRequest(watermark, 'socket', pageRequest(requestId), () => acknowledged.push(requestId))
+		expect(deliver(1)).toBe('handle')
+		expect(deliver(1)).toBe('duplicate')
+		expect(deliver(2)).toBe('handle')
+		expect(acknowledged).toEqual([1, 1, 2])
+		expect(watermark.get('socket')).toBe(2)
 	})
 
 	test('leaves a request eligible for retry when acknowledgement fails', () => {
-		const latestReceivedRequestIds = new Map<string, number>()
-		const acknowledgementError = new Error('port disconnected')
-
-		expect(() => acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 1, () => {
-			throw acknowledgementError
-		})).toThrow(acknowledgementError)
-		expect(latestReceivedRequestIds.has('socket')).toBeFalse()
-		expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 1, () => undefined)).toBeTrue()
+		const watermark = new Map<string, number>()
+		const error = new Error('port disconnected')
+		expect(() => acknowledgeAndTrackBridgeRequest(watermark, 'socket', pageRequest(1), () => { throw error })).toThrow(error)
+		expect(watermark.has('socket')).toBeFalse()
+		expect(acknowledgeAndTrackBridgeRequest(watermark, 'socket', pageRequest(1), () => undefined)).toBe('handle')
 	})
 
-	test('handles only ordered request IDs and the diagnostics request ID -1', () => {
-		expect(isHandledBridgeRequestId(0, 'eth_sendTransaction')).toBeTrue()
-		expect(isHandledBridgeRequestId(7, 'eth_sendTransaction')).toBeTrue()
-		expect(isHandledBridgeRequestId(-1, 'InterceptorError')).toBeTrue()
-		expect(isHandledBridgeRequestId(-1, 'eth_sendTransaction')).toBeFalse()
-		expect(isHandledBridgeRequestId(-2, 'InterceptorError')).toBeFalse()
-		expect(isHandledBridgeRequestId(Number.NaN, 'eth_sendTransaction')).toBeFalse()
-		expect(isHandledBridgeRequestId(Number.POSITIVE_INFINITY, 'eth_sendTransaction')).toBeFalse()
-		expect(isHandledBridgeRequestId(1.5, 'eth_sendTransaction')).toBeFalse()
+	test('request identity owns the ordered and diagnostic categories', () => {
+		expect(classifyRequestId(pageRequest(0))).toBe('ordered')
+		expect(classifyRequestId(pageRequest(7))).toBe('ordered')
+		expect(classifyRequestId(INTERCEPTOR_DIAGNOSTIC_REQUEST)).toBe('diagnostic')
+		expect(classifyRequestId(pageRequest(INTERCEPTOR_DIAGNOSTIC_REQUEST.requestId))).toBe('invalid')
+		expect(classifyRequestId({ ...INTERCEPTOR_DIAGNOSTIC_REQUEST, requestId: -2 })).toBe('invalid')
 	})
 
-	test('acknowledges a malformed request ID without recording it, so a later ordered request is handled', () => {
-		for (const malformedRequestId of [1.5, 2 ** 53, Number.POSITIVE_INFINITY, Number.NaN]) {
-			const latestReceivedRequestIds = new Map<string, number>()
-			let acknowledgementCount = 0
-			acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', malformedRequestId, () => acknowledgementCount++)
-			expect(acknowledgementCount).toBe(1)
-			expect(latestReceivedRequestIds.has('socket')).toBeFalse()
-			expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', 1, () => acknowledgementCount++)).toBeTrue()
-			expect(isHandledBridgeRequestId(1, 'eth_sendTransaction')).toBeTrue()
+	test('invalid identities have an explicit outcome and never poison the watermark or look like a replay', () => {
+		for (const requestId of [-2, -1, 1.5, 2 ** 53, Number.POSITIVE_INFINITY, Number.NaN]) {
+			const watermark = new Map<string, number>()
+			let acknowledgements = 0
+			expect(acknowledgeAndTrackBridgeRequest(watermark, 'socket', pageRequest(requestId), () => acknowledgements++)).toBe('invalid')
+			expect(acknowledgements).toBe(1)
+			expect(watermark.has('socket')).toBeFalse()
+			expect(acknowledgeAndTrackBridgeRequest(watermark, 'socket', pageRequest(1), () => undefined)).toBe('handle')
 		}
 	})
 
-	test('does not deduplicate diagnostic request ID -1', () => {
-		const latestReceivedRequestIds = new Map<string, number>()
-		let acknowledgementCount = 0
-
-		expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', -1, () => acknowledgementCount++)).toBeTrue()
-		expect(acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'socket', -1, () => acknowledgementCount++)).toBeTrue()
-
-		expect(acknowledgementCount).toBe(2)
-		expect(latestReceivedRequestIds.has('socket')).toBeFalse()
+	test('diagnostics are handled repeatedly without advancing an existing ordered watermark', () => {
+		const watermark = new Map([['socket', 7]])
+		let acknowledgements = 0
+		for (let delivery = 0; delivery < 2; delivery++) expect(acknowledgeAndTrackBridgeRequest(watermark, 'socket', INTERCEPTOR_DIAGNOSTIC_REQUEST, () => acknowledgements++)).toBe('handle')
+		expect(acknowledgements).toBe(2)
+		expect(watermark.get('socket')).toBe(7)
 	})
 })
