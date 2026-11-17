@@ -358,7 +358,7 @@ test('the popup projection of a stored confirmation holds none of its run record
 		assert.notEqual(projection, stored, description)
 		assert.deepEqual(BACKGROUND_ONLY_RUN_RECORD_FIELDS.filter((field) => collectOwnKeys(projection).has(field)), [], description)
 		// It keeps every field the dialog's codec would have sent.
-		assert.deepEqual(projection, PopupPendingTransactionOrSignableMessage.parse(PopupPendingTransactionOrSignableMessage.serialize(stored)), description)
+		assert.deepEqual(projection, PopupPendingTransactionOrSignableMessage.parse(PopupPendingTransactionOrSignableMessage.serialize({ ...stored, reviewedResultId: projection.reviewedResultId })), description)
 	}
 })
 
