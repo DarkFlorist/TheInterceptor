@@ -268,7 +268,7 @@ const createEthereumWithThrowingSimulationPreparation = () => {
 	let prepareCallCount = 0
 	const throwingEthereum = new Proxy(ethereum, {
 		get(target, property, receiver) {
-			if (property === 'prepareEthSimulateV1Input') {
+			if (property === 'prepareEthSimulateV1Input' || property === 'prepareSimulationPrefixForRpc') {
 				return async () => {
 					prepareCallCount += 1
 					throw new Error('simulation preparation should not run')

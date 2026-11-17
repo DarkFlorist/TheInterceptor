@@ -138,7 +138,7 @@ describe('simulation stack extraction', () => {
 		assert.deepEqual(getSimulatedStackV2(emptyStackWithDelegateClearing), { stateOverrides: delegateClearingOverrides, transactions: [] })
 	})
 
-	test('version 2.0.0 reports the first block overrides unchanged when they already include the initial overrides', () => {
+	test('version 2.0.0 derives effective overrides from the captured replay recipe', () => {
 		if (simulationStateWithBalanceBelowBaseFee.kind !== 'simulated' || !simulationStateWithBalanceBelowBaseFee.value.success) throw new Error('Expected a successful simulated state')
 		const firstBlock = simulationStateWithBalanceBelowBaseFee.value.simulatedBlocks[0]
 		if (firstBlock === undefined) throw new Error('Expected a simulated block')
@@ -148,7 +148,8 @@ describe('simulation stack extraction', () => {
 			value: {
 				...simulationStateWithBalanceBelowBaseFee.value,
 				simulationOverrides: { [addressString(SENDER)]: { code: new Uint8Array() } },
-				simulatedBlocks: [{ ...firstBlock, effectiveStateOverrides: firstBlockOverrides }],
+				simulationStateInput: [{ stateOverrides: { [addressString(SENDER)]: { balance: 5n } }, transactions: [], signedMessages: [], blockTimeManipulation: firstBlock.blockTimeManipulation, simulateWithZeroBaseFee: false }],
+				simulatedBlocks: [firstBlock],
 			},
 		}
 		assert.deepEqual(getSimulatedStackV2(stackWithDelegateClearing).stateOverrides, firstBlockOverrides)

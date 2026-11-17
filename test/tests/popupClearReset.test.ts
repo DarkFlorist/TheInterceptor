@@ -225,7 +225,6 @@ function buildStalePopupVisualisationState(
 		simulatedBlocks: [{
 			simulatedTransactions: [],
 			signedMessages: [],
-			effectiveStateOverrides: {},
 			blockTimestamp: new Date('2024-01-01T00:00:12.000Z'),
 			blockTimeManipulation: defaultBlockManipulation,
 			blockBaseFeePerGas: 1n,
