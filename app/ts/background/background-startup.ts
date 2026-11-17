@@ -1,4 +1,3 @@
-import { DEFAULT_RPCS } from '../config/defaults.js'
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
 import { getSettingsSnapshot, updateKnownWebsiteMetadata, requireReadableSettings } from './settings.js'
@@ -282,8 +281,7 @@ async function startup() {
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const rpcConfiguration = await getRpcConfigurationState()
-	// The final startup/recovery layer removes the legacy startup fallback.
-	const simulatorNetwork = resolveRpcServicesTarget(rpcConfiguration) ?? DEFAULT_RPCS[0]
+	const simulatorNetwork = resolveRpcServicesTarget(rpcConfiguration)
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
 	// Runs with or without RPC services: orphaned requests and replies to closed tabs are recovered either way.
 	await recoverPendingTerminalState()
