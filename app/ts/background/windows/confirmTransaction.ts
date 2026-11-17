@@ -13,7 +13,7 @@ import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGa
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { getExecutedCallFormation, getUpdatedSimulationState, requireSimulationSnapshot } from '../simulationUpdating.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
@@ -50,12 +50,14 @@ import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPa
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
+import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
+import { getReviewedResultId } from '../reviewedResult.js'
+import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 // Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Safe nonce against the pending proposals stored before it (createSafeSigningRequestForTransaction).
 export const runWithPendingConfirmationLock = async <T>(work: () => Promise<T>) => await pendingConfirmationSemaphore.execute(work)
-const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const NO_RESPONSE_RETRY_DELAY_MS = 50
+const pendingNoResponseRetries = new Map<string, ReturnType<typeof createBackoffRetryScheduler>>()
 
 // The shared visualisation follows the latest stack, so its refresh reads the stack when it runs rather than the stack this confirmation appended to; if another network's services were installed meanwhile, the refresh does nothing.
 const refreshSharedVisualisationAfterAppend = async ({ ethereum, tokenPriceService }: SimulationServices) => await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
@@ -224,7 +226,7 @@ const shouldReplacePopupVisualisation = (
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction':
-			return pending
+			return { ...pending, reviewedResultId: getReviewedResultId(pending) }
 		case 'SignableMessage': {
 			const base = {
 				type: pending.type,
@@ -236,6 +238,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 				website: pending.website,
 				activeAddress: pending.activeAddress,
 				approvalStatus: pending.approvalStatus,
+				reviewedResultId: getReviewedResultId(pending),
 			}
 			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
 			switch (transactionOrMessageCreationStatus) {
@@ -333,6 +336,24 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
+// An accept authorizes only the stored request whose reviewed content the user saw. A transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
+function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { reviewedResultId: string, forceSend: boolean }) {
+	if (getReviewedResultId(pending) !== accept.reviewedResultId) return false
+	if (isRejectOnlyTransaction(pending)) return false
+	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
+}
+
+// Checks the accept against the stored request and claims it in the same locked storage update, so a refresh committed in between cannot become the accepted request. Signing-mode requests move to WaitingForSigner; simulation-mode ones are removed once added to the simulation. Returns the accepted snapshot, or undefined when the accept no longer matches.
+async function claimAcceptedRequest(accept: Extract<TransactionConfirmation['data'], { action: 'accept' }>) {
+	let acceptedPending: PendingTransactionOrSignableMessage | undefined
+	await updatePendingTransactionOrMessage(accept.uniqueRequestIdentifier, async (current) => {
+		if (current.transactionOrMessageCreationStatus !== 'Simulated' || !isAcceptForStoredResult(current, accept)) return undefined
+		acceptedPending = current.simulationMode ? current : modifyObject(current, { approvalStatus: { status: 'WaitingForSigner' as const } })
+		return acceptedPending
+	})
+	return acceptedPending
+}
+
 // The services owner lets an accepted simulated confirmation read the installed services together with the stack it appends to.
 export async function resolvePendingTransactionOrMessage(simulationServicesOwner: SimulationServicesReader, network: NetworkRead, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	const { ethereum } = network.services
@@ -341,6 +362,11 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	const updateViewOnCurrentSnapshot = async () => await updateConfirmTransactionView(current)
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
+	if (confirmation.data.action === 'accept' && !isAcceptForStoredResult(pendingTransactionOrMessage, confirmation.data)) {
+		// Keep the request pending and redraw the popup, so the user reviews the current result before accepting again.
+		await updateViewOnCurrentSnapshot()
+		return false
+	}
 	if (
 		confirmation.data.action === 'accept'
 		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
@@ -386,6 +412,16 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 	pendingTransactionOrMessage = safeResolution.pending
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
+	}
+	if (confirmation.data.action === 'accept') {
+		// The Safe signer refresh and resolution above, or a concurrent result refresh, may have stored new content, so the accept is checked again while claiming the request.
+		const acceptedPending = await claimAcceptedRequest(confirmation.data)
+		if (acceptedPending === undefined) {
+			await updateViewOnCurrentSnapshot()
+			return false
+		}
+		// The claimed snapshot has the reviewed content, so forwarding it is unaffected by refreshes stored after the claim.
+		pendingTransactionOrMessage = acceptedPending
 	}
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
@@ -435,12 +471,7 @@ export async function resolvePendingTransactionOrMessage(simulationServicesOwner
 		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
 		return false
 	}
-	if (
-		confirmation.data.action === 'accept'
-		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
-	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateViewOnCurrentSnapshot()
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
@@ -553,6 +584,7 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (simulationSer
 	for (const transaction of transactions) {
 		try {
 			await resolveAsNoResponse(simulationServicesOwner, transaction, websiteTabConnections)
+			clearPendingNoResponseRetry(transaction)
 		} catch(e) {
 			await reportLocalRecovery(e, { code: 'pending_request_no_response_resolution_failed', message: 'Failed to resolve a pending request as no-response after a popup closed.' })
 			schedulePendingNoResponseRetry(simulationServicesOwner, transaction, websiteTabConnections)
@@ -560,21 +592,30 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (simulationSer
 	}
 }
 
+function clearPendingNoResponseRetry(transaction: PendingTransactionOrSignableMessage) {
+	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
+	pendingNoResponseRetries.get(identifier)?.reset()
+	pendingNoResponseRetries.delete(identifier)
+}
+
 function schedulePendingNoResponseRetry(simulationServicesOwner: SimulationServicesReader, transaction: PendingTransactionOrSignableMessage, websiteTabConnections: WebsiteTabConnections) {
 	const identifier = getUniqueRequestIdentifierString(transaction.uniqueRequestIdentifier)
-	if (pendingNoResponseRetryTimers.has(identifier)) return
-	const retryTimer = setTimeout(() => {
-		pendingNoResponseRetryTimers.delete(identifier)
+	let retry = pendingNoResponseRetries.get(identifier)
+	if (retry === undefined) {
+		retry = createBackoffRetryScheduler(50)
+		pendingNoResponseRetries.set(identifier, retry)
+	}
+	retry.schedule(() => {
 		void (async () => {
 			try {
 				await resolveAsNoResponse(simulationServicesOwner, transaction, websiteTabConnections)
+				clearPendingNoResponseRetry(transaction)
 			} catch (error) {
 				await reportLocalRecovery(error, { code: 'pending_request_no_response_retry_failed', message: 'Retrying a pending popup-close rejection after a transient failure.' })
 				schedulePendingNoResponseRetry(simulationServicesOwner, transaction, websiteTabConnections)
 			}
 		})()
-	}, NO_RESPONSE_RETRY_DELAY_MS)
-	pendingNoResponseRetryTimers.set(identifier, retryTimer)
+	})
 }
 
 // Whether a re-read may continue a request: no network change committed between the two reads, which the generation decides, and the stack context is the same, which the generation does not count because selecting a Gnosis Safe or toggling simulation mode keeps the network.
@@ -767,6 +808,7 @@ export async function openConfirmTransactionDialogForMessage(
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
 		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
+	const requestOrigin = getWebsiteSocketRequestOrigin(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website.websiteOrigin)
 	const signedMessageTransaction = {
 		website,
 		created,
@@ -777,6 +819,7 @@ export async function openConfirmTransactionDialogForMessage(
 		request,
 		messageIdentifier,
 		...(safeMessage === undefined ? {} : { safeMessageReview: safeMessage.review }),
+		...(requestOrigin === undefined ? {} : { requestOrigin }),
 	}
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())

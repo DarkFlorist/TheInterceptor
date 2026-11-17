@@ -19,6 +19,8 @@
 		"benchmark:popup-switching": "bun ./test/benchmarks/popupSwitchingChrome.ts",
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
 		"benchmark:dispatch-event-reload": "bun ./test/benchmarks/dispatchEventReloadComparison.ts",
+		"benchmark:rpc-soak:firefox": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 RPC_REJECTION_ROUNDS=30 RPC_REJECTION_MIXED=true RPC_REJECTION_RELOAD_EVERY=5 RPC_REJECTION_IDLE_MS=10000 bun ./test/benchmarks/rpcRejectionFirefox.ts",
+		"benchmark:rpc-rejection:firefox": "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 bun ./test/benchmarks/rpcRejectionFirefox.ts",
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
 		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
 		"test:chrome-safe-cosigning-communication": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts",

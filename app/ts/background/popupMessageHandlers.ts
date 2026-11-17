@@ -1,4 +1,5 @@
 import type { SimulationSnapshot } from './networkTransitionLock.js'
+import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
@@ -15,6 +16,8 @@ import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAcce
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
+import { withWebsiteAccessChanges } from './websiteAccessMutations.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -62,9 +65,8 @@ import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getAc
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
-export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
+export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { setMetamaskCompatibilityMode } from './metamaskCompatibilityMode.js'
@@ -427,16 +429,7 @@ export async function setSafeSimulationSigner(
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => {
-		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
-		return withEntriesRemoved.map((entry) => {
-			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
-			if (changeForEntry === undefined) return entry
-			return changeForEntry.newEntry
-		})
-	})
-
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'whenInjectionChanges', withWebsiteAccessChanges(accessChange.data))
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -565,6 +558,13 @@ export async function refreshPopupConfirmTransactionMetadata(network: NetworkSna
 			if (first.simulationMode && first.simulationChainId !== undefined && first.simulationChainId !== simulation.activeRpcNetwork.chainId) return
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())
 			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
+			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
+			// Persisting the refreshed visualization means the popup only shows content the background will match an accept against. A message still being crafted is left to its creation flow.
+			await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+				if (current.type !== 'SignableMessage' || current.transactionOrMessageCreationStatus !== 'Simulated') return current
+				if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh || getReviewedResultId(current) !== getReviewedResultId(first)) return current
+				return { ...current, visualizedPersonalSignRequest }
+			})
 			const message: UpdateConfirmTransactionDialog = {
 				method: 'popup_update_confirm_transaction_dialog',
 				data: {
@@ -573,19 +573,15 @@ export async function refreshPopupConfirmTransactionMetadata(network: NetworkSna
 					rpcConnectionStatus: await rpcConnectionStatusPromise,
 				}
 			}
-			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
-			// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
-			const [currentFirst, ...otherPendingRequests] = await getPendingTransactionsAndMessages()
+			// The request can be resolved during the awaits above; the popup needs a non-empty queue, and it closes by itself once the queue is empty.
+			const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 			if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
-			if (currentFirst?.type !== 'SignableMessage' || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
+			const [currentFirst] = pendingTransactionAndSignableMessages
+			if (currentFirst === undefined || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
 			const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 				method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
 				data: {
-					pendingTransactionAndSignableMessages: [{
-						...currentFirst,
-						visualizedPersonalSignRequest,
-						transactionOrMessageCreationStatus: 'Simulated' as const
-					}, ...otherPendingRequests].map(toPopupPendingTransactionOrSignableMessage),
+					pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
 					currentBlockNumber: message.data.currentBlockNumber,
 					rpcConnectionStatus: message.data.rpcConnectionStatus,
 				}

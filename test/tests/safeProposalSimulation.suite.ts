@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole, fakeRequestHandler } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole, fakeRequestHandler, createAcceptConfirmation } from './confirmTransactionTestHarness.js'
+
+
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { createTestSimulationServicesOwner, fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
@@ -140,10 +142,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	if (pendingFailure.transactionToSimulate.success) throw new Error('Expected Safe preparation failure')
 	assert.match(pendingFailure.transactionToSimulate.error.message, /current Gnosis Safe nonce 1 is beyond this stack's final nonce 0/u)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), await readNetworkState(), websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), await readNetworkState(), websiteTabConnections, await createAcceptConfirmation()), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.transactionOrMessageCreationStatus, 'FailedToSimulate')
 

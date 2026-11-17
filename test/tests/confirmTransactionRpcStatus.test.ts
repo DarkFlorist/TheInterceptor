@@ -344,6 +344,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const pendingTransaction = makePendingTransaction()
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
@@ -361,7 +362,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 					data: {
 						popupOrTabId: { type: 'popup', id: 1 },
 						confirmTransactionBootstrap: {
-							pendingTransactionAndSignableMessages: [pendingTransaction],
+							pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 							currentBlockNumber: 123n,
 							rpcConnectionStatus: undefined,
 							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
@@ -400,6 +401,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const freshPendingTransaction = makePendingTransaction('fresh pushed transaction')
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock(async (message) => {
@@ -412,7 +414,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 					data: {
 						popupOrTabId: { type: 'popup', id: 1 },
 						confirmTransactionBootstrap: {
-							pendingTransactionAndSignableMessages: [stalePendingTransaction],
+							pendingTransactionAndSignableMessages: [stalePendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 							currentBlockNumber: 123n,
 							rpcConnectionStatus: undefined,
 							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
@@ -435,7 +437,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [freshPendingTransaction],
+						pendingTransactionAndSignableMessages: [freshPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 124n,
 						rpcConnectionStatus: undefined,
 					},

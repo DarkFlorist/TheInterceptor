@@ -19,12 +19,13 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, simulator as confirmationSimulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, simulator as confirmationSimulator, uniqueRequestIdentifier, withSilencedConsole, createAcceptConfirmation } from './confirmTransactionTestHarness.js'
 import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { readActiveSimulationInput, readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 // Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
 const readNetworkState = async (services: Parameters<typeof import('../../app/ts/background/networkTransitionLock.js').readNetworkSnapshotForServices>[0]) => await readTestNetworkSnapshot(services)
+
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -215,7 +216,7 @@ for (const { description, message, errorData, returnData } of revertResponses) {
 				const simulationParams = rpcRequest.params?.[0]
 				const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
 				return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
-					...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+					...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, []),
 					calls: blockStateCall.calls.map(() => ({ status: 'failure', gasUsed: 75_370n, returnData, error: { code: 3, message, ...(errorData === undefined ? {} : { data: errorData }) } })),
 				})))
 			},
@@ -753,7 +754,7 @@ test('repairs a wrong nonce of an ordinary transaction from a Gnosis Safe withou
 			const simulationParams = rpcRequest.params?.[0]
 			const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
 			return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
-				...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+				...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, []),
 				calls: blockStateCall.calls.map((call: { readonly from: string }) => BigInt(call.from) === SAFE_EXECUTION_SIMULATION_EXECUTOR
 					? { status: 'success' as const, gasUsed: 21_000n, logs: [], returnData: new Uint8Array() }
 					: { status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: -32000, message: 'wrong transaction nonce' } }),
@@ -839,7 +840,7 @@ function createRecordingSimulator(contractCreationSimulationOutcome: SimulationO
 				if (outcome === 'network-error') throw new Error('fetch failed')
 				if (outcome === 'revert') {
 					return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
-						...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, 0),
+						...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, []),
 						calls: blockStateCall.calls.map(() => ({ status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: 3, message: 'execution reverted' } })),
 					})))
 				}
@@ -901,10 +902,7 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.deepEqual(refreshedPending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'a refresh forms the transaction as a Safe execution again')
 
-	await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), await readNetworkState(simulator), websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	})
+	await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), await readNetworkState(simulator), websiteTabConnections, await createAcceptConfirmation())
 	const [stackedOperation] = (await modules.getInterceptorTransactionStack()).operations
 	if (stackedOperation?.type !== 'Transaction') throw new Error('Expected the Safe transaction on the simulation stack')
 	assert.deepEqual(stackedOperation.preSimulationTransaction.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)

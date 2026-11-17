@@ -1,3 +1,6 @@
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { getPendingTransactionsAndMessages } from '../../app/ts/background/storageVariables.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
 import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
@@ -723,7 +726,7 @@ describe('network transition snapshot', () => {
 	test('a simulated transaction confirmed after a network switch is not added to the new network stack', async () => {
 		const { modules, websiteTabConnections, sendDappRequest, switchToNetworkB, getReply } = await createApprovedSimulationDapp()
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
-		const accept = (uniqueRequestIdentifier: { readonly requestId: number, readonly requestSocket: { readonly tabId: number, readonly connectionName: bigint } }) => modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+		const accept = async (uniqueRequestIdentifier: { readonly requestId: number, readonly requestSocket: { readonly tabId: number, readonly connectionName: bigint } }) => modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier))
 		try {
 			await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
 			const [pending] = await modules.getPendingTransactionsAndMessages()
@@ -768,7 +771,7 @@ describe('network transition snapshot', () => {
 			assert.equal(afterRefresh.simulationChainId, networkA.chainId)
 			assert.deepEqual(afterRefresh.transactionToSimulate, pending.transactionToSimulate)
 
-			await modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+			await modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(pending.uniqueRequestIdentifier))
 			assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 			const [stillPending] = await modules.getPendingTransactionsAndMessages()
 			assert.equal(stillPending?.approvalStatus.status, 'SignerError')
@@ -825,7 +828,7 @@ describe('network transition snapshot', () => {
 		const { modules, websiteTabConnections, sendDappRequest, getReply, getReplies, createPopupContext } = await createApprovedSimulationDapp()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { owner, retireAll } = createRecordingServicesOwner(networkA)
-		const accept = async (uniqueRequestIdentifier: { readonly requestId: number, readonly requestSocket: { readonly tabId: number, readonly connectionName: bigint } }) => await modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+		const accept = async (uniqueRequestIdentifier: { readonly requestId: number, readonly requestSocket: { readonly tabId: number, readonly connectionName: bigint } }) => await modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(uniqueRequestIdentifier))
 		try {
 			await sendDappRequest(owner, { method: 'eth_sendTransaction', params: [{ from: addressString(firstAddress), to: addressString(secondAddress), value: '0x0', data: '0x' }] })
 			const [pending] = await modules.getPendingTransactionsAndMessages()
@@ -870,7 +873,7 @@ describe('network transition snapshot', () => {
 			const servicesB = installed[1]
 			if (servicesB === undefined) throw new Error('Expected the switch to install network B services')
 			// The accept captures B's settings and services, then waits while the user switches back to A.
-			const acceptance = modules.confirmDialog(capturingOwner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+			const acceptance = modules.confirmDialog(capturingOwner, websiteTabConnections, await createAcceptConfirmation(pending.uniqueRequestIdentifier))
 			await readPause.started
 			await modules.changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, activeAddress: firstAddress, rpcNetwork: networkA, promptForAccessesIfNeeded: false })
 			readPause.release()
@@ -940,7 +943,7 @@ describe('network transition snapshot', () => {
 			if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated message')
 			// The confirmation shows the domain's chain, while the request was admitted on A.
 			assert.equal(pending.visualizedPersonalSignRequest.rpcNetwork.chainId, networkB.chainId)
-			await modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+			await modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(pending.uniqueRequestIdentifier))
 
 			assert.notEqual(getReply('eth_signTypedData_v4', 1)?.result, undefined)
 			assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
@@ -1178,7 +1181,7 @@ describe('network transition snapshot', () => {
 			await sendDappRequest(owner, { method: 'eth_signTypedData_v4', params: [addressString(firstAddress), JSON.stringify(typedData)] }, 1)
 			await sendDappRequest(owner, { method: 'personal_sign', params: ['0x68656c6c6f', addressString(firstAddress)] }, 2)
 			for (const pending of await modules.getPendingTransactionsAndMessages()) {
-				await modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+				await modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(pending.uniqueRequestIdentifier))
 			}
 			await modules.updateInterceptorTransactionStack((stack) => ({ operations: [createStackedTransaction(1n, networkA.chainId, STACKED_ON_A_RECIPIENT), ...stack.operations] }))
 			const { simulation } = await modules.readNetworkSnapshot(owner)
@@ -1775,7 +1778,7 @@ describe('network transition snapshot', () => {
 			])
 			// Accepting the request appends it to the same network's stack, then refreshes the shared visualisation from that stack; no network change commits, so the generation stays the same.
 			const acceptRefreshProbed = whenRuntimeMessageSent((message) => isRecord(message) && message.method === 'popup_isSimulationVisualizerOpen')
-			const acceptance = modules.confirmDialog(owner, websiteTabConnections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pending.uniqueRequestIdentifier } })
+			const acceptance = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation(pending.uniqueRequestIdentifier))
 			await acceptRefreshProbed
 			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 2)
 			servicesA.interceptRequests(async (request) => {
@@ -3001,3 +3004,10 @@ test('a rejected settings write runs no transition callback or repair effects', 
 		retireAll()
 	}
 })
+
+// Test approvals review the latest stored result, including an explicit override for failure-path fixtures.
+async function createAcceptConfirmation(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	const pending = (await getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, uniqueRequestIdentifier))
+	if (pending === undefined) throw new Error('Expected a stored request to accept')
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier, reviewedResultId: getReviewedResultId(pending), forceSend: true } }
+}
