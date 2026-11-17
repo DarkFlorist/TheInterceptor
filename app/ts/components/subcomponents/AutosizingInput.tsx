@@ -3,6 +3,7 @@ import { batch, type Signal, useSignal, useSignalEffect } from '@preact/signals'
 import { OptionalSignal } from '../../utils/OptionalSignal.js'
 
 interface BaseInputModel extends Omit<JSX.HTMLAttributes<HTMLInputElement>, 'value' | 'onInput'> {
+	readonly onInput?: () => void
 	readonly rawValue?: Signal<string>
 }
 
@@ -57,7 +58,7 @@ function ParsedInput<T>(model: ParsedInputModel<T>) {
 	// we want to pass through all model values *except* the rawValue, which may contain a password
 	const inputModel = { ...model }
 	delete inputModel.rawValue
-	return <input { ...inputModel } class = 'autosizing-input' value = { internalValue } onInput = { event => { internalValue.value = event.currentTarget.value } } onChange = { onChange }/>
+	return <input { ...inputModel } class = 'autosizing-input' value = { internalValue } onInput = { event => { model.onInput?.(); internalValue.value = event.currentTarget.value } } onChange = { onChange }/>
 }
 
 function isParsedInputModel<T>(model: UnparsedInputModel | ParsedInputModel<T>): model is ParsedInputModel<T> {
@@ -71,7 +72,7 @@ function Input<T>(model: UnparsedInputModel | ParsedInputModel<T>) {
 		return <ParsedInput { ...model } value = { new OptionalSignal(model.value)} sanitize = { model.sanitize || (x => x) } tryParse = { value => ({ ok: true, value }) } serialize = { x => x || '' }/>
 }
 
-interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>, Pick<UnparsedInputModel, 'key' | 'type' | 'pattern' | 'placeholder' | 'required' | 'onChange' | 'autocomplete'> {
+interface BaseAutosizingInputModel extends Pick<JSX.HTMLAttributes<HTMLSpanElement>, 'class' | 'style'>, Pick<UnparsedInputModel, 'key' | 'type' | 'pattern' | 'placeholder' | 'required' | 'onChange' | 'onInput' | 'autocomplete'> {
 	readonly dataList?: string[]
 	readonly rawValue?: Signal<string>
 }
@@ -97,6 +98,7 @@ function AutosizingInput<T>(model: UnparsedAutosizingInputModel | ParsedAutosizi
 		...(model.placeholder !== undefined ? { placeholder: model.placeholder } : {}),
 		...(model.autocomplete !== undefined ? { autocomplete: model.autocomplete } : {}),
 		...(model.onChange !== undefined ? { onChange: model.onChange } : {}),
+		...(model.onInput !== undefined ? { onInput: model.onInput } : {}),
 		list: 'datalist',
 		size: 1,
 	}
@@ -133,6 +135,7 @@ export interface IntegerInput {
 	readonly required?: boolean | JSX.SignalLike<boolean>
 	readonly dataList?: string[]
 	readonly onChange?: () => void
+	readonly onInput?: () => void
 	readonly disabled?: boolean
 }
 export function IntegerInput(model: IntegerInput) {
@@ -143,6 +146,7 @@ export function IntegerInput(model: IntegerInput) {
 		tryParse: (input: string) => input === '' ? { ok: true, value: undefined } : regexp.test(input) ? { ok: true, value: BigInt(input) } : { ok: false } as const,
 		serialize: (input: bigint | undefined) => input === undefined ? '' : input.toString(10),
 		onChange: model.onChange,
+		onInput: model.onInput,
 		...model.className ? { className: model.className } : {},
 		...model.style ? { style: model.style } : {},
 		...model.type ? { type: model.type } : {},
