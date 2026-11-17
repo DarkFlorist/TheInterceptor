@@ -38,7 +38,10 @@ const FailedTransactionPreview = funtypes.ReadonlyObject({ addressBookEntries: f
 export type ConfirmationRunId = funtypes.Static<typeof CurrentConfirmationRunId>
 const CurrentConfirmationRunId = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
 export const ConfirmationRunId = funtypes.Union(CurrentConfirmationRunId, funtypes.Number.withParser({
-	parse: (sequence) => ({ success: true, value: { lifetime: '', sequence } }),
+	parse: (input) => {
+		const parsed = funtypes.Number.safeParse(input)
+		return parsed.success ? { success: true, value: { lifetime: '', sequence: parsed.value } } : parsed
+	},
 	serialize: (value: ConfirmationRunId) => ({ success: true, value: value.sequence }),
 }))
 
