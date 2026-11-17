@@ -7,6 +7,7 @@ type RuntimeMessage = {
 }
 
 type BrowserMockOptions = {
+	readonly currentTabQueryError?: Error
 	readonly reloadError?: Error
 	readonly reloadErrorsByTab?: ReadonlyMap<number, Error>
 }
@@ -46,7 +47,10 @@ function installBrowserMock(options: BrowserMockOptions) {
 				},
 			},
 			tabs: {
-				async query() { return [] },
+				async query() {
+					if (options.currentTabQueryError !== undefined) throw options.currentTabQueryError
+					return []
+				},
 				async get() { return undefined },
 				async update() { return undefined },
 				async reload(tabId: number) {
@@ -82,7 +86,7 @@ function installBrowserMock(options: BrowserMockOptions) {
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/background/reloadConnectedTabs.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
 }
@@ -94,6 +98,14 @@ const multiTabWebsiteTabConnections: WebsiteTabConnections = new Map([
 ])
 
 describe('reloadConnectedTabs', () => {
+	test('propagates current-tab lookup failure without reloading a subset of tabs', async () => {
+		const failure = new Error('Current tab lookup failed')
+		const { reloadedTabs } = installBrowserMock({ currentTabQueryError: failure })
+		const { reloadConnectedTabs } = await loadModules()
+		await assert.rejects(reloadConnectedTabs(websiteTabConnections), (error) => error === failure)
+		assert.deepEqual(reloadedTabs, [])
+	})
+
 	test('ignores tabs that disappeared before reload', async () => {
 		const { sentMessages, reloadedTabs } = installBrowserMock({ reloadError: new Error('No tab with id: 10.') })
 		const { reloadConnectedTabs, getLatestUnexpectedError } = await loadModules()

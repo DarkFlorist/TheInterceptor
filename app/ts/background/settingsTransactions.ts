@@ -1,3 +1,4 @@
+import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { Website, WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { updateWebsiteAccess, updateWebsiteAccessWithSnapshots } from './settings.js'
@@ -99,21 +100,30 @@ async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessAr
 	})
 }
 
-// Merge-and-restore: if afterUpdate fails, reverts only the fields this update changed that no concurrent writer has overwritten since.
-export async function withWebsiteAccessRollback(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) {
+export type WebsiteAccessTransactionOutcome =
+	| (Extract<StorageTransactionOutcome, { readonly status: 'completed' }> & { readonly websiteAccess: WebsiteAccessArray })
+	| Extract<StorageTransactionOutcome, { readonly status: 'failed' }>
+
+// The transaction itself owns the commit/rollback phase, including failures; callers never infer it from a callback being invoked.
+export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>): Promise<WebsiteAccessTransactionOutcome> {
 	let snapshots: Awaited<ReturnType<typeof updateWebsiteAccessWithSnapshots>> | undefined
 	try {
 		snapshots = await updateWebsiteAccessWithSnapshots(update)
 		await afterUpdate(snapshots.updatedWebsiteAccess)
-		return snapshots.updatedWebsiteAccess
+		return { status: 'completed', storage: 'written', websiteAccess: snapshots.updatedWebsiteAccess }
 	} catch (error: unknown) {
-		if (snapshots !== undefined) {
+		if (snapshots === undefined) return { status: 'failed', storage: 'not-written', error }
+		try {
+			await restoreWebsiteAccessUpdate(snapshots.previousWebsiteAccess, snapshots.updatedWebsiteAccess)
+		} catch (rollbackError: unknown) {
+			let failure: unknown = error
 			try {
-				await restoreWebsiteAccessUpdate(snapshots.previousWebsiteAccess, snapshots.updatedWebsiteAccess)
-			} catch (rollbackError: unknown) {
 				await reportUnexpectedError(rollbackError, { code: 'website_access_update_rollback_failed' })
+			} catch (reportingError: unknown) {
+				failure = new AggregateError([error, rollbackError, reportingError], 'Website access update, rollback and error reporting failed')
 			}
+			return { status: 'failed', storage: 'rollback-failed', error: failure }
 		}
-		throw error
+		return { status: 'failed', storage: 'rolled-back', error }
 	}
 }
