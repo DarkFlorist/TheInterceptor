@@ -7,7 +7,8 @@ import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/ser
 import { UNISWAP_V2_ROUTER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import type { SimulationState } from '../../app/ts/types/visualizer-types.js'
+import type { ProtectorChainReads } from '../../app/ts/simulation/protectorChainReads.js'
+import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 
@@ -76,22 +77,10 @@ const requestHandler: IEthereumJSONRpcRequestHandler = {
 
 const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
 
-const simulationState: SimulationState = {
-	success: false,
-	simulationStateInput: [],
-	jsonRpcError: {
-		jsonrpc: '2.0',
-		id: 1,
-		error: {
-			code: -32000,
-			message: 'simulation unavailable',
-		},
-	},
-	blockNumber: 1n,
-	blockTimestamp: new Date('2024-01-01T00:00:00.000Z'),
-	baseFeePerGas: 1n,
-	simulationConductedTimestamp: new Date('2024-01-01T00:00:00.000Z'),
-	rpcNetwork: rpcEntry,
+// commonTokenOops reads no chain state, so any read fails the test.
+const chainReads: ProtectorChainReads = {
+	readCode: async () => { throw new Error('Unexpected code read') },
+	readGasPrice: async () => { throw new Error('Unexpected gas price read') },
 }
 
 describe('commonTokenOops', () => {
@@ -107,7 +96,7 @@ describe('commonTokenOops', () => {
 			input: encodeFunctionCall(transferAbi, 'transfer', [addressString(UNISWAP_V2_ROUTER_ADDRESS), 1n]),
 		})
 
-		const result = await commonTokenOops(transaction, ethereum, undefined, simulationState)
+		const result = await commonTokenOops(transaction, rpcEntry.chainId, chainReads, identifyAddressWith(ethereum, undefined))
 
 		assert.equal(result, 'Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens')
 	})
