@@ -1,3 +1,4 @@
+import { isActiveSimulationTarget } from '../../utils/activeSimulationTarget.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { SimulationServices } from '../../simulation/serviceLifecycle.js'
 import type { Settings } from '../../types/interceptor-messages.js'
@@ -11,7 +12,7 @@ import { getSettings, setDelegateClearingEnabled } from '../settings.js'
 export async function requestDelegateClearing(settings: Settings, ethereum: EthereumClientService, address: bigint, chainId: bigint) {
 	const network = settings.activeRpcNetwork
 	// Endpoint identity comes from rpcNetworkChange.ts, so the hint is only read from the service that simulates the selected endpoint.
-	if (!settings.simulationMode || settings.activeSimulationAddress !== address || network.chainId !== chainId
+	if (!isActiveSimulationTarget(settings, address, chainId)
 		|| isSignerOnlyNetwork(network) || getRpcNetworkChange(network, ethereum.getRpcEntry()).endpointChanged) {
 		return { method: 'popup_requestDelegateClearing' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
@@ -26,8 +27,7 @@ export async function requestDelegateClearing(settings: Settings, ethereum: Ethe
 }
 
 export async function setDelegateClearing(settings: Settings, services: SimulationServices, address: bigint, chainId: bigint, enabled: boolean) {
-	const network = settings.activeRpcNetwork
-	const affectsActiveSimulation = settings.simulationMode && settings.activeSimulationAddress === address && network.chainId === chainId
+	const affectsActiveSimulation = isActiveSimulationTarget(settings, address, chainId)
 	if (enabled && !affectsActiveSimulation) {
 		return { method: 'popup_setDelegateClearing' as const, data: { ok: false as const, message: 'The active simulation account or network changed. Please try again.' } }
 	}

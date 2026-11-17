@@ -850,7 +850,7 @@ describe('delegate clearing in simulation', () => {
 			blockBaseFeePerGas: 1n,
 		}],
 	})
-	const visualizedDelegatesOf = async (simulationState: SimulationState, nodeCode: (prefixCalls: readonly PrefixCall[], account: bigint) => string, subsequentStates: readonly SimulationState[] = []) => {
+	const visualizedDelegatesOf = async (simulationState: SimulationState, nodeCode: (prefixCalls: readonly PrefixCall[], account: bigint) => string, subsequentStates: readonly SimulationState[] = [], cleanupBetweenRenders = false) => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		const fakeNode = createFakeNode(nodeCode)
@@ -861,7 +861,10 @@ describe('delegate clearing in simulation', () => {
 		const visualized = await (async () => {
 			try {
 				let visualized = await visualizeSimulatorState(simulationState, fakeNode.ethereum, new TokenPriceService(fakeNode.ethereum, 60000), undefined)
-				for (const next of subsequentStates) visualized = await visualizeSimulatorState(next, fakeNode.ethereum, new TokenPriceService(fakeNode.ethereum, 60000), undefined)
+				for (const next of subsequentStates) {
+					if (cleanupBetweenRenders) fakeNode.ethereum.cleanup()
+					visualized = await visualizeSimulatorState(next, fakeNode.ethereum, new TokenPriceService(fakeNode.ethereum, 60000), undefined)
+				}
 				return visualized
 			} finally {
 				console.warn = originalConsole.warn
@@ -899,6 +902,12 @@ describe('delegate clearing in simulation', () => {
 		assert.deepEqual(result.delegates, [onChainDelegate, undefined, restoredDelegate])
 		assert.equal(result.codeReplayRequests, 1, 'both senders share one prefix replay, and a repeated render makes none')
 		assert.equal(result.codeReads.length, 2)
+	})
+
+	test('client cleanup releases account-code observations before a later render', async () => {
+		const state = successfulStateOf([delegatedAccountCall(1n), delegatedAccountCall(2n, [signAuthorization(restoredDelegate, 2n)])], {})
+		const result = await visualizedDelegatesOf(state, () => delegationDesignator(restoredDelegate), [structuredClone(state)], true)
+		assert.equal(result.codeReplayRequests, 2)
 	})
 
 	test('a different captured override does not reuse a previous account-code observation', async () => {

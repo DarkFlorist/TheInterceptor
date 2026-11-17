@@ -1,3 +1,4 @@
+import { getActiveSimulationTarget } from '../utils/activeSimulationTarget.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
@@ -34,8 +35,9 @@ export function getSimulationPreviewPurpose(context: SimulationPreviewContext): 
 
 // The single boundary for the opt-in delegate-clearing state: it never reaches a signing-or-execution preview and applies only in simulation mode.
 export function getSimulationOverridesForPreview(context: SimulationPreviewContext, settings: Settings): StateOverrides {
-	if (getSimulationPreviewPurpose(context) === 'signing-or-execution' || !settings.simulationMode) return {}
-	const address = hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
-		? settings.activeSimulationAddress : undefined
+	const target = getActiveSimulationTarget(settings)
+	if (getSimulationPreviewPurpose(context) === 'signing-or-execution' || target === undefined) return {}
+	const address = hasDelegateClearingPreference(settings.delegateClearingPreferences, target.address, target.chainId)
+		? target.address : undefined
 	return withDelegateCleared({}, address)
 }

@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
+import { type EthereumClientService, type SimulatedAccountCode, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringifyJSONWithBigInts, stringToUint8Array } from '../../utils/bigint.js'
@@ -1928,10 +1928,6 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 }
 
 
-type SimulatedAccountCode = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure' }
-const accountCodeReads = new WeakMap<EthereumClientService, Map<string, readonly SimulatedAccountCode[]>>()
-const MAX_ACCOUNT_CODE_READS_PER_CLIENT = 64
-
 // All accounts observed after one authorization prefix share one replay and one reader block. Cache only successful observations, scoped to the client, exact prepared prefix, queried accounts and parent block hash: metadata re-renders reuse them, while a new block, reorg, input or override does not.
 export async function getSimulatedCodesAfterInput(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, input: SimulationExecutionInput, addresses: readonly bigint[], parentBlockNumber: bigint): Promise<readonly SimulatedAccountCode[]> {
 	if (requestAbortController?.signal.aborted) throw new Error(NEW_BLOCK_ABORT)
@@ -1940,9 +1936,7 @@ export async function getSimulatedCodesAfterInput(ethereum: EthereumClientServic
 	if (context === undefined) throw new Error('Account code replay requires a simulation prefix')
 	if (requestAbortController?.signal.aborted) throw new Error(NEW_BLOCK_ABORT)
 	const key = stringifyJSONWithBigInts([context.parentBlock.hash, context.prepared.request, addresses])
-	const cache = accountCodeReads.get(ethereum) ?? new Map<string, readonly SimulatedAccountCode[]>()
-	accountCodeReads.set(ethereum, cache)
-	const cached = cache.get(key)
+	const cached = ethereum.getSimulatedAccountCodeObservation(key)
 	if (cached !== undefined) return cached
 	const nonce = await getSimulatedTransactionCountFromPreparedInputContext(ethereum, requestAbortController, context, MOCK_ADDRESS, 'latest')
 	const calls = addresses.map((address, index) => ({
@@ -1965,13 +1959,7 @@ export async function getSimulatedCodesAfterInput(ethereum: EthereumClientServic
 			if (result?.status !== 'success') return { statusCode: 'failure' }
 			return { statusCode: 'success', getCodeReturn: EthereumData.parse(decodeFunctionOutput(getCodeAbi, 'at', result.returnData)) }
 		})
-		if (codes.every((code) => code.statusCode === 'success')) {
-			if (cache.size >= MAX_ACCOUNT_CODE_READS_PER_CLIENT) {
-				const oldest = cache.keys().next().value
-				if (oldest !== undefined) cache.delete(oldest)
-			}
-			cache.set(key, codes)
-		}
+		ethereum.rememberSimulatedAccountCodeObservation(key, codes)
 		return codes
 	} catch (error: unknown) {
 		if (error instanceof JsonRpcResponseError) return addresses.map(() => ({ statusCode: 'failure' }))

@@ -140,7 +140,20 @@ export type PreparedEthSimulateV1Input = {
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }
+export type SimulatedAccountCode = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure' }
+
 export class EthereumClientService {
+	private readonly simulatedAccountCodeReads = new Map<string, readonly SimulatedAccountCode[]>()
+	public readonly getSimulatedAccountCodeObservation = (key: string) => this.simulatedAccountCodeReads.get(key)
+	public readonly rememberSimulatedAccountCodeObservation = (key: string, codes: readonly SimulatedAccountCode[]) => {
+		if (!codes.every((code) => code.statusCode === 'success')) return
+		if (this.simulatedAccountCodeReads.size >= 64) {
+			const oldest = this.simulatedAccountCodeReads.keys().next().value
+			if (oldest !== undefined) this.simulatedAccountCodeReads.delete(oldest)
+		}
+		this.simulatedAccountCodeReads.set(key, codes)
+	}
+
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
@@ -169,7 +182,10 @@ export class EthereumClientService {
 		if ((Date.now() - this.cachedBlock.timestamp.getTime()) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE * 1000) return undefined
 		return this.cachedBlock
 	}
-	public cleanup = () => this.setBlockPolling(false)
+	public cleanup = () => {
+		this.simulatedAccountCodeReads.clear()
+		this.setBlockPolling(false)
+	}
 
 	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
 
