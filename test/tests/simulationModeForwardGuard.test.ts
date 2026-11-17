@@ -360,4 +360,45 @@ describe('simulation mode forward guard', () => {
 		await browserStorageLocalSet2(Object.fromEntries([['simulationMode', true]]))
 		assert.equal(readStoredValue('simulationMode'), undefined)
 	})
+
+	test('a held write to another setting does not block signer forwarding', async () => {
+		const { setStorageHooks, sendAddEthereumChain } = await setUpSigningModeWebsite()
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		const release = createDeferredValue<void>()
+		setStorageHooks({ afterSet: async (items) => { if ('metamaskCompatibilityMode' in items) await release.promise } })
+		const unrelatedWrite = browserStorageLocalSet({ metamaskCompatibilityMode: true })
+		try {
+			assert.deepEqual((await sendAddEthereumChain(20)).map((reply) => reply.type), ['forwardToSigner'])
+		} finally {
+			release.resolve()
+			await unrelatedWrite
+			setStorageHooks({})
+		}
+	})
+
+	test('a stuck mode-enabling write refuses the request instead of waiting indefinitely', async () => {
+		const { setStorageHooks, enableSimulationMode, sendAddEthereumChainAfterArming } = await setUpSigningModeWebsite()
+		const release = createDeferredValue<void>()
+		let enabling: Promise<void> | undefined
+		let writeStarted = false
+		try {
+			const replies = await sendAddEthereumChainAfterArming(21, async () => setStorageHooks({ afterGet: async (keys) => {
+				if (keys !== 'tabState_1') return
+				setStorageHooks({ afterSet: async (items) => {
+					if (items.simulationMode !== true) return
+					writeStarted = true
+					await release.promise
+				} })
+				enabling = enableSimulationMode()
+			} }))
+			assert.equal(writeStarted, true)
+			assert.equal(replies.some((reply) => reply.type === 'forwardToSigner'), false)
+			assert.deepEqual(replies.map((reply) => reply.error), [ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error])
+		} finally {
+			release.resolve()
+			await enabling
+			setStorageHooks({})
+		}
+	})
+
 })

@@ -1,4 +1,4 @@
-import { trackSimulationModeEnablingWrite } from './simulationModeGuard.js'
+import { createStorageWriteTracking, type StorageWriteValue } from './storageWriteTracking.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -229,10 +229,15 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
+// One storage owner records all writes. Higher-level consumers capture only the typed key/value relevant to their decision; the writer knows no domain-specific policy.
+const localStorageWrites = createStorageWriteTracking()
+export const captureLocalStorageWritesTo = <Key extends keyof LocalStorageItems & string>(key: Key, value: LocalStorageItems[Key] & StorageWriteValue) => localStorageWrites.capture(key, value)
+
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	const serialized = serialize(LocalStorageItems, items)
-	const write = async () => await browser.storage.local.set(serialized)
-	return await (items.simulationMode === true ? trackSimulationModeEnablingWrite(write) : write())
+	// Observe decoded values only for keys the codec actually writes, preserving cleared-versus-omitted semantics and independence from wire encoding.
+	const writtenValues = Object.fromEntries(Object.entries(items).filter(([key]) => hasOwnKey(serialized, key)))
+	return await localStorageWrites.write(writtenValues, async () => await browser.storage.local.set(serialized))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

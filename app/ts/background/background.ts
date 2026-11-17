@@ -1,4 +1,4 @@
-import { captureSimulationModeGuard, waitForSimulationModeEnablingWrites } from '../utils/simulationModeGuard.js'
+import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -565,6 +565,7 @@ async function getActiveAddressForReroute(websiteTabConnections: WebsiteTabConne
 async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddressInitiallyVerified: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
+		const refuseModeChange = () => replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
 		for (let routingAttempt = 1; routingAttempt <= MAX_REQUEST_ROUTING_ATTEMPTS; routingAttempt++) {
 			const simulationModeGuard = captureSimulationModeGuard()
 			const settings = await getSettings()
@@ -576,7 +577,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 			if (resolved.type === 'forwardToSigner') {
 				const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
 				if (forward.posted) return { replyDelivered: forward.result, afterReplyDelivered }
-				await waitForSimulationModeEnablingWrites()
+				if (!await simulationModeGuard.waitForPendingWrites()) return refuseModeChange()
 				continue
 			}
 			// Permission persistence carries the owner through any follow-up access prompts.
@@ -591,7 +592,7 @@ async function replyToContentScriptMessage(simulationServicesOwner: SimulationSe
 			replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 			return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
 		}
-		return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
+		return refuseModeChange()
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))
