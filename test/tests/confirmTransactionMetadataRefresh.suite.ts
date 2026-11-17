@@ -1142,6 +1142,10 @@ test('signable-message dialog refreshes that overlap a rename send their visuali
 	// A first refresh caches the metadata it looks up, which later refreshes read instead.
 	await refreshDialog()
 	const lookupsPerRefresh = await countAddressBookReads(refreshDialog)
+	// Leave a different stored result so the first queued re-label changes its reviewed-result id too.
+	await nameRecipient('Before both refreshes')
+	await refreshDialog()
+	await nameRecipient('Older name')
 	clearObservedRpcMethodsAndMessages()
 	// The earlier refresh's last address-book lookup returns the address book from before the rename. Meanwhile the rename is stored and a later refresh is given time to visualise and send the new name.
 	let addressBookReads = 0

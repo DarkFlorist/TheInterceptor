@@ -525,7 +525,11 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 	if (first === undefined) return
 	switch (first.type) {
 		case 'SignableMessage': {
+			const requestIdentifier = first.uniqueRequestIdentifier
 			await signableMessageDialogRefreshSemaphore.execute(async () => {
+				// A preceding queued re-label may have changed the reviewed result. Capture its committed snapshot after entering the serial refresh.
+				const [first] = await getPendingTransactionsAndMessages()
+				if (first?.type !== 'SignableMessage' || !doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, requestIdentifier)) return
 				// Named as an address-book re-label names addresses, from the entries the message's first visualisation identified, never on chain. A message without that record, stored by an older version or not visualised yet, keeps its stored visualisation, as a run without recorded lookups keeps its names.
 				const identifiedAddressBookEntries = first.transactionOrMessageCreationStatus === 'Simulated' ? first.identifiedAddressBookEntries : undefined
 				if (identifiedAddressBookEntries === undefined) {
