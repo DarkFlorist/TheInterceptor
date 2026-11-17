@@ -1,20 +1,25 @@
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
 const contentScriptUpdateBatches: { readonly id: string, readonly excludeMatches?: readonly string[] }[][] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
+const registeredContentScripts = new Map<string, { readonly id: string, readonly js?: readonly string[], readonly excludeMatches?: readonly string[] }>()
+const contentScriptRegistrationOperations: string[] = []
+const reloadedTabs: number[] = []
 let storageSetError: Error | undefined
-let storageGetError: Error | undefined
-let storageGetErrorAfterWebsiteAccessWrite: Error | undefined
+let websiteAccessStorageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
+let contentScriptRegistrationError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
@@ -35,11 +40,6 @@ Reflect.set(globalThis, 'browser', {
 	storage: {
 		local: {
 			async get(keys?: string | string[] | Record<string, unknown> | null) {
-				if (storageGetError !== undefined) {
-					const error = storageGetError
-					storageGetError = undefined
-					throw error
-				}
 				if (keys === undefined || keys === null) return { ...storageState }
 				if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
 				if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
@@ -47,21 +47,40 @@ Reflect.set(globalThis, 'browser', {
 			},
 			async set(items: Record<string, unknown>) {
 				if (storageSetError !== undefined) throw storageSetError
+				if ('websiteAccess' in items && websiteAccessStorageSetError !== undefined) throw websiteAccessStorageSetError
 				Object.assign(storageState, items)
-				if ('websiteAccess' in items) {
-					storageGetError = storageGetErrorAfterWebsiteAccessWrite
-					storageGetErrorAfterWebsiteAccessWrite = undefined
-				}
 			},
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 			},
 		},
 	},
+	scripting: {
+		getRegisteredContentScripts: async () => [...registeredContentScripts.values()],
+		unregisterContentScripts: async (filter?: { readonly ids?: readonly string[] }) => {
+			contentScriptRegistrationOperations.push('unregister')
+			const ids = filter?.ids ?? [...registeredContentScripts.keys()]
+			for (const id of ids) registeredContentScripts.delete(id)
+		},
+		registerContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[] }[]) => {
+			contentScriptRegistrationOperations.push('register')
+			contentScriptUpdateBatches.push(scripts)
+			const registrationError = contentScriptRegistrationError
+			contentScriptRegistrationError = undefined
+			if (registrationError !== undefined) throw registrationError
+			for (const script of scripts) registeredContentScripts.set(script.id, script)
+		},
+		updateContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[], readonly excludeMatches?: readonly string[] }[]) => {
+			contentScriptRegistrationOperations.push('update')
+			contentScriptUpdateBatches.push(scripts)
+			for (const script of scripts) registeredContentScripts.set(script.id, script)
+		},
+	},
 	tabs: {
 		query: async () => [],
 		get: async () => undefined,
 		update: async () => undefined,
+		reload: async (tabId: number) => { reloadedTabs.push(tabId) },
 		onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 		onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 	},
@@ -91,15 +110,6 @@ Reflect.set(globalThis, 'browser', {
 			return undefined
 		},
 		updateSessionRules: async () => undefined,
-	},
-	scripting: {
-		getRegisteredContentScripts: async () => [
-			{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
-			{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
-		],
-		registerContentScripts: async () => undefined,
-		updateContentScripts: async (scripts: { readonly id: string, readonly excludeMatches?: readonly string[] }[]) => { contentScriptUpdateBatches.push(scripts) },
-		unregisterContentScripts: async () => undefined,
 	},
 })
 
@@ -147,38 +157,6 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 	declarativeNetRequestBlockMode: 'disabled',
 }
 
-const buildImportedSettingsFile = (websiteAccess: readonly unknown[]) => JSON.stringify({
-	name: 'InterceptorSettingsAndAddressBook',
-	version: '1.4',
-	exportedDate: '2026-11-04',
-	settings: {
-		activeSimulationAddress: '0x0000000000000000000000000000000000000002',
-		rpcNetwork: {
-			name: 'Imported network',
-			chainId: '0x1',
-			httpsRpc: 'https://example.test/rpc',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-			minimized: true,
-		},
-		openedPage: { page: 'Home' },
-		useSignersAddressAsActiveAddress: false,
-		websiteAccess,
-		simulationMode: false,
-		addressBookEntries: [],
-		useTabsInsteadOfPopup: false,
-		metamaskCompatibilityMode: false,
-	},
-})
-
-const importedDisabledWebsiteAccess = {
-	website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website' },
-	addressAccess: [],
-	access: false,
-	interceptorDisabled: true,
-}
-
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
@@ -195,15 +173,18 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 
 beforeEach(() => {
 	storageSetError = undefined
-	storageGetError = undefined
-	storageGetErrorAfterWebsiteAccessWrite = undefined
+	websiteAccessStorageSetError = undefined
 	dynamicRuleUpdateError = undefined
+	contentScriptRegistrationError = undefined
 	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
 	contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
+	registeredContentScripts.clear()
+	contentScriptRegistrationOperations.splice(0, contentScriptRegistrationOperations.length)
+	reloadedTabs.splice(0, reloadedTabs.length)
 })
 
 describe('popup message dispatcher seams', () => {
@@ -498,12 +479,14 @@ describe('popup message dispatcher seams', () => {
 				simulationMode: false,
 				addressBookEntries: [],
 				useTabsInsteadOfPopup: false,
-				metamaskCompatibilityMode: false,
+				metamaskCompatibilityMode: true,
 			},
 		})
 
+		const context = createDispatcherContext(async () => undefined)
+		context.websiteTabConnections.set(42, { connections: {} })
 		await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
+			context,
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
@@ -518,6 +501,8 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(reloadedTabs, [42])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{
@@ -532,55 +517,167 @@ describe('popup message dispatcher seams', () => {
 		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
 		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
 		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
+
+		const registrationOperationCount = contentScriptRegistrationOperations.length
+		reloadedTabs.splice(0, reloadedTabs.length)
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
+		assert.equal(contentScriptRegistrationOperations.length, registrationOperationCount)
+		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('refreshes manifest v3 content script exclusions with the imported disabled websites', async () => {
-		storageState.websiteAccess = [disabledWebsiteAccess]
+	test('keeps an imported settings transaction when its best-effort content script refresh fails', async () => {
+		const previousWebsiteAccess = [{
+			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}]
+		storageState.metamaskCompatibilityMode = false
+		storageState.websiteAccess = previousWebsiteAccess
+		registeredContentScripts.set('inpage', { id: 'inpage', js: ['/inpage/js/inpage.js'] })
+		registeredContentScripts.set('inpage2', { id: 'inpage2', js: ['/inpage/js/listenContentScript.js'] })
+		contentScriptRegistrationError = new Error('Content script registration unavailable')
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.4',
+			exportedDate: '2026-07-28',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				rpcNetwork: {
+					name: 'Imported network',
+					chainId: '0x1',
+					httpsRpc: 'https://example.test/rpc',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: true,
+				},
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [{
+					website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website' },
+					addressAccess: [],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'disabled',
+				}],
+				simulationMode: false,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: false,
+				metamaskCompatibilityMode: true,
+			},
+		})
+
+		await withSilencedConsole(async () => await dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
+		))
+
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
+		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
+		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected import broadcast.')
+		assert.deepEqual(importReply.data, { success: true })
+		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), true)
+		assert.equal(storageState.metamaskCompatibilityMode, true)
+		assert.equal(WebsiteAccessArray.parse(storageState.websiteAccess)[0]?.website.websiteOrigin, 'imported-disabled.test')
+		assert.equal(JSON.stringify(storageState.activeRpcNetwork)?.includes('https://example.test/rpc'), true)
+		assert.deepEqual(reloadedTabs, [])
+	})
+
+	test('reports import failure and keeps every previous setting when the import storage write fails', async () => {
+		const previousWebsiteAccess = [{
+			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}]
+		storageState.metamaskCompatibilityMode = false
+		storageState.websiteAccess = previousWebsiteAccess
+		registeredContentScripts.set('inpage', { id: 'inpage', js: ['/inpage/js/inpage.js'] })
+		registeredContentScripts.set('inpage2', { id: 'inpage2', js: ['/inpage/js/listenContentScript.js'] })
+		websiteAccessStorageSetError = new Error('Imported settings could not be stored')
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.4',
+			exportedDate: '2026-07-28',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				rpcNetwork: {
+					name: 'Imported network',
+					chainId: '0x1',
+					httpsRpc: 'https://example.test/rpc',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: true,
+				},
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [{
+					website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website' },
+					addressAccess: [],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'disabled',
+				}],
+				simulationMode: false,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: true,
+				metamaskCompatibilityMode: true,
+			},
+		})
 
 		await dispatchPopupMessage(
 			createDispatcherContext(async () => undefined),
-			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([importedDisabledWebsiteAccess]) } },
+			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
-		assert.equal(contentScriptUpdateBatches.length, 1)
-		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
-			{ id: 'inpage2', excludeMatches: ['http://imported-disabled.test:80/*', 'https://imported-disabled.test:443/*'] },
-			{ id: 'inpage', excludeMatches: ['http://imported-disabled.test:80/*', 'https://imported-disabled.test:443/*'] },
-		])
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
+		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
+		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
+		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Imported settings could not be stored' })
+		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), false)
+		assert.equal(storageState.metamaskCompatibilityMode, false)
+		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)
+		assert.notEqual(JSON.stringify(storageState.activeRpcNetwork)?.includes('https://example.test/rpc'), true)
+		assert.deepEqual(contentScriptRegistrationOperations, [])
+		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('leaves settings unchanged and skips every follow-up when storing an import fails', async () => {
-		storageState.websiteAccess = [disabledWebsiteAccess]
-		storageState.simulationMode = true
-		const storageBeforeImport = structuredClone(storageState)
-		const storageFailure = new Error('Settings storage unavailable.')
-		storageSetError = storageFailure
+	test('legacy imports preserve compatibility mode while refreshing content scripts and connected tabs', async () => {
+		storageState.metamaskCompatibilityMode = true
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.0',
+			exportedDate: '2026-09-07',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				activeChain: '0x1',
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [{
+					website: { websiteOrigin: 'legacy-disabled.test', title: 'Legacy disabled website' },
+					addressAccess: [],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'block-all',
+				}],
+				simulationMode: false,
+				addressInfos: [],
+				useTabsInsteadOfPopup: false,
+			},
+		})
 
-		await assert.rejects(dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
-			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([importedDisabledWebsiteAccess]) } },
-		), storageFailure)
+		const context = createDispatcherContext(async () => undefined)
+		context.websiteTabConnections.set(43, { connections: {} })
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
 
-		assert.deepEqual(storageState, storageBeforeImport)
-		assert.deepEqual(sentMessages, [])
-		assert.deepEqual(dynamicRuleUpdates, [])
-		assert.equal(contentScriptUpdateBatches.length, 0)
-	})
-
-	test('reports a failed content script update of a committed import and still applies the import', async () => {
-		storageGetErrorAfterWebsiteAccessWrite = new Error('Settings read unavailable.')
-
-		await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
-			{ method: 'popup_import_settings', data: { fileContents: buildImportedSettingsFile([{ ...importedDisabledWebsiteAccess, access: true, interceptorDisabled: false, declarativeNetRequestBlockMode: 'block-all' }]) } },
-		)
-
-		const latestUnexpectedError = await getLatestUnexpectedError()
-		assert.equal(latestUnexpectedError?.data.code, 'settings_import_content_script_update_failed')
-		assert.equal(contentScriptUpdateBatches.length, 0)
-		assert.equal(dynamicRuleUpdates.length, 1)
-		const methods = sentMessages.map((message) => MessageToPopup.parse(message).method)
-		assert.ok(methods.includes('popup_initiate_export_settings_reply'))
-		assert.ok(methods.includes('popup_settingsUpdated'))
+		assert.equal(storageState.metamaskCompatibilityMode, true)
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['http://legacy-disabled.test:80/*', 'https://legacy-disabled.test:443/*'])
+		assert.deepEqual(reloadedTabs, [43])
 	})
 })

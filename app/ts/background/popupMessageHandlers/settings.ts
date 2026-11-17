@@ -1,4 +1,5 @@
 import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
@@ -8,6 +9,7 @@ import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariabl
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -28,7 +30,7 @@ export async function settingsOpened() {
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
+export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
 	}
@@ -36,7 +38,11 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 	if (!parsed.success) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
-	await importSettingsAndAddressBook(parsed.value)
+	try {
+		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
+	} catch (error: unknown) {
+		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
+	}
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

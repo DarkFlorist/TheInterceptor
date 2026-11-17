@@ -1,48 +1,47 @@
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { ActiveAddress, ExportedSettings } from '../types/exportedSettingsTypes.js'
-import { updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
-import { reportUnexpectedError } from '../utils/errors.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type { EthereumAddress } from '../types/wire-types.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { commitImportedSettings, defaultActiveAddresses, defaultRpcs, type ImportedSettingsValues } from './settings.js'
+import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
+import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './storageVariables.js'
+import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
-function getImportedAddressBookUpdate(exportedSettings: ExportedSettings): (previousEntries: AddressBookEntries) => AddressBookEntries {
-	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || exportedSettings.version === '1.6') {
-		const { addressBookEntries } = exportedSettings.settings
-		return () => addressBookEntries
-	}
-	// Pre-1.4 exports only contain active addresses and contacts, which are merged into the existing address book instead of replacing it.
+function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previousEntries: AddressBookEntries) {
+	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || exportedSettings.version === '1.6') return exportedSettings.settings.addressBookEntries
 	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-	const legacyEntries = exportedSettings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))
-	const contacts = exportedSettings.settings.contacts ?? []
-	return (previousEntries) => getUniqueItemsByProperties(previousEntries.concat(legacyEntries).concat(contacts), ['address'])
+	return getUniqueItemsByProperties(previousEntries.concat(exportedSettings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSettings.settings.contacts ?? []), ['address'])
 }
 
-function getImportedSettingsValues(exportedSettings: ExportedSettings): ImportedSettingsValues {
+function getImportedSimulationModeStorageWrite(exportedSettings: ExportedSettings, defaultActiveAddress: EthereumAddress) {
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
+	if (exportedSettings.version === '1.0') return simulationModeStorageWrite({ simulationMode: exportedSettings.settings.simulationMode, rpcNetwork: defaultRpcs[0], activeSimulationAddress: defaultActiveAddress, activeSigningAddress: undefined, activeSigningSafeAddress: undefined })
+	const hasIndependentAddresses = exportedSettings.version === '1.5' || exportedSettings.version === '1.6'
+	return simulationModeStorageWrite({
+		simulationMode: exportedSettings.settings.simulationMode,
+		rpcNetwork: exportedSettings.settings.rpcNetwork,
+		activeSimulationAddress: hasIndependentAddresses ? exportedSettings.settings.activeSimulationAddress : defaultActiveAddress,
+		activeSigningAddress: undefined,
+		activeSigningSafeAddress: hasIndependentAddresses ? exportedSettings.settings.activeSigningSafeAddress : undefined,
+	})
+}
+
+// The import composes the storage owners' writes into one settings storage transaction: it names no storage key itself, and a failed write changes nothing, so there is nothing to roll back.
+export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
-	return {
-		openedPage: exportedSettings.version === '1.0' || exportedSettings.version === '1.1' || exportedSettings.version === '1.2' ? undefined : exportedSettings.settings.openedPage,
-		updateAddressBookEntries: getImportedAddressBookUpdate(exportedSettings),
-		simulationMode: exportedSettings.settings.simulationMode,
-		rpcNetwork: exportedSettings.version === '1.0' ? defaultRpcs[0] : exportedSettings.settings.rpcNetwork,
-		activeSimulationAddress: exportedSettings.version === '1.5' || exportedSettings.version === '1.6' ? exportedSettings.settings.activeSimulationAddress : defaultActiveAddress,
-		activeSigningSafeAddress: exportedSettings.version === '1.5' || exportedSettings.version === '1.6' ? exportedSettings.settings.activeSigningSafeAddress : undefined,
-		signingAddressPreferences: exportedSettings.version === '1.5' || exportedSettings.version === '1.6' ? exportedSettings.settings.signingAddressPreferences : [],
-		useSignersAddressAsActiveAddress: exportedSettings.settings.useSignersAddressAsActiveAddress,
-		websiteAccess: exportedSettings.settings.websiteAccess,
-		useTabsInsteadOfPopup: exportedSettings.settings.useTabsInsteadOfPopup,
-		metamaskCompatibilityMode: exportedSettings.version === '1.0' || exportedSettings.version === '1.1' ? undefined : exportedSettings.settings.metamaskCompatibilityMode,
-		safeAppsCompatibilityMode: exportedSettings.version === '1.6' ? exportedSettings.settings.safeAppsCompatibilityMode : false,
-	}
-}
-
-export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
-	await commitImportedSettings(getImportedSettingsValues(exportedSettings))
-	// The refresh has one implementation, updateContentScriptInjectionStrategy, which both paths call; only the decision to call it is here, because this write bypasses updateWebsiteAccess. The import replaces the whole website access list and the refresh only re-applies it, so it runs without comparing the disabled sites. The import is committed by now, so a failure is reported rather than rethrown to keep the caller's reconciliation running. This stays out of commitImportedSettings because settings.ts importing the content script updater would create an import cycle.
-	try {
-		await updateContentScriptInjectionStrategy()
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, { code: 'settings_import_content_script_update_failed', displayMessage: 'Failed to update the website injection rules after importing settings.' })
-	}
+	const version = exportedSettings.version
+	await runSettingsStorageTransaction(async () => ({
+		result: undefined,
+		writes: [
+			...version === '1.3' || version === '1.4' || version === '1.5' || version === '1.6' ? [pageStorageWrite(exportedSettings.settings.openedPage)] : [],
+			userAddressBookEntriesStorageWrite(getImportedAddressBookEntries(exportedSettings, await getUserAddressBookEntries())),
+			getImportedSimulationModeStorageWrite(exportedSettings, defaultActiveAddress),
+			signingAddressPreferencesStorageWrite(version === '1.5' || version === '1.6' ? exportedSettings.settings.signingAddressPreferences : []),
+			useSignersAddressAsActiveAddressStorageWrite(exportedSettings.settings.useSignersAddressAsActiveAddress),
+			websiteAccessStorageWrite(exportedSettings.settings.websiteAccess),
+			useTabsInsteadOfPopupStorageWrite(exportedSettings.settings.useTabsInsteadOfPopup),
+			safeAppsCompatibilityModeStorageWrite(version === '1.6' ? exportedSettings.settings.safeAppsCompatibilityMode : false),
+			...version !== '1.0' && version !== '1.1' ? [metamaskCompatibilityModeStorageWrite(exportedSettings.settings.metamaskCompatibilityMode)] : [],
+		],
+	}))
 }

@@ -4,16 +4,14 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, readUserAddressBookEntriesWithoutRepairWrite } from './storageVariables.js'
-import { withStorageTransactionLock } from './storageTransactionLock.js'
-import type { AddressBookEntries } from '../types/addressBookTypes.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { getUserAddressBookEntries } from './storageVariables.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -42,33 +40,8 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
-type StartupStorageDefaults = {
-	independentActiveSimulationAddress: Settings['activeSimulationAddress']
-	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
-	openedPageV2: Page
-	useSignersAddressAsActiveAddress: boolean
-	websiteAccess: WebsiteAccessArray
-	simulationMode: boolean
-	activeRpcNetwork: RpcNetwork
-	makeCurrentAddressRich: boolean
-	fixedAddressRichList: readonly RichListElement[]
-	signingAddressPreferences: SigningAddressPreferences
-}
-
-async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
-	const rawValue = storedItems[key]
-	const storedItem = hasOwnKey(storedItems, key) ? { [key]: rawValue } : {}
-	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = browserStorageLocalSafeParse(storedItem)
-	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
-	if (rawValue === undefined) return defaultValue
-	console.warn(`${ key } was corrupt:`)
-	console.warn(rawValue)
-	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
-	return defaultValue
-}
-
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
-	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
+async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageValues>(key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
+	return await getStartupStorageValueOrDefault(await browser.storage.local.get(key), key, defaultValue)
 }
 
 export async function getSettings() : Promise<Settings> {
@@ -83,13 +56,13 @@ export async function getSettings() : Promise<Settings> {
 		'simulationMode',
 		'activeRpcNetwork',
 	]))
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
-	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
+	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
+	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
@@ -102,22 +75,20 @@ export async function getSettings() : Promise<Settings> {
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
+export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
+export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
 export async function getSigningAddressPreferences() {
 	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
 }
 
+export const signingAddressPreferencesStorageWrite = (signingAddressPreferences: SigningAddressPreferences): StorageWrite => ({ signingAddressPreferences })
+
 export async function rememberSigningAddressPreference(preference: SigningAddressPreference) {
-	await withStorageTransactionLock(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const preferences = await getSigningAddressPreferences()
-		await browserStorageLocalSet({
-			signingAddressPreferences: [
-				...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress),
-				preference,
-			],
-		})
+		return { writes: [signingAddressPreferencesStorageWrite([...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress), preference])], result: undefined }
 	})
 }
 
@@ -176,11 +147,13 @@ export async function trackPreviousActiveAddressForMakeMeRichList(previousActive
 	})
 }
 
+export const useSignersAddressAsActiveAddressStorageWrite = (useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined): StorageWrite => ({
+	useSignersAddressAsActiveAddress,
+	...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
+})
+
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	return await browserStorageLocalSet({
-		useSignersAddressAsActiveAddress,
-		...useSignersAddressAsActiveAddress === true ? { activeSigningAddress: currentSignerAddress } : {}
-	})
+	return await browserStorageLocalSet(useSignersAddressAsActiveAddressStorageWrite(useSignersAddressAsActiveAddress, currentSignerAddress))
 }
 
 type SimulationModeChanges = {
@@ -191,7 +164,7 @@ type SimulationModeChanges = {
 	readonly activeSigningSafeAddress?: EthereumAddress
 }
 
-function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
+export function simulationModeStorageWrite(changes: SimulationModeChanges): StorageWrite {
 	return {
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
@@ -202,7 +175,7 @@ function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
 }
 
 export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+	return await browserStorageLocalSet(simulationModeStorageWrite(changes))
 }
 
 async function getNormalizedWebsiteAccessFromStorage() {
@@ -215,13 +188,21 @@ export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	await withStorageTransactionLock(async () => {
+export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): StorageWrite => ({ websiteAccess: sanitizeWebsiteAccess(websiteAccess) })
+
+// Returns the stored value before and after the update so rollback transactions can restore only what this update changed.
+export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	return await runSettingsStorageTransaction(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
-		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+		const changed = nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess
+		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: { previousWebsiteAccess: sanitizedWebsiteAccess, updatedWebsiteAccess: nextWebsiteAccess } }
 	})
+}
+
+// Last-write-wins: applies the update to the latest stored value; see tryWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {
@@ -239,13 +220,16 @@ export async function updateKnownWebsiteMetadata(website: Website) {
 }
 
 export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet('useTabsInsteadOfPopup'))?.useTabsInsteadOfPopup ?? false
-export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
+export const useTabsInsteadOfPopupStorageWrite = (useTabsInsteadOfPopup: boolean): StorageWrite => ({ useTabsInsteadOfPopup })
+export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet(useTabsInsteadOfPopupStorageWrite(useTabsInsteadOfPopup))
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
-export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
+export const metamaskCompatibilityModeStorageWrite = (metamaskCompatibilityMode: boolean): StorageWrite => ({ metamaskCompatibilityMode })
+export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet(metamaskCompatibilityModeStorageWrite(metamaskCompatibilityMode))
 
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
-export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
+export const safeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
+export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(safeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
@@ -270,45 +254,6 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
 		}
 	}
-}
-
-export type ImportedSettingsValues = {
-	readonly openedPage?: Page
-	readonly updateAddressBookEntries: (previousEntries: AddressBookEntries) => AddressBookEntries
-	readonly simulationMode: boolean
-	readonly rpcNetwork?: RpcNetwork
-	readonly activeSimulationAddress: Settings['activeSimulationAddress']
-	readonly activeSigningSafeAddress: Settings['activeSigningSafeAddress']
-	readonly signingAddressPreferences: SigningAddressPreferences
-	readonly useSignersAddressAsActiveAddress: boolean
-	readonly websiteAccess: WebsiteAccessArray
-	readonly useTabsInsteadOfPopup: boolean
-	readonly metamaskCompatibilityMode?: boolean
-	readonly safeAppsCompatibilityMode: boolean
-}
-
-// Stores an import in one storage write, so a failed write leaves every previous setting in place rather than a mix of previous and imported ones, and Safe selection and per-signer preferences, which resolve through the address book, are never visible without their imported address book entries. An omitted optional value keeps its stored setting. A repairable or corrupt stored address book is only replaced by that write, so a failed import leaves it untouched too.
-export async function commitImportedSettings(values: ImportedSettingsValues) {
-	await withStorageTransactionLock(async () => {
-		const { entries: previousAddressBookEntries } = await readUserAddressBookEntriesWithoutRepairWrite()
-		await browserStorageLocalSet({
-			...values.openedPage === undefined ? {} : { openedPageV2: values.openedPage },
-			userAddressBookEntriesV3: values.updateAddressBookEntries(previousAddressBookEntries),
-			...getSimulationModeStorageUpdate({
-				simulationMode: values.simulationMode,
-				rpcNetwork: values.rpcNetwork,
-				activeSimulationAddress: values.activeSimulationAddress,
-				activeSigningAddress: undefined,
-				activeSigningSafeAddress: values.activeSigningSafeAddress,
-			}),
-			signingAddressPreferences: values.signingAddressPreferences,
-			useSignersAddressAsActiveAddress: values.useSignersAddressAsActiveAddress,
-			websiteAccess: sanitizeWebsiteAccess(values.websiteAccess),
-			useTabsInsteadOfPopup: values.useTabsInsteadOfPopup,
-			...values.metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode: values.metamaskCompatibilityMode },
-			safeAppsCompatibilityMode: values.safeAppsCompatibilityMode,
-		})
-	})
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

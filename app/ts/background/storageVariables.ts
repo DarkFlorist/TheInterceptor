@@ -22,7 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { withStorageTransactionLock } from './storageTransactionLock.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -98,10 +98,18 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
-export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
-	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
-	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
+	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined,
+	write: async (fetchSimulationStackRequestPromise) => {
+		if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+	},
+	getDefault: () => undefined,
+})
+export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
+export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
+export async function clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await fetchSimulationStackRequestRepository.update((storedRequest) => storedRequest !== undefined && doesUniqueRequestIdentifiersMatch(storedRequest.uniqueRequestIdentifier, uniqueRequestIdentifier) ? undefined : storedRequest)
 }
 
 const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
@@ -281,47 +289,42 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
 }
 
-// Reads the address book without writing: a repairable or corrupt stored value is returned repaired or as the defaults, with repairNeeded telling the caller to store the returned entries.
-export async function readUserAddressBookEntriesWithoutRepairWrite(): Promise<{ readonly entries: AddressBookEntries, readonly repairNeeded: boolean }> {
+export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
-	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return { entries: parsedEntries.userAddressBookEntriesV3, repairNeeded: false }
-	if (rawEntries === undefined) return { entries: DEFAULT_ACTIVE_ADDRESSES, repairNeeded: false }
+	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
+	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
-	if (repairedEntries !== undefined) return { entries: repairedEntries, repairNeeded: true }
+	if (repairedEntries !== undefined) {
+		await browserStorageLocalSet({ userAddressBookEntriesV3: repairedEntries })
+		return repairedEntries
+	}
 	console.warn('userAddressBookEntriesV3 was corrupt:')
 	console.warn(rawEntries)
-	return { entries: DEFAULT_ACTIVE_ADDRESSES, repairNeeded: true }
-}
-
-export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
-	const { entries, repairNeeded } = await readUserAddressBookEntriesWithoutRepairWrite()
-	if (repairNeeded) await browserStorageLocalSet({ userAddressBookEntriesV3: entries })
-	return entries
+	await browserStorageLocalSet({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
+	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
+
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await withStorageTransactionLock(async () => {
-		const entries = await getUserAddressBookEntries()
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
-	})
+	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await withStorageTransactionLock(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
+		return { writes: [{ userAddressBookEntriesV2: updateFunc(entries) }], result: undefined }
 	})
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await withStorageTransactionLock(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
+		return { writes: existingEntry === undefined ? [userAddressBookEntriesStorageWrite(entries.concat(newEntry))] : [], result: undefined }
 	})
 }
 
