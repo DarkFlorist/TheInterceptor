@@ -6,6 +6,7 @@ import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 
 // One policy for every owner replacement and selection refresh, after the complete update has settled.
 export const refreshAfterSimulationServicesUpdate: SimulationServicesUpdateObserver = async (services, outcome) => {
+	if (!services.ethereum.isCurrent()) return
 	if (outcome.status === 'failed') {
 		await publishFailedPopupVisualisation()
 		return

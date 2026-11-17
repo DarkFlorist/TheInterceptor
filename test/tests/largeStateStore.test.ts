@@ -499,7 +499,7 @@ describe('large state store helpers', () => {
 			jsonRpcRequest: async () => assert.fail('must not simulate an unreadable stack'),
 		}, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 
-		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), undefined, true), (caught: unknown) => caught === error)
+		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), { throwOnUnexpectedError: true }), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
 		assert.deepEqual(storageState, {})

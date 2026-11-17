@@ -1,3 +1,4 @@
+import { Future } from '../../app/ts/utils/future.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { createEthereumClientService, createSimulationServicesOwner, type SimulationServicesUpdate } from '../../app/ts/simulation/serviceLifecycle.js'
@@ -104,6 +105,29 @@ test('an update context cannot replace services after its callback has completed
 		assert.throws(() => expired.requestRefresh(), /no longer active/)
 		assert.equal(refreshes, 0)
 	} finally {
+		owner.getCurrent().ethereum.cleanup()
+	}
+})
+
+
+test('a slow refresh observer does not hold the services mutation lock', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const started = new Future<void>()
+	const release = new Future<void>()
+	let observerCalls = 0
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => {
+		observerCalls += 1
+		if (observerCalls === 1) { started.resolve(undefined); await release }
+	})
+	const first = owner.update(async ({ reset }) => reset(rpc))
+	try {
+		await started
+		const replacement = await owner.update(async ({ reset }) => reset({ ...rpc, httpsRpc: 'https://next.invalid' }))
+		assert.equal(owner.getCurrent(), replacement)
+		assert.equal(observerCalls, 2)
+	} finally {
+		release.resolve(undefined)
+		await first
 		owner.getCurrent().ethereum.cleanup()
 	}
 })

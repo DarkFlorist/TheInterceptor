@@ -337,7 +337,7 @@ test('execution with the services of a previously selected endpoint publishes no
 	const fixture = createNetworkSwitchFixture()
 	const otherEndpointVisualisation = await switchToOtherEndpointWithTransaction(fixture)
 	// The executor path a refresh takes after committing: its services were replaced while it waited for the semaphore.
-	await updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, undefined, true)
+	await updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { throwOnUnexpectedError: true })
 	await assertOtherEndpointVisualisationKept(fixture, otherEndpointVisualisation)
 })
 
@@ -400,7 +400,7 @@ for (const selectionChange of selectionChangesWithoutFollowUp) test(`execution o
 	const visualisationBefore = await getPopupVisualisationState()
 	const publicationsBefore = getPublications().length
 	// The executor path a queue entry takes after passing its pre-abort check: the selection changed while it waited for the semaphore.
-	await updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, undefined, true, snapshot)
+	await updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { throwOnUnexpectedError: true, snapshot })
 	await assertRefreshLeftNoTrace(fixture, visualisationBefore, publicationsBefore)
 })
 
@@ -595,7 +595,7 @@ test('a reset landing while the execution guard reads the settings stops the rep
 	})
 	const restoreSendMessage = openVisualisationConsumer()
 	try {
-		const execution = updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, undefined, true, snapshot)
+		const execution = updatePopupVisualisationState(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { throwOnUnexpectedError: true, snapshot })
 		await guardReadsSettings
 		// The replacement's own refresh waits for the semaphore this execution holds, so only the reset itself is awaited here.
 		const replacing = replaceRpcListWithOtherEndpointAsPrimary(fixture)

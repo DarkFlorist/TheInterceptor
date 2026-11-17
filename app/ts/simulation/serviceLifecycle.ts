@@ -88,31 +88,32 @@ export function createSimulationServicesOwnerFromOperations(getCurrent: () => Si
 	const updates = new Semaphore(1)
 	return {
 		getCurrent,
-		update: async <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>): Promise<Result> => await updates.execute(async () => {
-			let refreshRequested = false
-			let invalidateOldState = false
-			let result: Result
-			let updateOpen = true
-			const requireOpenUpdate = () => { if (!updateOpen) throw new Error('This simulation services update is no longer active') }
-			try {
-				result = await apply({
-					reset: (network) => {
-						requireOpenUpdate()
-						refreshRequested = true
-						invalidateOldState = true
-						return replace(network)
-					},
-					requestRefresh: () => { requireOpenUpdate(); refreshRequested = true },
-				})
-			} catch (error: unknown) {
-				updateOpen = false
-				if (refreshRequested) await observe(getCurrent(), { status: 'failed', error })
-				throw error
+		update: async <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>): Promise<Result> => {
+			const completed = await updates.execute(async () => {
+				let refreshRequested = false
+				let invalidateOldState = false
+				let updateOpen = true
+				const requireOpenUpdate = () => { if (!updateOpen) throw new Error('This simulation services update is no longer active') }
+				try {
+					const result = await apply({
+						reset: (network) => { requireOpenUpdate(); refreshRequested = true; invalidateOldState = true; return replace(network) },
+						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true },
+					})
+					return { status: 'completed' as const, invalidateOldState, result, services: getCurrent(), refreshRequested }
+				} catch (error: unknown) {
+					return { status: 'failed' as const, error, services: getCurrent(), refreshRequested }
+				} finally {
+					updateOpen = false
+				}
+			})
+			// Storage and installation are serialized; network simulation belongs outside the mutation lock.
+			if (completed.refreshRequested) {
+				const outcome: SimulationServicesUpdateOutcome = completed.status === 'failed' ? { status: 'failed', error: completed.error } : { status: 'completed', invalidateOldState: completed.invalidateOldState }
+				await observe(completed.services, outcome)
 			}
-			updateOpen = false
-			if (refreshRequested) await observe(getCurrent(), { status: 'completed', invalidateOldState })
-			return result
-		}),
+			if (completed.status === 'failed') throw completed.error
+			return completed.result
+		},
 	}
 }
 

@@ -1309,7 +1309,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	console.info(`[simulation-stack import] persisted transaction stack at ${ formatEstimatedBytes(updatedStackBytes) }.`)
 
 	try {
-		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
+		await updatePopupVisualisationState(ethereum, tokenPriceService, { throwOnUnexpectedError: true })
 		const popupVisualisation = await getPopupVisualisationState()
 		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
 		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)
