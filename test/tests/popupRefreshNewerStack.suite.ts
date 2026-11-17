@@ -1,7 +1,7 @@
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { browserMock, fakeRequestHandler, fakeRpcNetwork, modules, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { createAcceptConfirmation, browserMock, fakeRequestHandler, fakeRpcNetwork, modules, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from '../../app/ts/background/storageVariables.js'
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
@@ -64,7 +64,7 @@ for (const entryPoint of olderRefreshEntryPoints) test(`${ entryPoint.name } hel
 		await olderRefreshReadsBlockNumber
 
 		// Accepting the simulation-mode request appends it to the stack and refreshes the visualisation for the newer stack.
-		await modules.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+		await modules.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, new Map(), await createAcceptConfirmation(uniqueRequestIdentifier))
 		assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
 
 		releaseOlderRefresh.resolve(undefined)
@@ -233,7 +233,7 @@ function openVisualisationConsumer() {
 
 async function acceptTransactionOnFirstEndpoint(fixture: ReturnType<typeof createNetworkSwitchFixture>) {
 	await modules.browserStorageLocalSet({ simulationMode: true, activeRpcNetwork: fakeRpcNetwork })
-	await modules.resolvePendingTransactionOrMessage(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+	await modules.resolvePendingTransactionOrMessage(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, new Map(), await createAcceptConfirmation(uniqueRequestIdentifier))
 	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
 }
 
@@ -494,7 +494,7 @@ test('a queue entry publishes a stack edit made after it was queued, even when t
 	try {
 		const queueEntry = queuePopupSimulationRefresh({ ethereum, tokenPriceService })
 		await entryProbesConsumer
-		await modules.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, new Map(), { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+		await modules.resolvePendingTransactionOrMessage(ethereum, tokenPriceService, new Map(), await createAcceptConfirmation(uniqueRequestIdentifier))
 		assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
 		releaseEntry.resolve(undefined)
 		await queueEntry
