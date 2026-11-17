@@ -1,10 +1,3 @@
-import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
-import { PASSTHROUGH_STATE } from '../types/visualizer-types.js'
-import type { EthereumBlockHeader } from '../types/wire-types.js'
-import { isExpectedInfrastructureError } from '../utils/errors.js'
-import { readNetworkSnapshotForServices } from './networkTransitionLock.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -13,7 +6,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { printError, reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
+import { isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -28,6 +21,7 @@ import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionS
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { createNewBlockAttemptCallback, readCurrentPollingNetwork } from './newBlockHandling.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -235,41 +229,16 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	}
 }
 
-async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) {
-	if (ethereumClientService !== getSimulationServices().ethereum) return
-	if (blockheader === null) throw new Error('The latest block is null')
-	try {
-		const rpcConnectionStatus = {
-			isConnected: true,
-			lastConnnectionAttempt: new Date(),
-			latestBlock: blockheader,
-			rpcNetwork: ethereumClientService.getRpcEntry(),
-			retrying: ethereumClientService.isBlockPolling(),
-		}
-		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
-		if (isNewBlock) {
-			const simulateCurrentStack = async () => {
-				const network = await readNetworkSnapshotForServices(getSimulationServices())
-				return network === undefined ? PASSTHROUGH_STATE : await getUpdatedSimulationState(requireSimulationSnapshot(network.simulation))
-			}
-			const settings = await getSettings()
-			if (settings.simulationMode) {
-				const { ethereum, tokenPriceService } = getSimulationServices()
-				const updatePopupVisualisationPromise = updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
-				silenceChromeUnCaughtPromise(updatePopupVisualisationPromise)
-				return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, simulateCurrentStack)
-			}
-			return await sendSubscriptionMessagesForNewBlock(blockheader.number, ethereumClientService, settings.simulationMode, websiteTabConnections, simulateCurrentStack)
-		}
-	} catch(error) {
-		if (isExpectedInfrastructureError(error)) return
-		await reportUnexpectedError(error)
-	}
-}
+const newBlockAttemptCallback = createNewBlockAttemptCallback({
+	getSimulationServices,
+	publishRpcConnectionStatus: rpcConnectionStatusPublisher.publishRpcConnectionStatus,
+	websiteTabConnections,
+})
 
 async function onErrorBlockCallback(ethereumClientService: EthereumClientService, _error: unknown) {
-	if (ethereumClientService !== getSimulationServices().ethereum) return
 	try {
+		const current = await readCurrentPollingNetwork(getSimulationServices, ethereumClientService)
+		if (current === undefined) return
 		const rpcConnectionStatus = {
 			isConnected: false,
 			lastConnnectionAttempt: new Date(),
@@ -277,7 +246,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 			rpcNetwork: ethereumClientService.getRpcEntry(),
 			retrying: ethereumClientService.isBlockPolling(),
 		}
-		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus)
+		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_failed_to_get_block', rpcConnectionStatus, current.isCurrent)
 	} catch(error) {
 		await reportUnexpectedError(error)
 	}

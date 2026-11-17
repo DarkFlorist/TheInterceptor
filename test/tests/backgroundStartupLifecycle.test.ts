@@ -1,6 +1,6 @@
 import * as assert from 'assert'
-import * as path from 'node:path'
 import { describe, test } from 'bun:test'
+import * as path from 'node:path'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from '../../app/ts/background/contentScriptPortLifecycle.js'
 
 const backgroundStartupSourcePath = path.join(import.meta.dir, '..', '..', 'app', 'ts', 'background', 'background-startup.ts')
@@ -65,7 +65,7 @@ describe('background startup lifecycle', () => {
 	test('keeps the real content script registration and first tab-state write behind the startup gate', async () => {
 		const source = await Bun.file(backgroundStartupSourcePath).text()
 		const connectionHandlerStart = source.indexOf('async function onContentScriptConnected')
-		const connectionHandlerEnd = source.indexOf('async function newBlockAttemptCallback', connectionHandlerStart)
+		const connectionHandlerEnd = source.indexOf('const newBlockAttemptCallback', connectionHandlerStart)
 		assert.notEqual(connectionHandlerStart, -1)
 		assert.notEqual(connectionHandlerEnd, -1)
 		const connectionHandler = source.slice(connectionHandlerStart, connectionHandlerEnd)

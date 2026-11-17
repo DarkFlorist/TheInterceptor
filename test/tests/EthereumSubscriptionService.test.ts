@@ -1,16 +1,16 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
+import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { EthereumSubscriptionsAndFilters, PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
-import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
 function parseRequest<T>(data: string): T {
@@ -238,8 +238,8 @@ const blockNumber = 8443561n
 			}
 			assert.deepEqual(postedMessages.map((message) => InterceptorMessageToInpage.parse(message)), [expectedSyncingNotification])
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
-			await sendSubscriptionMessagesForNewBlock(blockNumber + 1n, ethereum, true, websiteTabConnections, async () => PASSTHROUGH_STATE)
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE, () => true)
+			await sendSubscriptionMessagesForNewBlock(blockNumber + 1n, ethereum, true, websiteTabConnections, async () => PASSTHROUGH_STATE, () => true)
 			assert.deepEqual(postedMessages.map((message) => InterceptorMessageToInpage.parse(message)), [expectedSyncingNotification])
 			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => subscription.subscriptionOrFilterId), [subscriptionId])
 
@@ -484,7 +484,7 @@ const blockNumber = 8443561n
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationInput)
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState))
+			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => toResolvedExecutionSimulationState(simulationState), () => true)
 
 			const emittedBlockNumbers = postedMessages.flatMap((message) => {
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
@@ -536,7 +536,7 @@ const blockNumber = 8443561n
 
 			const writes = spyOn(browser.storage.local, 'set')
 			try {
-				await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+				await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE, () => true)
 				assert.equal(writes.mock.calls.length, 1)
 			} finally {
 				writes.mockRestore()
@@ -574,7 +574,7 @@ const blockNumber = 8443561n
 				return snapshot
 			})
 			try {
-				await sendSubscriptionMessagesForNewBlock(blockNumber, createEthereum(), false, connections, async () => PASSTHROUGH_STATE)
+				await sendSubscriptionMessagesForNewBlock(blockNumber, createEthereum(), false, connections, async () => PASSTHROUGH_STATE, () => true)
 			} finally {
 				reads.mockRestore()
 			}
@@ -621,7 +621,7 @@ const blockNumber = 8443561n
 
 			const writes = spyOn(browser.storage.local, 'set')
 			try {
-				await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
+				await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE, () => true)
 				assert.equal(writes.mock.calls.length, 1)
 			} finally {
 				writes.mockRestore()
@@ -665,7 +665,7 @@ const blockNumber = 8443561n
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, true, websiteTabConnections, async () => {
 				simulationStateRequests++
 				return toResolvedExecutionSimulationState(simulationState)
-			})
+			}, () => true)
 
 			assert.equal(simulationStateRequests, 1)
 			const emittedMessages = postedMessages.filter((message) => message.type === 'result' && 'method' in message && message.method === 'newHeads')

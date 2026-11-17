@@ -1,16 +1,16 @@
+import { websiteSocketToString } from '../../background/backgroundUtils.js'
+import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
+import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
 import type { EthNewFilter, EthSubscribeParams } from '../../types/JsonRpc-types.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
+import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../utils/constants.js'
+import { JsonRpcResponseError } from '../../utils/errors.js'
+import type { WebsiteSocket } from '../../utils/requests.js'
+import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
 import { hasOwnKey } from '../../utils/typescript.js'
 import type { EthereumClientService } from './EthereumClientService.js'
-import { getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } from '../../background/storageVariables.js'
-import type { EthereumSubscriptionsAndFilters, ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../../types/visualizer-types.js'
-import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
-import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
-import type { WebsiteSocket } from '../../utils/requests.js'
-import { websiteSocketToString } from '../../background/backgroundUtils.js'
-import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
-import { JsonRpcResponseError } from '../../utils/errors.js'
-import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../utils/constants.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 
@@ -57,6 +57,8 @@ type NewBlockSources = {
 	readonly isSimulation: boolean
 	readonly getLiveBlock: () => Promise<LiveBlock>
 	readonly getSimulatedBlocks: () => Promise<readonly SimulatedBlock[]>
+	// Asked after every await and before sending, because a network change can commit while a block or a simulation is awaited; once it is false, nothing more is sent for this block.
+	readonly networkIsCurrent: () => boolean
 }
 type EthSubscriptionTypeBehaviour = {
 	// Sent once, right after the subscriber received the eth_subscribe reply carrying the subscription id.
@@ -71,6 +73,7 @@ const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptio
 		sendInitialMessages: () => undefined,
 		sendNewBlockMessages: async (websiteTabConnections, subscription, newBlockSources) => {
 			const newBlock = await newBlockSources.getLiveBlock()
+			if (!newBlockSources.networkIsCurrent()) return
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
 				type: 'result',
 				method: 'newHeads' as const,
@@ -78,7 +81,9 @@ const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptio
 				subscription: subscription.subscriptionOrFilterId,
 			})
 			if (!newBlockSources.isSimulation) return
-			for (const simulatedBlock of await newBlockSources.getSimulatedBlocks()) {
+			const simulatedBlocks = await newBlockSources.getSimulatedBlocks()
+			if (!newBlockSources.networkIsCurrent()) return
+			for (const simulatedBlock of simulatedBlocks) {
 				// post our simulated blocks on top (reorg them)
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscription.subscriptionCreatorSocket, {
 					type: 'result',
@@ -103,12 +108,14 @@ const ethSubscriptionTypes: Record<StoredEthSubscription['type'], EthSubscriptio
 	},
 }
 
+// The caller decides whether the network these blocks describe is still the active one; this transport only asks before each send, because a network change can commit while it awaits a block or a simulation.
 export async function sendSubscriptionMessagesForNewBlock(
 	blockNumber: bigint,
 	ethereumClientService: EthereumClientService,
 	isSimulation: boolean,
 	websiteTabConnections: WebsiteTabConnections,
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
+	networkIsCurrent: () => boolean,
 ) {
 	const storedSubscriptions = await getEthereumSubscriptionsAndFilters()
 	const isConnected = (subscription: EthereumSubscriptionsAndFilters[number]) => websiteTabConnections.get(subscription.subscriptionCreatorSocket.tabId)
@@ -142,13 +149,14 @@ export async function sendSubscriptionMessagesForNewBlock(
 		})()
 		return await simulatedBlocksPromise
 	}
-	const newBlockSources = { isSimulation, getLiveBlock, getSimulatedBlocks }
+	const newBlockSources = { isSimulation, getLiveBlock, getSimulatedBlocks, networkIsCurrent }
 	// Notify only subscribers present when this block started; pruning must not admit a subscription whose reply is still pending.
 	for (const subscriptionOrFilter of storedSubscriptions) {
 		// A socket can disconnect while an earlier subscriber's block fetch is in flight; the next block's bulk cleanup will prune it.
 		if (!isConnected(subscriptionOrFilter)) continue
 		if (subscriptionOrFilter.type === 'eth_newFilter') continue // filters are polled through eth_getFilterChanges instead
 		await ethSubscriptionTypes[subscriptionOrFilter.type].sendNewBlockMessages(websiteTabConnections, subscriptionOrFilter, newBlockSources)
+		if (!networkIsCurrent()) return
 	}
 	return
 }
