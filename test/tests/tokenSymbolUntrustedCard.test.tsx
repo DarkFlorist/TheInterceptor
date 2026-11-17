@@ -3,6 +3,8 @@ import { render } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
+import { ON_CHAIN_TOKEN_METADATA_WARNING } from '../../app/ts/components/subcomponents/onChainTokenWarnings.js'
+import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { TokenSymbol, TokenWithAmount } from '../../app/ts/components/subcomponents/coins.js'
 import type { Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import { installDomMock } from './domMock.js'
@@ -20,7 +22,7 @@ const collectElements = (node: RenderTreeNode, matches: (element: RenderTreeNode
 ]
 
 const collectTokenNames = (container: RenderTreeNode) => collectElements(container, (element) => element.tagName === 'DATA')
-const collectWarningSigns = (container: RenderTreeNode) => collectElements(container, (element) => element.getAttribute?.('role') === 'alert')
+const collectWarningSigns = (container: RenderTreeNode) => collectElements(container, (element) => element.getAttribute?.('class') === 'inline-card-warning-sign')
 
 async function renderIntoDom<T>(element: JSX.Element, read: (container: RenderTreeNode) => T) {
 	const dom = installDomMock()
@@ -50,17 +52,25 @@ const createTokenSymbol = (entrySource: Erc20TokenEntry['entrySource'], style: J
 const ROW_COLORS = ['var(--danger-color)', 'var(--danger-dim-color)', 'var(--dim-text-color)', 'var(--disabled-text-color)']
 
 describe('untrusted token card', () => {
-	test('shows the token name in the regular text color whatever color the row uses', async () => {
+	test('lets the card stylesheet color warning labels whatever color the row uses', async () => {
 		for (const color of ROW_COLORS) {
 			const nameColors = await renderIntoDom(createTokenSymbol('OnChain', { color }), (container) => collectTokenNames(container).map((name) => name.style?.['color']))
 			assert.ok(nameColors.length > 0)
-			assert.deepEqual([...new Set(nameColors)], ['var(--text-color)'])
+			assert.deepEqual([...new Set(nameColors)], [''])
+		}
+	})
+
+	test('protects every warning card label, including expanded and noninteractive labels', async () => {
+		for (const nonInteractive of [false, true]) {
+			const colors = await renderIntoDom(<InlineCard icon = { () => <span /> } label = 'Warning' warningMessage = 'Untrusted' nonInteractive = { nonInteractive } style = { { color: 'red', 'font-weight': '500' } } />, (container) => collectTokenNames(container).map((name) => ({ color: name.style?.['color'], weight: name.style?.['font-weight'] })))
+			assert.ok(colors.length >= 2)
+			assert.ok(colors.every(({ color, weight }) => color === '' && weight === '500'))
 		}
 	})
 
 	test('keeps both warning signs that turn the card red', async () => {
-		const warningTitles = await renderIntoDom(createTokenSymbol('OnChain', { color: 'var(--danger-dim-color)' }), (container) => collectWarningSigns(container).map((sign) => sign.getAttribute?.('title')))
-		assert.deepEqual(warningTitles, ['Untrusted address', 'Untrusted address'])
+		const warningTitles = await renderIntoDom(createTokenSymbol('OnChain', { color: 'var(--danger-dim-color)' }), (container) => collectWarningSigns(container).map((sign) => sign.getAttribute?.('data-warning-tooltip')))
+		assert.deepEqual(warningTitles, [ON_CHAIN_TOKEN_METADATA_WARNING, ON_CHAIN_TOKEN_METADATA_WARNING])
 	})
 
 	test('keeps the other styles of the row', async () => {

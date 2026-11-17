@@ -39,6 +39,8 @@ export const InlineCard = (props: InlineCardProps) => {
 		props.onEditClicked?.(event)
 	}
 
+	// Warning labels use the card stylesheet's text color instead of a caller color chosen for the surrounding row.
+	const labelStyle = props.warningMessage === undefined ? props.style : { ...props.style, color: undefined }
 	const Icon = props.icon
 	const hasAction = !props.noCopy || props.onEditClicked !== undefined
 
@@ -46,15 +48,15 @@ export const InlineCard = (props: InlineCardProps) => {
 		<span ref = { warningHint.setContainerElement } class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
 			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { false } /> : <></> }
 			<span role = 'img'><Icon /></span>
-			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
+			<data class = 'truncate text-legible' style = { labelStyle } value = { props.label }>{ props.label }</data>
 			<span class = 'inline-card-actions' role = { hasAction ? 'group' : undefined } aria-hidden = { props.nonInteractive || !hasAction } aria-label = { props.noExpandButtons || props.nonInteractive || !hasAction ? undefined : 'Spell-out actions' }>
 				{ props.nonInteractive ? <>
 					<span role = 'img'><Icon /></span>
-					<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+					<span><data class = 'truncate text-legible' style = { labelStyle } value = { props.label }>{ props.label }</data></span>
 				</> : !props.noCopy && props.copyOnActionOnly ? <>
 					<span class = 'inline-card-expanded-label'>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+						<span><data class = 'truncate text-legible' style = { labelStyle } value = { props.label }>{ props.label }</data></span>
 					</span>
 					<button class = 'inline-card-copy-action' type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } aria-label = { `Copy ${ props.label }` }>
 						<span class = 'inline-card-action-chip' title = 'Copy'>
@@ -65,7 +67,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				</> : !props.noCopy ? (
 					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue }>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+						<span><data class = 'truncate text-legible' style = { labelStyle } value = { props.label }>{ props.label }</data></span>
 						<span class = 'inline-card-action-chip' title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
@@ -74,7 +76,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				) : <>
 					<span class = 'inline-card-static-action'>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+						<span><data class = 'text-legible' style = { labelStyle } value = { props.label }>{ props.label }</data></span>
 					</span>
 				</>
 				}
