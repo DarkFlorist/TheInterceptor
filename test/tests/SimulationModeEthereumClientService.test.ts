@@ -10,7 +10,7 @@ import { createExecutionSimulationState, createSimulationCallParams, createSimul
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, toSimulationStateInputMinimalData } from '../../app/ts/types/visualizer-types.js'
 import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
@@ -106,6 +106,8 @@ class MockEthereumJSONRpcRequestHandler {
 	public balance = 0n
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
+	public syncingResponse: unknown = false
+	public readonly ethSyncingBypassCacheArguments: boolean[] = []
 	public ethFeeHistoryCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetStorageAtCalls: EthereumJsonRpcRequest[] = []
@@ -117,9 +119,12 @@ class MockEthereumJSONRpcRequestHandler {
 
 	public getChainId = async () => 5n
 
-	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest) => {
+	public readonly jsonRpcRequest = async (rpcRequest: EthereumJsonRpcRequest, _requestAbortController: AbortController | undefined = undefined, bypassCache = false) => {
 		switch (rpcRequest.method) {
 			case 'eth_blockNumber': return `0x${ blockNumber.toString(16) }`
+			case 'eth_syncing':
+				this.ethSyncingBypassCacheArguments.push(bypassCache)
+				return this.syncingResponse
 			case 'eth_getTransactionCount': return '0x0'
 			case 'eth_getBalance':
 				this.ethGetBalanceCalls.push(rpcRequest)
@@ -442,7 +447,7 @@ describe('SimulationModeEthereumClientService', () => {
 	})
 
 		test('prepareEthSimulateV1Input strips the local transaction hash from RPC calls', async () => {
-			const prepared = await ethereum.prepareEthSimulateV1Input(createSimulationStateInput(), blockNumber, undefined)
+			const prepared = await ethereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(createSimulationStateInput()), blockNumber, undefined)
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call === undefined) throw new Error('missing prepared eth_simulateV1 call')
 			assert.equal('hash' in call, false)
@@ -474,7 +479,7 @@ describe('SimulationModeEthereumClientService', () => {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined)
+			const prepared = await ethereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(input), blockNumber, undefined)
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call?.type !== '7702') throw new Error('missing prepared type-7702 call')
 			const [authorization] = call.authorizationList
@@ -990,7 +995,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			}] as const
 
-			const { prepared, result } = await ethereum.simulatePrepared(splitSimulationStateInput, blockNumber, undefined)
+			const { prepared, result } = await ethereum.simulatePrepared(toSimulationStateInputMinimalData(splitSimulationStateInput), blockNumber, undefined)
 			assert.equal(result.length, 2)
 			const grouped = groupEthSimulateV1ResultByInputBlocks(prepared, result)
 			assert.equal(grouped.length, 1)
@@ -1647,6 +1652,41 @@ describe('SimulationModeEthereumClientService', () => {
 				await assert.rejects(async () => await ethereum.getMaxPriorityFeePerGas(undefined))
 			} finally {
 				requestHandler.maxPriorityFeePerGasResponse = '0x3b9aca00'
+			}
+		})
+
+		test('Ethereum client reads eth_syncing from the RPC node without the block cache and keeps client-specific progress fields', async () => {
+			assert.equal(EthereumJsonRpcRequest.parse({ method: 'eth_syncing', params: [] }).method, 'eth_syncing')
+			requestHandler.ethSyncingBypassCacheArguments.splice(0)
+			const syncingProgress = {
+				startingBlock: '0x0',
+				currentBlock: '0x80d5a9',
+				highestBlock: '0x80d5b0',
+				knownStates: '0x2a',
+				pulledStates: '0x29',
+				stages: [{ stage_name: 'Headers', block_number: '0x80d5b0' }],
+			}
+			try {
+				const syncedStatus = await ethereum.getSyncingStatus(undefined)
+				assert.equal(syncedStatus, false)
+				const syncedReply: RPCReply = { type: 'result', method: 'eth_syncing', result: syncedStatus }
+				assert.deepEqual(serialize(RPCReply, syncedReply), { type: 'result', method: 'eth_syncing', result: false })
+
+				requestHandler.syncingResponse = syncingProgress
+				const syncingStatus = await ethereum.getSyncingStatus(undefined)
+				assert.deepEqual(syncingStatus, { ...syncingProgress, startingBlock: 0n, currentBlock: 0x80d5a9n, highestBlock: 0x80d5b0n })
+				const syncingReply: RPCReply = { type: 'result', method: 'eth_syncing', result: syncingStatus }
+				const serializedReply = serialize(RPCReply, syncingReply)
+				assert.deepEqual(serializedReply, { type: 'result', method: 'eth_syncing', result: syncingProgress })
+				assert.deepEqual(RPCReply.parse(serializedReply), syncingReply)
+				assert.deepEqual(requestHandler.ethSyncingBypassCacheArguments, [true, true])
+
+				for (const malformedResponse of [true, null, { ...syncingProgress, currentBlock: '80d5a9' }, { startingBlock: '0x0', currentBlock: '0x80d5a9' }]) {
+					requestHandler.syncingResponse = malformedResponse
+					await assert.rejects(async () => await ethereum.getSyncingStatus(undefined))
+				}
+			} finally {
+				requestHandler.syncingResponse = false
 			}
 		})
 
