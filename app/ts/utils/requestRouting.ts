@@ -1,6 +1,6 @@
 import type { RpcNetwork } from '../types/rpc.js'
 
-// Whether the background forwards a website's requests to its wallet: only in signing mode, and only when the page has a wallet to forward to.
+// Whether the background forwards a website's requests to its wallet: only in signing mode, and only when the page has a wallet to forward to. The page states that fact once, as its wallet request function being present: each request carries it (usingInterceptorWithoutSigner, read by the background's routing) and the signer handshake stores it as the tab's signerConnected (read by the popup).
 export function isForwardingRequestsToSigner(simulationMode: boolean, signerAvailable: boolean) {
 	return !simulationMode && signerAvailable
 }
