@@ -1,10 +1,12 @@
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSet, type LocalStorageItems } from '../utils/storageUtils.js'
+import { commitBrowserStorageLocalWrite, type LocalStorageItems, type GeneralStorageItems } from '../utils/storageUtils.js'
+import { isPreparedStorageWrite, getPreparedStorageWrite, type PreparedStorageWrite, type StorageCommitBoundary } from './storageTransactionWrite.js'
 
 // The items one storage owner writes for its own keys, built by that owner's …StorageWrite function so each key, value transform and sanitization stays with its owner.
-export type StorageWrite = LocalStorageItems
+export type StorageWrite = GeneralStorageItems
 
-type StorageTransactionPlan<Result> = { readonly writes: readonly StorageWrite[], readonly result: Result }
+
+type StorageTransactionPlan<Result> = { readonly writes: readonly (StorageWrite | PreparedStorageWrite)[], readonly result: Result }
 
 // The one lock of every read-modify-write of website access, signing address preferences and the address book, including the settings import that replaces all three; with a single lock there is no acquisition order between them to get wrong.
 const settingsStorageLock = new Semaphore(1)
@@ -13,7 +15,17 @@ const settingsStorageLock = new Semaphore(1)
 export async function runSettingsStorageTransaction<Result>(plan: () => Promise<StorageTransactionPlan<Result>>) {
 	return await settingsStorageLock.execute(async () => {
 		const { writes, result } = await plan()
-		if (writes.length > 0) await browserStorageLocalSet(writes.reduce<StorageWrite>((items, write) => ({ ...items, ...write }), {}))
+		if (writes.length > 0) {
+			const boundaries = new Set<StorageCommitBoundary>()
+			const items = writes.reduce<LocalStorageItems>((items, write) => {
+				if (!isPreparedStorageWrite(write)) return { ...items, ...write }
+				const prepared = getPreparedStorageWrite(write)
+				if (prepared.boundary !== undefined) boundaries.add(prepared.boundary)
+				return { ...items, ...prepared.items }
+			}, {})
+			const commit = [...boundaries].reduceRight<() => Promise<void>>((next, boundary) => async () => await boundary(next), async () => await commitBrowserStorageLocalWrite(items))
+			await commit()
+		}
 		return result
 	})
 }

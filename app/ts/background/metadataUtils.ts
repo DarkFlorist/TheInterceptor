@@ -7,7 +7,7 @@ import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
 import { assertNever } from '../utils/typescript.js'
-import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { cacheEnsLabelHash, cacheEnsNodeHash, cacheIdentifiedAddressBookEntry, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
@@ -230,7 +230,7 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 		}
 	}
 	const entry = getEntry(tokenIdentification)
-	if (useLocalStorage) await addUserAddressBookEntryIfItDoesNotExist(entry)
+	if (useLocalStorage) await cacheIdentifiedAddressBookEntry(entry)
 	return entry
 }
 
@@ -354,13 +354,13 @@ export const retrieveEnsNodeAndLabelHashes = async (lookUpEnsName: LookUpEnsName
 
 	// update the mappings if we have new labels
 	const deduplicatedLabels = Array.from(new Set(newLabels))
-	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await addEnsLabelHash(label), await addEnsNodeHash(label.endsWith('.eth') ? label : `${ label }.eth`)])))
+	await Promise.all(deduplicatedLabels.map(async (label) => Promise.all([await cacheEnsLabelHash(label), await cacheEnsNodeHash(label.endsWith('.eth') ? label : `${ label }.eth`)])))
 
 	// return the label hashes that we have now available
 	const currentLabelHashes = [...reverseEnsLabelHashes, ...await getEnsLabelHashes()]
 	const ensLabelHashes = await Promise.all(Array.from(new Set(labelHashesToRetrieve)).map(async (labelHash) => {
 		const found = currentLabelHashes.find((entry) => entry.labelHash === labelHash)
-		if (found) await addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
+		if (found) await cacheEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
 		return { labelHash, label: found?.label }
 	}))
 
@@ -377,8 +377,8 @@ export const retrieveEnsNodeAndLabelHashes = async (lookUpEnsName: LookUpEnsName
 
 const addNewEnsNameEntry = async (name: string) => {
 	const [label] = name.split('.')
-	if (label !== undefined) await addEnsLabelHash(label)
-	await addEnsNodeHash(name)
+	if (label !== undefined) await cacheEnsLabelHash(label)
+	await cacheEnsNodeHash(name)
 }
 
 const getAndCacheEnsNodeHash = async (lookUpEnsName: LookUpEnsName, ensNameHash: EthereumBytes32, extraNameHashes: ENSNameHashes) => {
