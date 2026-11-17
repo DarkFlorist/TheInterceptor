@@ -17,7 +17,7 @@ import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcC
 import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { createWebsiteRequestDispatcher } from './websiteRequestDispatcher.js'
-import { checkAndThrowRuntimeLastError, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, getFrameOrigins, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getWebsiteOrigin, getWebsiteOriginForSender } from '../utils/websiteOrigin.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, METAMASK_ERROR_NOT_AUTHORIZED } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
@@ -157,7 +157,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+	const newConnection = { port, socket, ...getFrameOrigins(websiteOrigin), websiteOrigin, approved: false, wantsToConnect: false }
 	const isTopFrame = isTopFramePort(port)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {

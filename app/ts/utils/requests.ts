@@ -1,3 +1,4 @@
+import { getWebsiteOrigin } from './websiteOrigin.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
@@ -153,6 +154,17 @@ export const checkAndPrintRuntimeLastError = () => {
 	const error: browser.runtime._LastError | undefined | null = browser.runtime.lastError // firefox return `null` on no errors
 	if (error !== null && error !== undefined && error.message !== undefined) console.error(error)
 }
+
+export const getHostWithPort = (urlString: string): string => {
+	const url = new URL(urlString)
+	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
+}
+
+// `getHostWithPort` with the scheme of the URL in front, such as `https://example.com:8443`, so the host and port are normalized in one place. Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
+export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`
+
+// Capture the canonical permission identity and the full SIWE origin together before any asynchronous work.
+export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getWebsiteOrigin(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
 
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)
