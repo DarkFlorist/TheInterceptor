@@ -28,6 +28,8 @@ import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import type { RpcEntry } from '../../types/rpc.js'
+import { isSignerMissing } from '../../utils/signerMetadata.js'
+import { NetworkWithoutRpcError } from '../subcomponents/NetworkErrors.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
@@ -907,6 +909,7 @@ export function Home(param: HomeParams) {
 	const removedTransactionOrSignedMessages = useSignal<readonly TransactionOrMessageIdentifier[]>([])
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
+	const tabSignerAvailability = useComputed(() => isSignerMissing(param.tabState.value?.signerName ?? 'NoSignerDetected') ? 'missing' : 'available')
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const modeActiveAddress = useModeActiveAddress(param)
@@ -967,9 +970,7 @@ export function Home(param: HomeParams) {
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
-		{ param.rpcNetwork.value.httpsRpc === undefined ?
-			<ErrorComponent text = { `${ param.rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ param.rpcNetwork.value.name }.` }/>
-		: <></> }
+		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } signerAvailability = { tabSignerAvailability.value }/>
 
 		<FirstCard
 			isActiveAddressChanging = { param.isActiveAddressChanging }
