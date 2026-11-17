@@ -1,4 +1,5 @@
 import * as assert from 'assert'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { test } from 'bun:test'
 import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 
@@ -43,5 +44,31 @@ test('a captured client can execute RPC work after the owner installs its replac
 	} finally {
 		owner.getCurrent().ethereum.cleanup()
 		server.stop(true)
+	}
+})
+
+test('reconciles selected networks against installed services, including after a direct reset', () => {
+	const initialNetwork = DEFAULT_RPCS[0]
+	if (initialNetwork === undefined) throw new Error('Expected a default RPC endpoint')
+	const owner = createSimulationServicesOwner(initialNetwork, async () => undefined, async (_ethereum, error) => { throw error })
+	try {
+		const initialServices = owner.getCurrent()
+		owner.ensureNetwork({ ...initialNetwork, name: 'Renamed endpoint' })
+		assert.equal(owner.getCurrent(), initialServices)
+		const nextNetwork = { ...initialNetwork, httpsRpc: 'https://replacement.example' }
+		owner.ensureNetwork(nextNetwork)
+		const replacementServices = owner.getCurrent()
+		assert.notEqual(replacementServices, initialServices)
+		assert.equal(replacementServices.ethereum.getRpcEntry().httpsRpc, nextNetwork.httpsRpc)
+		owner.ensureNetwork({ ...nextNetwork, httpsRpc: undefined })
+		owner.ensureNetwork(nextNetwork)
+		assert.equal(owner.getCurrent(), replacementServices, 'Signer-only selections retain the installed fallback endpoint')
+		const resetServices = owner.reset(initialNetwork)
+		owner.ensureNetwork(initialNetwork)
+		assert.equal(owner.getCurrent(), resetServices, 'Direct resets update the reconciliation baseline')
+		owner.ensureNetwork({ ...initialNetwork, chainId: initialNetwork.chainId + 1n })
+		assert.notEqual(owner.getCurrent(), resetServices, 'A different chain needs new services even at the same URL')
+	} finally {
+		owner.getCurrent().ethereum.cleanup()
 	}
 })

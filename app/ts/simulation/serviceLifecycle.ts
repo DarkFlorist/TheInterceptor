@@ -1,7 +1,6 @@
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
-import type { RpcNetwork } from '../types/rpc.js'
-import type { RpcEntry } from '../types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
@@ -68,6 +67,8 @@ export function resetSimulationServices(
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+	// Reconcile a selected network with the installed endpoint, retaining fallback services for signer-only selections.
+	readonly ensureNetwork: (rpcNetwork: RpcNetwork) => void
 }
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
@@ -78,17 +79,17 @@ export function createSimulationServicesOwner(
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
 	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+	let installedNetwork = rpcNetwork
+	const reset = (nextRpc: RpcEntry): SimulationServices => {
+		current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+		installedNetwork = nextRpc
+		return current
+	}
 	return {
 		getCurrent: () => current,
-		reset: (nextRpc: RpcEntry): SimulationServices => {
-			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-			return current
+		reset,
+		ensureNetwork: (nextNetwork: RpcNetwork): void => {
+			if (nextNetwork.httpsRpc !== undefined && getRpcNetworkChange(installedNetwork, nextNetwork).endpointChanged) reset(nextNetwork)
 		},
 	}
-}
-
-// Callers choose the comparison baseline: ordinary transitions use their previous selection, while imports have already committed settings and use the installed endpoint.
-export function installSimulationServicesForNetworkChange(owner: SimulationServicesOwner, previousNetwork: RpcNetwork, nextNetwork: RpcNetwork) {
-	// Signer-only selections retain the fallback services without installing an endpoint.
-	if (nextNetwork.httpsRpc !== undefined && getRpcNetworkChange(previousNetwork, nextNetwork).endpointChanged) owner.reset(nextNetwork)
 }

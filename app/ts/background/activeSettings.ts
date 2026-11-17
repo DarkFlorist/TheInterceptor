@@ -1,6 +1,6 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import { installSimulationServicesForNetworkChange, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -111,7 +111,7 @@ async function runActiveSettingsChange(
 					// The preference belongs to the committed selection, even if later provider preparation fails.
 					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
 					try {
-						installSimulationServicesForNetworkChange(simulationServicesOwner, previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+						simulationServicesOwner.ensureNetwork(updatedSettings.activeRpcNetwork)
 					} catch (error) {
 						// Only failed provider installation invalidates simulation output here.
 						await publishFailedPopupVisualisation()

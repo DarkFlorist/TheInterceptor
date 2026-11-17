@@ -3,7 +3,8 @@ import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLif
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
-import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -279,10 +280,17 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset'], installedNetwork?: RpcNetwork): SimulationServicesOwner {
 	let current = initial
+	const replace = (network: RpcEntry) => {
+		current = reset === undefined ? current : reset(network)
+		installedNetwork = network
+		return current
+	}
 	return {
 		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		reset: replace,
+		// Callers can seed the installed endpoint when their fake services already represent a selected network.
+		ensureNetwork: network => { if (network.httpsRpc !== undefined && getRpcNetworkChange(installedNetwork, network).endpointChanged) replace(network) },
 	}
 }

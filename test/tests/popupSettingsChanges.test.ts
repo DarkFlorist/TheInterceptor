@@ -196,7 +196,7 @@ describe('popup settings changes', () => {
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const editedRpc = { ...currentRpc, name: 'Renamed network', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' }, primary: !currentRpc.primary, minimized: !currentRpc.minimized }
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') })
+		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') }, currentRpc)
 		assert.deepEqual(await changeActiveRpc(reset, connections, editedRpc, { source: 'dapp', simulationMode: simulationMode, signerTabId: 1 }), { result: null })
 		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
 		const popupEdit = { ...editedRpc, name: 'Renamed through popup' }
