@@ -9,7 +9,11 @@ export type ImportedSimulationStackAdmission =
 const toImportedStackOperation = (operation: ExportedInterceptorStackOperation): InterceptorStackOperation => {
 	switch (operation.type) {
 		// A message's active address and simulation signer cannot be re-derived from the message (for a Safe, an owner rather than the Safe signs), so they are kept for the simulation but the message is marked `importedFromExport`, and flagImportedSignature (importedStackTrust.ts) then flags it instead of trusting its account check. Its `safeMessageReview` stays, because a Safe message is only shown with its review when the review text hashes to the digest it signs.
-		case 'Message': return { type: 'Message', signedMessageTransaction: { ...operation.signedMessageTransaction, importedFromExport: true } }
+		case 'Message': {
+			// An export cannot attest which frame requested the message, including a claimed matching sign-in origin.
+			const { requestOrigin: _unobservedRequestOrigin, ...signedMessageTransaction } = operation.signedMessageTransaction
+			return { type: 'Message', signedMessageTransaction: { ...signedMessageTransaction, importedFromExport: true } }
+		}
 		// Every claimed simulation option is dropped, which leaves an imported transaction an ordinary one:
 		// - Dropping `executeThroughSafe` is what guarantees a file can never make Interceptor assume a Gnosis Safe's owners approved a transaction; only a confirmation decides that (isSimulationModeSafeExecution). A simulation-mode Gnosis Safe stack therefore re-imports as ordinary transactions from the Safe, keeping their recorded hashes like any re-imported transaction (shared-hash cases are tracked in #1713). The whole object goes rather than the field alone, so no imported value of it, whatever authorizesExecutedCall would make of it, survives.
 		// - A claimed `requiredChainId` decides on which chain the transaction is simulated at all.

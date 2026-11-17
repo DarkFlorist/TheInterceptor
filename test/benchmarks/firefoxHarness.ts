@@ -15,6 +15,7 @@ type PendingCommand = {
 
 export type FirefoxPage = {
 	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
+	reload: () => Promise<void>
 	setViewport: (width: number, height: number) => Promise<void>
 	captureScreenshot: () => Promise<string>
 	close: () => Promise<void>
@@ -24,6 +25,7 @@ export type FirefoxSession = {
 	browserVersion: string
 	openPage: (url: string) => Promise<FirefoxPage>
 	openExtensionPage: (pagePath: string) => Promise<FirefoxPage>
+	openPage: (url: string) => Promise<FirefoxPage>
 	close: () => Promise<void>
 }
 
@@ -290,6 +292,8 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 					target: { context },
 					awaitPromise: true,
 				})),
+				reload: async () => { await activeBidi.send('browsingContext.reload', { context, wait: 'complete' }) },
+
 				setViewport: async (width: number, height: number) => {
 					await activeBidi.send('browsingContext.setViewport', {
 						context,
@@ -314,8 +318,9 @@ export async function launchFirefoxSession(extensionDirectory = DEFAULT_EXTENSIO
 		}
 		return {
 			browserVersion: webDriverSession.browserVersion,
+			openExtensionPage: (pagePath) => openPage(`${ extensionOrigin }/${ pagePath }`),
 			openPage,
-			openExtensionPage: async (pagePath: string) => await openPage(`${ extensionOrigin }/${ pagePath }`),
+
 			close: async () => {
 				activeBidi.close()
 				await fetch(`http://127.0.0.1:${ port }/session/${ webDriverSession.sessionId }`, { method: 'DELETE' }).catch(() => undefined)
