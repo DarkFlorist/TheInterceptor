@@ -1,3 +1,4 @@
+import { publishAddressBookChangeAndRelabelSimulations } from './addressBookChangePublication.js'
 import { identifyAddressWith, lookUpMetadataOnChain } from './metadataUtils.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
@@ -37,14 +38,14 @@ import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silen
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateTopLevelSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
+import { createWatchAssetResolutionDependencies, resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
@@ -216,8 +217,8 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 	}
 }
 
-export async function watchAssetDialog(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation) {
-	await resolveWatchAsset(websiteTabConnections, confirmation)
+export async function watchAssetDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation) {
+	await resolveWatchAsset(websiteTabConnections, confirmation, createWatchAssetResolutionDependencies(simulationServicesOwner, websiteTabConnections))
 }
 
 async function getSignerAccount() {
@@ -290,7 +291,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 }
 
 export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
@@ -337,7 +338,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			return previousContacts.concat([entryToStore])
 		})
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
-		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+		void publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {
@@ -416,7 +417,7 @@ export async function setSafeSimulationSigner(
 	if (updatedEntry.useAsActiveAddress) {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
 
@@ -894,7 +895,7 @@ export async function refreshHomeData(
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
 		const currentSettings = await getSettings()
-		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
+		if (currentSettings.simulationMode) await updateTopLevelSimulationMetadata(ethereum, requestAbortController)
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
@@ -1032,13 +1033,13 @@ export async function openWebPage(parsedRequest: OpenWebPage) {
 	await browser.tabs.create({ url: parsedRequest.data.url, active: true })
 }
 
-export async function setEnsNameForHash(parsedRequest: SetEnsNameForHash) {
+export async function setEnsNameForHash(simulationServicesOwner: SimulationServicesOwner, parsedRequest: SetEnsNameForHash) {
 	if (parsedRequest.data.type === 'labelHash') {
 		await addEnsLabelHash(parsedRequest.data.name)
 	} else {
 		await addEnsNodeHash(parsedRequest.data.name)
 	}
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+	await publishAddressBookChangeAndRelabelSimulations(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 }
 
 export async function forceSetGasLimitForTransaction(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ForceSetGasLimitForTransaction) {
