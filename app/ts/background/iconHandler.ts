@@ -111,14 +111,14 @@ async function waitForLoadedTab(tabId: number) {
 
 const runTabIconUpdate = createScopedKeyedSerialExecutor<object, number>()
 
-export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
+export async function updateExtensionIcon(_websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string, popupRefreshGeneration: number) {
 	// Keep a tab's stored state and browser action writes ordered, without blocking active settings or other tabs.
 	await runTabIconUpdate(browser, tabId, async () => {
 		if (!(await doesTabExist(tabId))) {
 			await removeTabState(tabId)
 			return
 		}
-		const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
+		const blockingWebsitePromise = areWeBlocking(tabId, websiteOrigin)
 		silenceChromeUnCaughtPromise(blockingWebsitePromise)
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)

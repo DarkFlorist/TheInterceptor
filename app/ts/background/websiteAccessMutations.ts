@@ -18,9 +18,9 @@ export const withExternalRequestsBlockedOrAllowed = (website: Website, shouldBlo
 	return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
 })
 
-export const withoutAddressAccess = (websiteOrigin: string, address: EthereumAddress): WebsiteAccessMutation => (previousAccessList) => previousAccessList.map((access) => {
+export const withoutAddressAccess = (websiteOrigin: string, address: EthereumAddress, keepDenial = false): WebsiteAccessMutation => (previousAccessList) => previousAccessList.map((access) => {
 	if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
-	return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address) })
+	return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address || (keepDenial && !addressAccess.access)) })
 })
 
 export const withAddressAccessForWebsite = (websiteOrigin: string, address: EthereumAddress, allowAccess: boolean): WebsiteAccessMutation => (previousAccessList) => previousAccessList.map((access) => {

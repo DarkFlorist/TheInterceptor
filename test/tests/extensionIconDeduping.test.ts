@@ -17,6 +17,7 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 	const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
 	const setIconCalls: browser.action._SetIconDetails[] = []
 	const setTitleCalls: browser.action._SetTitleDetails[] = []
+	const dynamicRules: { readonly id: number, readonly condition: { readonly initiatorDomains?: readonly string[] } }[] = []
 
 	globalThis.browser = {
 		runtime: {
@@ -85,9 +86,12 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 			async setBadgeBackgroundColor() { return undefined },
 		},
 		declarativeNetRequest: {
-			async getDynamicRules() { return [] },
+			async getDynamicRules() { return [...dynamicRules] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules() { return undefined },
+			async updateDynamicRules(update: { readonly removeRuleIds?: readonly number[], readonly addRules?: readonly { readonly id: number, readonly condition: { readonly initiatorDomains?: readonly string[] } }[] }) {
+				const remaining = dynamicRules.filter((rule) => update.removeRuleIds?.includes(rule.id) !== true)
+				dynamicRules.splice(0, dynamicRules.length, ...remaining, ...(update.addRules ?? []))
+			},
 			async updateSessionRules() { return undefined },
 		},
 		webRequest: {
@@ -192,7 +196,7 @@ describe('extension icon deduping', () => {
 
 	test('blocked websites with denied access keep the plain denied icon', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+		const { updateDeclarativeNetRequestBlocks, updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 
 		await updateWebsiteAccess(() => [{
 			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
@@ -208,6 +212,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
+		await updateDeclarativeNetRequestBlocks(new Map())
 		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })

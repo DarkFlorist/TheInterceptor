@@ -215,6 +215,9 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
+export const safeParseLocalStorageItems = (items: unknown) => LocalStorageItems.safeParse(items)
+export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
+
 export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
 	const parsed = LocalStorageItems.safeParse(items)
 	if (parsed.success) return parsed.value
