@@ -744,6 +744,9 @@ const getPendingTransactionWindow = async (ethereum: EthereumClientService, toke
 	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 }
 
+// An internal operation identity belongs to this request instance, even when the page reuses its RPC id.
+const createRequestIdentity = (uniqueRequestIdentifier: UniqueRequestIdentifier) => EthereumQuantity.parse(keccak256(stringToBytes(`${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) }-${ crypto.randomUUID() }`)))
+
 export async function openConfirmTransactionDialogForMessage(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -767,8 +770,7 @@ export async function openConfirmTransactionDialogForMessage(
 			? 'Select a Gnosis Safe signer for simulation before signing a message.'
 			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
 	}
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const messageIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
 		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
@@ -805,6 +807,7 @@ export async function openConfirmTransactionDialogForMessage(
 		await pendingConfirmationSemaphore.execute(async () => {
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
+			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return
 
 			const pendingMessage = {
 				type: 'SignableMessage' as const,
@@ -916,8 +919,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const transactionIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
@@ -945,6 +947,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			const { transactionToSimulate, safeFlow, approvalStatus: safeSignerMismatch } = finalizedSafePreparation
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
 			if (openedDialog === undefined) return formRejectMessage(METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, 'Failed to get pending transaction window')
+			if (await getPendingTransactionOrMessageByidentifier(request.uniqueRequestIdentifier) !== undefined) return { success: true }
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionConfirmPopupOpened)
 
 			const pendingTransaction = {
