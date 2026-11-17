@@ -538,7 +538,7 @@ describe('confirm transaction address-book refresh', () => {
 				role: 'all',
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-					data: { pendingTransactionAndSignableMessages: [makePendingTransaction()], currentBlockNumber: 124n, rpcConnectionStatus: undefined },
+					data: { pendingTransactionAndSignableMessages: [makePendingTransaction()].map(toPopupPendingTransactionOrSignableMessage), currentBlockNumber: 124n, rpcConnectionStatus: undefined },
 				}),
 			})
 		})
