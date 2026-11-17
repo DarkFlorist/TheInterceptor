@@ -23,7 +23,7 @@ export function hasCurrentAddressBookEntries({ simulationUpdatingState }: Pick<C
 	}
 }
 
-// Within one simulation id, the updater stores the retained 'updating' state first and then at most one result: 'done', 'failed', or 'updating' again when the node cannot be reached, which repeats the first state. A new updating state fails typecheck here until its place in the refresh is decided.
+// Within one simulation id, the updater stores the retained 'updating' state first and then at most one result: 'done', 'failed', or 'updating' again when the node cannot be reached, which repeats the first state. An address-book re-label may store a 'done' result again with new names under the same id and a higher metadataRevision, which predatesVisualisation orders after the result it replaces. A new updating state fails typecheck here until its place in the refresh is decided.
 function isRefreshResult(simulationUpdatingState: SimulationUpdatingState) {
 	switch (simulationUpdatingState) {
 		case 'done':
@@ -33,10 +33,13 @@ function isRefreshResult(simulationUpdatingState: SimulationUpdatingState) {
 	}
 }
 
-type VisualisationOrder = Pick<CompleteVisualizedSimulation, 'simulationId' | 'simulationUpdatingState'>
+type VisualisationOrder = Pick<CompleteVisualizedSimulation, 'simulationId' | 'simulationUpdatingState' | 'metadataRevision'>
 
-// Whether the candidate was stored before the shown state, so showing it would go back in time: simulation ids grow with every refresh, and within one id the updating state comes before the refresh's result.
+// Whether the candidate was stored before the shown state, so showing it would go back in time: simulation ids grow with every refresh, within one id the updating state comes before the refresh's result, and within one id and stage each address-book re-label raises the metadata revision.
 export function predatesVisualisation(candidate: VisualisationOrder, shown: VisualisationOrder) {
 	if (candidate.simulationId !== shown.simulationId) return candidate.simulationId < shown.simulationId
-	return !isRefreshResult(candidate.simulationUpdatingState) && isRefreshResult(shown.simulationUpdatingState)
+	const candidateIsResult = isRefreshResult(candidate.simulationUpdatingState)
+	const shownIsResult = isRefreshResult(shown.simulationUpdatingState)
+	if (candidateIsResult !== shownIsResult) return shownIsResult
+	return (candidate.metadataRevision ?? 0) < (shown.metadataRevision ?? 0)
 }

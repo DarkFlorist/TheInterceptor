@@ -476,7 +476,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 }
 
 // Partial refresh of top-level metadata; it does not replay the stored visualization.
-export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
+export const updateTopLevelSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	return await updatePopupVisualisationWithCallBack(async (prevState) => {
 		if (prevState.simulationState.kind === 'passthrough') return prevState
 		if (prevState.simulationState.value.success === false) return prevState

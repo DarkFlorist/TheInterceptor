@@ -26,6 +26,14 @@ test('stored visualization replay uses edited local names and recorded chain rea
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 	assert.equal(replayed.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.name, 'Edited replay recipient')
 	assert.deepEqual(replayed.recordedVisualisationLookups, stored.recordedVisualisationLookups)
+	const { relabelPopupVisualisation } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+	await relabelPopupVisualisation(fakeRpcNetwork)
+	const relabelled = await getPopupVisualisationState()
+	assert.equal(relabelled.simulationId, stored.simulationId)
+	assert.equal(relabelled.metadataRevision, 1)
+	assert.deepEqual(relabelled.simulationState, stored.simulationState)
+	assert.equal(relabelled.visualizedSimulationState.visualizedBlocks[0]?.simulatedAndVisualizedTransactions[0]?.transaction.to?.name, 'Edited replay recipient')
+	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 })
 
 test('protector replay uses recorded values and identifies missing compatibility data', async () => {
@@ -34,4 +42,17 @@ test('protector replay uses recorded values and identifies missing compatibility
 	assert.equal(await chainReads.readGasPrice(), 42n)
 	await assert.rejects(chainReads.readCode(2n), isMissingRecordedProtectorReadError)
 	await assert.rejects(replayRecordedProtectorChainReads({ addressCode: [] }).chainReads.readGasPrice(), isMissingRecordedProtectorReadError)
+})
+
+test('an empty stack is left unchanged by a metadata re-label', async () => {
+	const { relabelPopupVisualisation } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+	const { getPopupVisualisationState, setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+	// This fixture has no chain operations, so it must be left unchanged by a re-label.
+	const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+	await setPopupVisualisationState(createPassthroughCompleteVisualizedSimulation((await getPopupVisualisationState()).simulationId + 1))
+	const before = await getPopupVisualisationState()
+	fakeSafeContract.requestedRpcMethods.length = 0
+	await relabelPopupVisualisation(fakeRpcNetwork)
+	assert.deepEqual(await getPopupVisualisationState(), before)
+	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 })
