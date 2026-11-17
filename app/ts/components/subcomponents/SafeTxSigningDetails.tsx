@@ -3,8 +3,7 @@ import type { SafeTx } from '../../types/personal-message-definitions.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { bigintToDecimalString } from '../../utils/bigint.js'
-import { CHAIN_NAMES } from '../../utils/chainNames.js'
-import { CellElement } from '../ui-utils.js'
+import { CellElement, ExactValue, getChainNameWithId } from '../ui-utils.js'
 import { SmallAddress } from './address.js'
 import { Ether } from './coins.js'
 
@@ -28,20 +27,6 @@ type SafeTxSigningDetailsParams = {
 	// Undefined when the network is not known to the popup; the value is then shown without a token symbol.
 	rpcNetwork: RpcNetwork | undefined
 	renameAddressCallBack: RenameAddressCallBack
-}
-
-// A hardware signer shows the numeric EIP-712 chainId, so keep it visible next to the human-readable name.
-function getChainNameWithId(chainId: bigint) {
-	const chainName = CHAIN_NAMES.get(chainId.toString(10))
-	return chainName === undefined ? chainId.toString(10) : `${ chainName } (${ chainId.toString(10) })`
-}
-
-// Values that must be compared digit by digit are wrapped instead of truncated, so they stay complete in narrow popups.
-function ExactValue({ label, value }: { label: string, value: string }) {
-	return <>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ label }</p>
-		<p class = 'paragraph text-legible' style = 'overflow-wrap: anywhere'>{ value }</p>
-	</>
 }
 
 // The EIP-712 SafeTx fields and hashes in the order a hardware signer lists them, so the user can compare the two side by side.
