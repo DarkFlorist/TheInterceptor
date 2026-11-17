@@ -9,7 +9,8 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
-import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionSigningRequest } from './safeTypes.js'
+import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionRequestContext, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -30,6 +31,18 @@ export const PendingAccessRequest = funtypes.ReadonlyObject({
 export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests>
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
+export type FailedTransactionPreview = funtypes.Static<typeof FailedTransactionPreview>
+const FailedTransactionPreview = funtypes.ReadonlyObject({
+	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+	parsedInputData: EnrichedEthereumInputData,
+})
+
+// Identifies the confirmation simulation run that produced a visualisation, across background restarts too: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A confirmation stored by a version without run ids decodes as a run of no lifetime, which no run's lifetime matches: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
+export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
+const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
+const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, ConfirmationRunId>(undefined, CONFIRMATION_RUN_OF_NO_LIFETIME)))
+
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
@@ -38,9 +51,11 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
+	// Names one confirmation simulation run of this pending transaction.
+	confirmationRunId: ConfirmationRunIdCodec,
 }).And(funtypes.ReadonlyPartial({
-	// Identifies the confirmation simulation run that produced this visualisation; confirmations stored by older versions have none.
-	confirmationRunId: funtypes.Number,
+	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
+	failedTransactionPreview: FailedTransactionPreview,
 }))
 
 type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
@@ -90,6 +105,29 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
+// How a pending transaction's confirmation forms it, the one record of that decision: prepareSafeTransactionConfirmation makes it once when the confirmation opens, with the data the flow needs, and every refresh reads it back (getPendingTransactionFlowKind) to form the transaction the same way.
+// - ordinary: a transaction from the active address, or a raw transaction.
+// - simulationModeSafeExecution: in simulation mode, a Gnosis Safe's own transaction. Forming it gives the transaction simulationOptions.executeThroughSafe, which tells the simulator to run it through the Safe.
+// - directExecution: a signer's execTransaction call executing a SafeTx of the configured Safe.
+// - proposal: a transaction of the configured Safe, proposed as a SafeTx. It is 'created' with its Gnosis Safe transaction. If the transaction did not form ('formationFailed': a gas estimate that reverted, a node error), the proposal was never attempted, so every refresh prepares the confirmation again, with the page's safeRequestContext, until it forms. If the transaction formed but the Gnosis Safe transaction could not be made from it ('creationFailed'), the confirmation keeps that failure.
+// - unsupportedSafeRequest: a request the configured Safe can't make through execTransaction (a contract creation), which the confirmation keeps as its request-shape failure.
+export type PendingTransactionSafeFlow = funtypes.Static<typeof PendingTransactionSafeFlow>
+export const PendingTransactionSafeFlow = funtypes.Union(
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('ordinary') }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('simulationModeSafeExecution') }),
+	funtypes.ReadonlyObject({
+		kind: funtypes.Literal('directExecution'),
+		safeExecutionOriginalRequestParameters: SendTransactionParams,
+	}).And(funtypes.ReadonlyPartial({
+		safeExecutionSignerAddress: EthereumAddress,
+		safeExecutionReviewedSafeState: SafeContractStateSnapshot,
+	})),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('created'), safeTransaction: SafeTransactionSigningRequest }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('formationFailed') }).And(funtypes.ReadonlyPartial({ safeRequestContext: SafeTransactionRequestContext })),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('proposal'), state: funtypes.Literal('creationFailed') }),
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('unsupportedSafeRequest') }),
+)
+
 // Generated by the extension once per pending request. The page chooses the JSON-RPC request id and can send a new request under the id of one that is still pending or was just closed, so the request id alone does not identify one pending request.
 export const createPendingRequestInstanceId = () => crypto.randomUUID()
 
@@ -113,12 +151,9 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	transactionIdentifier: EthereumQuantity,
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
-}).And(funtypes.ReadonlyPartial({
-	safeTransaction: SafeTransactionSigningRequest,
-	safeExecutionSignerAddress: EthereumAddress,
-	safeExecutionOriginalRequestParameters: SendTransactionParams,
-	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
-}))
+	// Required, so a pending transaction stored by a version without it does not parse, and the corrupt-storage recovery of pendingTransactionsAndMessages (readPendingTransactionsAndMessagesWithRecovery) clears it instead of a refresh forming it as another kind of transaction.
+	safeFlow: PendingTransactionSafeFlow,
+})
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(
@@ -175,6 +210,12 @@ const PendingSignableMessage = funtypes.Intersect(
 	)
 )
 
+// Stamped by the background on each popup copy from the stored request (getReviewedResultId); the popup returns it unchanged with an accept and never computes it.
+const PopupReviewedResultId = funtypes.String
+
+export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
+export const PopupPendingTransaction = funtypes.Intersect(PendingTransaction, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
+
 type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('SignableMessage'),
@@ -187,6 +228,7 @@ const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	website: Website,
 	activeAddress: EthereumAddress,
 	approvalStatus: PendingTransactionApprovalStatus,
+	reviewedResultId: PopupReviewedResultId,
 })
 
 export type PopupPendingSignableMessage = funtypes.Static<typeof PopupPendingSignableMessage>
@@ -202,6 +244,10 @@ export type PendingTransactionOrSignableMessage = PendingSignableMessage | Pendi
 const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 
-export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PendingTransaction
-const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PendingTransaction)
+export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PopupPendingTransaction
+const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PopupPendingTransaction)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype
+
+// Popup-local provenance, never persisted or sent over the wire. The disjoint source tags prevent storage first paint from being treated as a background-reviewed, confirmable request.
+export type BackgroundPendingTransactionOrSignableMessage = PopupPendingTransactionOrSignableMessage & { readonly source: 'background' }
+export type ShownPendingTransactionOrSignableMessage = BackgroundPendingTransactionOrSignableMessage | (PendingTransactionOrSignableMessage & { readonly source: 'storage' })

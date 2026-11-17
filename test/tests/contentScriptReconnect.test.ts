@@ -1,12 +1,16 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { getManifestV2DocumentStartScriptPath } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { generateInpageArtifacts } from '../../scripts/inline-inpage-document-start.mts'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
 	readonly runtimeMessageListeners: ((message: unknown) => unknown)[]
 	readonly disconnectListeners: (() => void)[]
 	readonly eventListeners: Map<string, EventListenerOrEventListenerObject[]>
+	readonly injectedScripts: readonly { readonly src: string, readonly textContent: string }[]
 	readonly postedMessages: unknown[]
 	readonly connectionNames: string[]
 	readonly runtime: { lastError: { message?: string } | undefined }
@@ -16,9 +20,11 @@ type ContentScriptMockState = {
 
 type ContentScriptSource = 'manifest-v2-document-start' | 'standalone-listener'
 let contentScriptMockImportId = 0
+// A stand-in provider with the compatibility-mode marker the build fills in, so tests can tell which mode's provider document-start inlined.
+const stubPageWorldProviderSource = 'const metamaskCompatibilityModeAtPageLoad = false // [[metamaskCompatibilityModeAtPageLoad]]'
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
 
-async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined) {
+async function withContentScriptMock(source: ContentScriptSource, run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, metamaskCompatibilityMode = false) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 	const addEventListenerDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'addEventListener')
 	const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
@@ -28,6 +34,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const runtimeMessageListeners: ((message: unknown) => unknown)[] = []
 	const disconnectListeners: (() => void)[] = []
 	const eventListeners = new Map<string, EventListenerOrEventListenerObject[]>()
+	const injectedScripts: { readonly src: string, readonly textContent: string }[] = []
 	const postedMessages: unknown[] = []
 	const connectionNames: string[] = []
 	const runtime: { lastError: { message?: string } | undefined } = { lastError: undefined }
@@ -65,25 +72,42 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 	const scriptContainer = {
 		children: [{}, {}],
-		insertBefore: () => undefined,
+		// An inline provider marks its script element as soon as it runs; this mock does not run it, so it sets that mark itself as a page without a blocking CSP would.
+		insertBefore: (script: { readonly src: string, readonly textContent: string, readonly setAttribute: (name: string, value: string) => void }) => {
+			if (script.src === '') script.setAttribute('data-interceptor-provider-ran', '')
+			injectedScripts.push({ src: script.src, textContent: script.textContent })
+		},
 		removeChild: () => undefined,
 	}
 	Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: {
 		head: scriptContainer,
 		documentElement: scriptContainer,
-		createElement: () => ({
-			setAttribute: () => undefined,
-			src: '',
-			textContent: '',
-		}),
+		createElement: () => {
+			const attributes = new Set<string>()
+			return {
+				src: '',
+				textContent: '',
+				setAttribute: (name: string) => { attributes.add(name) },
+				hasAttribute: (name: string) => attributes.has(name),
+			}
+		},
 	} })
 
 	try {
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
-		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
+		if (source === 'manifest-v2-document-start') {
+			const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
+			const compilerOptions = { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
+			const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
+				compilerOptions,
+			}).outputText
+			const generatedDocumentStart = generateInpageArtifacts(compiledDocumentStart, stubPageWorldProviderSource).find(({ path }) => path === getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode))
+			if (generatedDocumentStart === undefined) throw new Error('Missing generated document-start script')
+			Function(generatedDocumentStart.source)()
+		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
-		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
+		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, injectedScripts, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {
 		if (browserDescriptor === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', browserDescriptor)
@@ -426,6 +450,14 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 
 	test('manifest v2 document-start content script recovers its background port without reconnect churn', async () => {
 		await verifyContentScriptReconnect('manifest-v2-document-start')
+	})
+
+	test('manifest v2 document-start injects the inline provider for the active compatibility mode', async () => {
+		await withContentScriptMock('manifest-v2-document-start', async ({ injectedScripts }) => {
+			assert.equal(injectedScripts.length, 1)
+			assert.equal(injectedScripts[0]?.src, '')
+			assert.equal(injectedScripts[0]?.textContent.includes('const metamaskCompatibilityModeAtPageLoad = true'), true)
+		}, undefined, true)
 	})
 
 	test('standalone content script queues requests while its background port reconnects', async () => {

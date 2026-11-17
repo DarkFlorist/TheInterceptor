@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -106,12 +107,9 @@ export async function appendPendingTransactionOrMessage(pendingTransactionOrMess
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
 
-export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise === undefined) return pendingTransactionsOrMessages
-		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
-	})
+// Removes only the instance read by the caller, so an awaited rejection or terminal-reply write cannot delete a replacement under the same page request id.
+export async function removePendingTransactionOrMessage(instance: PendingRequestInstance) {
+	await updatePendingTransactionOrMessages(async (pending) => pending.filter((request) => !isSamePendingRequestInstance(request, instance)))
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
@@ -120,10 +118,18 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
-export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
-	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
-	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
+	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined,
+	write: async (fetchSimulationStackRequestPromise) => {
+		if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+	},
+	getDefault: () => undefined,
+})
+export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
+export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
+export async function clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await fetchSimulationStackRequestRepository.update((storedRequest) => storedRequest !== undefined && doesUniqueRequestIdentifiersMatch(storedRequest.uniqueRequestIdentifier, uniqueRequestIdentifier) ? undefined : storedRequest)
 }
 
 const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
@@ -321,27 +327,24 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
+
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
-		const entries = await getUserAddressBookEntries()
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
-	})
+	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
+		return { writes: [{ userAddressBookEntriesV2: updateFunc(entries) }], result: undefined }
 	})
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
+		return { writes: existingEntry === undefined ? [userAddressBookEntriesStorageWrite(entries.concat(newEntry))] : [], result: undefined }
 	})
 }
 

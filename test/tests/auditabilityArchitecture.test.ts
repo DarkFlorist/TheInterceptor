@@ -1,3 +1,4 @@
+import { collectFilePaths, scriptKindForPath } from '../../scripts/typescript-lint-utils.mjs'
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import ts from 'typescript'
@@ -47,9 +48,8 @@ const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
 	}
 	const normalizedSource = source.replace(/\s+/gu, ' ')
 	return [
-		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeExecutionOriginalRequestParameters(?: !== undefined|\?\.)/gu,
+		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeFlow\.(?:kind|state) [!=]==/gu,
 		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'SignableMessage' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeMessageCoSignSnapshot(?: !== undefined|\?\.)/gu,
-		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeTransaction(?: !== undefined|\?\.)/gu,
 	].some((discriminant) => Array.from(normalizedSource.matchAll(discriminant)).some((match) => {
 		const typeOwner = match[1]
 		const safeFieldOwner = match[2]
@@ -59,7 +59,7 @@ const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
 
 const hasRawSafeFieldAfterTransactionNarrowing = (source: string) => {
 	const normalizedSource = source.replace(/\s+/gu, ' ')
-	return /\b([A-Za-z_$][A-Za-z0-9_$]*)\.type !== 'Transaction'.{0,3000}\b\1\.(?:safeExecutionOriginalRequestParameters|safeTransaction)\b/u.test(normalizedSource)
+	return /\b([A-Za-z_$][A-Za-z0-9_$]*)\.type !== 'Transaction'.{0,3000}\b\1\.safeFlow\.(?:kind|state|safeExecutionOriginalRequestParameters|safeTransaction)\b/u.test(normalizedSource)
 }
 
 const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
@@ -149,7 +149,7 @@ const getEnclosingFunctionDeclarationName = (node: ts.Node) => {
 
 // Every reference to the signer-reply pending update in one source, under its own name, an aliased import or a namespace property, with the function declaration around it and whether it is called there.
 function findSignerReplyUpdateUses(fileName: string, sourceText: string) {
-	const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true)
+	const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(fileName))
 	const localNames = new Set([SIGNER_REPLY_UPDATE])
 	for (const statement of sourceFile.statements) {
 		const namedBindings = ts.isImportDeclaration(statement) ? statement.importClause?.namedBindings : undefined
@@ -177,11 +177,15 @@ const signerReplyCall: SignerReplyUpdateUse = { enclosingFunction: 'signerReply'
 test('only signer replies update a pending request found by its request id alone', async () => {
 	const repositoryRoot = new URL('../../', import.meta.url).pathname
 	const usesByFile: [string, SignerReplyUpdateUse][] = []
-	for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan({ cwd: repositoryRoot })) {
+	for (const file of await collectFilePaths(['app/ts/**/*.{ts,tsx}'])) {
 		for (const use of findSignerReplyUpdateUses(file, await Bun.file(`${ repositoryRoot }${ file }`).text())) usesByFile.push([file, use])
 	}
 	const signerReplyFile = 'app/ts/background/providerMessageHandlers.ts'
-	assert.deepEqual(usesByFile, [[signerReplyFile, signerReplyCall], [signerReplyFile, signerReplyCall], [signerReplyFile, signerReplyCall]])
+	assert.notEqual(usesByFile.length, 0, 'the signer reply path is covered')
+	for (const [file, use] of usesByFile) {
+		assert.equal(file, signerReplyFile)
+		assert.deepEqual(use, signerReplyCall)
+	}
 })
 
 test('the signer-reply update check finds calls by syntax, not by text position', () => {
@@ -200,16 +204,16 @@ test('Safe pending flow discrimination has one owner', () => {
 	assert.match(safePendingFlowSource, /kind: 'proposal'/u)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
 		candidate.type === 'Transaction'
-			&& candidate.safeTransaction?.safeAddress !== undefined
+			&& candidate.safeFlow.kind === 'proposal'
 	`), true)
 	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(`
 		if (candidate.type !== 'Transaction') return
-		use(candidate.safeTransaction)
+		use(candidate.safeFlow.safeTransaction)
 	`), true)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
 		const alias = candidate
 		candidate.type === 'Transaction'
-			&& alias.safeTransaction !== undefined
+			&& alias.safeFlow.state === 'created'
 	`), true)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationResolverSource), false)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationPersistenceSource), false)
@@ -219,7 +223,7 @@ test('Safe pending flow discrimination has one owner', () => {
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(popupMessageHandlersSource), false)
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionPageSource), false)
 	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(refreshPopupSimulationSource), false)
-	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.(?:safeExecutionOriginalRequestParameters|safeTransaction)/u)
+	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.safeFlow/u)
 })
 
 

@@ -3,7 +3,7 @@ import { setSystemTime, test } from 'bun:test'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
 import { PendingRequestInstanceId, type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import { activeAddress, browserMock, createWebsitePort, fakeRequestHandler, isRecord, modules, recipientAddress, type RuntimeMessage, simulator } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createAcceptConfirmation, createWebsitePort, fakeRequestHandler, isRecord, modules, recipientAddress, type RuntimeMessage, simulator } from './confirmTransactionTestHarness.js'
 
 // A page chooses its own JSON-RPC request ids, so it can send a new request under the id of one whose popup was just closed, or of one that is still pending.
 const pageRequestIdentifier = { requestId: -2, requestSocket: { tabId: 1, connectionName: 0n } }
@@ -47,7 +47,7 @@ async function getOnlyPendingRequest() {
 
 // In simulation mode an accepted request joins the simulation stack under its transaction or message identifier.
 async function acceptPendingRequest(connections: PageConnections) {
-	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier } })
+	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, await createAcceptConfirmation(pageRequestIdentifier))
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
 }
 
@@ -314,7 +314,7 @@ test('a transaction reusing the request id of one already in the simulation stac
 	const replacement = await getOnlyPendingRequest()
 	if (stacked?.type !== 'Transaction' || replacement.type !== 'Transaction' || replacement.transactionOrMessageCreationStatus !== 'Simulated' || replacement.popupVisualisation.statusCode !== 'success') throw new Error('Expected a stacked transaction and a simulated replacement')
 	assert.equal(stacked.preSimulationTransaction.signedTransaction.value, 0n)
-	const { getResultsForTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { getResultsForTransaction } = await import('../../app/ts/utils/visualizedTransactionResult.js')
 	const shownSimulation = getResultsForTransaction(replacement.popupVisualisation.data.visualizedSimulationState, replacement.transactionIdentifier)
 	assert.equal(shownSimulation?.transaction.value, ONE_ETHER)
 	assert.notEqual(replacement.transactionIdentifier, stacked.preSimulationTransaction.transactionIdentifier)
@@ -369,7 +369,7 @@ const signerReplies = [
 ] as const
 
 async function approveAndForwardToSigner(connections: PageConnections) {
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier } }), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, await createAcceptConfirmation(pageRequestIdentifier)), true)
 	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
 }
 
@@ -482,5 +482,76 @@ test('a metadata refresh does not store its visualisation over a re-simulation o
 		assert.deepEqual(visualisedGas, [42_000n])
 	} finally {
 		setSystemTime()
+	}
+})
+
+test.each(['reject', 'noResponse'] as const)('a %s awaiting its terminal-reply write cannot remove a replacement request instance', async (action) => {
+	const connections = await startPageConnection()
+	await sendPersonalSignFromPage(connections, FIRST_MESSAGE)
+	const original = await getOnlyPendingRequest()
+	const replacement = { ...original, instanceId: crypto.randomUUID() }
+	let replacedDuringReplyWrite = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (!replacedDuringReplyWrite && 'pendingTerminalReplies' in items) {
+			replacedDuringReplyWrite = true
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [replacement] })
+		}
+		writeStoredItems()
+	})
+	try {
+		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action, uniqueRequestIdentifier: pageRequestIdentifier } })
+		assert.equal(replacedDuringReplyWrite, true)
+		assert.equal((await getOnlyPendingRequest()).instanceId, replacement.instanceId)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+})
+
+test('an orphan-window lookup cannot reject a replacement that arrived during the lookup', async () => {
+	const connections = await startPageConnection()
+	await sendPersonalSignFromPage(connections, FIRST_MESSAGE)
+	const original = await getOnlyPendingRequest()
+	const replacement = { ...original, instanceId: crypto.randomUUID(), popupOrTabId: { type: 'popup' as const, id: 100 } }
+	let replacedDuringLookup = false
+	browserMock.setLiveWindowIds([])
+	browserMock.setWindowGetHandler(async () => {
+		if (replacedDuringLookup) return
+		replacedDuringLookup = true
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [replacement] })
+		browserMock.setLiveWindowIds([100])
+	})
+	try {
+		await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, connections)
+		assert.equal(replacedDuringLookup, true)
+		assert.equal((await getOnlyPendingRequest()).instanceId, replacement.instanceId)
+	} finally {
+		browserMock.setWindowGetHandler(undefined)
+	}
+})
+
+test('a scheduled popup-close retry cannot reject a replacement under the same page request id', async () => {
+	const connections = await startPageConnection()
+	await sendPersonalSignFromPage(connections, FIRST_MESSAGE)
+	const original = await getOnlyPendingRequest()
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTerminalReplies' in items) throw new Error('Terminal reply storage temporarily unavailable')
+		writeStoredItems()
+	})
+	await modules.onCloseWindowOrTab(original.popupOrTabId, simulator.ethereum, simulator.tokenPriceService, connections)
+	browserMock.setStorageSetHandler(undefined)
+	const replacement = { ...original, instanceId: crypto.randomUUID() }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [replacement] })
+	let retryReadTheQueue = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (Array.isArray(keys) && keys.includes('pendingTransactionsAndMessages')) retryReadTheQueue = true
+		return readStoredItems()
+	})
+	try {
+		// The retry is scheduled for 50 ms; the later timer runs after its lookup and microtasks even when the event loop is busy.
+		await new Promise((resolve) => setTimeout(resolve, 150))
+		assert.equal(retryReadTheQueue, true)
+		assert.equal((await getOnlyPendingRequest()).instanceId, replacement.instanceId)
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
 	}
 })
