@@ -1,6 +1,6 @@
-import { refreshAfterSimulationServicesUpdate } from './simulationServiceRefresh.js'
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { refreshAfterSimulationServicesUpdate } from './simulationServiceRefresh.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
