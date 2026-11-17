@@ -46,7 +46,7 @@ test('the storage modules import no module that owns a lock above them', () => {
 
 test('registering a transaction takes the hash lock inside the pending-confirmation lock', () => {
 	const confirmTransaction = getSource('background/windows/confirmTransaction.ts')
-	const opener = confirmTransaction.slice(confirmTransaction.indexOf('export async function openConfirmTransactionDialogForTransaction('))
+	const opener = confirmTransaction.slice(confirmTransaction.indexOf('async function createConfirmationForTransaction('))
 	const pendingConfirmationLock = opener.search(PENDING_CONFIRMATION_LOCK)
 	const hashLock = opener.search(SIMULATION_HASH_LOCK)
 	assert.ok(pendingConfirmationLock >= 0 && hashLock > pendingConfirmationLock)
