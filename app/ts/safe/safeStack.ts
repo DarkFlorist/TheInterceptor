@@ -80,31 +80,43 @@ export function reconcileSafeTransactionStack(stack: SafeTransactionStack, curre
 	}
 }
 
+type SafeTransactionState = {
+	readonly safeTransactionStacks: SafeTransactionStacks
+	readonly interceptorTransactionStack: InterceptorTransactionStack
+}
+
+export type ReconciledSafeTransactionState = {
+	readonly state: SafeTransactionState
+	// True only when the on-chain nonce proves a stored prefix executed. Callers must not infer this from object allocation or reference equality.
+	readonly removedExecutedOperations: boolean
+}
+
+// Reconcile both stored representations and report the domain change explicitly. Unchanged results need not preserve reference identity.
 export function reconcileSafeTransactionState(
-	state: {
-		readonly safeTransactionStacks: SafeTransactionStacks
-		readonly interceptorTransactionStack: InterceptorTransactionStack
-	},
+	state: SafeTransactionState,
 	chainId: bigint,
 	safeAddress: bigint,
 	currentNonce: bigint,
-) {
+): ReconciledSafeTransactionState {
 	const stack = state.safeTransactionStacks.find((candidate) => candidate.chainId === chainId && candidate.safeAddress === safeAddress)
-	if (stack === undefined) return state
+	if (stack === undefined) return { state, removedExecutedOperations: false }
 	const reconciledStack = reconcileSafeTransactionStack(stack, currentNonce)
-	if (reconciledStack === stack) return state
+	if (currentNonce === stack.baseNonce) return { state, removedExecutedOperations: false }
 	const remainingIdentifiers = new Set(reconciledStack.transactions.map(({ transactionIdentifier }) => transactionIdentifier))
 	const reconciledSafeTransactionIdentifiers = new Set(stack.transactions.map(({ transactionIdentifier }) => transactionIdentifier))
 	return {
-		safeTransactionStacks: state.safeTransactionStacks
-			.map((candidate) => candidate === stack ? reconciledStack : candidate)
-			.filter((candidate) => candidate.transactions.length > 0),
-		interceptorTransactionStack: {
-			operations: normalizeConsecutiveTimeManipulations(state.interceptorTransactionStack.operations.filter((operation) => {
-				if (operation.type !== 'Transaction') return true
-				const transactionIdentifier = operation.preSimulationTransaction.transactionIdentifier
-				return !reconciledSafeTransactionIdentifiers.has(transactionIdentifier) || remainingIdentifiers.has(transactionIdentifier)
-			})),
+		removedExecutedOperations: true,
+		state: {
+			safeTransactionStacks: state.safeTransactionStacks
+				.map((candidate) => candidate === stack ? reconciledStack : candidate)
+				.filter((candidate) => candidate.transactions.length > 0),
+			interceptorTransactionStack: {
+				operations: normalizeConsecutiveTimeManipulations(state.interceptorTransactionStack.operations.filter((operation) => {
+					if (operation.type !== 'Transaction') return true
+					const transactionIdentifier = operation.preSimulationTransaction.transactionIdentifier
+					return !reconciledSafeTransactionIdentifiers.has(transactionIdentifier) || remainingIdentifiers.has(transactionIdentifier)
+				})),
+			},
 		},
 	}
 }

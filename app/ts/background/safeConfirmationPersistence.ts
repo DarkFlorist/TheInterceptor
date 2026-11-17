@@ -1,17 +1,17 @@
 import * as funtypes from 'funtypes'
+import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
+import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SimulationStackChange } from '../types/visualizer-types.js'
-import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
-import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
-import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
-import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
+import { getErrorMessage } from '../utils/errors.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
@@ -123,7 +123,7 @@ async function persistSafeTransaction(
 	}
 	try {
 		await updateTransactionState((previousState) => {
-			const reconciledState = reconcileSafeTransactionState(
+			const { state: reconciledState } = reconcileSafeTransactionState(
 				previousState,
 				ethereum.getChainId(),
 				safeSigningRequest.safeAddress,

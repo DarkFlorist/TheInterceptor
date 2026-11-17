@@ -40,7 +40,7 @@ import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactio
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { appendToActiveSimulationStack } from '../networkTransition.js'
-import { readNetworkSnapshotForPendingRequest, type NetworkRead, type NetworkSnapshot, type SimulationSnapshot } from '../networkTransitionLock.js'
+import { readNetworkSnapshotForPendingRequest, readNetworkSnapshotForServices, type NetworkRead, type NetworkSnapshot, type SimulationSnapshot } from '../networkTransitionLock.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { computeConfirmationVisualisation, updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
 import { getReviewedResultId } from '../reviewedResult.js'
@@ -894,7 +894,7 @@ export async function openConfirmTransactionDialogForMessage(
 // Forms the transaction a confirmation's Gnosis Safe preparation decided on. A preparation failure stands in for the transaction, which is then not formed.
 async function formPreparedTransaction(
 	simulation: SimulationSnapshot,
-	safePreparation: SafeTransactionConfirmationPreparation,
+	safePreparation: Extract<SafeTransactionConfirmationPreparation, { readonly rejection: undefined }>,
 	website: Website,
 	created: Date,
 	transactionIdentifier: bigint,
@@ -937,8 +937,10 @@ export async function prepareUnformedSafeProposalAgain(
 		pending.activeAddress,
 		getWalletSelectedAccount(await getTabState(tabId)),
 	)
-	if (safePreparation.flowKind !== 'proposal') return undefined
-	const network = requestNetwork
+	if (safePreparation.rejection !== undefined || safePreparation.flowKind !== 'proposal') return undefined
+	// Reconciliation can remove executed operations; rebuild from that committed stack on the same network.
+	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkSnapshotForServices(requestNetwork.services) : requestNetwork
+	if (network === undefined || !readsShareNetworkAndStackContext(requestNetwork, network)) return undefined
 	const simulation = requireSimulationSnapshot(network.simulation)
 	const formedTransaction = await formPreparedTransaction(simulation, safePreparation, pending.website, pending.created, pending.transactionIdentifier, pending.simulationMode)
 	const { transactionToSimulate, safeFlow, approvalStatus } = await safePreparation.finalize(formedTransaction, tabId)
@@ -972,7 +974,11 @@ export async function openConfirmTransactionDialogForTransaction(
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
 	}
-	const network = requestNetwork
+	// Only when reconciliation removed executed Gnosis Safe operations from storage is the request's stack out of date; it is then re-read and simulated as it is now, provided no network change committed since the request was admitted. Otherwise the request stays on the network it was admitted on, even if a switch committed during preparation.
+	const network = safePreparation.storedSafeStackChange === 'removed-executed-operations' ? await readNetworkSnapshotForServices(requestNetwork.services) : requestNetwork
+	if (network === undefined || !readsShareNetworkAndStackContext(requestNetwork, network)) {
+		return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The active network changed while the Interceptor prepared this request. Send it again.')
+	}
 	// Checked before the request joins the confirmation queue, so a stack that cannot be read fails the request rather than leaving it pending.
 	const simulation = requireSimulationSnapshot(network.simulation)
 	const { effectiveTransactionParams, transactionExecutor } = safePreparation

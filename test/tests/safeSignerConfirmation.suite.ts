@@ -1113,7 +1113,87 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 	assert.equal(mirroredProposal.preSimulationTransaction.safeTransaction?.signatures[0]?.signer, safeSignerAddress)
 })
 
-for (const change of ['switches network', 'selects another Gnosis Safe'] as const)
+for (const change of ['switches network', 'selects another Gnosis Safe'] as const) test(`an unsigned Safe proposal whose validation finishes after the user ${ change } joins its own Safe stack without replacing the shared visualisation of the current selection`, async () => {
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	const { updatePopupVisualisationIfNeeded } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+	const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+	const safeSignerAddress = safeTestOwnerAddress
+	fakeSafeContract.owners = [safeSignerAddress]
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	// Serialized messages carry the hash as hex text, so search for it without its prefix.
+	const mentionsProposal = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? `0x${ item.toString(16) }` : item).toLowerCase().includes(safeTxHash.toString(16))
+	const otherNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chainId: fakeRpcNetwork.chainId + 1n, httpsRpc: 'https://other.example.invalid' }
+	const otherNetworkEthereum = new modules.EthereumClientService({ ...fakeRequestHandler, rpcUrl: otherNetwork.httpsRpc }, async () => undefined, async () => undefined, otherNetwork)
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: activeAddress })
+	const safePending = {
+		...pendingTransaction,
+		simulationMode: false as const,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1' as const, nonce: 0n, owners: [safeSignerAddress], threshold: 2n },
+			safeTxHash,
+			safeTx,
+		} },
+	}
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
+	const validationStarted = createDeferredValue<void>()
+	const releaseValidation = createDeferredValue<void>()
+	fakeSafeContract.beforeVersionResponse = async () => {
+		fakeSafeContract.beforeVersionResponse = undefined
+		validationStarted.resolve(undefined)
+		await releaseValidation.promise
+	}
+	// The main popup is open, so shared refreshes publish the visualisation of the current selection.
+	const originalSendMessage = browser.runtime.sendMessage
+	Object.defineProperty(browser.runtime, 'sendMessage', {
+		configurable: true,
+		value: async (message: unknown) => isRecord(message) && message.method === 'popup_isSimulationVisualizerOpen'
+			? { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: true } }
+			: await originalSendMessage(message as never),
+	})
+	try {
+		const addToStack = modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), await readNetworkState(), new Map(), {
+			method: 'popup_confirmDialog',
+			data: { action: 'addToSafeStack', uniqueRequestIdentifier },
+		})
+		await validationStarted.promise
+		if (change === 'switches network') {
+			await changeSimulationMode({ simulationMode: false, rpcNetwork: otherNetwork, activeSigningSafeAddress: activeAddress })
+			await updatePopupVisualisationIfNeeded(otherNetworkEthereum, new modules.TokenPriceService(otherNetworkEthereum, 60_000), { invalidateOldState: true })
+		} else {
+			await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress: recipientAddress })
+			await updatePopupVisualisationIfNeeded(simulator.ethereum, simulator.tokenPriceService, { invalidateOldState: true })
+		}
+		const currentVisualisation = await getPopupVisualisationState()
+		assert.ok(!mentionsProposal(currentVisualisation))
+		const broadcastsBeforeResume = browserMock.sentMessages.length
+		releaseValidation.resolve(undefined)
+		await addToStack
+
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		const [storedStack] = await modules.getSafeTransactionStacks()
+		assert.equal(storedStack?.chainId, fakeRpcNetwork.chainId)
+		assert.equal(storedStack?.safeAddress, activeAddress)
+		assert.equal(storedStack?.transactions[0]?.safeTxHash, safeTxHash)
+		const settings = await getSettings()
+		assert.equal(settings.activeRpcNetwork.chainId, change === 'switches network' ? otherNetwork.chainId : fakeRpcNetwork.chainId)
+		assert.ok(!mentionsProposal(await getPopupVisualisationState()))
+		const sharedBroadcasts = browserMock.sentMessages.slice(broadcastsBeforeResume).filter((message) => message.method === 'popup_simulation_state_changed')
+		for (const broadcast of sharedBroadcasts) assert.ok(!mentionsProposal(broadcast))
+	} finally {
+		releaseValidation.resolve(undefined)
+		fakeSafeContract.beforeVersionResponse = undefined
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSendMessage })
+		otherNetworkEthereum.cleanup()
+	}
+})
 
 test('invalid Safe owner signatures retain the request as a signer error without creating a Safe stack', async () => {
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
