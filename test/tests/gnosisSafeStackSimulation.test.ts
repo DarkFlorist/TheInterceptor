@@ -725,7 +725,7 @@ describe('Gnosis Safe stack simulation', () => {
 		}
 		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
 		const safeMessage = createSafeMessage(fakeRpcNetwork, connectedUser, connectedUser)
-		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: sharedSafe, message: { ...safeMessage.message, domain: { ...safeMessage.message.domain, verifyingContract: sharedSafe.address } } }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
+		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: sharedSafe, message: { ...safeMessage.message, domain: { ...safeMessage.message.domain, verifyingContract: sharedSafe.address } } }, ethereum, new modules.TokenPriceService(ethereum, 0))
 		if (!reply.success) throw new Error(reply.errorMessage)
 
 		const requirement = reply.result.safeSignatureRequirement

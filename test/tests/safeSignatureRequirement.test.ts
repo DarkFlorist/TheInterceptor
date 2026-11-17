@@ -1,3 +1,4 @@
+import { createSimulatedExecutionInput } from '../../app/ts/types/visualizer-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
@@ -108,7 +109,7 @@ const stackWithSafeDeployment: SimulationStateInput = [{
 	simulateWithZeroBaseFee: false,
 }]
 
-const readRequirement = async (answerOwnerRead: OwnerReadAnswer, simulationInput: SimulationStateInput = []) => await getSafeSignatureRequirement(createNode(answerOwnerRead), simulationInput, SAFE, USER)
+const readRequirement = async (answerOwnerRead: OwnerReadAnswer, simulationInput: SimulationStateInput = []) => await getSafeSignatureRequirement(createNode(answerOwnerRead), createSimulatedExecutionInput(simulationInput), SAFE, USER)
 
 describe('Safe signature requirement', () => {
 	test('a 1 of 1 Safe owned by the user needs only the user', async () => {
