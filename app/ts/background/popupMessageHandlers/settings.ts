@@ -9,6 +9,7 @@ import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariabl
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { clearSimulationStateFromConfig } from '../activeSettings.js'
 import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
@@ -49,11 +50,14 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 
 // Import commits settings before reconciling services. Keep reconciliation and its dependent refresh in one workflow.
 export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
+	const previousSettings = await getSettings()
 	const reply = await importSettings(request, websiteTabConnections)
 	await sendPopupMessageToOpenWindows(reply)
 	if (!reply.data.success) return
 	const settings = await getSettings()
 	simulationServicesOwner.ensureNetwork(settings.activeRpcNetwork)
+	// Simulation operations are shared across chains, so discard them before a refresh can use the imported chain.
+	if (settings.simulationMode && previousSettings.activeRpcNetwork.chainId !== settings.activeRpcNetwork.chainId) await clearSimulationStateFromConfig()
 	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settings, true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })
 }

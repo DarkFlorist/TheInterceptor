@@ -16,7 +16,7 @@ import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
-async function clearSimulationStateFromConfig() {
+export async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {

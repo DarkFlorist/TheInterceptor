@@ -115,11 +115,12 @@ Reflect.set(globalThis, 'browser', {
 
 const [
 	{ dispatchPopupMessage },
-	{ getLatestUnexpectedError },
+	{ getLatestUnexpectedError, updateInterceptorTransactionStack, getInterceptorTransactionStack },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
 	{ createSimulationServicesOwner },
+	{ mockSignTransaction },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
 	import('../../app/ts/background/storageVariables.js'),
@@ -127,6 +128,7 @@ const [
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
 	import('../../app/ts/simulation/serviceLifecycle.js'),
+	import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 ])
 
 const settings: Settings = {
@@ -721,6 +723,26 @@ describe('settings import installs the imported network', () => {
 		const importedSettings = sentMessages.map((message) => MessageToPopup.parse(message)).find((message) => message.method === 'popup_settingsUpdated')
 		if (importedSettings?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
 		return importedSettings
+	}
+
+	for (const scenario of ['different chain', 'same chain', 'failed import'] as const) {
+		test(`settings import handles the existing simulation stack: ${ scenario }`, async () => {
+			const context = createDispatcherContextWithInstalledServices()
+			const originalStack = await updateInterceptorTransactionStack(() => ({ operations: [{
+				type: 'Transaction',
+				preSimulationTransaction: {
+					signedTransaction: mockSignTransaction({ type: '1559', from: 1n, to: 2n, nonce: 0n, chainId: 1n, gas: 21000n, value: 0n, maxFeePerGas: 2n, maxPriorityFeePerGas: 1n, input: new Uint8Array(), accessList: [] }),
+					website: { websiteOrigin: 'https://stack.example' },
+					created: new Date('2026-01-01T00:00:00Z'),
+					originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+					transactionIdentifier: 1n,
+				},
+			}] }))
+			const network = scenario === 'same chain' ? { ...importedSepoliaNetwork, chainId: '0x1' } : importedSepoliaNetwork
+			const fileContents = scenario === 'failed import' ? 'invalid settings' : buildImportFile(network)
+			await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents } })
+			assert.deepEqual((await getInterceptorTransactionStack()).operations, scenario === 'different chain' ? [] : originalStack.operations)
+		})
 	}
 
 	test('replaces the installed services when the import selects another endpoint', async () => {
