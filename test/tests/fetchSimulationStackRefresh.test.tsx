@@ -178,6 +178,9 @@ const ethereum = new EthereumClientService(requestHandler, async () => undefined
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 const simulationServicesOwner = {
 	getCurrent: () => ({ ethereum, tokenPriceService }),
+	requireCurrent: () => ({ ethereum, tokenPriceService }),
+	recover: () => ({ ethereum, tokenPriceService }),
+	clear: () => undefined,
 	reset: () => ({ ethereum, tokenPriceService }),
 }
 

@@ -42,6 +42,7 @@ import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
+import { getConfirmationWindowRequests } from '../../utils/confirmationQueue.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -107,7 +108,7 @@ const backgroundCopy = (pending: PopupPendingTransactionOrSignableMessage): Back
 
 async function hydratePendingTransactionsFromStorage() {
 	const pendingRequests = (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
-	return pendingRequests.map((pending): ShownPendingTransactionOrSignableMessage => ({ ...pending, source: 'storage' }))
+	return getConfirmationWindowRequests(pendingRequests).map((pending): ShownPendingTransactionOrSignableMessage => ({ ...pending, source: 'storage' }))
 }
 
 export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addressBookEntries: readonly AddressBookEntry[]) {
@@ -694,6 +695,7 @@ const RejectButton = ({ onClick, state }: RejectButtonParams) => {
 		/>
 	</div>
 }
+
 
 type ButtonsParams = {
 	currentPendingTransactionOrSignableMessage: ShownPendingTransactionOrSignableMessage | undefined

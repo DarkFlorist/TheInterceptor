@@ -1,3 +1,5 @@
+import { getRpcConfigurationState } from './rpcConfigurationStorage.js'
+import { getRpcServicesAtAdmission } from './rpcConfigurationAvailability.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
@@ -10,9 +12,8 @@ import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { refreshPendingSafeSignerSelectionErrors, resolvePendingSignerReply, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
@@ -106,7 +107,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+		const { ethereum, tokenPriceService } = simulationServicesOwner.requireCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
@@ -283,7 +284,6 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		if (params.forwardRequest.method === 'wallet_watchAsset') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
@@ -306,7 +306,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
+			if (simulationServices !== undefined) await updateConfirmTransactionView(simulationServices.ethereum, simulationServices.tokenPriceService)
 			return doNotReply
 		}
 		switch(params.forwardRequest.method) {
@@ -318,32 +319,24 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_signTypedData_v4':
 			case 'eth_sendRawTransaction':
 			case 'eth_sendTransaction': {
-				if (params.success) {
+				const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
+				if (params.success && simulationServices !== undefined) {
 					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
-							method: 'popup_confirmDialog',
-							data: {
-								uniqueRequestIdentifier,
-								action: 'signerIncluded',
-								signerReply: params.reply,
-							}
-						})
+						await resolvePendingSignerReply(simulationServices, async () => await getAvailableSimulationServices(simulationServicesOwner), websiteTabConnections, uniqueRequestIdentifier, params)
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}
 					return doNotReply
 				}
-				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
-					return doNotReply
-				}
-				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				await resolvePendingSignerReply(simulationServices, async () => await getAvailableSimulationServices(simulationServicesOwner), websiteTabConnections, uniqueRequestIdentifier, params)
 				return doNotReply
 			}
 		}
 		if (params.success) return { type: 'result' as const, method: 'signer_reply' as const, result: params.reply }
 		return { type: 'result' as const, method: 'signer_reply' as const, error: params.error }
 	})
+}
+
+async function getAvailableSimulationServices(owner: SimulationServicesOwner) {
+	return getRpcServicesAtAdmission(await getRpcConfigurationState(), owner)
 }

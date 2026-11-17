@@ -26,6 +26,9 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	uniqueRequestIdentifier: false,
 	popupOrTabId: false,
 	approvalStatus: false,
+	deferredSafeSignerReply: false,
+	signerRequestChainId: false,
+	websiteReplyQueued: false,
 	// Bind the visualization and its signing inputs together, including the simulated signer and Safe message review.
 	signedMessageTransaction: true,
 }

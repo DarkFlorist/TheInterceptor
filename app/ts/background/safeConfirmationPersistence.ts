@@ -60,6 +60,10 @@ async function prepareSafeProposalPersistence(
 	if (safeSigningRequest.reviewedSafeState === undefined) {
 		throw createSafeContractValidationFailure('Review this Gnosis Safe proposal again so its current owners, threshold, and nonce can be verified.')
 	}
+	// The stack is keyed by the connected network, so a proposal signed for another network's domain is never stored in it.
+	if (safeSigningRequest.safeTx.domain.chainId !== ethereum.getChainId()) {
+		throw createSafeContractValidationFailure('This Gnosis Safe proposal was prepared for another network than the one the Interceptor is connected to.')
+	}
 	const safeSnapshot = await getSafeContractSnapshot(ethereum, safeSigningRequest.safeAddress)
 	assertSafeContractStateUnchanged(safeSigningRequest.reviewedSafeState, safeSnapshot.state)
 	const storedStack = (await getSafeTransactionStacks()).find((stack) =>

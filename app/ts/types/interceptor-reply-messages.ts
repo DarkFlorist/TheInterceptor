@@ -1,3 +1,7 @@
+import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
+
+export const RPC_CONFIGURATION_UNAVAILABLE_ERROR = { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import type { popupSettingsOperations } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'

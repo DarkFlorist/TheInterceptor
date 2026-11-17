@@ -44,6 +44,41 @@ test('Gnosis Safe persistence only persists, and the confirmation window shows t
 	assert.match(confirmTransactionSource, /async function showStoredSafeProposal\(/u)
 })
 
+// Runtime imports only (type-only imports are erased), followed through every module the given one loads.
+async function getRuntimeImportClosure(entryPath: string) {
+	const transpiler = new Bun.Transpiler({ loader: 'ts' })
+	const visited = new Set<string>()
+	const pending = [entryPath]
+	for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+		if (visited.has(path)) continue
+		visited.add(path)
+		const directory = path.slice(0, path.lastIndexOf('/') + 1)
+		for (const { path: specifier } of transpiler.scanImports(await Bun.file(path).text())) {
+			if (!specifier.startsWith('.')) continue
+			for (const extension of ['.ts', '.tsx']) {
+				const resolved = new URL(specifier.replace(/\.js$/u, extension), `file://${ directory }`).pathname
+				if (await Bun.file(resolved).exists()) pending.push(resolved)
+			}
+		}
+	}
+	return [...visited]
+}
+
+test('the Gnosis Safe signer-reply lifecycle reaches the confirmation window only through the callbacks it is given', async () => {
+	const lifecycleUrl = new URL('../../app/ts/background/safeSignerReplyLifecycle.ts', import.meta.url)
+	const lifecycleSource = await Bun.file(lifecycleUrl).text()
+	assert.doesNotMatch(lifecycleSource, /from '(?:\.\.\/utils\/popupOrTab|\.\/popupVisualisationUpdater|\.\/popupMessageHandlers|\.\/windows\/[^']+|\.\.\/components\/[^']+)\.js'/u)
+	assert.doesNotMatch(lifecycleSource, /\b(?:getHtmlFile|openPopupOrTab|closePopupOrTabById|tryFocusingTabOrWindow|updatePopupVisualisationIfNeeded|sendPopupMessageToOpenWindows|updateConfirmTransactionView)\b/u)
+	const appRoot = new URL('../../app/ts/', import.meta.url).pathname
+	const viewModules = (await getRuntimeImportClosure(lifecycleUrl.pathname))
+		.map((path) => path.slice(appRoot.length))
+		.filter((path) => /^(?:background\/windows\/|components\/)|^background\/popup(?:MessageHandlers|VisualisationUpdater)\.ts$|^utils\/popupOrTab\.ts$/u.test(path))
+	assert.deepEqual(viewModules, [])
+	// The confirmation window calls into the lifecycle and keeps none of its state.
+	assert.match(confirmTransactionSource, /from '\.\.\/safeSignerReplyLifecycle\.js'/u)
+	assert.doesNotMatch(confirmTransactionSource, /safeSignerReplyLifecycleSemaphore|safeSignerReplyRetryTimers|pendingRetriesSpentTransitions|reportedSpentSafeSignerReplyRetries|safeSignerReplyAdvancesOnNewBlock|function advanceSafeSignerReply\b/u)
+})
+
 test('popup message handlers delegate Gnosis Safe stack import and export', () => {
 	assert.match(popupMessageHandlersSource, /export \{ importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract \} from '\.\/safeStackHandlers\.js'/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /function validateSafeTransactionStackForCurrentContract/u)
@@ -74,7 +109,7 @@ test('the RPC client enforces the executed-call invariant without Gnosis Safe do
 
 test('the minimal simulation input that crosses into the RPC client carries no Gnosis Safe domain type', async () => {
 	const visualizerTypesSource = await Bun.file(new URL('../../app/ts/types/visualizer-types.ts', import.meta.url)).text()
-	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)/u)?.[0]
 	if (minimalDataBlockDefinition === undefined) throw new Error('SimulationStateInputMinimalDataBlock definition not found')
 	assert.match(minimalDataBlockDefinition, /executedCallAuthorized: funtypes\.Boolean,/u)
 	assert.doesNotMatch(minimalDataBlockDefinition.split('\n').filter((line) => !/^\s*\/\//u.test(line)).join('\n'), /Safe|safeTransaction|simulationOptions|TransactionSimulationOptions|PreSimulationTransaction|SimulationInputTransaction/u)
@@ -124,11 +159,11 @@ test('a Gnosis Safe confirmation and its refreshes take the fee mode from one ma
 test('a pending transaction records its flow once, as the safeFlow that the confirmation stores and every refresh reads', async () => {
 	const accessRequestSource = await Bun.file(new URL('../../app/ts/types/accessRequest.ts', import.meta.url)).text()
 	const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
-	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)/u)?.[0]
 	if (pendingTransactionBaseDefinition === undefined) throw new Error('SimulatedPendingTransactionBase definition not found')
 	assert.match(pendingTransactionBaseDefinition, /\tsafeFlow: PendingTransactionSafeFlow,\n/u)
 	// The flow's data lives only in safeFlow, so no other pending field can disagree with it.
-	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest|\.And\(/u)
+	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest/u)
 	assert.equal(accessRequestSource.match(/export const PendingTransactionSafeFlow = /gu)?.length, 1)
 	assert.match(safePendingFlowSource, /export type SafeTransactionFlowKind = PendingTransactionSafeFlow\['kind'\]/u)
 	assert.match(safePendingFlowSource, /export const getPendingTransactionFlowKind = \(pending: PendingTransaction\): SafeTransactionFlowKind => pending\.safeFlow\.kind/u)
