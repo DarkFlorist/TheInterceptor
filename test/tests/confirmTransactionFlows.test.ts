@@ -3,6 +3,7 @@ import { resetConfirmTransactionTestState } from './confirmTransactionTestHarnes
 import './metadataLookupChain.suite.js'
 import './storedRunReplay.suite.js'
 import './addressBookRevision.suite.js'
+import './confirmTransactionMetadataRefresh.suite.js'
 import './failedTransactionPreview.suite.js'
 import './safeConfirmationFlows.suite.js'
 import './safeStackFlows.suite.js'
