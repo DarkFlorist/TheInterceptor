@@ -1,4 +1,3 @@
-import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
@@ -83,30 +82,30 @@ export type SimulationServicesOwner = {
 	readonly update: <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>) => Promise<Result>
 }
 
-// Raw replacement is private to a serialized update. Its observer runs after every storage/notification step, so replacing a client cannot retire old work without scheduling its replacement or publishing a failed state.
+// Replacement is synchronous. Each update tracks its own installed pair and refresh intent; application workflows own their ordering, and an unfinished callback cannot lock out another replacement.
 export function createSimulationServicesOwnerFromOperations(getCurrent: () => SimulationServices, replace: SimulationServicesUpdate['reset'], observe: SimulationServicesUpdateObserver): SimulationServicesOwner {
-	const updates = new Semaphore(1)
 	return {
 		getCurrent,
 		update: async <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>): Promise<Result> => {
-			const completed = await updates.execute(async () => {
+			const completed = await (async () => {
+				let services = getCurrent()
 				let refreshRequested = false
 				let invalidateOldState = false
 				let updateOpen = true
 				const requireOpenUpdate = () => { if (!updateOpen) throw new Error('This simulation services update is no longer active') }
 				try {
 					const result = await apply({
-						reset: (network) => { requireOpenUpdate(); refreshRequested = true; invalidateOldState = true; return replace(network) },
-						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true },
+						reset: (network) => { requireOpenUpdate(); refreshRequested = true; invalidateOldState = true; services = getCurrent(); services = replace(network); return services },
+						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true; if (!invalidateOldState) services = getCurrent() },
 					})
-					return { status: 'completed' as const, invalidateOldState, result, services: getCurrent(), refreshRequested }
+					return { status: 'completed' as const, invalidateOldState, result, services, refreshRequested }
 				} catch (error: unknown) {
-					return { status: 'failed' as const, error, services: getCurrent(), refreshRequested }
+					return { status: 'failed' as const, error, services, refreshRequested }
 				} finally {
 					updateOpen = false
 				}
-			})
-			// Storage and installation are serialized; network simulation belongs outside the mutation lock.
+			})()
+			// The workflow has settled and released its own ordering lock before observing its captured pair.
 			if (completed.refreshRequested) {
 				const outcome: SimulationServicesUpdateOutcome = completed.status === 'failed' ? { status: 'failed', error: completed.error } : { status: 'completed', invalidateOldState: completed.invalidateOldState }
 				await observe(completed.services, outcome)

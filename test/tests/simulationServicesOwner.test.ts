@@ -1,3 +1,4 @@
+import { runSimulationSettingsTransition } from '../../app/ts/background/simulationSettingsTransition.js'
 import { Future } from '../../app/ts/utils/future.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
@@ -110,7 +111,7 @@ test('an update context cannot replace services after its callback has completed
 })
 
 
-test('a slow refresh observer does not hold the services mutation lock', async () => {
+test('a slow refresh observer does not block another replacement', async () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const started = new Future<void>()
 	const release = new Future<void>()
@@ -128,6 +129,60 @@ test('a slow refresh observer does not hold the services mutation lock', async (
 	} finally {
 		release.resolve(undefined)
 		await first
+		owner.getCurrent().ethereum.cleanup()
+	}
+})
+
+
+test('an unfinished update does not block replacement and observes its own retired pair', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const started = new Future<void>()
+	const release = new Future<void>()
+	const observed: string[] = []
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async (services) => { observed.push(services.ethereum.getRpcEntry().httpsRpc) })
+	const first = owner.update(async ({ reset }) => {
+		reset({ ...rpc, httpsRpc: 'https://first.invalid' })
+		started.resolve(undefined)
+		await release
+	})
+	await started
+	let timer: ReturnType<typeof setTimeout> | undefined
+	try {
+		await Promise.race([
+			owner.update(async ({ reset }) => reset({ ...rpc, httpsRpc: 'https://second.invalid' })),
+			new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Replacement waited for an unrelated update callback')), 1000) }),
+		])
+		assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, 'https://second.invalid')
+	} finally {
+		clearTimeout(timer)
+		release.resolve(undefined)
+		await first
+		owner.getCurrent().ethereum.cleanup()
+	}
+	assert.deepEqual(observed, ['https://second.invalid', 'https://first.invalid'])
+})
+
+
+test('a settings transition releases its application lock before its refresh observer', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const order: string[] = []
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => {
+		if (order.includes('observer')) return
+		order.push('observer')
+		await runSimulationSettingsTransition(owner, async ({ reset }) => {
+			order.push('next settings transition')
+			reset({ ...rpc, httpsRpc: 'https://next.invalid' })
+		})
+	})
+	let timer: ReturnType<typeof setTimeout> | undefined
+	try {
+		await Promise.race([
+			runSimulationSettingsTransition(owner, async ({ reset }) => { reset(rpc); order.push('settings complete') }),
+			new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Observer retained the settings transition lock')), 1000) }),
+		])
+		assert.deepEqual(order, ['settings complete', 'observer', 'next settings transition'])
+	} finally {
+		clearTimeout(timer)
 		owner.getCurrent().ethereum.cleanup()
 	}
 })

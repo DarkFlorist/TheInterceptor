@@ -4,7 +4,7 @@ import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { Semaphore } from '../utils/semaphore.js'
+import { runSimulationSettingsTransition } from './simulationSettingsTransition.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -69,7 +69,6 @@ type ActiveSettingsTransition = {
 	readonly signingPreference?: SigningAddressPreference
 }
 
-const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 async function runActiveSettingsChange(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -79,7 +78,7 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		await simulationServicesOwner.update(async (servicesUpdate) => await changeActiveAddressAndChainSemaphore.execute(async () => {
+		await runSimulationSettingsTransition(simulationServicesOwner, async (servicesUpdate) => {
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -134,7 +133,7 @@ async function runActiveSettingsChange(
 				servicesUpdate.requestRefresh()
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
-		}))
+		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {

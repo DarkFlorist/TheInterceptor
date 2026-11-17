@@ -4,6 +4,7 @@ import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { runSimulationSettingsTransition } from '../simulationSettingsTransition.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
@@ -56,7 +57,7 @@ export async function exportSettings() {
 }
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList) {
-	await simulationServicesOwner.update(async ({ reset }) => {
+	await runSimulationSettingsTransition(simulationServicesOwner, async ({ reset }) => {
 		await setRpcList(request.data)
 		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 		const primary = await getPrimaryRpcForChain((await getSettings()).activeRpcNetwork.chainId)
