@@ -1,5 +1,4 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
 import { runContentScriptConfigurationUpdate } from './contentScriptInjectionStrategy.js'
@@ -7,8 +6,8 @@ import { updateWebsiteAccess } from './settings.js'
 import type { WebsiteAccessMutation } from './websiteAccessMutations.js'
 
 type WebsiteAccessUpdateOutcome =
-	| { readonly status: 'completed', readonly reload: 'not-needed' | 'handled', readonly storage: StorageTransactionOutcome['storage'] }
-	| { readonly status: 'failed', readonly reload: 'not-needed' | 'handled', readonly storage: StorageTransactionOutcome['storage'], readonly error: unknown }
+	| { readonly status: 'completed', readonly reload: 'not-needed' | 'handled', readonly storage: 'written' }
+	| { readonly status: 'failed', readonly reload: 'not-needed' | 'handled' | 'blocked', readonly storage: 'not-written' | 'written', readonly error: unknown }
 
 // Persist desired permissions before reconciling actual registrations. A failed browser update keeps the saved authority and is retried by the next reconciliation; the handler still reconciles open approvals.
 export async function tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: WebsiteAccessMutation): Promise<WebsiteAccessUpdateOutcome> {
@@ -26,7 +25,7 @@ export async function tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(we
 			}
 			return { status: 'completed', reload, storage: 'written' }
 		} catch (error) {
-			return { status: 'failed', reload, storage: 'written', error }
+			return { status: 'failed', reload: reload === 'not-needed' ? 'blocked' : reload, storage: 'written', error }
 		}
 	})
 }

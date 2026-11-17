@@ -35,6 +35,7 @@ const requestsStorageKey = (keys: string | string[] | Record<string, unknown> | 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, firstCurrentTabIdReadError }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly firstCurrentTabIdReadError?: Error } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
+	let registeredScripts: browser.scripting.RegisteredContentScript[] = []
 	const runtimeMessages: unknown[] = []
 	const removedWindowIds: number[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
@@ -90,10 +91,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			},
 		},
 		scripting: {
-			getRegisteredContentScripts: async () => [],
-			registerContentScripts: async () => undefined,
-			updateContentScripts: async () => undefined,
-			unregisterContentScripts: async () => undefined,
+			getRegisteredContentScripts: async () => registeredScripts,
+			registerContentScripts: async (scripts: browser.scripting.RegisteredContentScript[]) => { registeredScripts = [...registeredScripts, ...scripts] },
+			updateContentScripts: async (scripts: browser.scripting.RegisteredContentScript[]) => { registeredScripts = registeredScripts.map((script) => scripts.find(({ id }) => id === script.id) ?? script) },
+			unregisterContentScripts: async ({ ids }: { ids?: string[] }) => { registeredScripts = registeredScripts.filter(({ id }) => ids !== undefined && !ids.includes(id)) },
 		},
 		contentScripts: { register: async () => ({ unregister: async () => undefined }) },
 		tabs: {

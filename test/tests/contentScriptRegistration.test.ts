@@ -219,18 +219,18 @@ describe('content script injection strategy', () => {
 	test('Firefox website toggle refreshes exclusions before reloading on disable and re-enable', async () => {
 		const { storageState, firefoxScripts, firefoxOperations } = installBrowserMock({ manifestVersion: 2 })
 		const { reconcileContentScriptRegistration } = await loadModules()
-		const { disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const { withInterceptorDisabledForWebsite } = await import('../../app/ts/background/websiteAccessMutations.js')
 		const { saveCurrentTabId } = await import('../../app/ts/background/storageVariables.js')
 		await saveCurrentTabId(7)
 		await reconcileContentScriptRegistration()
 		firefoxOperations.length = 0
 		const website = { websiteOrigin: 'https://toggle.example:8443', icon: undefined, title: undefined }
-		await disableInterceptorForPage(new Map(), website, true)
+		await (await import('../../app/ts/background/websiteAccessUpdating.js')).tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), withInterceptorDisabledForWebsite(website, true))
 		assert.deepEqual(firefoxScripts.at(-1)?.excludeGlobs, ['https://toggle.example:8443/*'])
 		assert.deepEqual(firefoxOperations, ['register', 'unregister', 'reload:7'])
 		assert.ok(JSON.stringify(storageState.websiteAccess).includes('"interceptorDisabled":true'))
 		firefoxOperations.length = 0
-		await disableInterceptorForPage(new Map(), website, false)
+		await (await import('../../app/ts/background/websiteAccessUpdating.js')).tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), withInterceptorDisabledForWebsite(website, false))
 		assert.equal(firefoxScripts.at(-1)?.excludeGlobs, undefined)
 		assert.deepEqual(firefoxOperations, ['register', 'unregister', 'reload:7'])
 		assert.ok(JSON.stringify(storageState.websiteAccess).includes('"interceptorDisabled":false'))
@@ -334,7 +334,7 @@ describe('content script injection strategy', () => {
 		test(`manifest v${ manifestVersion } failed toggle does not reload or acknowledge success and can be retried`, async () => {
 			const options: { manifestVersion: number, registerError?: Error } = { manifestVersion }
 			const { firefoxOperations, sentMessages } = installBrowserMock(options)
-			const { disableInterceptor, disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+			const { disableInterceptor } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 			const { saveCurrentTabId } = await import('../../app/ts/background/storageVariables.js')
 			const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
 			const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -347,7 +347,7 @@ describe('content script injection strategy', () => {
 			assert.equal(firefoxOperations.some((operation) => operation.startsWith('reload:')), false)
 			assert.equal(sentMessages.some(({ method }) => method === 'popup_setDisableInterceptorReply'), false)
 			options.registerError = undefined
-			await disableInterceptorForPage(new Map(), website, true)
+			await disableInterceptor(simulationServicesOwner, new Map(), { method: 'popup_setDisableInterceptor', data: { website, interceptorDisabled: true } })
 			assert.equal(firefoxOperations.at(-1), 'reload:8')
 			if (manifestVersion === 2) assert.ok(firefoxOperations.indexOf('register') < firefoxOperations.indexOf('reload:8'))
 		})
