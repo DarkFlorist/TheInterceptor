@@ -1,8 +1,8 @@
 import { type AddressBookEntries, type AddressBookEntry, SafeEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress } from '../types/wire-types.js'
-import { type OldActiveAddressEntry, OldActiveAddressEntry as OldActiveAddressEntryRuntype, browserStorageLocalRemove, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type OldActiveAddressEntry, OldActiveAddressEntry as OldActiveAddressEntryRuntype, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
+import { repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, setUserAddressBookEntries, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
 
 async function getLegacyAddressBookEntriesV1ForMigration(): Promise<readonly (AddressBookEntry | OldActiveAddressEntry)[] | undefined> {
 	const storageEntries: Partial<Record<'userAddressBookEntries', unknown>> = await browser.storage.local.get('userAddressBookEntries')
@@ -98,7 +98,7 @@ async function migrateLegacySafeSignerFieldInV3() {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const migratedEntries = migrateLegacySafeAddressBookEntries(rawEntries)
 	if (migratedEntries === undefined) return
-	await browserStorageLocalSet({ userAddressBookEntriesV3: migratedEntries })
+	await setUserAddressBookEntries(migratedEntries)
 }
 
 export async function migrateAddressBook() {

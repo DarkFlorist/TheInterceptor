@@ -8,7 +8,7 @@ import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
+import { AddressBookStorageItems } from '../types/addressBookStorage.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
@@ -122,20 +122,17 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	safeAppsCompatibilityMode: funtypes.Boolean,
 	userAddressBookEntries: funtypes.ReadonlyArray(funtypes.Union(AddressBookEntry, OldActiveAddressEntry)),
 	userAddressBookEntriesV2: AddressBookEntries,
-	userAddressBookEntriesV3: AddressBookEntries,
 	idsOfOpenedTabs: IdsOfOpenedTabs,
 	interceptorDisabled: funtypes.Boolean,
 	interceptorStartSleepingTimestamp: funtypes.Number,
 	latestUnexpectedError: UnexpectedErrorOccured,
 	interceptorErrorDiagnostics: funtypes.ReadonlyArray(InterceptorErrorDiagnostic),
-	ensNameHashes: ENSNameHashes,
-	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
+}), AddressBookStorageItems, OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
@@ -227,8 +224,16 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-export async function browserStorageLocalSet(items: LocalStorageItems) {
-	return await browser.storage.local.set(serialize(LocalStorageItems, items))
+// Name stores use an explicit domain write, rather than adding confirmation bookkeeping to every storage write.
+export type GeneralStorageItems = Omit<LocalStorageItems, keyof AddressBookStorageItems> & { readonly [Key in keyof AddressBookStorageItems]?: never }
+
+// The raw atomic commit shared by the general setter and the domain/settings transaction writers. It has no revision or notification side effects.
+export async function commitBrowserStorageLocalWrite(items: LocalStorageItems) {
+	await browser.storage.local.set(serialize(LocalStorageItems, items))
+}
+
+export async function browserStorageLocalSet(items: GeneralStorageItems) {
+	await commitBrowserStorageLocalWrite(items)
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`
