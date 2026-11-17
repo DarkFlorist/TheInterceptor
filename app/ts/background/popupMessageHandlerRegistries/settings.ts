@@ -3,7 +3,7 @@ import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getSettings } from '../settings.js'
-import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
+import { installSimulationServicesForNetworkChange } from '../../simulation/serviceLifecycle.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
@@ -15,9 +15,8 @@ export const settingsPopupMessageHandlers = {
 		if (!importSettingsReply.data.success) return
 		const importedSettings = await getSettings()
 		// Import writes the active network straight to storage, so compare it with the installed services rather than the previously stored network.
-		const importedRpcNetwork = importedSettings.activeRpcNetwork
 		const installedRpcEntry = context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry()
-		if (importedRpcNetwork.httpsRpc !== undefined && getRpcNetworkChange(installedRpcEntry, importedRpcNetwork).endpointChanged) context.simulationServicesOwner.reset(importedRpcNetwork)
+		installSimulationServicesForNetworkChange(context.simulationServicesOwner, installedRpcEntry, importedSettings.activeRpcNetwork)
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),

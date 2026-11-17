@@ -1,4 +1,6 @@
 import type { EthereumBlockHeader } from '../types/wire-types.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
@@ -83,4 +85,10 @@ export function createSimulationServicesOwner(
 			return current
 		},
 	}
+}
+
+// Callers choose the comparison baseline: ordinary transitions use their previous selection, while imports have already committed settings and use the installed endpoint.
+export function installSimulationServicesForNetworkChange(owner: SimulationServicesOwner, previousNetwork: RpcNetwork, nextNetwork: RpcNetwork) {
+	// Signer-only selections retain the fallback services without installing an endpoint.
+	if (nextNetwork.httpsRpc !== undefined && getRpcNetworkChange(previousNetwork, nextNetwork).endpointChanged) owner.reset(nextNetwork)
 }
