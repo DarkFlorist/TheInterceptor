@@ -60,7 +60,7 @@ async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: W
 // Reload ownership is an outcome even when refresh/error reporting fails, so callers can finish their own post-commit work without an out-parameter.
 export type ContentScriptConfigurationUpdateOutcome = {
 	readonly reload: 'not-needed' | 'handled'
-	readonly storage: 'not-written' | 'written' | 'rolled-back' | 'rollback-failed'
+	readonly storage: StorageTransactionOutcome['storage']
 } & ({ readonly status: 'completed' } | { readonly status: 'failed', readonly error: unknown })
 
 // Refresh failures are reported once here. Update failures and reporting failures are returned explicitly; website-access coordination needs the partial outcome to reconcile persisted permissions.
@@ -111,11 +111,6 @@ export async function tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged
 		(before, after) => hasSameContentScriptInjectionSitesConfiguration(before.injectionSites, after.injectionSites),
 		{ onRefreshFailure: 'rollBackUpdate', refreshFailureCode: 'website_access_content_script_refresh_failed', runUpdateWithRefresh: async (refreshIfChanged) => await transaction(update, refreshIfChanged) },
 	)
-}
-
-// Ordinary configuration-update APIs throw on failures; only the explicitly named try variant exposes a partial outcome for website-access reconciliation.
-export async function updateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, transaction: WebsiteAccessUpdateTransaction) {
-	return requireCompletedConfigurationUpdate(await tryUpdateContentScriptInjectionSitesAndReloadTabsIfChanged(websiteTabConnections, update, transaction))
 }
 
 // The other refresh workflows have no post-commit reconciliation and preserve their throwing API.

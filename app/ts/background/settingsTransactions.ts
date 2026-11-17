@@ -127,10 +127,3 @@ export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: W
 		return { status: 'failed', storage: 'rolled-back', error }
 	}
 }
-
-// The ordinary transaction API throws; the explicitly named try variant exposes partial storage state to the configuration workflow.
-export async function withWebsiteAccessRollback(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) {
-	const outcome = await tryWebsiteAccessRollback(update, afterUpdate)
-	if (outcome.status === 'failed') throw outcome.error
-	return outcome.websiteAccess
-}
