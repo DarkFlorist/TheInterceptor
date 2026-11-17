@@ -11,9 +11,13 @@ export function acknowledgeAndTrackBridgeRequest(
 	const idKind = classifyRequestId(request)
 	const latestReceivedRequestId = latestReceivedRequestIds.get(socketIdentifier)
 	acknowledge()
-	if (idKind === 'invalid') return 'invalid'
-	if (idKind === 'diagnostic') return 'handle'
-	if (latestReceivedRequestId !== undefined && request.requestId <= latestReceivedRequestId) return 'duplicate'
-	latestReceivedRequestIds.set(socketIdentifier, request.requestId)
-	return 'handle'
+	switch (idKind) {
+		case 'invalid': return 'invalid'
+		case 'diagnostic': return 'handle'
+		case 'ordered': {
+			if (latestReceivedRequestId !== undefined && request.requestId <= latestReceivedRequestId) return 'duplicate'
+			latestReceivedRequestIds.set(socketIdentifier, request.requestId)
+			return 'handle'
+		}
+	}
 }
