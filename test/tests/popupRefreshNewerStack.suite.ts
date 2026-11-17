@@ -1,3 +1,4 @@
+import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { browserMock, fakeRequestHandler, fakeRpcNetwork, modules, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
@@ -511,8 +512,7 @@ test('a queue entry publishes a stack edit made after it was queued, even when t
 async function replaceRpcListWithOtherEndpointAsPrimary(fixture: ReturnType<typeof createNetworkSwitchFixture>) {
 	// Imported once the harness has installed the extension globals that their imports require.
 	const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const { getSettings } = await import('../../app/ts/background/settings.js')
-	await setNewRpcList(fixture.simulationServicesOwner, { method: 'popup_set_rpc_list', data: [{ ...otherEndpointNetwork, primary: true }] }, await getSettings())
+	await setNewRpcList(fixture.simulationServicesOwner, { method: 'popup_set_rpc_list', data: [{ ...otherEndpointNetwork, primary: true }] })
 }
 
 async function assertOtherEndpointPublishedTransaction() {
@@ -650,5 +650,38 @@ test('a refresh resuming from its pre-abort settings read after a reset does not
 		releaseGuardRead.resolve(undefined)
 		fixture.releaseAll()
 		restoreSendMessage()
+	}
+})
+
+
+test('a refresh invalidated before switching to ordinary signer mode publishes a terminal empty view', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const snapshot = await captureSimulationSnapshot()
+	const restoreConsumer = openVisualisationConsumer()
+	const originalSend = browser.runtime.sendMessage
+	let switched = false
+	browser.runtime.sendMessage = async (message) => {
+		if (!switched && isRecord(message) && message.method === 'popup_simulation_state_changed' && isRecord(message.data)) {
+			const parsed = CompleteVisualizedSimulation.safeParse(message.data.visualizedSimulatorState)
+			if (parsed.success && parsed.value.simulationResultState === 'invalid') {
+				switched = true
+				await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined })
+			}
+		}
+		return await originalSend(message)
+	}
+	try {
+		await updatePopupVisualisationIfNeeded(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { snapshot, invalidateOldState: true })
+		assert.equal(switched, true)
+		const stored = await getPopupVisualisationState()
+		assert.equal(stored.simulationUpdatingState, 'done')
+		assert.equal(stored.simulationResultState, 'done')
+		assert.equal(stored.simulationState.kind, 'passthrough')
+		assert.deepEqual(getPublications().at(-1)?.data, { visualizedSimulatorState: modules.serialize(CompleteVisualizedSimulation, stored) })
+	} finally {
+		browser.runtime.sendMessage = originalSend
+		restoreConsumer()
+		fixture.releaseAll()
 	}
 })

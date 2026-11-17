@@ -8,7 +8,7 @@ import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchEr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { buildSimulationInput, captureSimulationSnapshot, getSimulationProviderForSnapshot, type BuiltSimulationInput, type SimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { selectionChanged, type SimulationSelection } from '../utils/simulationSelection.js'
+import { selectionShowsStack, selectionChanged, type SimulationSelection } from '../utils/simulationSelection.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
@@ -98,13 +98,15 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
 		const thisAbortController = abortController
+		let invalidatedSimulationId: number | undefined
 		if (invalidateOldState) {
 			const simulationId = popupVisualisation.simulationId + 1
+			invalidatedSimulationId = simulationId
 			const visualizedSimulatorState = await setPopupVisualisationState(retainPreviousVisualisation(popupVisualisation, { simulationId, simulationUpdatingState: 'updating', simulationResultState: 'invalid' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
 		// Execution builds its input inside the semaphore; a supplied snapshot (the interactive queue) fixes only the selection and rich addresses. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself.
-		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, snapshot)
+		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, snapshot, invalidatedSimulationId)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
 		await reportUnexpectedError(error)
@@ -143,7 +145,7 @@ export async function publishFailedPopupVisualisation() {
 }
 
 // Serialized execution without a visibility probe; persistence callers can require unexpected errors to propagate.
-export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot) {
+export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot, invalidatedSimulationId?: number) {
 	try {
 		return await updateSimulationVisualisationSemaphore.execute(async () => {
 			if (abortController?.signal.aborted) return
@@ -153,7 +155,15 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			const capturedSnapshot = snapshot ?? await captureSimulationSnapshot()
 			const builtInput = await buildSimulationInput(capturedSnapshot)
 			// The selection can change after this refresh committed, including between the reads above and this check.
-			if (!refreshStillApplies(ethereum, capturedSnapshot, await getSettings())) return
+			const currentSelection = await getSettings()
+			if (!refreshStillApplies(ethereum, capturedSnapshot, currentSelection)) {
+				// A switch to ordinary signer mode queues no replacement refresh. Finish an admitted invalidation with an empty terminal view, unless newer work or services already own it.
+				if (invalidatedSimulationId !== undefined && popupVisualisation.simulationId === invalidatedSimulationId && !abortController?.signal.aborted && ethereum.isCurrent() && !selectionShowsStack(currentSelection)) {
+					const terminal = await setPopupVisualisationState(buildPassthroughVisualizedState(simulationId, 0))
+					await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: terminal } })
+				}
+				return
+			}
 			const simulationState = await getUpdatedSimulationState(ethereum, builtInput)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
 			const numberOfAddressesMadeRich = capturedSnapshot.richAddresses.length
