@@ -6,17 +6,23 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } from '../../app/ts/util
 import type { ConfirmationRunId } from '../../app/ts/types/accessRequest.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
-import { activeAddress, addressString, browserMock, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, popupVisualisation as successfulPopupVisualisation, recipientAddress, signedTransaction, simulator, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createFeeValidatingSimulator, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction as sharedPendingTransaction, popupVisualisation as sharedSuccessfulPopupVisualisation, recipientAddress, signedTransaction as sharedSignedTransaction, TOO_LITTLE_ETH_FOR_FEES, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
-// These previews decode mainnet USDC calldata using the bundled mainnet ABI. The shared Safe harness now defaults to a local chain.
+// These previews use their own mainnet clients; mutating the shared local-chain fixture can leak into Safe fixtures evaluated while these tests run.
+const previewRpcNetwork = { ...fakeRpcNetwork, chainId: 1n }
+const previewEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, previewRpcNetwork)
+const simulator = { ethereum: previewEthereum, tokenPriceService: new modules.TokenPriceService(previewEthereum, 60_000) }
+const signedTransaction = modules.mockSignTransaction({ ...sharedSignedTransaction, chainId: previewRpcNetwork.chainId })
+const pendingTransaction = sharedPendingTransaction
+const successfulPopupVisualisation = { ...sharedSuccessfulPopupVisualisation, data: {
+	...sharedSuccessfulPopupVisualisation.data,
+	transactionToSimulate: { ...sharedSuccessfulPopupVisualisation.data.transactionToSimulate, transaction: { ...sharedSuccessfulPopupVisualisation.data.transactionToSimulate.transaction, chainId: previewRpcNetwork.chainId } },
+	simulationState: { ...sharedSuccessfulPopupVisualisation.data.simulationState, rpcNetwork: previewRpcNetwork },
+} }
 const test = (name: string, run: () => Promise<void>) => testWithDefaultNetwork(name, async () => {
-	const previousChainId = fakeRpcNetwork.chainId
-	fakeRpcNetwork.chainId = 1n
-	try {
-		await run()
-	} finally {
-		fakeRpcNetwork.chainId = previousChainId
-	}
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: previewRpcNetwork })
+	await run()
 })
 
 const USDC_ADDRESS = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
@@ -27,14 +33,14 @@ type RpcRequest = { method: string, params?: readonly unknown[] }
 
 function createSimulatorWithRpcFailure(getFailure: (rpcRequest: RpcRequest) => Error | undefined) {
 	const ethereum = new modules.EthereumClientService({
-		rpcUrl: fakeRpcNetwork.httpsRpc,
+		rpcUrl: previewRpcNetwork.httpsRpc,
 		clearCache() { return undefined },
 		async jsonRpcRequest(rpcRequest: RpcRequest) {
 			const failure = getFailure(rpcRequest)
 			if (failure !== undefined) throw failure
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, previewRpcNetwork)
 	return { ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 60_000) }
 }
 
@@ -42,8 +48,8 @@ const createRpcError = (message: string) => new modules.JsonRpcResponseError({ j
 
 async function useInvoiceAddressBook() {
 	await modules.updateUserAddressBookEntries(() => [
-		{ type: 'contact', name: 'Invoice Payer', address: activeAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId, useAsActiveAddress: true, askForAddressAccess: false },
-		{ type: 'contact', name: 'Supplier', address: recipientAddress, entrySource: 'User', chainId: fakeRpcNetwork.chainId },
+		{ type: 'contact', name: 'Invoice Payer', address: activeAddress, entrySource: 'User', chainId: previewRpcNetwork.chainId, useAsActiveAddress: true, askForAddressAccess: false },
+		{ type: 'contact', name: 'Supplier', address: recipientAddress, entrySource: 'User', chainId: previewRpcNetwork.chainId },
 	])
 }
 
@@ -71,7 +77,7 @@ async function createFormedUsdcTransfer(transactionIdentifier: bigint): Promise<
 		transaction: {
 			type: '1559',
 			from: activeAddress,
-			chainId: fakeRpcNetwork.chainId,
+			chainId: previewRpcNetwork.chainId,
 			nonce: 0n,
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
@@ -175,7 +181,7 @@ function assertUsdcTransferPreview(failedTransactionPreview: Awaited<ReturnType<
 
 test('resolves address-book names and parses calldata when the confirmation simulation fails', async () => {
 	await useInvoiceAddressBook()
-	await openUsdcTransferConfirmation(createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES))
+	await openUsdcTransferConfirmation(createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork))
 
 	const popupVisualisation = await getPendingFailedTransactionVisualisation()
 	if (popupVisualisation.statusCode !== 'failed') throw new Error('Expected the confirmation simulation to fail')
@@ -202,11 +208,11 @@ test('resolves address-book names and parses calldata when the transaction could
 
 test('refreshes the failed transaction preview when the address book changes', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	await modules.updateUserAddressBookEntries((entries) => [
 		...entries,
-		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: fakeRpcNetwork.chainId },
+		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: previewRpcNetwork.chainId },
 	])
 
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
@@ -231,13 +237,13 @@ async function setStoredConfirmationRunId(confirmationRunId: ConfirmationRunId |
 
 test('refreshes the metadata of a confirmation stored without a confirmation run id', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	await setStoredConfirmationRunId(undefined)
 	assert.deepEqual((await getPendingFailedTransactionVisualisation()).data.confirmationRunId, { lifetime: '', sequence: 0 }, 'a confirmation stored without a confirmation run id decodes as a run of no lifetime')
 	await modules.updateUserAddressBookEntries((entries) => [
 		...entries,
-		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: fakeRpcNetwork.chainId },
+		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: previewRpcNetwork.chainId },
 	])
 
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
@@ -248,7 +254,7 @@ test('refreshes the metadata of a confirmation stored without a confirmation run
 
 test('keeps a newer simulation run stored during the failure preview metadata refresh even when both runs share a timestamp', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	const { refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 	let initialVisualisation: Awaited<ReturnType<typeof getPendingFailedTransactionVisualisation>> | undefined
 	let newerVisualisation: Awaited<ReturnType<typeof getPendingFailedTransactionVisualisation>> | undefined
@@ -304,7 +310,7 @@ const runsStoredBeforeRestart = [
 for (const { storedRun, getStoredRunId } of runsStoredBeforeRestart) {
 	test(`keeps a newer simulation run stored during the metadata refresh of a run stored before a background restart ${ storedRun }`, async () => {
 		await useInvoiceAddressBook()
-		const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+		const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 		const { refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 		await openUsdcTransferConfirmation(confirmationSimulator)
 		const newerRunSequence = (await getPendingFailedTransactionVisualisation()).data.confirmationRunId.sequence + 1
@@ -331,7 +337,7 @@ for (const { storedRun, getStoredRunId } of runsStoredBeforeRestart) {
 
 test('stores the names of a metadata refresh on a successful run from before a background restart that an overlapping refresh stamped again', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	const runBeforeRestart = { lifetime: LIFETIME_BEFORE_RESTART, sequence: 1 }
 	const { data: successfulRun } = successfulPopupVisualisation
 	const { originalRequestParameters, transactionIdentifier } = successfulRun.transactionToSimulate
@@ -384,7 +390,7 @@ test('stores the names of a metadata refresh on a successful run from before a b
 
 test('stores the names of a metadata refresh on its run when another field of the stored run was derived again during the lookups', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	const initialVisualisation = await getPendingFailedTransactionVisualisation()
@@ -447,7 +453,7 @@ test('neither names nor probes the EIP-7702 delegation target of a formed transa
 	const delegatingTransfer: WebsiteCreatedEthereumTransaction['transaction'] = {
 		type: '7702',
 		from: activeAddress,
-		chainId: fakeRpcNetwork.chainId,
+		chainId: previewRpcNetwork.chainId,
 		nonce: 0n,
 		maxFeePerGas: 1n,
 		maxPriorityFeePerGas: 1n,
@@ -521,7 +527,7 @@ test('neither names, parses nor probes anything for a failed raw transaction, wh
 
 test('keeps and shows the names of a newer metadata refresh when an older refresh of the same failed confirmation finishes last', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	// Forgetting the supplier makes the older refresh look it up on chain after reading the payer's name, which is when the payer is renamed and the newer refresh runs.
 	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
@@ -548,7 +554,7 @@ test('keeps and shows the names of a newer metadata refresh when an older refres
 
 test('stores the names of a newer metadata refresh that read the confirmation before an older refresh\'s write landed', async () => {
 	await useInvoiceAddressBook()
-	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const getStoredPayerName = async () => (await getPendingFailedTransactionVisualisation()).data.failedTransactionPreview?.addressBookEntries.find((entry) => entry.address === activeAddress)?.name
@@ -699,7 +705,7 @@ for (const { description, createLookupError, isDefect } of failedPreviewLookups)
 for (const { description, createLookupError, isDefect } of failedPreviewLookups) {
 	test(`keeps the stored failure and still updates the dialog when the metadata refresh's preview lookup hits ${ description }`, async () => {
 		await useInvoiceAddressBook()
-		const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES)
+		const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 		await openUsdcTransferConfirmation(confirmationSimulator)
 		const storedFailure = await getPendingFailedTransactionVisualisation()
 		// Forgetting the supplier makes the metadata refresh look it up on chain, where the lookup fails.
@@ -771,7 +777,7 @@ const refreshUsdcTransferSimulation = async (ethereum: InstanceType<typeof modul
 const supersededFailurePreviewScenarios = [
 	{
 		scenario: 'the confirmation simulation fails',
-		createSimulator: () => createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES),
+		createSimulator: () => createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork),
 		refresh: async (ethereum: InstanceType<typeof modules.EthereumClientService>) => await refreshUsdcTransferSimulation(ethereum, await createFormedUsdcTransfer(14n)),
 	},
 	{
