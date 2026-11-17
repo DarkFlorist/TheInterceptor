@@ -23,7 +23,7 @@ function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	let getCurrentWindow: CurrentWindowProvider = async () => ({ id: 1 })
 	let confirmDialogHandler: ConfirmDialogHandler | undefined
-	const readyAndListeningWithoutBootstrap = { method: 'popup_readyAndListening', data: { popupOrTabId: { type: 'popup', id: 1 } } }
+	const readyAndListeningWithoutBootstrap = { method: 'popup_readyAndListening', ok: true, data: { popupOrTabId: { type: 'popup', id: 1 } } }
 	let readyAndListeningReply: () => unknown = () => readyAndListeningWithoutBootstrap
 
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
@@ -540,6 +540,7 @@ async function storeSignatureRequest(browser: ReturnType<typeof createBrowserMoc
 function makeBootstrapReply(stored: PendingTransactionOrSignableMessage) {
 	return serialize(PopupRequestsReplies.popup_readyAndListening, {
 		method: 'popup_readyAndListening',
+		ok: true,
 		data: {
 			popupOrTabId: { type: 'popup', id: 1 },
 			confirmTransactionBootstrap: {

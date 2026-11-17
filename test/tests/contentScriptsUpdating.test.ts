@@ -53,6 +53,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 	])
 	const registeredContentScripts = new Map((initialRegisteredContentScripts ?? registeredContentScriptIds.map((id) => ({ id, js: defaultScriptFilesById.get(id) }))).map((registration) => [registration.id, registration]))
 	let executeScriptCalls = 0
+	let reloadCalls = 0
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
 	const pendingRegisterErrors = [...registerErrors ?? (registerError === undefined ? [] : [registerError])]
@@ -86,7 +87,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					storageGetCalls++
-					if (Array.isArray(keys) && keys.includes('websiteAccess') && settingsReadError !== undefined) throw settingsReadError
+					if ((keys === 'websiteAccess' || (Array.isArray(keys) && keys.includes('websiteAccess'))) && settingsReadError !== undefined) throw settingsReadError
 					if (failNextStorageGet && storageGetErrorAfterSet !== undefined) {
 						failNextStorageGet = false
 						throw storageGetErrorAfterSet
@@ -135,7 +136,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 				},
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
 				async update() { return undefined },
-				async reload(tabId: number) { reloadedTabs.push(tabId) },
+				async reload(tabId: number) { reloadCalls += 1; reloadedTabs.push(tabId) },
 				async executeScript(_tabId: number, injection: { readonly code?: string, readonly file?: string }) {
 					executeScriptCalls++
 					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
@@ -145,6 +146,12 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 				},
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			},
+			declarativeNetRequest: {
+				async getDynamicRules() { return [] },
+				async getSessionRules() { return [] },
+				async updateDynamicRules() { return undefined },
+				async updateSessionRules() { return undefined },
 			},
 			windows: {
 				async get() { return undefined },
@@ -182,7 +189,9 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 		getExecuteScriptCalls() { return executeScriptCalls },
+		getReloadCalls() { return reloadCalls },
 		getExecutedScriptCode() { return [...executedScriptCode] },
+
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
 		getReloadedTabs() { return [...reloadedTabs] },
 		getCommittedListener() {
@@ -221,6 +230,9 @@ async function loadModules() {
 		...await import('../../app/ts/background/contentScriptInjectionStrategy.js'),
 		...await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/websiteAccessUpdating.js'),
+		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/simulation/serviceLifecycle.js'),
 	}
 	return {
 		...modules,
@@ -876,7 +888,91 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['obsolete-inpage']])
 	})
 
-	test('restores existing and obsolete manifest v3 content scripts when an update fails', async () => {
+	test('removing a disabled website removes its origin from registered script exclusions', async () => {
+		const websiteOrigin = 'https://disabled.example'
+		const { getRegisteredContentScripts } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV3, tryUpdateWebsiteAccessAndContentScriptInjectionStrategy } = await loadModules()
+		await browser.storage.local.set({ websiteAccess: [{
+			website: { websiteOrigin, icon: undefined, title: undefined },
+			interceptorDisabled: true,
+		}] })
+
+		await updateContentScriptInjectionStrategyManifestV3()
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://disabled.example:443/*') === true), true)
+
+		await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), (websiteAccess) => websiteAccess.filter((entry) => entry.website.websiteOrigin !== websiteOrigin))
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+	})
+
+	test('bulk access edits reconcile exclusions when disabling, enabling, and removing a website', async () => {
+		const website = { websiteOrigin: 'https://bulk-disabled.example', icon: undefined, title: undefined }
+		const enabledEntry = { website, addressAccess: [], interceptorDisabled: false }
+		const disabledEntry = { ...enabledEntry, interceptorDisabled: true }
+		const { getRegisteredContentScripts, getReloadCalls } = installBrowserMock()
+		const { changeInterceptorAccess, createSimulationServicesOwner } = await loadModules()
+		const simulationServicesOwner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+		const websiteTabConnections = new Map()
+		await browser.storage.local.set({ websiteAccess: [enabledEntry] })
+
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: enabledEntry, newEntry: disabledEntry }],
+		})
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://bulk-disabled.example:443/*') === true), true)
+
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: disabledEntry, newEntry: enabledEntry }],
+		})
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: false, oldEntry: enabledEntry, newEntry: disabledEntry }],
+		})
+		await changeInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ removed: true, oldEntry: disabledEntry, newEntry: disabledEntry }],
+		})
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+		assert.equal(getReloadCalls(), 4)
+	})
+
+	test('applies disabled-site exclusions while the RPC configuration is unreadable', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await browser.storage.local.set({
+			activeRpcNetwork: 'corrupt',
+			rpcEntries: 'corrupt',
+			websiteAccess: [{ website: { websiteOrigin: 'https://disabled-offline.example', icon: undefined, title: undefined }, interceptorDisabled: true }],
+		})
+
+		await updateContentScriptInjectionStrategyManifestV3()
+
+		assert.equal(getRegisteredContentScripts().length, 2)
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://disabled-offline.example:443/*') === true), true)
+	})
+
+	test.each([
+		{ disabled: false, expectedExecuteScriptCalls: 3 },
+		{ disabled: true, expectedExecuteScriptCalls: 0 },
+	])('decides manifest v2 injection from website access while the RPC configuration is unreadable (disabled: $disabled)', async ({ disabled, expectedExecuteScriptCalls }) => {
+		const { getCommittedListener, getExecuteScriptCalls } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		await browser.storage.local.set({
+			activeRpcNetwork: 'corrupt',
+			rpcEntries: 'corrupt',
+			websiteAccess: [{ website: { websiteOrigin: 'example.com', icon: undefined, title: undefined }, interceptorDisabled: disabled }],
+		})
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		assert.equal(await getCommittedListener()(committedDetails), false)
+
+		assert.equal(getExecuteScriptCalls(), expectedExecuteScriptCalls)
+	})
+
+	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
+
 		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({
 			registeredContentScriptIds: ['inpage', 'inpage2', 'obsolete-inpage'],
 			updateError: new Error('update failed'),

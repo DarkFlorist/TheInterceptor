@@ -38,7 +38,7 @@ async function refreshIconAfterRequestBlocks({ websiteTabConnections, socket, we
 	const refreshIcon = async () => {
 		const iconWebsiteOrigin = createdTabConnection || isTopFrame ? websiteOrigin : await getTopLevelWebsiteOrigin(websiteTabConnections, socket.tabId)
 		// Without a known top-level website the icon is left to the tab's navigation-complete refresh.
-		if (iconWebsiteOrigin !== undefined) await updateExtensionIcon(websiteTabConnections, socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
+		if (iconWebsiteOrigin !== undefined) await updateExtensionIcon(socket.tabId, iconWebsiteOrigin, bumpPopupRefreshGeneration())
 	}
 	try {
 		await requestBlocksReconciliation

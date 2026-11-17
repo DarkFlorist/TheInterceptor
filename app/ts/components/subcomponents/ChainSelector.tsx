@@ -57,6 +57,8 @@ interface ChainSelectorParams {
 	changeChain: (entry: ChainEntry) => void
 	buttonClassses: string
 	ariaLabel?: string
+	// Shown for a selected chain that is not in rpcEntries, for example while the RPC list is unavailable.
+	unlistedChainName?: ReadonlySignal<string | undefined>
 }
 
 export function findChainEntryByName(chains: readonly ChainEntry[], chainName: string) {
@@ -66,7 +68,7 @@ export function findChainEntryByName(chains: readonly ChainEntry[], chainName: s
 export function ChainSelector(params: ChainSelectorParams) {
 	const chains = useComputed(() => rpcEntriesToChainEntriesWithAllChainsEntry(params.rpcEntries.value))
 	const options = useComputed(() => chains.value.map((entry) => entry.name))
-	const selected = useComputed(() => chains.value.find((chainEntry) => chainEntry.chainId === params.chainId.value)?.name || 'No Chain Selected')
+	const selected = useComputed(() => chains.value.find((chainEntry) => chainEntry.chainId === params.chainId.value)?.name || params.unlistedChainName?.value || 'No Chain Selected')
 	const onChangedCallBack = (chainName: string) => {
 		const newEntry = findChainEntryByName(chains.value, chainName)
 		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ chainName }`)

@@ -3,7 +3,7 @@ import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequest
 import { applyWebsiteAccessUpdate } from '../applyWebsiteAccessUpdate.js'
 import { withInterceptorDisabledForWebsite, withExternalRequestsBlockedOrAllowed, withoutAddressAccess, withAddressAccessForWebsite, withoutWebsiteAccess } from '../websiteAccessMutations.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getSettings } from '../settings.js'
+import { getSettingsSnapshot, requireReadableSettings } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
@@ -14,7 +14,7 @@ export async function disableInterceptor(simulationServicesOwner: SimulationServ
 }
 
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
-	const settings = await getSettings()
+	const settings = requireReadableSettings(await getSettingsSnapshot())
 	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
 	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess, settings.activeRpcNetwork.chainId)
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
@@ -25,8 +25,8 @@ export async function blockOrAllowExternalRequests(simulationServicesOwner: Simu
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
-	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'alsoWhenInjectionUnchanged', withoutAddressAccess(parsedRequest.data.websiteOrigin, parsedRequest.data.address))
+export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess, settingsUnavailable: boolean) {
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'alsoWhenInjectionUnchanged', withoutAddressAccess(parsedRequest.data.websiteOrigin, parsedRequest.data.address, settingsUnavailable))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 

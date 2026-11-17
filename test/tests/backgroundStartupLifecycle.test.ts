@@ -62,7 +62,8 @@ describe('background startup lifecycle', () => {
 		assert.equal(connectionInitialized, true)
 	})
 
-	test('keeps the real content script registration and first tab-state write behind the startup gate', async () => {
+	// Background startup cannot be loaded in a unit test, so this checks only the wiring; the gate is tested above and everything after it in registerWebsiteConnection, in backgroundSignerLifecycle.
+	test('keeps the real content script registration behind the startup gate', async () => {
 		const source = await Bun.file(backgroundStartupSourcePath).text()
 		const connectionHandlerStart = source.indexOf('async function onContentScriptConnected')
 		const connectionHandlerEnd = source.indexOf('async function newBlockAttemptCallback', connectionHandlerStart)
@@ -72,10 +73,21 @@ describe('background startup lifecycle', () => {
 
 		const listenerRegistration = connectionHandler.indexOf('tryRegisterContentScriptPortListeners(')
 		const startupGate = connectionHandler.indexOf('connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(')
-		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnectionAndProvisionallyClaimSignerState(')
-		const firstTabStateWrite = connectionHandler.indexOf('await updateTabState(')
+		const connectionRegistration = connectionHandler.indexOf('registerWebsiteConnection(')
 
 		assert.equal(listenerRegistration >= 0 && listenerRegistration < startupGate, true)
-		assert.equal(startupGate < connectionRegistration && connectionRegistration < firstTabStateWrite, true)
+		assert.equal(startupGate < connectionRegistration, true)
+	})
+
+	// The behaviour of the advance is tested in the Safe signer routing suite; background startup cannot be loaded in a unit test, so this checks only that every new block runs it, with no connection-status condition.
+	test('advances outstanding Gnosis Safe signer-reply work on every new block', async () => {
+		const source = await Bun.file(backgroundStartupSourcePath).text()
+		const callbackStart = source.indexOf('async function newBlockAttemptCallback')
+		const callbackEnd = source.indexOf('async function onErrorBlockCallback', callbackStart)
+		assert.notEqual(callbackStart, -1)
+		assert.notEqual(callbackEnd, -1)
+		const callback = source.slice(callbackStart, callbackEnd)
+		assert.equal(callback.includes('if (isNewBlock) void catchAllErrorsAndCall(async () => await advanceOutstandingSafeSignerReplies(getSimulationServices(), websiteTabConnections))'), true)
+		assert.equal(callback.includes('getRpcConnectionStatus'), false)
 	})
 })

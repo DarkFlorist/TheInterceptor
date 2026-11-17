@@ -1240,7 +1240,7 @@ test('the confirmation window shows, refreshes and approves a later request whil
 
 	// Opening (or reloading) the window and storage hydration show the later request in its own window.
 	const bootstrap = await modules.popupReadyAndListening(simulator.ethereum, websiteTabConnections, 'confirmTransaction')
-	if (bootstrap?.method !== 'popup_readyAndListening' || bootstrap.data.confirmTransactionBootstrap === undefined) throw new Error('Missing confirmation bootstrap')
+	if (bootstrap?.ok !== true || bootstrap.data.confirmTransactionBootstrap === undefined) throw new Error('Missing confirmation bootstrap')
 	assert.deepEqual(bootstrap.data.popupOrTabId, laterWindow)
 	assert.deepEqual(requestIdsOf(bootstrap.data.confirmTransactionBootstrap.pendingTransactionAndSignableMessages), [71])
 	assert.deepEqual(requestIdsOf(getConfirmationWindowRequests(await modules.getPendingTransactionsAndMessages())), [71])

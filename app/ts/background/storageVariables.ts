@@ -1,8 +1,3 @@
-import { modifyObject } from '../utils/typescript.js'
-import { DEFAULT_RPCS } from '../config/defaults.js'
-import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { getChainName } from '../utils/constants.js'
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -337,51 +332,9 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 	return { oldSubscriptions: previous, newSubscriptions: current }
 }
 
-const rpcListRepository = createStoredValueRepository<RpcEntries>({
-	read: async () => (await browserStorageLocalGet('rpcEntries')).rpcEntries,
-	write: async (rpcEntries) => { await browserStorageLocalSet({ rpcEntries }) },
-	getDefault: () => DEFAULT_RPCS,
-	recover: async (error) => { reportCorruptStoredValue('Rpc entries')(error) },
-})
-export const setRpcList = rpcListRepository.set
-export const getRpcList = rpcListRepository.get
-
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
 
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
-
-export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	await rpcListRepository.update((rpcs) => {
-		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
-		if (selectedIndex === -1) return rpcs
-		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
-	})
-}
-
-export const getPrimaryRpcForChain = async (chainId: bigint) => {
-	const rpcs = await getRpcList()
-	const primary = rpcs.find((rpc) => rpc.chainId === chainId && rpc.primary)
-	if (primary) return primary
-
-	// no primary was found, try to find what ever we have for that chain id
-	const nonPrimary = rpcs.find((rpc) => rpc.chainId === chainId)
-	if (nonPrimary) return nonPrimary
-	return undefined
-}
-
-export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
-	const rpc = await getPrimaryRpcForChain(chainId)
-	if (rpc !== undefined) return rpc
-	return {
-		chainId: chainId,
-		currencyName: 'Ether?',
-		currencyTicker: 'ETH?',
-		name: getChainName(chainId),
-		httpsRpc: undefined,
-		primary: false,
-		minimized: true,
-	}
-}
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)

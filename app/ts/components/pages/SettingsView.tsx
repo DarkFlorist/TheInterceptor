@@ -9,7 +9,7 @@ import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import { getChainName } from '../../utils/constants.js'
-import { getRpcList } from '../../background/storageVariables.js'
+import { getRpcList } from '../../background/rpcConfigurationStorage.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -298,7 +298,7 @@ export function useRpcConnectionsList() {
 			if (parsedMessage.success === false) return false
 			if (parsedMessage.value.method === 'popup_update_rpc_list') {
 				updateVersion += 1
-				entries.value = parsedMessage.value.data
+				if (parsedMessage.value.data.available) entries.value = parsedMessage.value.data.rpcEntries
 			}
 			return false
 		}

@@ -1,5 +1,6 @@
 import { verifyAccess } from './accessManagement.js'
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -8,7 +9,8 @@ import { isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { getSafeAppsCompatibilityMode, getSettings } from './settings.js'
+import { getSafeAppsCompatibilityMode, getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable } from './settings.js'
+import { grantWithLiveSettings } from './connectionGrant.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
@@ -49,19 +51,27 @@ function createSafeAppsCompatibilityCoordinator() {
 		if (!sent) signerAccountDiscoveryTabs.delete(socket.tabId)
 		return sent
 	}
+	// Reconciles cached Safe consent within the publication generation so any newer refresh also retries it. `safe` was resolved on `settings`, so the restore is the grant of a fresh read of the same network and Safe (grantWithLiveSettings).
+	const restoreCachedSafeConsent = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, safe: AddressBookEntry, settings: Settings, isCurrent: () => boolean) => {
+		await grantWithLiveSettings(settings, (liveSettings) => {
+			if (!isCurrent() || liveSettings.simulationMode || liveSettings.activeSigningSafeAddress !== safe.address) return
+			const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
+			const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+			if (connection === undefined || connection.approved || !isTopFramePort(connection.port) || signer?.socket.connectionName !== socket.connectionName) return
+			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, liveSettings, { ignoreConnectionApproval: true })
+		})
+	}
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)
 		if (!active) return
-		const settings = await getSettings()
+		// Unreadable settings are an expected outage state, not an error: the refresh waits for the reconciliation that follows recovery. With readable settings but an unusable RPC configuration the flag is still published, and the consent restore fails closed inside grantWithLiveSettings.
+		const settings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
+		if (settings === undefined) return
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
 		const safe = await getConfiguredSigningSafe(settings, tabState.signerAccounts)
 		if (!isCurrentPublication(socketIdentifier, token)) return
-		// Reconcile cached Safe consent within the publication generation so any newer refresh also retries it.
-		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (!settings.simulationMode && safe !== undefined && connection !== undefined && !connection.approved && isTopFramePort(connection.port) && signer?.socket.connectionName === socket.connectionName) {
-			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
-		}
+		if (safe !== undefined && connection?.approved === false) await restoreCachedSafeConsent(websiteTabConnections, socket, safe, settings, () => isCurrentPublication(socketIdentifier, token))
 		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
 			&& connection?.approved === true
 			&& isTopFramePort(connection.port)
@@ -74,7 +84,8 @@ function createSafeAppsCompatibilityCoordinator() {
 		const eligible = await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		// Re-read persisted state after async eligibility work; a newer publication invalidates this token while state transitions are being applied.
-		const latestSettings = await getSettings()
+		const latestSettings = settingsEvenIfRpcConfigurationUnusable(await getSettingsSnapshot())
+		if (latestSettings === undefined) return
 		const latestEnabled = active
 		const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 		if (!isCurrentPublication(socketIdentifier, token)) return

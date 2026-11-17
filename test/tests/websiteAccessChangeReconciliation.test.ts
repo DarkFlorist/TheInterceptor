@@ -104,7 +104,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), /current tab lookup failed/u)
 
-		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
+		assert.deepEqual((modules.requireReadableSettings(await modules.getSettingsSnapshot())).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		const latestUnexpectedError = await modules.getLatestUnexpectedError()
 		assert.equal(latestUnexpectedError, undefined)
@@ -119,7 +119,7 @@ describe('removeWebsiteAddressAccess', () => {
 
 		await assert.rejects(handlers.removeWebsiteAddressAccess(), (error) => error === reloadStepError)
 
-		assert.deepEqual((await modules.getSettings()).websiteAccess[0]?.addressAccess, [])
+		assert.deepEqual((modules.requireReadableSettings(await modules.getSettingsSnapshot())).websiteAccess[0]?.addressAccess, [])
 		assertConnectionDeApproved()
 		assert.equal(sentPopupMessageMethods().includes('popup_websiteAccess_changed'), false)
 	})
@@ -194,8 +194,8 @@ describe('website access registration and reconciliation', () => {
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
 
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.access, true)
-		assert.equal((await modules.getSettings()).websiteAccess[0]?.interceptorDisabled, false)
+		assert.equal((modules.requireReadableSettings(await modules.getSettingsSnapshot())).websiteAccess[0]?.access, true)
+		assert.equal((modules.requireReadableSettings(await modules.getSettingsSnapshot())).websiteAccess[0]?.interceptorDisabled, false)
 		assert.deepEqual(reloadedTabIds, [])
 		assert.equal(reconcile.mock.calls.length, 1)
 		assertConnectionStillApproved()

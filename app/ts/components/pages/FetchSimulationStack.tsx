@@ -99,7 +99,7 @@ export function FetchSimulationStack() {
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
+				if (parsed.data.rpcStatus.available) rpcEntries.value = parsed.data.rpcStatus.rpcEntries
 				return false
 			}
 			if (parsed.method !== 'popup_fetchSimulationStackRequest') return false
