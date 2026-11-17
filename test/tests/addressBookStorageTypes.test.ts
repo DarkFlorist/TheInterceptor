@@ -14,6 +14,6 @@ test('name stores require an explicit domain write directly and in atomic settin
 	if (fixture === undefined) throw new Error('Missing explicit address-book write fixture')
 	const errorLines = ts.getPreEmitDiagnostics(program, fixture).flatMap((diagnostic) => diagnostic.start === undefined ? [] : [fixture.getLineAndCharacterOfPosition(diagnostic.start).line + 1])
 	const expectedLines = (await Bun.file(fixturePath).text()).split('\n').flatMap((line, index) => line.includes('// expect-type-error') ? [index + 1] : [])
-	assert.equal(expectedLines.length, 3)
+	assert.equal(expectedLines.length, 7)
 	assert.deepEqual([...new Set(errorLines)].sort((first, second) => first - second), expectedLines)
 })

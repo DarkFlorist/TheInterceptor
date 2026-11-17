@@ -1,4 +1,4 @@
-import { prepareStorageTransactionWrite, type PreparedStorageWrite } from './storageTransactionWrite.js'
+import { prepareDomainStorageTransactionWrite, type PreparedStorageWrite } from './storageTransactionWrite.js'
 import { type AddressBookEntries, type AddressBookEntry, doAddressBookChainIdsMatch } from '../types/addressBookTypes.js'
 import type { ENSNameHashes, ENSLabelHashes } from '../types/ens.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
@@ -26,12 +26,15 @@ export const writeAddressBookStorage = async (items: AddressBookStorageItems) =>
 // Only this owner can assign a write's revision policy; callers cannot classify an arbitrary replacement as a cache fill.
 const addressBookWriteData: unique symbol = Symbol('address book write')
 export type AddressBookStorageWrite = PreparedStorageWrite & { readonly [addressBookWriteData]: true }
-export const prepareAddressBookWrite = (items: AddressBookStorageItems): AddressBookStorageWrite => ({ ...prepareStorageTransactionWrite(items, recordAddressBookWrite), [addressBookWriteData]: true })
+export const prepareAddressBookWrite = (items: AddressBookStorageItems): AddressBookStorageWrite => ({ ...prepareDomainStorageTransactionWrite(items, recordAddressBookWrite), [addressBookWriteData]: true })
+
+// This explicit domain policy is used only for an insertion the owner proves cannot replace a name.
+const commitIdentificationInsertion = async (commit: () => Promise<void>) => await commit()
 
 // A cache plan can only append one missing identification, never replace a name. The storage owner supplies entries read under the settings transaction lock.
 export function prepareAddressIdentificationInsertion(entries: AddressBookEntries, newEntry: AddressBookEntry): AddressBookStorageWrite | undefined {
 	if (entries.some((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))) return undefined
-	return { ...prepareStorageTransactionWrite({ userAddressBookEntriesV3: entries.concat(newEntry) }), [addressBookWriteData]: true }
+	return { ...prepareDomainStorageTransactionWrite({ userAddressBookEntriesV3: entries.concat(newEntry) }, commitIdentificationInsertion), [addressBookWriteData]: true }
 }
 
 // Repair-on-read normalizes the values the reader is about to use; it is not a separately published edit made during that reader's run.
