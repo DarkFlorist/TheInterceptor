@@ -8,6 +8,7 @@ import './safeConfirmationFlows.suite.js'
 import './safeStackFlows.suite.js'
 import './sendAnywayConsent.suite.js'
 import './signInWithEthereumConfirmation.suite.js'
+import './simulatedTransactionHashes.suite.js'
 import './terminalReplyDelivery.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)

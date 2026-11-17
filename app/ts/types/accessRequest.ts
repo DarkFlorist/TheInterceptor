@@ -1,7 +1,7 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress, EthereumBytes32 } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
@@ -149,7 +149,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	approvalStatus: PendingTransactionApprovalStatus,
 	// Required, so a pending transaction stored by a version without it does not parse, and the corrupt-storage recovery of pendingTransactionsAndMessages (readPendingTransactionsAndMessagesWithRecovery) clears it instead of a refresh forming it as another kind of transaction.
 	safeFlow: PendingTransactionSafeFlow,
-}).And(funtypes.ReadonlyPartial({ resolutionInputs: funtypes.ReadonlyArray(ResolutionInput) }))
+}).And(funtypes.ReadonlyPartial({ simulationHashReservation: funtypes.ReadonlyObject({ salt: EthereumQuantity, hash: EthereumBytes32 }), resolutionInputs: funtypes.ReadonlyArray(ResolutionInput) }))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(
@@ -244,6 +244,8 @@ const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPen
 export const OWNED_PENDING_REQUEST_FIELDS = [
 	// Owned by requestResolution.ts.
 	'resolutionInputs',
+	// Owned by simulationStackHashes.ts, and accepting a transaction that has no reservation yet (confirmTransaction.ts).
+	'simulationHashReservation',
 ] as const
 export type OwnedPendingRequestField = (typeof OWNED_PENDING_REQUEST_FIELDS)[number]
 // A pending request as a generic update writes it: without its owned fields, which that update cannot write. Distributed over the union, so each kind of request keeps its own fields.

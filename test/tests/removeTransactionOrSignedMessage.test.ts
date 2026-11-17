@@ -124,6 +124,8 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 		...makeBaseUnsignedTransaction(),
 		from: params.from ?? 0x1111111111111111111111111111111111111111n,
 		nonce: params.nonce,
+		// A value of its own gives every stacked fixture its own hash, as the stack requires.
+		value: params.transactionIdentifier,
 	})
 
 	return {

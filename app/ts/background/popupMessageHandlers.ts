@@ -1,15 +1,11 @@
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, resolvePendingTransactionOrMessage, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
-import type { PendingTransactionSafeFlow, SimulatedPendingTransaction } from '../types/accessRequest.js'
-import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
-import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
@@ -19,6 +15,7 @@ import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSigner
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { PendingTransactionSafeFlow, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
@@ -36,16 +33,19 @@ import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silen
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
-import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
+import { resolveChainChange } from './windows/changeChain.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
+import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -58,13 +58,16 @@ import { getCreatedSafeProposal, getPendingTransactionGasPayment, getPendingTran
 import { admitImportedSimulationStackOperations } from './importedSimulationStack.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
-export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
-export { getLastKnownCurrentTabId } from './currentTab.js'
-export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
-export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 import { setMetamaskCompatibilityMode } from './metamaskCompatibilityMode.js'
+import { findStackOperation, isStackOperationOf } from './requestStackIdentity.js'
+import { appendOperationsToStack, ensureSimulationHashReservation, getReservedTransactionHashes, withSimulationHashLock } from './simulationStackHashes.js'
+
+export { getLastKnownCurrentTabId } from './currentTab.js'
+export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
+export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
+export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -437,10 +440,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 	if (params.data.type === 'Transaction') {
 		const currentStack = await getInterceptorTransactionStack()
 		const transactionIdentifier = params.data.transactionIdentifier
-		const safeOperation = currentStack.operations.find((operation): operation is Extract<InterceptorStackOperation, { type: 'Transaction' }> =>
-			operation.type === 'Transaction'
-			&& operation.preSimulationTransaction.transactionIdentifier === transactionIdentifier
-		)
+		const safeOperation = findStackOperation(currentStack.operations, { type: 'Transaction', transactionIdentifier })
 		const safeTransactionToRemove = safeOperation?.preSimulationTransaction.safeTransaction
 		if (safeTransactionToRemove !== undefined) {
 			await updateTransactionState((previousState) => {
@@ -467,8 +467,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 	await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		switch (params.data.type) {
 			case 'Transaction': {
-				const transactionIdentifier = params.data.transactionIdentifier
-				const transactionToBeRemoved = prevStack.operations.find((transaction): transaction is Extract<InterceptorStackOperation, { type: 'Transaction' }> => transaction.type === 'Transaction' && transaction.preSimulationTransaction.transactionIdentifier === transactionIdentifier)
+				const transactionToBeRemoved = findStackOperation(prevStack.operations, params.data)
 				if (transactionToBeRemoved === undefined) return prevStack
 				const removedTransaction = transactionToBeRemoved.preSimulationTransaction
 				const shouldShiftNonceAfterRemoval = (transaction: typeof removedTransaction) => {
@@ -484,7 +483,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 				const newOperations: InterceptorStackOperation[] = []
 				let transactionWasFound = false
 				for (const operation of prevStack.operations) {
-					if (operation.type === 'Transaction' && transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier) {
+					if (isStackOperationOf(operation, params.data)) {
 						transactionWasFound = true
 						continue
 					}
@@ -500,11 +499,8 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 				return { operations: normalizeConsecutiveTimeManipulations(newOperations) }
 			}
 			case 'Message': {
-				const messageIdentifier = params.data.messageIdentifier
-				return {
-					operations: normalizeConsecutiveTimeManipulations(prevStack.operations)
-						.filter((operation) => !(operation.type === 'Message' && messageIdentifier === operation.signedMessageTransaction.messageIdentifier))
-				}
+				const removedMessage = params.data
+				return { operations: normalizeConsecutiveTimeManipulations(prevStack.operations).filter((operation) => !isStackOperationOf(operation, removedMessage)) }
 			}
 			default: assertNever(params.data)
 		}
@@ -666,6 +662,8 @@ async function simulateAndStoreRefreshedTransaction(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	preparedSafeProposal: { readonly safeFlow: PendingTransactionSafeFlow, readonly approvalStatus: SimulatedPendingTransaction['approvalStatus'] } | undefined,
 ) {
+	// Reserve before showing a successfully formed transaction for the first time.
+	const simulationHashReservation = transactionToSimulate.success ? await ensureSimulationHashReservation(pending.uniqueRequestIdentifier, transactionToSimulate) : pending.simulationHashReservation
 	const refreshMessage = await refreshConfirmTransactionSimulation(
 		ethereum,
 		tokenPriceService,
@@ -673,7 +671,7 @@ async function simulateAndStoreRefreshedTransaction(
 		pending.simulationMode,
 		pending.uniqueRequestIdentifier,
 		transactionToSimulate,
-		getCreatedSafeProposal(preparedSafeProposal?.safeFlow ?? pending.safeFlow),
+		{ safeSigningRequest: getCreatedSafeProposal(preparedSafeProposal?.safeFlow ?? pending.safeFlow), simulationHashReservation },
 	)
 	if (refreshMessage === undefined) return
 	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (transactionOrMessage) => {
@@ -1055,14 +1053,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 	const newStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
 		const normalizedPrevStack = { operations: normalizeConsecutiveTimeManipulations(prevStack.operations) }
 		const identifier = parsedRequest.data.transactionOrMessageIdentifier
-		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => {
-			switch(operation.type) {
-				case 'Transaction': return identifier.type === operation.type && identifier.transactionIdentifier === operation.preSimulationTransaction.transactionIdentifier
-				case 'Message': return identifier.type === operation.type && identifier.messageIdentifier === operation.signedMessageTransaction.messageIdentifier
-				case 'TimeManipulation': return false
-				default: return assertNever(operation)
-			}
-		})
+		const appendAfterIndex = normalizedPrevStack.operations.findIndex((operation) => isStackOperationOf(operation, identifier))
 		if (appendAfterIndex < 0) return normalizedPrevStack
 		const indexOfMaybeManipulator = appendAfterIndex + 1
 		const maybeExistingManipulator = normalizedPrevStack.operations[indexOfMaybeManipulator]
@@ -1083,9 +1074,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true, onlyIfNotAlreadyUpdating: true })
 		return
 	}
-	const appendIdentifier = parsedRequest.data.transactionOrMessageIdentifier.type === 'Transaction' ? parsedRequest.data.transactionOrMessageIdentifier.transactionIdentifier : parsedRequest.data.transactionOrMessageIdentifier.messageIdentifier
-	const operationIdentifier = secondToLastOperation.type === 'Transaction' ? secondToLastOperation.preSimulationTransaction.transactionIdentifier : secondToLastOperation.signedMessageTransaction.messageIdentifier
-	const appendedToEnd = appendIdentifier === operationIdentifier
+	const appendedToEnd = isStackOperationOf(secondToLastOperation, parsedRequest.data.transactionOrMessageIdentifier)
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: !appendedToEnd, onlyIfNotAlreadyUpdating: true })
 }
 
@@ -1284,17 +1273,21 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 
 	let updatedStack: InterceptorTransactionStack
 	try {
-		updatedStack = await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
-			const newOperations = [...prevStack.operations, ...admission.operations]
-			// generate new ids for operations to prevent duplicated ids
-			return { operations: normalizeConsecutiveTimeManipulations(newOperations.map((operation) => {
-				switch(operation.type) {
-					case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
-					case 'TimeManipulation': return operation
-					case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
-					default: return assertNever(operation)
-				}
-			})) }
+		// Under the hash lock, so no confirmation reserves a hash between reading the reservations and storing the import.
+		updatedStack = await withSimulationHashLock(async () => {
+			const reservedHashes = getReservedTransactionHashes(await getPendingTransactionsAndMessages())
+			return await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => {
+				// New identifiers keep the imported transactions' identifiers apart from the stack's; appendOperationsToStack keeps their hashes apart from the stack's and the pending confirmations' reservations.
+				const importedOperations = admission.operations.map((operation) => {
+					switch(operation.type) {
+						case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { messageIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.signedMessageTransaction.website) }) })
+						case 'TimeManipulation': return operation
+						case 'Transaction': return modifyObject(operation, { preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { transactionIdentifier: generate256BitRandomBigInt(), website: updateWebsiteDetails(operation.preSimulationTransaction.website) }) })
+						default: return assertNever(operation)
+					}
+				})
+				return { operations: normalizeConsecutiveTimeManipulations(appendOperationsToStack(prevStack, importedOperations, reservedHashes).stack.operations) }
+			})
 		})
 	} catch (error) {
 		return importSimulationStackFailure(`Failed to store the imported simulation stack (${ formatEstimatedBytes(importedStackBytes) }): ${ formatCaughtErrorMessage(error) }`)

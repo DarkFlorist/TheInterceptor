@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { toPreSimulationTransaction } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { addressString, browserMock, createReplayableAcceptConfirmation, isRecord, modules, simulator, testResolutionContext, withSilencedConsole } from './confirmTransactionTestHarness.js'
-import { CONFIRMATION_WINDOW_ID, REQUEST_SOCKET, SENDER, WEBSITE, asOperation, assertNoResolutionBookkeeping, createWebsiteTabConnections, getPageResponses, getStackedTransactions, hashesOf, openConfirmation, pauseNextStackReadThen, readsKey, startSimulationStack, waitForCondition, waitUntilNothingPending } from './simulationConfirmationTestHarness.js'
+import { CONFIRMATION_WINDOW_ID, REQUEST_SOCKET, SENDER, WEBSITE, asOperation, assertNoResolutionBookkeeping, createWebsiteTabConnections, getPageResponses, getStackedTransactions, hashesOf, openConfirmation, pauseNextStackReadThen, readsKey, startSimulationStack, waitForCondition, waitUntilNothingPending, withoutReservations } from './simulationConfirmationTestHarness.js'
 
 const pauseNextStackRead = () => {
 	let signalPaused = () => undefined
@@ -240,6 +240,7 @@ for (const competitor of ['reject', 'popup close'] as const) {
 		const postedMessages: unknown[] = []
 		const websiteTabConnections = createWebsiteTabConnections(postedMessages)
 		const request = await openConfirmation(1, SENDER, 1n, websiteTabConnections)
+		await withoutReservations([1])
 		const pause = pauseNextStackRead()
 		const accepting = withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createReplayableAcceptConfirmation(request)))
 		await pause.paused
@@ -350,7 +351,7 @@ test('answers a popup close with the stacked hash when the request\'s transactio
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
 	// As an accept leaves it that stacked the transaction and stopped before committing its reply, or one whose commitment a restart lost.
-	const stackedTransaction = toPreSimulationTransaction(pending.transactionToSimulate)
+	const stackedTransaction = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation(stackedTransaction)] }))
 	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: CONFIRMATION_WINDOW_ID }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
 	await waitUntilNothingPending()
@@ -623,7 +624,7 @@ test('finishes an accepted transaction\'s queued reply on recovery after a resta
 	await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
-	const stacked = toPreSimulationTransaction(pending.transactionToSimulate)
+	const stacked = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
 	await recoverAfterRestart(1, stacked, stacked.signedTransaction.hash, websiteTabConnections)
 	assert.deepEqual(getPageResponses(postedMessages, 1), [{ result: stacked.signedTransaction.hash }])
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
@@ -701,7 +702,7 @@ for (const state of restartStates) {
 				await openConfirmation(1, SENDER, 1n, websiteTabConnections)
 				const [pending] = await modules.getPendingTransactionsAndMessages()
 				if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated pending transaction')
-				const stacked = toPreSimulationTransaction(pending.transactionToSimulate)
+				const stacked = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
 				await modules.updateInterceptorTransactionStack(() => ({ operations: [asOperation(stacked)] }))
 				const { commitPendingTerminalReply, markPendingTerminalReplyDelivered } = await import('../../app/ts/background/pendingTerminalReplies.js')
 				if (state.entry !== 'none') await commitPendingTerminalReply({ ...pending.originalRequestParameters, type: 'result', result: stacked.signedTransaction.hash, uniqueRequestIdentifier: pending.uniqueRequestIdentifier, ...(state.windowPending ? { confirmationWindow: pending.popupOrTabId } : {}) })
@@ -1583,7 +1584,7 @@ for (const acceptStackedBeforeRestart of [false, true]) {
 		// The restarted extension starts from that stored state.
 		const [pending] = storedPending
 		if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the stored pending transaction')
-		const stackedByAccept = toPreSimulationTransaction(pending.transactionToSimulate)
+		const stackedByAccept = toPreSimulationTransaction(pending.transactionToSimulate, pending.simulationHashReservation)
 		await modules.updateInterceptorTransactionStack(() => ({ operations: acceptStackedBeforeRestart ? [asOperation(stackedByAccept)] : [] }))
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: storedPending })
 		const postedMessages: unknown[] = []

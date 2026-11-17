@@ -71,6 +71,12 @@ export const getStackedTransactions = async () => (await modules.getInterceptorT
 
 export const hashesOf = (transactions: readonly PreSimulationTransaction[]) => transactions.map((transaction) => transaction.signedTransaction.hash)
 
+export const withoutReservations = async (requestIds: readonly number[]) => await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: (await modules.getPendingTransactionsAndMessages()).map((pending) => {
+	if (pending.type !== 'Transaction' || !requestIds.includes(pending.uniqueRequestIdentifier.requestId)) return pending
+	const { simulationHashReservation: _simulationHashReservation, ...withoutReservation } = pending
+	return withoutReservation
+}) })
+
 export const asOperation = (preSimulationTransaction: PreSimulationTransaction) => ({ type: 'Transaction' as const, preSimulationTransaction })
 
 export const getReplyHashes = (postedMessages: readonly unknown[], requestId: number) => postedMessages.flatMap((message) => isRecord(message) && message.requestId === requestId && typeof message.result === 'string' ? [BigInt(message.result)] : [])

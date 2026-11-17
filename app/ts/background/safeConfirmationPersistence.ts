@@ -12,6 +12,7 @@ import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTran
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { findStackOperation } from './requestStackIdentity.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
@@ -169,9 +170,12 @@ async function persistSafeTransaction(
 				return persistedStackTransaction
 			})
 			const updatedOperations = stackWithUpdatedSafeMirror.operations
-			const interceptorTransactionStack = updatedSafeMirror || updatedOperations.some((operation) =>
-				operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pendingTransaction.transactionIdentifier
-			)
+			const mirrorIsStacked = updatedSafeMirror || findStackOperation(updatedOperations, { type: 'Transaction', transactionIdentifier: pendingTransaction.transactionIdentifier }) !== undefined
+			// The mirror is stacked under its safeTxHash, which an imported simulation transaction can already carry; checked here, inside the stack update, so no other write can race it.
+			if (!mirrorIsStacked && updatedOperations.some((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.signedTransaction.hash === safeSigningRequest.safeTxHash)) {
+				throw createSafeContractValidationFailure(`A transaction on the simulation stack already uses this proposal's Gnosis Safe transaction hash ${ EthereumBytes32.serialize(safeSigningRequest.safeTxHash) }. Remove that transaction from the simulation stack, then try again.`)
+			}
+			const interceptorTransactionStack = mirrorIsStacked
 				? { operations: updatedOperations }
 				: { operations: [...updatedOperations, {
 					type: 'Transaction' as const,
