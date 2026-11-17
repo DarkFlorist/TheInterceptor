@@ -72,6 +72,15 @@ for (const kind of ['transaction', 'message'] as const) {
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), pending)
 	})
 
+	test(`a failed ${ kind } preparation releases admission for a later retry`, async () => {
+		await startSimulationStack(SENDER)
+		const connections = createWebsiteTabConnections([])
+		assert.equal((await open(connections, undefined)).type, 'result')
+		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 0)
+		assert.deepEqual(await open(connections, SENDER), { type: 'doNotReply' })
+		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	})
+
 	test(`concurrent ${ kind } openings share one admission before creating a window`, async () => {
 		await startSimulationStack(SENDER)
 		let windowsCreated = 0
