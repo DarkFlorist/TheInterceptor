@@ -1,22 +1,33 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
-import { type EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
-import { PendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage as PendingTransactionOrSignableMessageType } from '../../app/ts/types/accessRequest.js'
-import { EthereumAddress, EthereumBlockHeader, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
-import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
-import { dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
-import { parseSendRawTransaction } from '../../app/ts/utils/sendRawTransactionParsing.js'
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import { PendingTransactionOrSignableMessage, type PendingTransactionOrSignableMessage as PendingTransactionOrSignableMessageType } from '../../app/ts/types/accessRequest.js'
+import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { type EthereumJsonRpcRequest, SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { WebsiteCreatedEthereumTransaction } from '../../app/ts/types/visualizer-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
+import { Erc20ABI } from '../../app/ts/utils/abi.js'
+import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
-import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
-import { Erc20ABI } from '../../app/ts/utils/abi.js'
-import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
-import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { keccak256 } from '../../app/ts/utils/ethereumPrimitives.js'
+import { parseSendRawTransaction } from '../../app/ts/utils/sendRawTransactionParsing.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
+
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async (ethereum: EthereumClientService) => {
+	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: ethereum.getRpcEntry() })
+	return await readTestNetworkSnapshot({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 0) })
+}
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -383,9 +394,13 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 		const pendingTransaction = makeSimulatedPendingRawTransaction(transactionToSimulate)
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 
+		const services = {
+			ethereum: new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+			tokenPriceService: {} as never,
+		}
 		await resolvePendingTransactionOrMessage(
-			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
-			{} as never,
+			fixedServicesOwner(services.ethereum, services.tokenPriceService),
+			await readNetworkState(services.ethereum),
 			browserMock.websiteTabConnections,
 			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(pendingTransaction), forceSend: false } },
 		)
@@ -471,7 +486,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
-				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				(await readNetworkState(new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 				undefined,
 				EthereumAddress.parse(sponsor.address),
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -532,7 +547,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
-				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				(await readNetworkState(new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 				undefined,
 				EthereumAddress.parse(sponsor.address),
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -560,6 +575,8 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const browserMock = installBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+			await changeSimulationMode({ simulationMode: true, rpcNetwork })
 			const sender = 0x0000000000000000000000000000000000000001n
 			const value = 2n * 10n ** 18n
 			const params = SendTransactionParams.parse({
@@ -571,7 +588,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			})
 			const createTransaction = async (balance: bigint) => await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(balance), async () => undefined, async () => undefined, rpcNetwork),
+				(await readNetworkState(new EthereumClientService(createFailedGasEstimationRequestHandler(balance), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -601,7 +618,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			})
 			const metadataFailureTransaction = await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n), async () => undefined, async () => undefined, rpcNetwork),
+				(await readNetworkState(new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -615,7 +632,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			assert.equal(metadataFailureTransaction.error.message, 'execution reverted')
 
 			const balanceFailureTransaction = await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(new Error('balance unavailable')), async () => undefined, async () => undefined, rpcNetwork),
+				(await readNetworkState(new EthereumClientService(createFailedGasEstimationRequestHandler(new Error('balance unavailable')), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -630,7 +647,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 
 			await assert.rejects(
 				async () => await formEthSendTransaction(
-					new EthereumClientService(createFailedGasEstimationRequestHandler(new Error(NEW_BLOCK_ABORT)), async () => undefined, async () => undefined, rpcNetwork),
+					(await readNetworkState(new EthereumClientService(createFailedGasEstimationRequestHandler(new Error(NEW_BLOCK_ABORT)), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 					undefined,
 					sender,
 					{ websiteOrigin: 'test', icon: undefined, title: undefined },
@@ -653,7 +670,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				}],
 			})
 			const insufficientTokenBalanceTransaction = await formEthSendTransaction(
-				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, 1_000_000n), async () => undefined, async () => undefined, rpcNetwork),
+				(await readNetworkState(new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, 1_000_000n), async () => undefined, async () => undefined, rpcNetwork))).simulation,
 				undefined,
 				sender,
 				{ websiteOrigin: 'test', icon: undefined, title: undefined },

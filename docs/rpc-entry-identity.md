@@ -8,6 +8,8 @@
 | Chain ID and RPC URL | The simulation endpoint changed. | Service replacement and accepted-endpoint verification |
 | Serialized selection or entry snapshot | The selected configuration or a configured list entry changed. | Settings publication, dropdown selection, editing, removal, and primary promotion |
 
+A selection change on the same endpoint is not a service replacement: the installed client takes the new metadata in place (`updateRpcEntryMetadata`), so it keeps serving its snapshots and no network change generation is spent.
+
 ## Decision and scope
 
 The selection key includes the full `RpcNetwork` serialization. The entry key uses that serialization with configured-entry `primary` and `minimized` preferences normalized away. Preference changes therefore do not detach the active selection from its list entry. These are transient value-comparison keys, not persisted IDs or a versioned wire format. Entry keys do not depend on list order.

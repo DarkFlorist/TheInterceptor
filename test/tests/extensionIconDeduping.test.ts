@@ -1,7 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
+
 
 type BrowserStorageState = Record<string, unknown>
 type MockTab = {
@@ -280,7 +282,7 @@ describe('extension icon deduping', () => {
 	})
 
 	test('imported mode change updates tabs without active connections', async () => {
-		const { changeSimulationMode, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, defaultRpcs, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const importedSettingsReply = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
@@ -317,7 +319,10 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } }, new Map())
+		const initialRpc = defaultRpcs[0]
+		if (initialRpc === undefined) throw new Error('missing default rpc')
+		const simulationServicesOwner = createSimulationServicesOwner(initialRpc, async () => undefined, async () => undefined)
+		const importSettingsReply = await importSettings(simulationServicesOwner, new Map(), { method: 'popup_import_settings', data: { fileContents: importedSettingsReply } })
 		assert.equal(importSettingsReply.data.success, true)
 		await updateWebsiteApprovalAccesses(
 			undefined,

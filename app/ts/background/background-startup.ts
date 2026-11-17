@@ -1,46 +1,49 @@
+import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
+import { PASSTHROUGH_STATE } from '../types/visualizer-types.js'
+import type { EthereumBlockHeader } from '../types/wire-types.js'
+import { isExpectedInfrastructureError } from '../utils/errors.js'
+import { readNetworkSnapshotForServices } from './networkTransitionLock.js'
+import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { getUpdatedSimulationState, requireSimulationSnapshot } from './simulationUpdating.js'
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
-import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
-import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
-import { handleInterceptedRequest } from './background.js'
-import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
-import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { popupMessageHandler } from './popupMessageRouting.js'
-import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
-import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { EthereumBlockHeader } from '../types/wire-types.js'
+import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
-import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
-import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
-import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
-import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
-import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
-import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { printError, reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
+import { addWindowTabListeners } from '../utils/popupOrTab.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
-import { removeWebsiteTabConnection } from './websiteTabConnections.js'
-import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
-import { migrateWebsiteAccess } from './websiteAccessMigration.js'
+import { handleInterceptedRequest } from './background.js'
+import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, acknowledgeAndTrackBridgeRequest } from './bridgeRequestDelivery.js'
+import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
-import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
-import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
-import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
-import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
-import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
+import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
+import { popupMessageHandler } from './popupMessageRouting.js'
+import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
+import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
+import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
+import { checkIfInterceptorShouldSleep } from './sleeping.js'
+import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
+import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
+import { migrateWebsiteAccess } from './websiteAccessMigration.js'
+import { removeWebsiteTabConnection } from './websiteTabConnections.js'
+import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -55,9 +58,12 @@ function getSimulationServices() {
 	return simulationServicesOwner.getCurrent()
 }
 
-async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
+async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus, isCurrent: () => boolean = () => true) {
+	if (!isCurrent()) return
 	await setRpcConnectionStatus(rpcConnectionStatus)
+	if (!isCurrent()) return
 	await updateExtensionBadge()
+	if (!isCurrent()) return
 	await sendPopupMessageToOpenWindows({ method, data: { rpcConnectionStatus } })
 }
 
@@ -242,7 +248,10 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
-			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
+			const simulateCurrentStack = async () => {
+				const network = await readNetworkSnapshotForServices(getSimulationServices())
+				return network === undefined ? PASSTHROUGH_STATE : await getUpdatedSimulationState(requireSimulationSnapshot(network.simulation))
+			}
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
@@ -300,8 +309,8 @@ async function startup() {
 
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
+		if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
+		await resolvePendingRequestsForMissingConfirmationWindows(simulationServicesOwner, websiteTabConnections)
 		await prunePendingTerminalRepliesForMissingTabs()
 	},
 	onFailure: (error) => {
@@ -337,15 +346,13 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
-	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	const { simulationServicesOwner: owner } = await waitForBackgroundStartup()
+	return await onCloseWindowOrTab(owner, { type: 'popup' as const, id }, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
-	await waitForBackgroundStartup()
-	const simulationServices = getSimulationServices()
-	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	const { simulationServicesOwner: owner } = await waitForBackgroundStartup()
+	return await onCloseWindowOrTab(owner, { type: 'tab' as const, id }, websiteTabConnections)
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
@@ -361,7 +368,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settings = await getSettings()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

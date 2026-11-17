@@ -1,13 +1,13 @@
-import { PopupMessage, type Settings } from '../types/interceptor-messages.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { PopupMessage } from '../types/interceptor-messages.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { isExpectedInfrastructureError } from '../utils/errors.js'
-import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { dispatchPopupMessage } from './popupMessageDispatcher.js'
-import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
+import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
+import { dispatchPopupMessage } from './popupMessageDispatcher.js'
+import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 
 const simulationAbortController = new AbortController()
 
@@ -15,7 +15,6 @@ export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationServicesOwner: SimulationServicesOwner,
 	request: unknown,
-	settings: Settings,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ) {
 	const maybeParsedRequest = PopupMessage.safeParse(request)
@@ -33,7 +32,6 @@ export async function popupMessageHandler(
 		const requestReply = await dispatchPopupMessage({
 			websiteTabConnections,
 			simulationServicesOwner,
-			settings,
 			publishRpcConnectionStatus,
 			simulationAbortController,
 			confirmTransactionAbortController: getConfirmTransactionAbortController(),

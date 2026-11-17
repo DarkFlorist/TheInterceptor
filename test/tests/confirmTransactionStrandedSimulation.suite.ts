@@ -1,8 +1,10 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createWebsitePort, fakeRequestHandler, modules, recipientAddress, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { activeAddress, addressString, browserMock, createWebsitePort, fakeRequestHandler, modules, recipientAddress, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 const transactionParams = SendTransactionParams.parse({
 	method: 'eth_sendTransaction',
@@ -34,8 +36,8 @@ function createWebsiteTabConnections() {
 
 async function openTransactionConfirmation() {
 	return await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
+		await readTestNetworkSnapshot(simulator),
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -95,7 +97,7 @@ for (const { cause, error } of [
 			assert.equal(interrupted.popupVisualisation.statusCode, 'failed')
 
 			failSimulation = false
-			await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+			await modules.refreshPopupConfirmTransactionSimulation(await readTestNetworkSnapshot(simulator))
 			const [refreshed] = await modules.getPendingTransactionsAndMessages()
 			if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed confirmation to stay simulated')
 			assert.equal(refreshed.popupVisualisation.statusCode, 'success')

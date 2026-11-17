@@ -1,10 +1,12 @@
 import * as assert from 'assert'
-import { getFrameOrigins } from '../../app/ts/utils/requests.js'
 import { test } from 'bun:test'
 import { checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { bytesToHex, stringToBytes } from '../../app/ts/utils/ethereumBytes.js'
+import { getFrameOrigins } from '../../app/ts/utils/requests.js'
 import { SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { activeAddress, createWebsitePort, fakeRpcNetwork, modules, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 
 // A sign-in message without a scheme, which means https, for the local dapp at localhost:3000.
 const localDappSiweMessage = (chainId: bigint) => [
@@ -41,8 +43,8 @@ async function openSignInConfirmation(siweMessage: string, pageUrl: string, live
 		},
 	}]])
 	const reply = await modules.openConfirmTransactionDialogForMessage(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
+		await readTestNetworkSnapshot(simulator),
 		request,
 		{ kind: 'message', parameters: signRequest },
 		true,

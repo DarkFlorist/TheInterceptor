@@ -1,28 +1,29 @@
-import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
-import { Future } from '../../utils/future.js'
-import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
-import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
-import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../websiteConnectionEvents.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
-import { handleInterceptedRequest, refuseAccess } from '../background.js'
-import { activateAddressSelection } from '../activeSettings.js'
-import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { getSettings } from '../settings.js'
-import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
-import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
-import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
-import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
-import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
+import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
+import { reportUnexpectedError } from '../../utils/errors.js'
+import { Future } from '../../utils/future.js'
+import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow, type PopupOrTab } from '../../utils/popupOrTab.js'
+import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
+import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
+import { isAccountConnectionMethod } from '../accountRequestMethods.js'
+import { activateAddressSelection } from '../activeSettings.js'
+import { handleInterceptedRequest, refuseAccess } from '../background.js'
+import { createInternalMessageListener, getHtmlFile, INTERNAL_CHANNEL_NAME, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
+import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
+import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
+import { getSettings } from '../settings.js'
+import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { clearPendingAccessRequests, getPendingAccessRequests, getTabState, updatePendingAccessRequests } from '../storageVariables.js'
+import { withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../websiteConnectionEvents.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -451,6 +452,7 @@ export async function requestAccessFromUser(
 
 async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
 	let promptForFollowUpAccesses = false
+	let rejectedAddressMoveFailed = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
@@ -467,24 +469,35 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
-			let approvedAddressSelection
-			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
-				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			}
+			const approvedAddressSelection = accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined
+				? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
+				: undefined
 			if (!userRequestedAddressChange) {
 				await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
 				return
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
-			const settings = await getSettings()
-			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
-			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
-				simulationMode: settings.simulationMode,
-				signerAddress,
-				promptForAccessesIfNeeded: false,
-			})
+			const requestedAddress = accessReply.requestAccessToAddress
+			const activateRequestedAddress = async () => {
+				const settings = await getSettings()
+				const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
+				const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, requestedAddress, 'pendingEntry')
+				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
+					simulationMode: settings.simulationMode,
+					signerAddress,
+					promptForAccessesIfNeeded: false,
+				})
+			}
+			if (accessReply.userReply !== 'Rejected') return await activateRequestedAddress()
+			// The website's answer does not depend on the address the user moved to, so a network that cannot apply the move does not hold the rejection back. The active address is then still the one the user did not decide on, so asking about it again would replace the answer.
+			try {
+				await activateRequestedAddress()
+			} catch (error: unknown) {
+				rejectedAddressMoveFailed = true
+				promptForFollowUpAccesses = false
+				await reportUnexpectedError(error)
+			}
 		}
 		if (accountRequestSocket === undefined) {
 			await applyAccessReply()
@@ -496,6 +509,9 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 	const isAffectedEntry = (pending: PendingAccessRequest) => pending.website.websiteOrigin === website.websiteOrigin && (pending.requestAccessToAddress?.address === accessReply.requestAccessToAddress || pending.requestAccessToAddress?.address === accessReply.originalRequestAccessToAddress)
 
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
+	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
+	// A replay would authorize against that undecided active address, so these requests get the rejection directly.
+	if (rejectedAddressMoveFailed) for (const { request: rejectedRequest } of affectedEntryWithPendingRequest) refuseAccess(websiteTabConnections, rejectedRequest)
 
 	if (pendingRequests.current.length > 0) {
 		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current) } })
@@ -504,9 +520,8 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 		await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined
 	}
-	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	if (affectedEntryWithPendingRequest.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
+	if (rejectedAddressMoveFailed || affectedEntryWithPendingRequest.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
 	return { pendingRequestsToReplay: affectedEntryWithPendingRequest, promptForFollowUpAccesses }
 }

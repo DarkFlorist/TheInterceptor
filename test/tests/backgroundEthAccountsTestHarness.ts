@@ -1,12 +1,13 @@
-import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
-import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
-import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
+import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
 type Listener = () => void
@@ -160,6 +161,8 @@ export async function loadModules() {
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
+		...await import('../../app/ts/background/networkTransition.js'),
+		...await import('../../app/ts/background/networkTransitionLock.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
@@ -213,29 +216,25 @@ export async function waitForPortMessageCount(messages: readonly PortMessage[], 
 	}
 }
 
+const DEFAULT_ACTIVE_RPC = DEFAULT_RPCS.find((rpc) => rpc.primary) ?? DEFAULT_RPCS[0]
+
 export function createEthereumWithGetBlockCounter(
 	getBlockCalls: { count: number },
 	{
 		initialBlockPolling = true,
 		getCodeResult,
 		getStorageAtResult,
+		rpcEntry = DEFAULT_ACTIVE_RPC,
 		getBlockNumberResult,
 	}: {
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
+		// A network read pairs this client with the settings only if it serves them, so the default is the network settings default to, and tests that select another pass the network the client serves.
+		readonly rpcEntry?: RpcEntry
 		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
-		name: 'Test RPC',
-		chainId: 1n,
-		httpsRpc: 'http://127.0.0.1:8545',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		primary: true,
-		minimized: false,
-	}
 	let blockPolling = initialBlockPolling
 	const ethereum = new Proxy(
 		new EthereumClientService(
@@ -282,10 +281,14 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
+// Reset fixtures install a client for the selected endpoint, just as the production owner does.
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current = initial
 	return {
 		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		reset: network => { current = reset === undefined ? createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: network }) : reset(network); return current },
 	}
 }
+
+// An owner that keeps the given services installed, for confirmation flows that need one but never switch networks.
+export const fixedServicesOwner = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService) => createTestSimulationServicesOwner({ ethereum, tokenPriceService })

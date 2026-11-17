@@ -1,8 +1,7 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, getWalletSwitchRequestId, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('popup settings changes', () => {
 	for (const firstSucceeded of [true, false]) test(`keeps overlapping refresh outcomes independent (first=${ firstSucceeded })`, async () => {
@@ -195,7 +194,7 @@ describe('popup settings changes', () => {
 		const currentRpc = (await getSettings()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const editedRpc = { ...currentRpc, name: 'Renamed network', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' }, primary: !currentRpc.primary, minimized: !currentRpc.minimized }
-		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: currentRpc })
 		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') })
 		assert.deepEqual(await changeActiveRpc(reset, connections, editedRpc, { source: 'dapp', simulationMode: simulationMode, signerTabId: 1 }), { result: null })
 		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
@@ -229,8 +228,8 @@ describe('popup settings changes', () => {
 		const currentRpc = (await getSettings()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const nextRpc = { ...currentRpc, httpsRpc: 'https://replacement.example' }
-		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const original = createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: currentRpc })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: nextRpc })
 		let resets = 0
 		const reset = createTestSimulationServicesOwner(original, (rpc: typeof nextRpc) => {
 			assert.deepEqual(rpc, nextRpc)
@@ -294,7 +293,7 @@ describe('popup settings changes', () => {
 		await changeActiveAddressAndChain(createTestSimulationServicesOwner({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService }, (entry) => {
 			assert.equal(entry.httpsRpc, rpc.httpsRpc)
 			installed = true
-			return services
+			return createEthereumWithGetBlockCounter({ count: 0 }, { rpcEntry: entry })
 		}), new Map(), { simulationMode: true, rpcNetwork: rpc })
 		assert.equal(announced, true)
 	})

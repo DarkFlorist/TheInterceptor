@@ -1,23 +1,22 @@
-import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../types/confirmationRequest.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
+import { createSimulationCallParams, ethSimulateV1FromInput, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetLogsParams, EthGetStorageAtParams, EthNewFilter, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetFilterLogs, GetSimulationStack, GetTransactionCount, InterceptorError, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter } from '../types/JsonRpc-types.js'
+import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../types/confirmationRequest.js'
+import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
-import { openChangeChainDialog } from './windows/changeChain.js'
-import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
-import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
-import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
-import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
-import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
-import { printError } from '../utils/errors.js'
-import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
-import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addressString } from '../utils/bigint.js'
+import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED, METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
+import { printError } from '../utils/errors.js'
+import { markPerformance, POPUP_PERFORMANCE_MARKS } from '../utils/popupPerformance.js'
+import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
+import type { NetworkSnapshot } from './networkTransitionLock.js'
+import { openChangeChainDialog } from './windows/changeChain.js'
+import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
+import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
 	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHashFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
@@ -38,8 +37,8 @@ export async function getTransactionReceipt(ethereumClientService: EthereumClien
 }
 
 export async function sendTransaction(
-	ethereumClientService: EthereumClientService,
-	tokenPriceService: TokenPriceService,
+	simulationServicesOwner: SimulationServicesReader,
+	network: NetworkSnapshot,
 	activeAddress: bigint | undefined,
 	confirmation: TransactionConfirmationRequest,
 	request: InterceptedRequest,
@@ -48,7 +47,7 @@ export async function sendTransaction(
 	simulationMode = true,
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
-	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(simulationServicesOwner, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }
@@ -131,8 +130,8 @@ export async function syncing(ethereumClientService: EthereumClientService) {
 }
 
 export async function personalSign(
-	ethereumClientService: EthereumClientService,
-	tokenPriceService: TokenPriceService,
+	simulationServicesOwner: SimulationServicesReader,
+	network: NetworkSnapshot,
 	activeAddress: bigint | undefined,
 	confirmation: MessageConfirmationRequest,
 	request: InterceptedRequest,
@@ -140,11 +139,12 @@ export async function personalSign(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(simulationServicesOwner, network, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
 	if (action.type === 'doNotReply') return action
 	return { method: confirmation.parameters.method, ...action }
 }
 
+// A switch acts on the live network, so it compares with the installed provider now rather than with the request's snapshot, which a later transition may have replaced. That is also the chain eth_chainId reports; on a signer-only network both still report the previous chain (#1691).
 export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (simulationServicesOwner.getCurrent().ethereum.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain

@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addressString, checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
+import { readActiveSimulationInput } from './simulationInputTestHelper.js'
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
@@ -70,6 +71,11 @@ async function loadModules() {
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
+}
+
+async function readRichListSettings() {
+	const { getMakeCurrentAddressRich, getFixedAddressRichList } = await loadModules()
+	return { makeCurrentAddressRich: await getMakeCurrentAddressRich(), fixedAddressRichList: await getFixedAddressRichList() }
 }
 
 async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) {
@@ -198,12 +204,12 @@ describe('requestMakeMeRichList resilience', () => {
 	test('includes changed rich addresses in the next simulation input without a popup refresh', async () => {
 		let runtimeSendMessageCount = 0
 		installBrowserMock({ onRuntimeSendMessage: () => { runtimeSendMessageCount += 1 } })
-		const { modifyMakeMeRich, getCurrentSimulationInput } = await loadModules()
+		const { modifyMakeMeRich } = await loadModules()
 		const richAddress = 0x7000000000000000000000000000000000000007n
 
 		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: richAddress } })
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(richAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
 		assert.equal(runtimeSendMessageCount, 0)
 	})
@@ -211,13 +217,13 @@ describe('requestMakeMeRichList resilience', () => {
 	test('includes current-address rich mode in the next simulation input without a popup refresh', async () => {
 		let runtimeSendMessageCount = 0
 		installBrowserMock({ onRuntimeSendMessage: () => { runtimeSendMessageCount += 1 } })
-		const { modifyMakeMeRich, changeSimulationMode, getCurrentSimulationInput } = await loadModules()
+		const { modifyMakeMeRich, changeSimulationMode } = await loadModules()
 		const activeAddress = 0x8000000000000000000000000000000000000008n
 
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
 		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
 
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await readActiveSimulationInput()
 		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
 		assert.equal(runtimeSendMessageCount, 0)
 	})
@@ -242,7 +248,7 @@ describe('requestMakeMeRichList resilience', () => {
 			getChainId: () => 1n,
 		}
 
-		const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined))
+		const reply = await withSilencedConsole(async () => await requestMakeMeRichList(ethereumClientService, undefined, await readRichListSettings()))
 		assert.equal(reply.method, 'popup_requestMakeMeRichData')
 		assert.equal(reply.makeCurrentAddressRich, true)
 		assert.equal(reply.richList.length, 2)
@@ -274,7 +280,7 @@ describe('requestMakeMeRichList resilience', () => {
 		const { requestMakeMeRichList } = await loadModules()
 		storageState.makeCurrentAddressRich = null
 
-		const reply = await withSilencedConsole(async () => await requestMakeMeRichList({}, undefined))
+		const reply = await withSilencedConsole(async () => await requestMakeMeRichList({}, undefined, await readRichListSettings()))
 
 		assert.equal(reply.method, 'popup_requestMakeMeRichData')
 		assert.equal(reply.makeCurrentAddressRich, false)

@@ -1,12 +1,13 @@
-import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { withSilencedConsole } from './consoleSilence.js'
 
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
@@ -159,11 +160,14 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
+	let currentRpcNetwork = settings.activeRpcNetwork
+	Object.defineProperty(ethereum, 'isRetired', { value: () => false })
+	Object.defineProperty(ethereum, 'getRpcEntry', { configurable: true, value: () => currentRpcNetwork })
+	Object.defineProperty(ethereum, 'updateRpcEntryMetadata', { configurable: true, value: (network: RpcNetwork) => { currentRpcNetwork = network } })
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),
-		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
-		settings,
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, (network) => { ethereum.updateRpcEntryMetadata(network); return { ethereum, tokenPriceService } }),
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),
@@ -250,10 +254,10 @@ describe('popup message dispatcher seams', () => {
 		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async snapshot => {
 			assert.equal('simulationServicesOwner' in snapshot, false)
 			assert.equal('resetSimulationState' in snapshot, false)
-			observed.push(snapshot.services)
+			observed.push(snapshot.network.services)
 			entered.resolve(undefined)
 			await release.promise
-			observed.push(snapshot.services)
+			observed.push(snapshot.network.services)
 		})
 		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
 		context.simulationServicesOwner.reset(network)
@@ -484,23 +488,22 @@ describe('popup message dispatcher seams', () => {
 		})
 
 		const context = createDispatcherContext(async () => undefined)
+		// Importing compares the imported network with the installed client's endpoint.
+		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getRpcEntry', { value: () => settings.activeRpcNetwork })
 		context.websiteTabConnections.set(42, { connections: {} })
-		await dispatchPopupMessage(
-			context,
-			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
-		)
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
 
 		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
-		assert.equal(messages.length, 2)
-		const importSuccess = messages[0]
-		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
+		// The import transition publishes the account refresh inside the lock; the handler then replies and broadcasts the settings.
+		assert.deepEqual(messages.map((message) => message.method), ['popup_accounts_update', 'popup_initiate_export_settings_reply', 'popup_settingsUpdated'])
+		const importSuccess = messages[1]
 		if (importSuccess?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected successful import broadcast.')
 		assert.equal(importSuccess.data.success, true)
-		assert.equal(messages[1]?.method, 'popup_settingsUpdated')
-		if (messages[1]?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
-		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
-		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
-		assert.equal(messages[1].data.simulationMode, false)
+		const settingsBroadcast = messages[2]
+		if (settingsBroadcast?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
+		assert.equal(settingsBroadcast.data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
+		assert.equal(settingsBroadcast.data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
+		assert.equal(settingsBroadcast.data.simulationMode, false)
 		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 		assert.deepEqual(reloadedTabs, [42])
 		assert.deepEqual(dynamicRuleUpdates, [{

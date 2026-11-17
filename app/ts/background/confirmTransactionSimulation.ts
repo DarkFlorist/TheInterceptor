@@ -1,22 +1,21 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { createSafeExecutionPreSimulationTransaction, createSafeSigningSimulationInput } from '../safe/safeSimulation.js'
 import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
-import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
+import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, NEW_BLOCK_ABORT } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
+import { isFailedToFetchError, isNewBlockAbort, JsonRpcResponseError, reportUnexpectedError } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
+import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
-import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
+import { getTabState } from './storageVariables.js'
 
 let confirmTransactionAbortController = new AbortController()
 export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
@@ -57,14 +56,14 @@ export function createInterruptedConfirmTransactionSimulation(
 }
 
 export async function refreshConfirmTransactionSimulation(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
+	simulation: SimulationSnapshot,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { ethereum, tokenPriceService } = simulation.services
 	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
 	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
 	confirmTransactionAbortController = new AbortController()
@@ -81,8 +80,8 @@ export async function refreshConfirmTransactionSimulation(
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined
-		? await getCurrentSimulationInput()
-		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
+		? simulation.simulationStateInput
+		: createSafeSigningSimulationInput(simulation.interceptorTransactionStack, safeSigningRequest)
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
