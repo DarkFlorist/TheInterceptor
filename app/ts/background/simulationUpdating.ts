@@ -173,14 +173,13 @@ export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClient
 
 export async function getMetadataForSimulation(
 	simulationState: SimulationState,
-	chainId: bigint,
 	lookups: MetadataLookups,
 	eventsForEachTransaction: readonly EnrichedEthereumEvents[],
 	inputData: readonly EnrichedEthereumInputData[],
 ) {
 	const allEvents = eventsForEachTransaction.flat()
 	const addressBookEntryPromises = silenceChromeUnCaughtPromise(getAddressBookEntriesForVisualiserFromTransactions(lookups.identifyAddress, allEvents, inputData, simulationState.simulationStateInput))
-	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(chainId, lookups.lookUpEnsName, allEvents))
+	const namedTokenIdPromises = silenceChromeUnCaughtPromise(nameTokenIds(lookups, allEvents))
 	const addressBookEntries = await addressBookEntryPromises
 	const ensPromise = silenceChromeUnCaughtPromise(retrieveEnsNodeAndLabelHashes(lookups.lookUpEnsName, allEvents, addressBookEntries))
 	const namedTokenIds = await namedTokenIdPromises
@@ -208,8 +207,8 @@ export async function getFailedTransactionPreview(ethereum: EthereumClientServic
 	return await getFailedTransactionPreviewWithLookups(identifyAddressWith(ethereum, requestAbortController), transactionToSimulate)
 }
 
-// Shared by live previews and address-book-only re-labels of their recorded entries.
-export async function getFailedTransactionPreviewWithLookups(identify: IdentifyAddress, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
+// Parses calldata and names the addresses shown in the failure preview with the supplied lookup.
+async function getFailedTransactionPreviewWithLookups(identify: IdentifyAddress, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
 	const fields = getFailedTransactionFields(transactionToSimulate)
 	if (fields === undefined) return { addressBookEntries: [], parsedInputData: { type: 'NonParsed', input: new Uint8Array() } }
 	const parsedInputData = await parseInputData(fields.call, identify)
@@ -496,7 +495,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			const events = (await eventsForEachBlockAndTransactionPromise).flat()
 			const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-			const metadata = await getMetadataForSimulation(prevState.simulationState.value, ethereum.getRpcEntry().chainId, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
+			const metadata = await getMetadataForSimulation(prevState.simulationState.value, lookUpMetadataOnChain(ethereum, requestAbortController), events, inputData)
 			return { ...prevState, ...metadata }
 		} catch (error) {
 			if (isExpectedInfrastructureError(error)) return prevState
@@ -573,7 +572,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 
 	if (simulationState.success === false) {
 		const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-		const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum.getRpcEntry().chainId, lookUpMetadataOnChain(ethereum, requestAbortController), [], parsedInputDataForEachBlockAndTransaction.flat())
+		const updatedMetadata = await getMetadataForSimulation(simulationState, lookUpMetadataOnChain(ethereum, requestAbortController), [], parsedInputDataForEachBlockAndTransaction.flat())
 		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
@@ -645,7 +644,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 
 	const eventsForEachBlockAndTransaction = await eventsForEachBlockAndTransactionPromise
 	const parsedInputDataForEachBlockAndTransaction = await parsedInputDataForEachBlockAndTransactionPromise
-	const updatedMetadata = await getMetadataForSimulation(simulationState, ethereum.getRpcEntry().chainId, lookUpMetadataOnChain(ethereum, requestAbortController), eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
+	const updatedMetadata = await getMetadataForSimulation(simulationState, lookUpMetadataOnChain(ethereum, requestAbortController), eventsForEachBlockAndTransaction.flat(), parsedInputDataForEachBlockAndTransaction.flat())
 
 	const tokenPriceEstimatesPromise = weth === undefined ? [] : silenceChromeUnCaughtPromise(tokenPriceService.estimateEthereumPricesForTokens(requestAbortController, weth, updatedMetadata.addressBookEntries.filter(onlyTokensAndTokensWithKnownDecimals).map(metadataRestructure)))
 

@@ -8,6 +8,8 @@ export type LookUpEnsName = (nameHash: EthereumBytes32) => Promise<string | unde
 
 // How a visualisation looks up the metadata it does not take from the simulation.
 export type MetadataLookups = {
+	// The chain these lookups resolve on, including the mainnet-only ENS naming policy.
+	readonly chainId: bigint
 	readonly identifyAddress: IdentifyAddress
 	readonly lookUpEnsName: LookUpEnsName
 }

@@ -1348,7 +1348,7 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 	const events = (await eventsForEachBlockAndTransactionPromise).flat()
 	const inputData = (await parsedInputDataForEachBlockAndTransactionPromise).flat()
 
-	const metadata = await getMetadataForSimulation(simulationState.value, ethereumClientService.getChainId(), lookUpMetadataOnChain(ethereumClientService, undefined), events, inputData)
+	const metadata = await getMetadataForSimulation(simulationState.value, lookUpMetadataOnChain(ethereumClientService, undefined), events, inputData)
 	return { method: 'popup_requestSimulationMetadata' as const, metadata }
 }
 

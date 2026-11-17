@@ -233,6 +233,7 @@ export const identifyAddressWith = (ethereumClientService: EthereumClientService
 
 // A simulation run's lookups, which reach the chain for what local data does not know.
 export const lookUpMetadataOnChain = (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): MetadataLookups => ({
+	chainId: ethereumClientService.getChainId(),
 	identifyAddress: identifyAddressWith(ethereumClientService, requestAbortController),
 	lookUpEnsName: async (nameHash) => await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, nameHash),
 })
@@ -314,7 +315,7 @@ export async function getAddressBookEntriesForTransactionWithoutSimulation(ident
 	return await promiseAllMapAbortSafe(getAddressesToIdentifyForVisualiser([], [inputData], [shownAddresses]), identify)
 }
 
-export async function nameTokenIds(chainId: bigint, lookUpEnsName: LookUpEnsName, events: EnrichedEthereumEvents) {
+export async function nameTokenIds(lookups: Pick<MetadataLookups, 'chainId' | 'lookUpEnsName'>, events: EnrichedEthereumEvents) {
 	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint }
 	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.logInformation.type !== 'ERC1155') return undefined
@@ -323,8 +324,8 @@ export async function nameTokenIds(chainId: bigint, lookUpEnsName: LookUpEnsName
 
 	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
 	const namedPairs = (await Promise.all(pairs.map(async (pair) => {
-		if (pair.tokenAddress === ENS_TOKEN_WRAPPER && chainId === 1n) {
-			const tokenIdName = (await getAndCacheEnsNodeHash(lookUpEnsName, pair.tokenId, [])).name
+		if (pair.tokenAddress === ENS_TOKEN_WRAPPER && lookups.chainId === 1n) {
+			const tokenIdName = (await getAndCacheEnsNodeHash(lookups.lookUpEnsName, pair.tokenId, [])).name
 			if (tokenIdName === undefined) return undefined
 			return { ...pair, tokenIdName }
 		}
