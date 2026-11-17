@@ -94,6 +94,14 @@ describe('utils.bigint', () => {
 		for (const data of edgeCases) assertSameStringConversion(data)
 	})
 
+	test('preserves sub-byte truncation before any fractional shift is evaluated', () => {
+		assert.equal(new Uint8Array(0.5).length, 0)
+		assert.deepEqual(bigintToUint8Array(1n, 0.5), new Uint8Array())
+		assert.deepEqual(quadraticBigintToUint8Array(1n, 0.5), new Uint8Array())
+		assert.throws(() => bigintToUint8Array(1n, 1.5), RangeError)
+		assert.throws(() => quadraticBigintToUint8Array(1n, 1.5), RangeError)
+	})
+
 	test('matches the per-byte BigInt conversion on random strings', () => {
 		const random = createRandom(1)
 		const prefixes = ['0x', '0X', '', ' 0x', '0x0', '00']
