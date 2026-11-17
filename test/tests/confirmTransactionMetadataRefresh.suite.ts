@@ -1114,7 +1114,7 @@ function getSignedAccountName(pending: PendingTransactionOrSignableMessage | Pop
 	return 'account' in visualizedPersonalSignRequest ? visualizedPersonalSignRequest.account.name : undefined
 }
 
-test('a confirmation dialog refresh sends a displayed signable message visualised with the new names without storing them', async () => {
+test('a confirmation dialog refresh stores and sends a displayed signable message with the same reviewed result', async () => {
 	await storeSimulationModeSettings([senderAddressBookEntry])
 	const storedMessages = await storeSimulatedPersonalSignMessages([uniqueRequestIdentifier])
 	assert.notEqual(getSignedAccountName(storedMessages[0]), recipientContact.name)
@@ -1125,8 +1125,13 @@ test('a confirmation dialog refresh sends a displayed signable message visualise
 
 	const { pendingTransactions } = getLastConfirmationDialogUpdates(browserMock.sentMessages)
 	assert.equal(getSignedAccountName(pendingTransactions[0]), recipientContact.name)
-	// Address-book re-labels do not cover signable messages, so only this dialog update carries the new names.
-	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), storedMessages)
+	// Acceptance binds the displayed names to the stored result, and an accept for the older names becomes stale.
+	const [current] = await modules.getPendingTransactionsAndMessages()
+	const { getReviewedResultId } = await import('../../app/ts/background/reviewedResult.js')
+	if (current === undefined || storedMessages[0] === undefined) throw new Error('Expected stored signable messages')
+	assert.equal(getSignedAccountName(current), recipientContact.name)
+	assert.equal(pendingTransactions[0]?.reviewedResultId, getReviewedResultId(current))
+	assert.notEqual(getReviewedResultId(current), getReviewedResultId(storedMessages[0]))
 })
 
 test('signable-message dialog refreshes that overlap a rename send their visualisations in the order they made them, so the new name is sent last', async () => {

@@ -129,7 +129,7 @@ async function refreshDirectSafeExecutionSimulation(
 	pending: PendingTransactionOrSignableMessage,
 ): Promise<PendingTransactionOrSignableMessage> {
 	const flow = getSafePendingFlow(pending)
-	if (flow?.kind !== 'directExecution') return { ...pending, reviewedResultId: getReviewedResultId(pending) }
+	if (flow?.kind !== 'directExecution') return pending
 	pending = flow.pending
 	const originalRequestParameters = pending.originalRequestParameters
 	if (originalRequestParameters.method !== 'eth_sendTransaction') return pending
@@ -227,7 +227,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 	switch (pending.type) {
 		case 'Transaction': {
 			// Crafting and simulating transactions store no run, so their stored type is their popup type.
-			if (pending.transactionOrMessageCreationStatus !== 'Simulated' && pending.transactionOrMessageCreationStatus !== 'FailedToSimulate') return pending
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated' && pending.transactionOrMessageCreationStatus !== 'FailedToSimulate') return { ...pending, reviewedResultId: getReviewedResultId(pending) }
 			const { confirmationRun: _confirmationRun, ...popupTransaction } = pending
 			return { ...popupTransaction, reviewedResultId: getReviewedResultId(pending) }
 		}
