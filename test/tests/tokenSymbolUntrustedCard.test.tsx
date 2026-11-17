@@ -21,6 +21,7 @@ const collectElements = (node: RenderTreeNode, matches: (element: RenderTreeNode
 	...(node.childNodes ?? []).flatMap((child) => collectElements(child, matches)),
 ]
 
+const collectCards = (container: RenderTreeNode) => collectElements(container, (element) => element.getAttribute?.('class') === 'inline-card')
 const collectTokenNames = (container: RenderTreeNode) => collectElements(container, (element) => element.tagName === 'DATA')
 const collectWarningSigns = (container: RenderTreeNode) => collectElements(container, (element) => element.getAttribute?.('class') === 'inline-card-warning-sign')
 
@@ -54,17 +55,17 @@ const ROW_COLORS = ['var(--danger-color)', 'var(--danger-dim-color)', 'var(--dim
 describe('untrusted token card', () => {
 	test('lets the card stylesheet color warning labels whatever color the row uses', async () => {
 		for (const color of ROW_COLORS) {
-			const nameColors = await renderIntoDom(createTokenSymbol('OnChain', { color }), (container) => collectTokenNames(container).map((name) => name.style?.['color']))
+			const nameColors = await renderIntoDom(createTokenSymbol('OnChain', { color }), (container) => collectTokenNames(container).map((name) => name.style?.['color'] ?? ''))
 			assert.ok(nameColors.length > 0)
 			assert.deepEqual([...new Set(nameColors)], [''])
 		}
 	})
 
-	test('protects every warning card label, including expanded and noninteractive labels', async () => {
+	test('applies explicit label styles to normal, expanded and noninteractive labels even with a warning', async () => {
 		for (const nonInteractive of [false, true]) {
-			const colors = await renderIntoDom(<InlineCard icon = { () => <span /> } label = 'Warning' warningMessage = 'Untrusted' nonInteractive = { nonInteractive } style = { { color: 'red', 'font-weight': '500' } } />, (container) => collectTokenNames(container).map((name) => ({ color: name.style?.['color'], weight: name.style?.['font-weight'] })))
+			const colors = await renderIntoDom(<InlineCard icon = { () => <span /> } label = 'Warning' warningMessage = 'Untrusted' nonInteractive = { nonInteractive } style = { { color: 'red' } } labelStyle = { { color: 'white' } } />, (container) => collectTokenNames(container).map((name) => name.style?.['color']))
 			assert.ok(colors.length >= 2)
-			assert.ok(colors.every(({ color, weight }) => color === '' && weight === '500'))
+			assert.ok(colors.every((color) => color === 'white'))
 		}
 	})
 
@@ -74,7 +75,7 @@ describe('untrusted token card', () => {
 	})
 
 	test('keeps the other styles of the row', async () => {
-		const nameWeights = await renderIntoDom(createTokenSymbol('OnChain', { color: 'var(--danger-color)', 'font-weight': '500' }), (container) => collectTokenNames(container).map((name) => name.style?.['font-weight']))
+		const nameWeights = await renderIntoDom(createTokenSymbol('OnChain', { color: 'var(--danger-color)', 'font-weight': '500' }), (container) => collectCards(container).map((card) => card.style?.['font-weight']))
 		assert.deepEqual([...new Set(nameWeights)], ['500'])
 	})
 
@@ -88,7 +89,7 @@ describe('untrusted token card', () => {
 
 	test('leaves a token without a warning in the row color', async () => {
 		const { nameColors, warningSigns } = await renderIntoDom(createTokenSymbol('DarkFloristMetadata', { color: 'var(--danger-dim-color)' }), (container) => ({
-			nameColors: collectTokenNames(container).map((name) => name.style?.['color']),
+			nameColors: collectCards(container).map((card) => card.style?.['color']),
 			warningSigns: collectWarningSigns(container),
 		}))
 		assert.equal(warningSigns.length, 0)

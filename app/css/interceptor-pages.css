@@ -269,6 +269,7 @@ header:has(form[role='search']) h1 {
 	--text-size: 1em;
 	--min-text-width: calc(var(--text-size) * 2.5);
 
+	color: var(--text-color);
 	font: inherit;
 	display: inline-grid;
 	align-items: baseline;
@@ -285,7 +286,7 @@ header:has(form[role='search']) h1 {
 
 	data {
 		line-height: 1em;
-		color: var(--text-color);
+		color: inherit;
 		padding-inline: 0.25em;
 		padding-right: 0px;
 		text-align: center;
@@ -334,6 +335,7 @@ header:has(form[role='search']) h1 {
 		:hover > &, &:focus-within { opacity: 1 }
 
 		> :is(button, .inline-card-static-action) {
+			color: inherit;
 			font: inherit;
 			appearance: none;
 			background: transparent;
@@ -407,6 +409,7 @@ header:has(form[role='search']) h1 {
 	/* Warning signs are matched by class rather than by the alert role, because only the leading sign is an alert and the trailing one is aria-hidden without a role */
 	&:has(.inline-card-warning-sign) {
 		--bg-status-color: var(--status-dimmed-bg-color); /* dark red */
+		data { color: var(--text-color); }
 		min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + 4ch);
 
 	}
