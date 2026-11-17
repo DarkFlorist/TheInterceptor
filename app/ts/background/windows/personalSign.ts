@@ -52,7 +52,8 @@ const serializeSignedPayload = (signedPayload: unknown) => ({ stringifiedMessage
 export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined, additionalReasons: readonly string[] = []): { quarantine: boolean, quarantineReasons: readonly string[] } {
 	const quarantineReasons = [...additionalReasons]
 	if (messageChainId !== undefined && messageChainId !== activeChainId) quarantineReasons.push(`The signature request is for a different chain (${ getChainName(messageChainId) }) than what is currently active (${ getChainName(activeChainId) }).`)
-	if (accountAddress !== activeAddress || (ownerAddress !== undefined && accountAddress !== ownerAddress)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
+	if (accountAddress !== activeAddress) quarantineReasons.push('The signature request is for an account that is different from your active address.')
+	if (ownerAddress !== undefined && accountAddress !== ownerAddress) quarantineReasons.push('The account named in the message differs from the signing account.')
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
 }
 

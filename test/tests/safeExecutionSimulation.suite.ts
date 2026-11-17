@@ -5,7 +5,7 @@ import type { SendRawTransactionParams, SendTransactionParams } from '../../app/
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { createSafeTxFromMessage } from '../../app/ts/safe/safeCore.js'
 import { decodeSafeExecution } from '../../app/ts/safe/safeExecution.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorSimulationExport, InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -1050,7 +1050,7 @@ async function importStackedTransaction(transaction: PreSimulationTransaction) {
 	// Storing the stack comes before visualizing it, whose result doesn't matter here.
 	await withSilencedConsole(async () => await importSimulationStack(ethereum, new modules.TokenPriceService(ethereum, 60_000), {
 		method: 'popup_importSimulationStack',
-		data: { name: 'Interceptor Simulation Export', version: '1.0.0', eth_simulateV1, interceptorSimulateStack: { operations: [{ type: 'Transaction', preSimulationTransaction: transaction }] } },
+		data: InterceptorSimulationExport.parse(InterceptorSimulationExport.serialize({ name: 'Interceptor Simulation Export', version: '1.0.0', eth_simulateV1, interceptorSimulateStack: { operations: [{ type: 'Transaction', preSimulationTransaction: transaction }] } })),
 	}))
 	const [operation] = (await modules.getInterceptorTransactionStack()).operations
 	if (operation?.type !== 'Transaction') throw new Error('Expected the imported transaction on the simulation stack')
@@ -1059,7 +1059,7 @@ async function importStackedTransaction(transaction: PreSimulationTransaction) {
 
 const ORDINARY_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId }
 const importCases = [
-	{ description: 'drops executeThroughSafe from an imported transaction of the active Gnosis Safe, so a file cannot make Interceptor assume the owners approved it', imported: SAFE_EXECUTION_SIMULATION_OPTIONS },
+	{ description: 'preserves hypothetical Safe execution when importing a simulation scenario', imported: SAFE_EXECUTION_SIMULATION_OPTIONS },
 	{ description: 'keeps an imported transaction of the active Gnosis Safe that does not ask to run through the Safe as an ordinary transaction', imported: ORDINARY_SIMULATION_OPTIONS },
 ]
 
@@ -1067,6 +1067,6 @@ for (const { description, imported } of importCases) {
 	test(description, async () => {
 		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 		await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
-		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), ORDINARY_SIMULATION_OPTIONS)
+		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), imported)
 	})
 }

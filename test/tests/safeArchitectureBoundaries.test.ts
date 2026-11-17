@@ -103,8 +103,7 @@ test('every decision whether the node runs a transaction as an executed call goe
 		const codeLines = (await Bun.file(new URL(`../../app/ts/${ file }`, import.meta.url)).text()).split('\n').filter((line) => !/^\s*(?:\/\/|\*|\/\*)/u.test(line))
 		if (codeLines.some((line) => /simulationOptions\??\.executeThroughSafe/u.test(line))) readers.push(file)
 	}
-	// The import admission removes the field itself, so it reads it directly.
-	assert.deepEqual(readers.sort(), ['background/importedSimulationStack.ts', 'types/visualizer-types.ts'])
+	assert.deepEqual(readers.sort(), ['types/visualizer-types.ts'])
 })
 
 test('simulation stack import applies every imported-stack admission rule from one module', () => {
