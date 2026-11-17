@@ -864,10 +864,10 @@ describe('ConfirmTransaction', () => {
 		// The simulation runs in the block after its base block, so the block after that one, which the regular updates carry, leaves the simulation one block old.
 		const regularUpdateBlock = simulationBlock + 2n
 		const dialogUpdates = {
-			pendingTransactions: serialize(UpdateConfirmTransactionDialogPendingTransactions, { method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: { pendingTransactionAndSignableMessages: [pendingTransaction], currentBlockNumber: regularUpdateBlock, rpcConnectionStatus: undefined } }),
+			pendingTransactions: serialize(UpdateConfirmTransactionDialogPendingTransactions, { method: 'popup_update_confirm_transaction_dialog_pending_transactions', data: { pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage), currentBlockNumber: regularUpdateBlock, rpcConnectionStatus: undefined } }),
 			stack: serialize(UpdateConfirmTransactionDialog, { method: 'popup_update_confirm_transaction_dialog', data: { visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(), currentBlockNumber: regularUpdateBlock, rpcConnectionStatus: undefined } }),
 			// Sent after an address-book re-label, without a block number or connection status.
-			metadata: serialize(UpdateConfirmTransactionDialogMetadata, { method: 'popup_update_confirm_transaction_dialog_metadata', data: { pendingTransactionAndSignableMessages: [pendingTransaction], visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() } }),
+			metadata: serialize(UpdateConfirmTransactionDialogMetadata, { method: 'popup_update_confirm_transaction_dialog_metadata', data: { pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage), visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation() } }),
 		}
 		const laterBlock = { author: 0n, difficulty: 0n, extraData: new Uint8Array(), gasLimit: 30_000_000n, gasUsed: 21_000n, hash: 0x1234n, logsBloom: 0n, miner: 0n, mixHash: 0n, nonce: 0n, number: regularUpdateBlock + 1n, parentHash: 0x1n, receiptsRoot: 0n, sha3Uncles: 0n, stateRoot: 0n, timestamp: new Date('2024-01-01T00:00:00.000Z'), size: 0n, totalDifficulty: 0n, uncles: [], baseFeePerGas: 1n, transactionsRoot: 0n, transactions: [], withdrawals: [], withdrawalsRoot: 0n }
 		const rpcNetwork = pendingTransaction.popupVisualisation.data.simulationState.rpcNetwork

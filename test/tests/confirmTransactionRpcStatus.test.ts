@@ -528,6 +528,7 @@ describe('confirm transaction address-book refresh', () => {
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
 		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const countMetadataRequests = () => browser.getSentMessages().filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshConfirmTransactionMetadata').length
 
 		await act(() => {

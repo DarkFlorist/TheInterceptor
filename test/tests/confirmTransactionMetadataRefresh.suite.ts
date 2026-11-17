@@ -1166,6 +1166,7 @@ test('signable-message dialog refreshes that overlap a rename send their visuali
 	browserMock.setStorageGetHandler(undefined)
 
 	assert.deepEqual(getDisplayedEntriesSentToDialog().map(getSignedAccountName), ['Older name', 'Newest name'])
+	assert.equal(getSignedAccountName((await modules.getPendingTransactionsAndMessages())[0]), 'Newest name')
 })
 
 test('a signable-message dialog refresh that fails to read the stored stack neither keeps an earlier refresh from sending nor holds back later dialog updates', async () => {
