@@ -96,12 +96,15 @@ export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	return hexDigitsToBytes(value.toString(16).padStart(numberOfBytes * 2, '0'))
 }
 
+// The one JSON encoding of bigints and bytes, for use inside a JSON.stringify replacer. Reviewed-result ids hash this encoding, so changing it changes every id.
+export const encodeBigIntOrBytesForJson = (value: unknown): unknown => {
+	if (typeof value === 'bigint') return `0x${ value.toString(16) }`
+	if (value instanceof Uint8Array) return dataStringWith0xStart(value)
+	return value
+}
+
 export function stringifyJSONWithBigInts(value: unknown, space?: string | number): string {
-	return JSON.stringify(value, (_key, value) => {
-		if (typeof value === 'bigint') return `0x${ value.toString(16) }`
-		if (value instanceof Uint8Array) return '0x' + Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('')
-		return value
-	}, space)
+	return JSON.stringify(value, (_key, nested: unknown) => encodeBigIntOrBytesForJson(nested), space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {
@@ -146,8 +149,11 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	return sortedData[sortedData.length - 1]?.dataPoint ?? 0n
 }
 
+// JavaScript dates can represent at most 8.64e15 milliseconds from the epoch.
+export const MAX_DATE_SECONDS = 8640000000000n
+
 export const bigintSecondsToDate = (seconds: bigint) => {
-	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${ seconds }`)
+	if (seconds > MAX_DATE_SECONDS) throw new Error(`Too big seconds value: ${ seconds }`)
 	if (seconds < 0) throw new Error(`Got negative seconds: ${ seconds }`)
 	return new Date(Number(seconds) * 1000)
 }
