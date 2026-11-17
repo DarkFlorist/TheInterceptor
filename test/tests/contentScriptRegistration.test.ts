@@ -523,3 +523,43 @@ test('website exclusions and settings bootstrap changes serialize their complete
 	assert.deepEqual(pageWorld?.excludeMatches, ['https://disabled.example:443/*'])
 	assert.deepEqual(pageWorld?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
 })
+
+
+test('a failed MV3 replacement restores the actual registrations and an identical desired update can retry', async () => {
+	const { storageState, getRegisteredContentScripts } = installBrowserMock()
+	const { reconcileContentScriptRegistration } = await loadModules()
+	await reconcileContentScriptRegistration()
+	const previous = structuredClone(getRegisteredContentScripts())
+	storageState.metamaskCompatibilityMode = true
+	const failure = new Error('Replacement registration failed')
+	const registration = spyOn(browser.scripting, 'registerContentScripts').mockImplementationOnce(async () => { throw failure })
+	try {
+		await assert.rejects(reconcileContentScriptRegistration(), (error) => error === failure)
+		assert.deepEqual(getRegisteredContentScripts(), previous)
+		assert.equal(await reconcileContentScriptRegistration(), true)
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		assert.equal(await reconcileContentScriptRegistration(), false)
+	} finally {
+		registration.mockRestore()
+	}
+})
+
+test('a failed MV3 restoration is reported and a later reconciliation repairs the missing provider', async () => {
+	const { storageState, getRegisteredContentScripts } = installBrowserMock()
+	const { reconcileContentScriptRegistration, getLatestUnexpectedError } = await loadModules()
+	await reconcileContentScriptRegistration()
+	storageState.metamaskCompatibilityMode = true
+	const failure = new Error('Replacement failed')
+	const rollbackFailure = new Error('Restoration failed')
+	const registration = spyOn(browser.scripting, 'registerContentScripts')
+		.mockImplementationOnce(async () => { throw failure })
+		.mockImplementationOnce(async () => { throw rollbackFailure })
+	try {
+		await assert.rejects(reconcileContentScriptRegistration(), (error) => error === failure)
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_rollback_failed')
+		assert.equal(await reconcileContentScriptRegistration(), true)
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+	} finally {
+		registration.mockRestore()
+	}
+})

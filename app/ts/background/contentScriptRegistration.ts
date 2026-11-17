@@ -1,7 +1,7 @@
-import { getInterceptorDisabledSites } from '../utils/contentScriptInjectionConfiguration.js'
-import { getMetamaskCompatibilityMode } from './settings.js'
+import type { ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
+import { getContentScriptInjectionConfiguration } from './contentScriptInjectionConfigurationLoader.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { getPageWorldScriptPaths, getManifestV2IsolatedWorldInjections } from '../utils/contentScriptInjectionArtifacts.js'
-import { getWebsiteAccess } from './settings.js'
 import { getManifestV2ExcludeGlobs, getManifestV2ExcludeMatches, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
 import { Semaphore } from '../utils/semaphore.js'
 
@@ -13,14 +13,14 @@ const registrationUpdates = new Semaphore(1)
 // Explicit exclusion workflows await reconciliation before reload/success. Storage-only metadata and access edits never retry browser infrastructure work.
 export async function reconcileContentScriptRegistration() {
 	return await registrationUpdates.execute(async () => {
-		const disabledOrigins = getInterceptorDisabledSites(await getWebsiteAccess())
+		const configuration = await getContentScriptInjectionConfiguration()
 		return browser.runtime.getManifest().manifest_version === 3
-			? await updateContentScriptInjectionStrategyManifestV3(disabledOrigins)
-			: await updateContentScriptInjectionStrategyManifestV2(disabledOrigins)
+			? await updateContentScriptInjectionStrategyManifestV3(configuration)
+			: await updateContentScriptInjectionStrategyManifestV2(configuration)
 	})
 }
 
-const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: readonly string[]) => {
+const updateContentScriptInjectionStrategyManifestV3 = async ({ injectionSites: { interceptorDisabledSites: disabledOrigins }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
 	const excludeMatches = getManifestV3ExcludeMatches(disabledOrigins)
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 	// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -38,7 +38,7 @@ const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: r
 		allFrames: true,
 		matches: injectableSitesWildcard,
 		excludeMatches,
-		js: getPageWorldScriptPaths(await getMetamaskCompatibilityMode()).map((path) => `/${ path }`),
+		js: getPageWorldScriptPaths(metamaskCompatibilityMode).map((path) => `/${ path }`),
 		runAt: 'document_start',
 		world: 'MAIN',
 		matchOriginAsFallback: true
@@ -62,11 +62,25 @@ const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: r
 			|| ('matchOriginAsFallback' in registered ? registered.matchOriginAsFallback : false) !== desired.matchOriginAsFallback
 	})
 	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
-	// Chrome requires unregister/register when a bootstrap script file changes.
-	if (replacements.size > 0) await browser.scripting.unregisterContentScripts({ ids: [...replacements] })
-	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
-	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
-	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+	try {
+		// Chrome requires unregister/register when a bootstrap script file changes.
+		if (replacements.size > 0) await browser.scripting.unregisterContentScripts({ ids: [...replacements] })
+		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
+		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
+		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+	} catch (error) {
+		// Restore the actual pre-update registrations, including browser-only fields, before propagating the failure to the configuration workflow.
+		try {
+			const current = await browser.scripting.getRegisteredContentScripts()
+			if (JSON.stringify(current) !== JSON.stringify(registeredContentScripts)) {
+				if (current.length > 0) await browser.scripting.unregisterContentScripts({ ids: current.map(({ id }) => id) })
+				if (registeredContentScripts.length > 0) await browser.scripting.registerContentScripts(registeredContentScripts)
+			}
+		} catch (rollbackError) {
+			await reportUnexpectedError(rollbackError, { code: 'content_script_registration_rollback_failed' })
+		}
+		throw error
+	}
 	return replacements.size > 0 || missingContentScripts.length > 0 || existingContentScripts.length > 0 || obsoleteContentScriptIds.length > 0
 }
 
@@ -83,7 +97,7 @@ async function removeSupersededManifestV2Registrations(state: ManifestV2Registra
 	}
 }
 
-const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: readonly string[]) => {
+const updateContentScriptInjectionStrategyManifestV2 = async ({ injectionSites: { interceptorDisabledSites: disabledOrigins }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
 	const state: ManifestV2RegistrationState = manifestV2Registrations.get(browser.contentScripts) ?? { pendingRemoval: new Set<browser.contentScripts.RegisteredContentScript>() }
 	manifestV2Registrations.set(browser.contentScripts, state)
 	const removedSuperseded = state.pendingRemoval.size > 0
@@ -97,7 +111,7 @@ const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: r
 		...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
 		allFrames: true,
 		runAt: 'document_start',
-		js: getManifestV2IsolatedWorldInjections(await getMetamaskCompatibilityMode()).map(({ file }) => ({ file: `/${ file }` })),
+		js: getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode).map(({ file }) => ({ file: `/${ file }` })),
 	} satisfies Parameters<typeof browser.contentScripts.register>[0]
 	if (state.active !== undefined && JSON.stringify(state.active.configuration) === JSON.stringify(configuration)) return removedSuperseded
 	// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.

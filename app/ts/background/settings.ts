@@ -217,20 +217,15 @@ export async function getWebsiteAccess() {
 
 export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): StorageWrite => ({ websiteAccess: sanitizeWebsiteAccess(websiteAccess) })
 
-// Returns atomic before/after values so configuration workflows can decide whether persisted exclusion settings changed.
-export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+// Applies the update to the latest stored value. Configuration workflows reconcile the persisted desired state.
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return await runSettingsStorageTransaction(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		const changed = nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess
-		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: { previousWebsiteAccess: sanitizedWebsiteAccess, updatedWebsiteAccess: nextWebsiteAccess } }
+		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: nextWebsiteAccess }
 
 	})
-}
-
-// Applies the update to the latest stored value. Configuration changes reconcile that persisted desired state through websiteAccessUpdating.ts.
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {
