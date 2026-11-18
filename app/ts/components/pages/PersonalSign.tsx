@@ -5,6 +5,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
+import { grantsSpendingRights } from '../../utils/approvals.js'
 import { TokenApprovalsVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -109,6 +110,8 @@ type PermitTokenAmount = { token: AddressBookEntry, amount: bigint }
 type PermitTokenApprovalsParams = {
 	spender: AddressBookEntry
 	tokenAmounts: readonly PermitTokenAmount[]
+	// Whether the amounts set allowances (EIP-2612 Permit, Permit2 AllowanceTransfer), where a zero amount removes one, or authorize single transfers (Permit2 SignatureTransfer), where a zero amount authorizes nothing and removes nothing.
+	amountsSetAllowances: boolean
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -139,18 +142,17 @@ function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddress
 }
 
 // Decides from the token entry alone, so a classification gap in the background cannot turn an NFT permit into a routine looking approval: only ERC20 entries get the approval box, and any other token is listed under the warning, which comes first.
-function PermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: PermitTokenApprovalsParams) {
+function PermitTokenApprovals({ spender, tokenAmounts, amountsSetAllowances, renameAddressCallBack }: PermitTokenApprovalsParams) {
 	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount }] : [])
 	const unidentifiedTokenAmounts = tokenAmounts.filter(({ token }) => token.type !== 'ERC20')
+	// A zero allowance (the canonical EIP-2612 revocation) removes it, so allowance grants and removals are shown in separate panels decided by the shared allowance rule. A transfer authorization never removes anything, so all of it is shown as granted.
+	const grantsAllowance = (amount: bigint) => !amountsSetAllowances || grantsSpendingRights({ kind: 'erc20Allowance', allowance: amount })
+	const grantedApprovals = approvals.filter(({ amount }) => grantsAllowance(amount))
+	const removedApprovals = approvals.filter(({ amount }) => !grantsAllowance(amount))
 	return <>
 		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
-		{ approvals.length === 0 ? <></> : <TokenApprovalsVisualisation
-			spender = { spender }
-			approvals = { approvals }
-			// A Permit2 signature only ever grants the spender an allowance.
-			granted = { true }
-			renameAddressCallBack = { renameAddressCallBack }
-		/> }
+		{ grantedApprovals.length === 0 ? <></> : <TokenApprovalsVisualisation spender = { spender } approvals = { grantedApprovals } granted = { true } renameAddressCallBack = { renameAddressCallBack }/> }
+		{ removedApprovals.length === 0 ? <></> : <TokenApprovalsVisualisation spender = { spender } approvals = { removedApprovals } granted = { false } renameAddressCallBack = { renameAddressCallBack }/> }
 	</>
 }
 
@@ -206,22 +208,26 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 		case 'Permit': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.verifyingContract, amount: visualizedPersonalSignRequest.message.message.value }] }
+			amountsSetAllowances = { true }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.token, amount: visualizedPersonalSignRequest.message.message.details.amount }] }
+			amountsSetAllowances = { true }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2Batch': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { visualizedPersonalSignRequest.details }
+			amountsSetAllowances = { true }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2SignatureTransfer': return <>
 			<PermitTokenApprovals
 				spender = { visualizedPersonalSignRequest.spender }
 				tokenAmounts = { visualizedPersonalSignRequest.permitted }
+				amountsSetAllowances = { false }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 			{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }

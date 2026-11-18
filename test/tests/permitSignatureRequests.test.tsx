@@ -549,6 +549,30 @@ describe('EIP-2612 permit signature requests', () => {
 		])
 	})
 
+	// A zero-value permit is the canonical EIP-2612 revocation, so it is worded as a removal like every other approval view.
+	test('shows a zero-value USDC permit as an allowance removal', async () => {
+		const revocation = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.message.value = '0' }))
+		const text = await renderSignatureCardText(revocation)
+		assertIncludesAll(text, ['Stop allowing', 'From spending', 'USDC'])
+		assert.equal(text.includes('To spend'), false)
+	})
+
+	// A zero-amount SignatureTransfer authorizes no transfer and revokes nothing, so it must not promise a removal.
+	test('does not word a zero-amount Permit2 transfer authorization as an allowance removal', async () => {
+		const visualized = await visualizeTypedData(permit2TransferFromMessage)
+		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+		const zeroTransfer = { ...visualized, permitted: visualized.permitted.map((tokenAmount) => ({ ...tokenAmount, amount: 0n })) }
+		assert.equal((await renderSignatureCardText(zeroTransfer)).includes('Stop allowing'), false)
+	})
+
+	// An AllowanceTransfer batch can set some allowances to zero and grant others; each gets its own panel.
+	test('shows the removed and the granted allowances of a mixed Permit2 batch in separate panels', async () => {
+		const visualized = await visualizeTypedData(permit2PermitBatchMessage)
+		if (visualized.type !== 'Permit2Batch') throw new Error(`Expected a Permit2 batch, got ${ visualized.type }`)
+		const mixedBatch = { ...visualized, details: visualized.details.map((detail, index) => index === 0 ? { ...detail, amount: 0n } : detail) }
+		assertIncludesAll(await renderSignatureCardText(mixedBatch), ['Stop allowing', 'From spending', 'Allow', 'To spend'])
+	})
+
 	test('identifies a permit whose nonce and deadline are sent as JSON numbers', async () => {
 		const decimalStringPermit = await visualizeEip2612Permit(eip2612UsdcPermitMessage)
 		const jsonNumberPermit = await visualizeEip2612Permit(modifyUsdcPermit((permit) => {
