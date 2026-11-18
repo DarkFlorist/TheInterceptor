@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, waitForPendingTransactionsToClear, withSilencedConsole, EIP712Message } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, waitForPendingTransactionsToClear, withSilencedConsole, EIP712Message, getStoredAcceptReview, getPendingSafeProposal } from './confirmTransactionTestHarness.js'
 
 // A page chooses its own JSON-RPC request ids, so it can send a new request under the id of one whose popup was just closed.
 const pageRequestIdentifier = { requestId: -2, requestSocket: { tabId: 1, connectionName: 0n } }
@@ -48,7 +48,7 @@ async function getOnlyPendingRequest() {
 
 async function approveAndForwardToSigner({ connections }: PageConnection) {
 	const { instanceId } = await getOnlyPendingRequest()
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier, instanceId } }), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier, instanceId, ...await getStoredAcceptReview(pageRequestIdentifier, true) } }), true)
 	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
 }
 
@@ -160,7 +160,7 @@ test('a metadata refresh stores its re-visualisation of the run it read, which k
 	const { visualisation } = await sendTransactionWithClearedAddressBookEntries(page)
 	await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
 	const refreshed = await getOnlySimulatedVisualisation()
-	assert.equal(refreshed.visualisation.data.simulationRunId, visualisation.data.simulationRunId)
+	assert.deepEqual(refreshed.visualisation.data.confirmationRunId, visualisation.data.confirmationRunId)
 	assert.notDeepEqual(refreshed.visualisation.data.addressBookEntries, [])
 })
 
@@ -195,9 +195,9 @@ test('a metadata refresh does not store its re-visualisation over a newer run of
 		// The transaction is simulated again while the refresh visualises the run it read. The newer run is stored as producing exactly what the read run did, so only its run id tells them apart.
 		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
 		const stored = await getOnlySimulatedVisualisation()
-		await storeVisualisationData(stored, { ...readRun.data, simulationRunId: stored.visualisation.data.simulationRunId })
+		await storeVisualisationData(stored, { ...readRun.data, confirmationRunId: stored.visualisation.data.confirmationRunId })
 		newerRun = (await getOnlySimulatedVisualisation()).visualisation
-		assert.notEqual(newerRun.data.simulationRunId, readRun.data.simulationRunId)
+		assert.notDeepEqual(newerRun.data.confirmationRunId, readRun.data.confirmationRunId)
 		pause.release()
 		await refresh
 	} finally {
@@ -328,7 +328,7 @@ async function sendSafeProposalFromPage({ connections }: PageConnection, walletO
 	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'transaction', parameters }, false, safeAddress, pageWebsite, connections), { type: 'doNotReply' })
 }
 
-const approveWithSafeSignerSelection = async ({ connections }: PageConnection, instanceId: string, refreshedSafeSignerSelection?: { readonly selectedSigner: bigint, readonly verificationError: string | undefined }) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier, instanceId } }, refreshedSafeSignerSelection)
+const approveWithSafeSignerSelection = async ({ connections }: PageConnection, instanceId: string, refreshedSafeSignerSelection?: { readonly selectedSigner: bigint, readonly verificationError: string | undefined }) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, { method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier: pageRequestIdentifier, instanceId, ...await getStoredAcceptReview(pageRequestIdentifier, true) } }, refreshedSafeSignerSelection)
 
 const isCloseRejection = (message: unknown) => isRecord(message) && message.type === 'result' && message.requestId === pageRequestIdentifier.requestId && isRecord(message.error) && message.error.code === 4001
 
@@ -367,7 +367,8 @@ test('a stale failed Gnosis Safe signer verification does not reset an approval 
 	fakeSafeContract.owners = [safeTestOwnerAddress, recipientAddress]
 	await sendSafeProposalFromPage(page, safeTestOwnerAddress)
 	const proposal = await getOnlyPendingRequest()
-	if (proposal.type !== 'Transaction' || proposal.safeTransaction === undefined) throw new Error('Expected a Gnosis Safe proposal')
+	const proposedSafeTransaction = getPendingSafeProposal(proposal)
+	if (proposedSafeTransaction === undefined) throw new Error('Expected a Gnosis Safe proposal')
 	const { instanceId } = proposal
 	// The Gnosis Safe owner check reads the tab's wallet state before reporting the failed verification.
 	const pause = holdNextStorageRead((key) => key.startsWith('tabState_'))
@@ -386,7 +387,7 @@ test('a stale failed Gnosis Safe signer verification does not reset an approval 
 	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'WaitingForSigner')
 
 	// The wallet's owner signature completes the proposal.
-	await sendSignerSuccessToPage(page, 'eth_signTypedData_v4', await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(proposal.safeTransaction.safeTx))))
+	await sendSignerSuccessToPage(page, 'eth_signTypedData_v4', await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(proposedSafeTransaction.safeTx))))
 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const terminalReplies = getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId)

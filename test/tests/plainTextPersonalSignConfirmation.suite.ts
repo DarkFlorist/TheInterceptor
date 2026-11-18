@@ -6,9 +6,10 @@ import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRe
 import { TransactionConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { decodePersonalSignMessage } from '../../app/ts/utils/personalSignMessage.js'
+import { getSendAnywayOverrideReason } from '../../app/ts/utils/sendAnywayConsent.js'
 import { hashMessage } from '../../app/ts/utils/ethereumPrimitives.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
-import { activeAddress, browserMock, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier as defaultUniqueRequestIdentifier, getPendingInstanceId } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createWebsitePort, isRecord, modules, simulator, uniqueRequestIdentifier as defaultUniqueRequestIdentifier, getPendingInstanceId, getStoredAcceptReview } from './confirmTransactionTestHarness.js'
 
 const plainTextMessage = 'Hello world'
 const website = { websiteOrigin: 'https://plain-text.example', icon: undefined, title: 'Plain text' }
@@ -38,12 +39,14 @@ const openPlainTextPersonalSign = async (simulationMode: boolean, postedMessages
 	assert.equal(visualized.messageHash, hashMessage(plainTextMessage))
 	const accept = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
+		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier), ...await getStoredAcceptReview(uniqueRequestIdentifier) },
 	})
-	// A popup decision names the pending request instance the user saw.
+	// A popup decision names the pending request instance the user saw, and an accept also the reviewed content of the request stored under the id.
 	const decide = async (decision: { readonly action: 'accept' | 'addToSafeStack' | 'noResponse' } | { readonly action: 'reject', readonly errorString: undefined }, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { ...decision, uniqueRequestIdentifier, instanceId },
+		data: decision.action === 'accept'
+			? { action: 'accept', uniqueRequestIdentifier, instanceId, ...await getStoredAcceptReview(uniqueRequestIdentifier) }
+			: { ...decision, uniqueRequestIdentifier, instanceId },
 	})
 	return { signerAddress: activeAddress, accept, decide, instanceId: pendingMessage.instanceId, pendingMessage, websiteTabConnections }
 }
@@ -76,7 +79,7 @@ test('answers an accepted plain-text personal_sign request in simulation mode wi
 
 test('requires every popup decision to name the request instance it decides on', () => {
 	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: '0x0' } }
-	const decisions = [{ action: 'accept' }, { action: 'addToSafeStack' }, { action: 'noResponse' }, { action: 'reject', errorString: undefined }]
+	const decisions = [{ action: 'accept', reviewedResultId: 'reviewed result', forceSend: false }, { action: 'addToSafeStack' }, { action: 'noResponse' }, { action: 'reject', errorString: undefined }]
 	for (const decision of decisions) {
 		assert.equal(TransactionConfirmation.safeParse({ method: 'popup_confirmDialog', data: { ...decision, uniqueRequestIdentifier } }).success, false, decision.action)
 		assert.equal(TransactionConfirmation.safeParse({ method: 'popup_confirmDialog', data: { ...decision, uniqueRequestIdentifier, instanceId: 'reviewed instance' } }).success, true, decision.action)
@@ -230,9 +233,12 @@ const createPersonalSignRequester = (postedMessages: unknown[]) => {
 		const uniqueRequestIdentifier = { requestId, requestSocket: socket }
 		return await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...signRequest }, { kind: 'message', parameters: signRequest }, false, signerAddress, website, websiteTabConnections)
 	}
-	const decide = async (decision: { readonly action: 'accept' } | { readonly action: 'reject', readonly errorString: undefined }, requestId: number, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	// An accept ticks send-anyway, as the quarantined messages here need it; the acknowledgement test below checks a quarantined message is refused without it.
+	const decide = async (decision: { readonly action: 'accept', readonly forceSend?: boolean } | { readonly action: 'reject', readonly errorString: undefined }, requestId: number, instanceId: string) => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { ...decision, uniqueRequestIdentifier: { requestId, requestSocket: socket }, instanceId },
+		data: decision.action === 'accept'
+			? { action: 'accept', uniqueRequestIdentifier: { requestId, requestSocket: socket }, instanceId, ...await getStoredAcceptReview({ requestId, requestSocket: socket }, decision.forceSend ?? true) }
+			: { ...decision, uniqueRequestIdentifier: { requestId, requestSocket: socket }, instanceId },
 	})
 	// The confirmation window the mock opens stays open, so later requests join it instead of resolving the earlier ones as abandoned.
 	browserMock.setLiveWindowIds([99])
@@ -295,7 +301,7 @@ test('accepts a request id again once the request pending under it is resolved',
 
 test('flags a 0x-prefixed message with invalid hex digits, shows it as written without a hash and requires an acknowledgement', async () => {
 	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
-	const { requestSignature } = createPersonalSignRequester([])
+	const { requestSignature, decide } = createPersonalSignRequester([])
 	// A permissive hex converter could sign this as the bytes 0x686900 while a strict wallet signs its text.
 	const malformedHexMessage = '0x6869zz'
 	assert.deepEqual(await requestSignature(malformedHexMessage, -4), { type: 'doNotReply' })
@@ -306,8 +312,9 @@ test('flags a 0x-prefixed message with invalid hex digits, shows it as written w
 	assert.equal(visualized.quarantine, true)
 	assert.equal(visualized.messageHash, undefined)
 	assert.equal(decodePersonalSignMessage(visualized.message, visualized.simulationMode), malformedHexMessage)
-	const { getApprovalAcknowledgement } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
-	assert.notEqual(getApprovalAcknowledgement(pending), undefined)
+	assert.equal(getSendAnywayOverrideReason(pending), 'quarantinedSignature')
+	assert.equal(await decide({ action: 'accept', forceSend: false }, -4, pending.instanceId), false, 'the quarantined message is not approved without the send-anyway override')
+	assert.equal(await decide({ action: 'accept', forceSend: true }, -4, pending.instanceId), true)
 })
 
 const getPendingRequests = async () => await modules.getPendingTransactionsAndMessages()

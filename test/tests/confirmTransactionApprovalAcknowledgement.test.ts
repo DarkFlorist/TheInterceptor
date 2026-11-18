@@ -110,6 +110,8 @@ const makeQuarantinedMessage = (requestId: number, message: string, quarantineRe
 		uniqueRequestIdentifier: uniqueRequestIdentifier(requestId),
 		created,
 		instanceId: instanceIdFor(requestId, message),
+		// The background stamps every popup copy with this id; the popup only echoes it in an accept.
+		reviewedResultId: `reviewed ${ instanceIdFor(requestId, message) } ${ quarantineReasons.join(' ') }`,
 		website,
 		activeAddress: signerAddress,
 		approvalStatus: { status: 'WaitingForUser' as const },
@@ -174,9 +176,11 @@ const makeQuarantinedTransaction = (requestId: number, outcome: TransactionOutco
 		activeAddress: signerAddress,
 		created,
 		instanceId: instanceIdFor(requestId, 'transaction'),
+		reviewedResultId: `reviewed ${ instanceIdFor(requestId, 'transaction') } ${ JSON.stringify(outcome) } ${ quarantineReasons.join(' ') }`,
 		transactionIdentifier,
 		transactionToSimulate,
 		website,
+		safeFlow: { kind: 'ordinary' as const },
 		approvalStatus: { status: 'WaitingForUser' as const },
 		popupVisualisation: {
 			statusCode: 'success' as const,
@@ -187,6 +191,7 @@ const makeQuarantinedTransaction = (requestId: number, outcome: TransactionOutco
 				uniqueRequestIdentifier: uniqueRequestIdentifier(requestId),
 				transactionToSimulate,
 				signerName: 'MetaMask' as const,
+				confirmationRunId: { lifetime: 'fixture', sequence: requestId },
 				addressBookEntries: [signerEntry, recipientEntry, getNativeTokenErc20(rpcNetwork)],
 				tokenPriceEstimates: [],
 				namedTokenIds: [],
@@ -239,13 +244,20 @@ const renderConfirmTransaction = async () => {
 		isCheckBoxShown: () => findCheckBox() !== undefined,
 		isTextShown: (text: string) => dom.document.body.textContent?.includes(text) === true,
 		isApproveDisabled: () => getAttribute(findApproveButton(), 'disabled') !== undefined,
-		// The DOM mock does not synthesize input events, so this calls the handler Preact registered, as a user tick would.
+		// The DOM mock does not synthesize input events, so this calls the handler Preact registered with a ticked checkbox, as a user tick would.
 		acknowledge: async () => {
 			const checkBox = findCheckBox()
 			const onInput = checkBox?.l === undefined ? undefined : Object.entries(checkBox.l).find(([key]) => key.startsWith('Input'))?.[1]
 			if (checkBox === undefined || onInput === undefined) throw new Error('Missing acknowledgement checkbox')
-			Object.assign(checkBox, { checked: true })
-			await act(() => { onInput({ currentTarget: checkBox }) })
+			class TickedCheckbox { readonly checked = true }
+			const previousHtmlInputElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')
+			Object.defineProperty(globalThis, 'HTMLInputElement', { value: TickedCheckbox, configurable: true, writable: true })
+			try {
+				await act(() => { onInput({ target: new TickedCheckbox() }) })
+			} finally {
+				if (previousHtmlInputElement === undefined) Reflect.deleteProperty(globalThis, 'HTMLInputElement')
+				else Object.defineProperty(globalThis, 'HTMLInputElement', previousHtmlInputElement)
+			}
 		},
 		approve: async () => { await act(async () => { await clickRenderedElement(findApproveButton()) }) },
 		reject: async () => { await act(async () => { await clickRenderedElement(findActionButton(true)) }) },
@@ -260,7 +272,10 @@ const getConfirmDialogDecisions = (action: 'accept' | 'reject') => browserMock.s
 	if (!isRecord(message) || message.method !== 'popup_confirmDialog' || !isRecord(message.data) || message.data.action !== action || !isRecord(message.data.uniqueRequestIdentifier)) return []
 	return [{ requestId: message.data.uniqueRequestIdentifier.requestId, instanceId: message.data.instanceId }]
 })
-const getAcceptedRequestIds = () => getConfirmDialogDecisions('accept').map(({ requestId }) => requestId)
+const getAccepts = () => browserMock.sentMessages.flatMap((message) => {
+	if (!isRecord(message) || message.method !== 'popup_confirmDialog' || !isRecord(message.data) || message.data.action !== 'accept' || !isRecord(message.data.uniqueRequestIdentifier)) return []
+	return [{ requestId: message.data.uniqueRequestIdentifier.requestId, instanceId: message.data.instanceId, reviewedResultId: message.data.reviewedResultId }]
+})
 
 test('does not carry a quarantine acknowledgement over to the next queued quarantined message', async () => {
 	const popup = await renderConfirmTransaction()
@@ -362,34 +377,39 @@ test('does not carry a quarantine acknowledgement over to an identical request c
 	await popup.unmount()
 })
 
-test('does not send an approval when the queue advances while the approval is in flight', async () => {
+// The popup captures an accept when the user clicks, so it always names the request instance and reviewed result the user saw; the background honours it only while both are still stored.
+test('an approval in flight names the clicked request even when the queue advances meanwhile', async () => {
 	const popup = await renderConfirmTransaction()
+	const clicked = makeQuarantinedMessage(401, '6869')
 	const next = makeQuarantinedMessage(402, '5369676e20696e')
-	await popup.pushPendingRequests([makeQuarantinedMessage(401, '6869'), next])
+	await popup.pushPendingRequests([clicked, next])
 	await popup.acknowledge()
 	const finishWindowLookup = holdNextWindowLookup()
 	await popup.approve()
 	await popup.pushPendingRequests([next])
 	assert.equal(popup.isApproveDisabled(), true)
 	await finishWindowLookup()
-	assert.deepEqual(getAcceptedRequestIds().filter((requestId) => requestId === 401 || requestId === 402), [])
+	assert.deepEqual(getAccepts().filter(({ requestId }) => requestId === 401 || requestId === 402), [{ requestId: 401, instanceId: clicked.instanceId, reviewedResultId: clicked.reviewedResultId }])
 	await popup.unmount()
 })
 
-test('does not send an approval when the warnings change while the approval is in flight', async () => {
+test('an approval in flight names the reviewed result the user clicked on even when the warnings change meanwhile', async () => {
 	const popup = await renderConfirmTransaction()
-	await popup.pushPendingRequests([makeQuarantinedMessage(403, '6869')])
+	const clicked = makeQuarantinedMessage(403, '6869')
+	const rewarned = makeQuarantinedMessage(403, '6869', [walletDependentReason, 'The signature request is for an account that is different from your active address.'])
+	await popup.pushPendingRequests([clicked])
 	await popup.acknowledge()
 	const finishWindowLookup = holdNextWindowLookup()
 	await popup.approve()
-	await popup.pushPendingRequests([makeQuarantinedMessage(403, '6869', [walletDependentReason, 'The signature request is for an account that is different from your active address.'])])
+	await popup.pushPendingRequests([rewarned])
 	await finishWindowLookup()
-	assert.deepEqual(getAcceptedRequestIds().filter((requestId) => requestId === 403), [])
+	assert.deepEqual(getAccepts().filter(({ requestId }) => requestId === 403).map(({ reviewedResultId }) => reviewedResultId), [clicked.reviewedResultId])
+	assert.equal(popup.isApproveDisabled(), true, 'the new warnings need a new acknowledgement')
 
-	// Acknowledging the new warnings lets the approval through.
+	// Acknowledging the new warnings sends an accept for the new reviewed result.
 	await popup.acknowledge()
 	await popup.approve()
-	assert.deepEqual(getAcceptedRequestIds().filter((requestId) => requestId === 403), [403])
+	assert.deepEqual(getAccepts().filter(({ requestId }) => requestId === 403).map(({ reviewedResultId }) => reviewedResultId), [clicked.reviewedResultId, rewarned.reviewedResultId])
 	await popup.unmount()
 })
 
@@ -418,16 +438,17 @@ test('requires a new acknowledgement when only the displayed failure of a failin
 	await popup.unmount()
 })
 
-test('does not send an approval when the displayed failure changes while the approval is in flight', async () => {
+test('an approval in flight names the failure the user clicked on even when the displayed failure changes meanwhile', async () => {
 	const popup = await renderConfirmTransaction()
-	await popup.pushPendingRequests([makeRevertedTransaction(904, 'SaleNotStarted()')])
+	const clicked = makeRevertedTransaction(904, 'SaleNotStarted()')
+	await popup.pushPendingRequests([clicked])
 	await popup.acknowledge()
 	const finishWindowLookup = holdNextWindowLookup()
 	await popup.approve()
 	await popup.pushPendingRequests([makeRevertedTransaction(904, 'SaleEnded()')])
 	await finishWindowLookup()
 	assert.equal(popup.isApproveDisabled(), true)
-	assert.deepEqual(getAcceptedRequestIds().filter((requestId) => requestId === 904), [])
+	assert.deepEqual(getAccepts().filter(({ requestId }) => requestId === 904).map(({ reviewedResultId }) => reviewedResultId), [clicked.reviewedResultId])
 	await popup.unmount()
 })
 

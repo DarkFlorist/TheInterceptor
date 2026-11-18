@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
+import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 
 function installBrowserMock() {
 	globalThis.browser = {
@@ -27,6 +28,24 @@ function createPort(postMessage: (message: unknown) => void): browser.runtime.Po
 }
 
 describe('background messageSending port lifecycle', () => {
+	test('error callbacks preserve optional request IDs and data without adding settlement metadata', () => {
+		installBrowserMock()
+		const postedMessages: unknown[] = []
+		const port = createPort((message) => { postedMessages.push(message) })
+		for (const requestId of [undefined, 7]) {
+			const message = {
+				type: 'result' as const,
+				method: 'unknown_callback',
+				error: { code: 4100, message: 'Unauthorized', data: 'Permission denied' },
+				...(requestId === undefined ? {} : { requestId }),
+			}
+			assert.equal(sendSubscriptionReplyOrCallBackToPort(port, message), true)
+			const wireMessage = postedMessages.at(-1)
+			assert.equal(InterceptorMessageToInpage.safeParse(wireMessage).success, true)
+			assert.deepEqual(JSON.parse(JSON.stringify(wireMessage)), { ...message, interceptorApproved: true })
+		}
+	})
+
 	test('ignores disconnected runtime lastError after posting to a content-script port', () => {
 		installBrowserMock()
 		let postedMessages = 0

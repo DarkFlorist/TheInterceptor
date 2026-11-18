@@ -1,11 +1,12 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { spyOn, test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
 import type { InterceptedRequestForward } from '../../app/ts/types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import { activeAddress, browserMock, bytes32String, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, getPendingInstanceId } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, bytes32String, createAcceptConfirmation, createDisconnectedPort, createRecordingPort, createSafeAddressBookEntry, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, privateKeyToAccount, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole, withSimulatedTransactionResult, getPendingInstanceId } from './confirmTransactionTestHarness.js'
+import * as retrySchedulers from '../../app/ts/utils/retryScheduler.js'
 
 // Production stores a terminal reply only together with a decision on the pending request it answers, so each reply here gets a request under its id. Queueing keeps that request pending, as a popup-close rejection does until it is delivered, so one reply can be queued more than once.
 const REPLY_REQUEST_INSTANCE_ID = 'instance answered by the terminal reply'
@@ -21,6 +22,124 @@ async function queueReplyAndAttemptDelivery(websiteTabConnections: WebsiteTabCon
 	await queueReplyToStoredRequest(reply)
 	return await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, reply, requestAnsweredBy(reply))
 }
+
+async function withControlledRecoveryRetries(run: (fireNext: () => Promise<number>) => Promise<void>) {
+	const scheduled: { retry: () => void, timer: ReturnType<typeof setTimeout>, delayMs: number }[] = []
+	const createScheduler = retrySchedulers.createBackoffRetryScheduler
+	const schedulerSpy = spyOn(retrySchedulers, 'createBackoffRetryScheduler').mockImplementation((initialDelayMs) => createScheduler(initialDelayMs, (retry, delayMs) => {
+		const timer = setTimeout(() => undefined, 60_000)
+		scheduled.push({ retry, timer, delayMs })
+		return timer
+	}))
+	try {
+		await withSilencedConsole(async () => await run(async () => {
+			const next = scheduled.shift()
+			assert.ok(next, 'Expected a scheduled recovery retry')
+			clearTimeout(next.timer)
+			next.retry()
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			return next.delayMs
+		}))
+	} finally {
+		schedulerSpy.mockRestore()
+		for (const retry of scheduled) clearTimeout(retry.timer)
+		browserMock.setStorageGetHandler(undefined)
+	}
+}
+
+test('connected reply recovery backs off and stops after a successful manual flush', async () => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const port = createRecordingPort([])
+	const connections = new Map([[socket.tabId, { connections: {
+		[socketKey]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	let reads = 0
+	let fail = true
+	await withControlledRecoveryRetries(async (fireNext) => {
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				reads += 1
+				if (fail) throw new Error('persistent outbox read failure')
+			}
+			return readStoredItems()
+		})
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		assert.equal(await fireNext(), 50)
+		assert.equal(await fireNext(), 100)
+		assert.equal(await fireNext(), 200)
+		assert.equal(reads, 4)
+		fail = false
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		assert.equal(reads, 5)
+		assert.equal(await fireNext(), 400)
+		assert.equal(reads, 5, 'A cancelled retry must not repeat storage work')
+	})
+})
+
+test('stale port recovery does not cancel retries belonging to its replacement', async () => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const port = createRecordingPort([])
+	const replacement = createRecordingPort([])
+	const connection = { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true }
+	const connections = new Map([[socket.tabId, { connections: { [socketKey]: connection } }]])
+	let reads = 0
+	await withControlledRecoveryRetries(async (fireNext) => {
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				reads += 1
+				throw new Error('persistent outbox read failure')
+			}
+			return readStoredItems()
+		})
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		connection.port = replacement
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, replacement)
+		await modules.flushPendingTerminalRepliesForConnectedPortWithRetry(connections, socket, port)
+		assert.equal(reads, 2)
+		assert.equal(await fireNext(), 50)
+		assert.equal(reads, 2, 'The old port timer must be cancelled')
+		assert.equal(await fireNext(), 50)
+		assert.equal(reads, 3, 'The replacement must retain its recovery timer')
+		connections.clear()
+		assert.equal(await fireNext(), 100)
+		assert.equal(reads, 3, 'Disconnected sockets must stop retrying')
+	})
+})
+
+test('popup-close rejection backs off persistent storage failures and delivers once after recovery', async () => {
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{ ...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForUser' } }] })
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const port = createRecordingPort(postedMessages)
+	const connections = new Map([[socket.tabId, { connections: {
+		[socketKey]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	} }]])
+	let reads = 0
+	let fail = true
+	await withControlledRecoveryRetries(async (fireNext) => {
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (Array.isArray(keys) && keys.includes('pendingTerminalReplies')) {
+				reads += 1
+				if (fail) throw new Error('persistent outbox read failure')
+			}
+			return readStoredItems()
+		})
+		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, connections)
+		assert.equal(await fireNext(), 50)
+		assert.equal(await fireNext(), 100)
+		assert.equal(await fireNext(), 200)
+		assert.equal(reads, 4)
+		assert.equal(postedMessages.length, 0)
+		fail = false
+		assert.equal(await fireNext(), 400)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+		assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+		assert.equal(postedMessages.length, 1)
+	})
+})
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
@@ -42,15 +161,12 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 	for (const connectionCase of connectionCases) {
 		browserMock.sentMessages.length = 0
 		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
-			...pendingTransaction,
+			...withSimulatedTransactionResult(pendingTransaction),
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
-		})
+		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, await createAcceptConfirmation())
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 
@@ -772,13 +888,11 @@ async function assertConfirmationViewFailureWasReported() {
 }
 
 test('approving a simulated transaction answers the website before the window cleanup, whose failure is reported', async () => {
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [withSimulatedTransactionResult(pendingTransaction)] })
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
-	}))
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
@@ -830,10 +944,7 @@ test('approving a simulated message signature answers the website before the win
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
 	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
-	}))
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
@@ -853,6 +964,7 @@ test('approving a simulated message signature answers the website before the win
 })
 
 test('a request the website sends while the previous window is still being cleaned up opens its own window and the previous window is closed', async () => {
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [withSimulatedTransactionResult(pendingTransaction)] })
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const previousWindow = pendingTransaction.popupOrTabId
 	// The mock browser opens every new window with id 99.
@@ -871,10 +983,7 @@ test('a request the website sends while the previous window is still being clean
 		nextRequestOutcome = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)
 	})
 
-	const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, instanceId: await getPendingInstanceId(uniqueRequestIdentifier) },
-	})
+	const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation())
 
 	assert.equal(delivered, true)
 	assert.deepEqual(nextRequestOutcome, { type: 'doNotReply' })
@@ -903,7 +1012,7 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 		...pendingTransaction,
 		simulationMode: false,
 		approvalStatus,
-		safeTransaction: {
+		safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 			safeAddress: activeAddress,
 			safeSignerAddress: safeTestOwnerAddress,
 			safeVersion: '1.4.1',
@@ -911,7 +1020,7 @@ async function storeSafeProposalRequest(approvalStatus: { readonly status: 'Wait
 			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
 			safeTxHash,
 			safeTx,
-		},
+		} },
 	}] })
 	return { safeTx, safeTxHash }
 }
