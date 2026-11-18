@@ -1,5 +1,6 @@
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { readCommittedNetworkChangeGeneration } from './networkTransition.js'
 import type { SimulationSnapshot } from './networkTransitionLock.js'
 import { type NetworkRead, type NetworkSnapshot, readNetworkSnapshot, readNetworkSnapshotForPendingRequest, runSimulationStackMutation, runStackIndependentNetworkTask } from './networkTransitionLock.js'
 import { getReviewedResultId } from './reviewedResult.js'
@@ -884,6 +885,12 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	})
 }
 
+// A refresh's services and settings serve one network only while no network change commits after its snapshot was read. The generation tells the networks apart even when a change keeps the client, as a signer-only network does, or returns to the same endpoint; reading it waits for a transition in progress, so settings the refresh read meanwhile are covered.
+const waitForTransitionsAndCheckSnapshotGeneration = async (snapshot: NetworkSnapshot) => await readCommittedNetworkChangeGeneration() === snapshot.simulation.networkChangeGeneration
+
+// How many snapshots one home page request tries. Each retry follows a committed network change, and each such change broadcasts its settings, after which the popup asks for the page again; a request that runs out of attempts therefore publishes nothing and leaves the page to that later request.
+const HOME_PAGE_ATTEMPTS = 3
+
 type HomePageAttemptSteps = {
 	// Work on the snapshot before its network is checked, such as metadata and the shared visualisation.
 	readonly prepare?: (snapshot: NetworkSnapshot) => Promise<void>
@@ -891,14 +898,22 @@ type HomePageAttemptSteps = {
 	readonly onCurrentNetwork?: (snapshot: NetworkSnapshot) => Promise<void>
 }
 
-// Build a home page using services captured at the start of the attempt.
-async function publishHomePageOnCurrentNetwork(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>, { prepare, onCurrentNetwork }: HomePageAttemptSteps = {}): Promise<'published'> {
-	const { network: snapshot, richSettings } = await captureRichListSnapshot(simulationServicesOwner)
-	await prepare?.(snapshot)
-	await onCurrentNetwork?.(snapshot)
-	const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() }, richSettings)
-	await sendPopupMessageToOpenWindows(updatedPage)
-	return 'published'
+// Builds and publishes the home page from one snapshot, and starts over on a new snapshot when a network change commits meanwhile, at most HOME_PAGE_ATTEMPTS times. The page reads settings when it is built, so it is built with the snapshot's client. This is the one place that checks the snapshot's network, after the preparation and before publishing. Each attempt takes its popup refresh generation just before it reads what it shows: a network change broadcasts a newer generation than the attempt it interrupts, which the popup would then drop, and generations keep the order of the reads, so an older page cannot replace a newer one.
+async function publishHomePageOnCurrentNetwork(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, options: Omit<HomePageUpdateOptions, 'popupRefreshGeneration'>, { prepare, onCurrentNetwork }: HomePageAttemptSteps = {}): Promise<'published' | 'network kept changing'> {
+	for (let attempt = 1; attempt <= HOME_PAGE_ATTEMPTS; attempt++) {
+		const { network: snapshot, richSettings } = await captureRichListSnapshot(simulationServicesOwner)
+		if (prepare !== undefined) {
+			await prepare(snapshot)
+			if (!await waitForTransitionsAndCheckSnapshotGeneration(snapshot)) continue
+		}
+		await onCurrentNetwork?.(snapshot)
+		const updatedPage = await buildHomePageUpdate(snapshot.services.ethereum, websiteTabConnections, { ...options, popupRefreshGeneration: bumpPopupRefreshGeneration() }, richSettings)
+		// Nothing is awaited between this check and the broadcast, so no network change commits in between.
+		if (!await waitForTransitionsAndCheckSnapshotGeneration(snapshot)) continue
+		await sendPopupMessageToOpenWindows(updatedPage)
+		return 'published'
+	}
+	return 'network kept changing'
 }
 
 export async function refreshHomeData(

@@ -6,7 +6,7 @@ import { Semaphore } from '../utils/semaphore.js'
 
 export type DefinedRpcConnectionStatus = Exclude<RpcConnectionStatus, undefined>
 export type RpcConnectionStatusChangeMethod = 'popup_new_block_arrived' | 'popup_failed_to_get_block' | 'popup_rpc_connection_status_changed'
-export type PublishRpcConnectionStatus = (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) => Promise<void>
+export type PublishRpcConnectionStatus = (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus, isCurrent?: () => boolean) => Promise<void>
 
 export type RpcStatusEthereumClient = {
 	getRpcEntry: () => RpcEntry
@@ -64,11 +64,13 @@ function getCurrentSlowRpcRequestForStatus(slowRpcRequests: ReadonlyMap<string, 
 export function createRpcConnectionStatusPublisher(config: RpcConnectionStatusPublisherConfig) {
 	const publishSemaphore = new Semaphore(1)
 	return {
-		publishRpcConnectionStatus: async (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) => {
+		publishRpcConnectionStatus: async (method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus, isCurrent: () => boolean = () => true) => {
 			await publishSemaphore.execute(async () => {
+				if (!isCurrent()) return
 				await config.publishRpcConnectionStatus(
 					method,
 					withCurrentSlowRpcRequest(rpcConnectionStatus, getCurrentSlowRpcRequestForStatus(config.slowRpcRequests, rpcConnectionStatus)),
+					isCurrent,
 				)
 			})
 		},
