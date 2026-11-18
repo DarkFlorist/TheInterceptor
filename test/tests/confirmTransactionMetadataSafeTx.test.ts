@@ -153,7 +153,7 @@ async function loadModules() {
 
 	return {
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
-		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
+		updateConfirmTransactionView: (await import('../../app/ts/background/confirmationWindowPublication.js')).updateConfirmTransactionView,
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,

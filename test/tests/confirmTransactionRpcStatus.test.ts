@@ -335,7 +335,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/settings.js'),
 			import('../../app/ts/background/storageVariables.js'),
-			import('../../app/ts/background/windows/confirmTransaction.js'),
+			import('../../app/ts/background/confirmationWindowPublication.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 			import('../../app/ts/simulation/services/EthereumClientService.js'),
 			import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -603,7 +603,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		})
 		const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 		const { getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
-		const { publishConfirmationQueue } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { publishConfirmationQueue } = await import('../../app/ts/background/confirmationWindowPublication.js')
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')

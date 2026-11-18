@@ -230,6 +230,7 @@ export async function loadModules() {
 		safeConfirmationPersistence,
 		errors,
 		popupPendingRequest,
+		confirmationWindowPublication,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -254,6 +255,7 @@ export async function loadModules() {
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
 		import('../../app/ts/utils/errors.js'),
 		import('../../app/ts/utils/popupPendingRequest.js'),
+		import('../../app/ts/background/confirmationWindowPublication.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -274,7 +276,7 @@ export async function loadModules() {
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		// The popup copy as the background sends it on a network that does not refuse the request.
 		toPopupPendingTransactionOrSignableMessage: (pending: PendingTransactionOrSignableMessage) => popupPendingRequest.toPopupPendingTransactionOrSignableMessage(pending, () => undefined),
-		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
+		updateConfirmTransactionView: confirmationWindowPublication.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,

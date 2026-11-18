@@ -54,3 +54,17 @@ test('the transport depends on no network policy or storage, and the network rul
 	const forwardingImports = getRuntimeDependencies(forwardingModule).map((dependency) => dependency.module)
 	for (const composed of [networkRuleModule, backgroundModule('messageSending.ts'), backgroundModule('manifestV2Reconnect.ts')]) assert.ok(forwardingImports.includes(composed), composed)
 })
+
+// The confirmation window's publication reads the stored queue and derives its refusals on its own, so the confirmation resolution and the popup handlers share it without depending on each other for it, and it depends on neither.
+test('the confirmation window publication depends on neither the confirmation resolution nor the popup handlers', () => {
+	const publicationModule = backgroundModule('confirmationWindowPublication.ts')
+	const confirmationModule = path.join(backgroundDirectory, 'windows', 'confirmTransaction.ts')
+	const popupHandlersModule = backgroundModule('popupMessageHandlers.ts')
+	assert.deepEqual(listReached([publicationModule], [confirmationModule, popupHandlersModule]), [])
+	const publicationExports = ['publishConfirmationView', 'publishConfirmationQueue', 'readConfirmationQueue', 'updateConfirmTransactionView', 'updateConfirmationSimulationView', 'reportFailedWindowUpdate']
+	for (const consumer of [confirmationModule, popupHandlersModule, backgroundModule('popupMessageDispatcher.ts'), backgroundModule('providerMessageHandlers.ts')]) {
+		const dependencies = getRuntimeDependencies(consumer)
+		const publicationNamesFromOtherModules = dependencies.filter((dependency) => dependency.module !== publicationModule).flatMap((dependency) => dependency.names === 'whole module' ? [] : dependency.names.filter((name) => publicationExports.includes(name)))
+		assert.deepEqual(publicationNamesFromOtherModules, [], path.basename(consumer))
+	}
+})

@@ -4,6 +4,7 @@ import { test } from 'bun:test'
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const confirmationWindowPublicationSource = await Bun.file(new URL('../../app/ts/background/confirmationWindowPublication.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
@@ -37,9 +38,9 @@ test('the locks of a pending request have one owner, which exposes only the orde
 // Showing what is stored only reads it, so a status has one owner and not also every window update.
 test('the window updates only read what is stored', () => {
 	const getFunctionSource = (name: string) => {
-		const start = confirmTransactionSource.indexOf(`async function ${ name }(`)
+		const start = confirmationWindowPublicationSource.indexOf(`async function ${ name }(`)
 		assert.notEqual(start, -1, name)
-		return confirmTransactionSource.slice(start, confirmTransactionSource.indexOf('\n}\n', start))
+		return confirmationWindowPublicationSource.slice(start, confirmationWindowPublicationSource.indexOf('\n}\n', start))
 	}
 	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage/u, view)
 })
@@ -55,16 +56,16 @@ test('the window queue is built only with the installed services passed in as a 
 		if (/^(?:export )?let \w+: SimulationServicesOwner\b/mu.test(source) && file !== 'background/background-startup.ts') installedServicesSlots.push(file)
 		if (/installedSimulationServices|getInstalledSimulationServices|setInstalledSimulationServicesOwner/u.test(source)) installedServicesSlots.push(file)
 	}
-	assert.deepEqual(builders, ['background/windows/confirmTransaction.ts'])
-	assert.match(confirmTransactionSource, /export const readConfirmationQueue = async \(getInstalledServices: GetInstalledServices\) => await buildFromPendingTransactionsAndMessages\(async \(pending\) => await projectConfirmationQueue\(getInstalledServices, pending\)\)/u)
+	assert.deepEqual(builders, ['background/confirmationWindowPublication.ts'])
+	assert.match(confirmationWindowPublicationSource, /export const readConfirmationQueue = async \(getInstalledServices: GetInstalledServices\) => await buildFromPendingTransactionsAndMessages\(async \(pending\) => await projectConfirmationQueue\(getInstalledServices, pending\)\)/u)
 	assert.match(popupMessageHandlersSource, /await readConfirmationQueue\(getInstalledServices\)/u)
 	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /await showWithCurrentNetworkRefusals\(getInstalledServices, /u, builder)
 	assert.deepEqual(installedServicesSlots, [])
 	assert.equal(await Bun.file(`${ appDirectory }background/installedSimulationServices.ts`).exists(), false)
 	const transactionNetworkSource = await Bun.file(`${ appDirectory }background/transactionNetwork.ts`).text()
 	assert.match(transactionNetworkSource, /export async function showWithCurrentNetworkRefusals<T>\(getInstalledServices: GetInstalledServices, /u)
-	assert.match(confirmTransactionSource, /export async function publishConfirmationView\(getInstalledServices: GetInstalledServices, /u)
-	assert.match(confirmTransactionSource, /export const publishConfirmationQueue = async \(getInstalledServices: GetInstalledServices\)/u)
+	assert.match(confirmationWindowPublicationSource, /export async function publishConfirmationView\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmationWindowPublicationSource, /export const publishConfirmationQueue = async \(getInstalledServices: GetInstalledServices\)/u)
 	assert.match(confirmTransactionSource, /export async function resolvePendingTransactionOrMessage\(getInstalledServices: GetInstalledServices, /u)
 	assert.match(confirmTransactionSource, /async function showNetworkRefusal\(getInstalledServices: GetInstalledServices, /u)
 	assert.match(popupMessageHandlersSource, /export async function popupReadyAndListening\(getInstalledServices: GetInstalledServices, /u)

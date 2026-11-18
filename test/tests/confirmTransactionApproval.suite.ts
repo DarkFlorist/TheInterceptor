@@ -300,7 +300,7 @@ function recordPendingRequestWrites() {
 
 // What the confirmation window is sent when it asks for its queue, as it does on a chain update, with the client getInstalledServices returns then, as the handler passes the owner's getCurrent.
 async function publishQueueAsAskedByTheWindow(getInstalledServices: () => typeof simulator) {
-	const { publishConfirmationQueue } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { publishConfirmationQueue } = await import('../../app/ts/background/confirmationWindowPublication.js')
 	browserMock.sentMessages.length = 0
 	await publishConfirmationQueue(getInstalledServices)
 }
@@ -428,7 +428,7 @@ test('a switch back while the queue is being built never pairs the network read 
 	await requestTransaction(websiteTabConnections, false)
 	const { simulationServicesOwner, switchNetwork } = await createNetworkSwitcher()
 	await switchNetwork(otherNetwork)
-	const { publishConfirmationQueue } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { publishConfirmationQueue } = await import('../../app/ts/background/confirmationWindowPublication.js')
 
 	const networkRead = holdNextActiveNetworkRead()
 	browserMock.sentMessages.length = 0
@@ -629,7 +629,7 @@ test('a confirmation stored by an older version is told so, and its refusal neve
 test('a delivery that does not finish holds no lock over the stored confirmations', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { publishConfirmationView } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { publishConfirmationView } = await import('../../app/ts/background/confirmationWindowPublication.js')
 	const deliveryStarted = createDeferredValue<undefined>()
 	const releaseDelivery = createDeferredValue<undefined>()
 	browserMock.setRuntimeSendMessageHandler(async (message) => {
@@ -651,7 +651,7 @@ test('a delivery that does not finish holds no lock over the stored confirmation
 test('a push whose read overlaps a write reaches the windows before that write is announced', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
-	const { publishConfirmationView } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { publishConfirmationView } = await import('../../app/ts/background/confirmationWindowPublication.js')
 	const { sendPopupMessageToOpenWindows } = await import('../../app/ts/background/backgroundUtils.js')
 	const readStarted = createDeferredValue<undefined>()
 	const releaseRead = createDeferredValue<undefined>()

@@ -6,34 +6,33 @@ import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Bal
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../../utils/constants.js'
-import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
+import type { TransactionConfirmation } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { confirmationRuns } from '../confirmationRunTracker.js'
 import { getConfirmationRunInputs, mayStoreNewRun } from '../confirmationRun.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
-import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, releaseConfirmationRunsIfRequestGone, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, buildFromPendingTransactionsAndMessages, publishPendingTransactionsAndMessages, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { getHtmlFile, getWebsiteSocketRequestOrigin } from '../backgroundUtils.js'
+import { publishConfirmationQueue, reportFailedWindowUpdate, updateConfirmationSimulationView, updateConfirmTransactionView } from '../confirmationWindowPublication.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, releaseConfirmationRunsIfRequestGone, getPendingTransactionsAndMessages, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { forwardToSignerOnRequestedNetwork } from '../requestedNetworkForwarding.js'
 import { cancelPendingTransactionOrMessage, type CommitToStoredRequest, createTerminalReply, formRejectMessage, getPendingTransactionOrMessageByidentifier, queueTerminalReplyAndRemovePendingRequest, resolveSerially, type TerminalReplyContent } from '../pendingRequestLocks.js'
 import { attemptQueuedTerminalReplyDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
+import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import type { ConfirmationRunId, PendingTransaction, PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import { toPopupPendingTransactionOrSignableMessage } from '../../utils/popupPendingRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
-import { getSettings } from '../settings.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
@@ -53,7 +52,7 @@ import { persistUnsignedSafeTransaction, resolveSafeSignerReply, type SafeResolu
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import type { GetInstalledServices, SimulationServices } from '../../simulation/serviceLifecycle.js'
-import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, showWithCurrentNetworkRefusals, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
+import { getTransactionNetworkApprovalError, isEthereumClientOnTransactionChain, updateInterceptorTransactionStackOnRequestedNetwork } from '../transactionNetwork.js'
 import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
 import { getReviewedResultId } from '../reviewedResult.js'
 import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
@@ -184,69 +183,6 @@ export async function refreshPendingSafeSignerSelectionErrors(getInstalledServic
 	}
 }
 
-
-type ShowPending = (pending: readonly PendingTransactionOrSignableMessage[]) => readonly PendingTransactionOrSignableMessage[]
-
-// The one builder of what the confirmation window is sent: the queue as it is stored at this moment, the window's only source of it, and with a view also the simulation view and the block data, which come after the queue. A push must never be older than the moment it is sent, or it could undo a later change, such as an approval handed to the signer, after the window has shown that change. So the stored confirmations are read here, under the lock of their writers, in the same step as the send, and a caller with slow work sends the queue only after it. The refusals shown with the queue are derived by showWithCurrentNetworkRefusals as the last step before the queue is built under that lock, from the active network and the client getInstalledServices returns at that moment, read together, so a client captured before slow work is never used and a switch during the publication never pairs an old network with a new client. showPending adds what a caller has prepared but not stored.
-export async function publishConfirmationView(getInstalledServices: GetInstalledServices, view: UpdateConfirmTransactionDialog['data'] | undefined, showPending: ShowPending = (pending) => pending) {
-	return await publishPendingTransactionsAndMessages(async (pending) => {
-		if (pending.length === 0) return []
-		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: { pendingTransactionAndSignableMessages: await projectConfirmationQueue(getInstalledServices, pending, showPending) },
-		}
-		const queueMessage = serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions)
-		if (view === undefined) return [queueMessage]
-		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
-		return [queueMessage, serialize(UpdateConfirmTransactionDialog, message)]
-	}, async (message) => await sendPopupMessageToOpenWindows(message, 'confirmTransaction'))
-}
-
-// The one projection of the stored queue for the window, run under the queue lock by both the push and the bootstrap reply. The refusals are derived as its last step, from the active network and the client getInstalledServices returns, read together.
-async function projectConfirmationQueue(getInstalledServices: GetInstalledServices, pending: readonly PendingTransactionOrSignableMessage[], showPending: ShowPending = (stored) => stored) {
-	return await showWithCurrentNetworkRefusals(getInstalledServices, (getNetworkRefusalMessage) => showPending(pending).map((current) => toPopupPendingTransactionOrSignableMessage(current, getNetworkRefusalMessage)))
-}
-
-// The queue for the window's bootstrap reply, read and projected under the queue lock as a push is, so no write lands between reading the queue and deriving its refusals. The reply's slow lookups run before this.
-export const readConfirmationQueue = async (getInstalledServices: GetInstalledServices) => await buildFromPendingTransactionsAndMessages(async (pending) => await projectConfirmationQueue(getInstalledServices, pending))
-
-// Sends the confirmation window the stored queue, which needs no RPC. It is sent after every stored change, before anything else happens, such as the wallet being prompted, and whenever the window asks for it, as it does when it opens and when the network, the client or the settings change.
-export const publishConfirmationQueue = async (getInstalledServices: GetInstalledServices) => await publishConfirmationView(getInstalledServices, undefined)
-
-// Sends the simulation view and the block data, without the queue: they wait for an RPC, so the queue goes out before the slow work instead, as soon as it is stored.
-async function publishSimulationView(view: UpdateConfirmTransactionDialog['data']) {
-	const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: view }
-	await sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
-}
-
-// Sends the simulation view with the block data, which waits for an RPC to the services installed when it starts.
-async function updateConfirmationSimulationView(getInstalledServices: GetInstalledServices, onlyIfNotAlreadyUpdating: boolean) {
-	const { ethereum, tokenPriceService } = getInstalledServices()
-	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
-	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-	const settings = await getSettings()
-	const visualizedSimulatorState = settings.simulationMode
-		? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
-		: createPassthroughCompleteVisualizedSimulation()
-	await publishSimulationView({ currentBlockNumber: await currentBlockNumberPromise, rpcConnectionStatus: await rpcConnectionStatusPromise, visualizedSimulatorState })
-}
-
-// Reports a failed window update, unless the RPC or the browser failed as they can at any time. It tells whether the update was sent, never.
-async function reportFailedWindowUpdate(error: unknown) {
-	if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
-	return false
-}
-
-// Tells the windows what is stored: the queue at once, then the simulation view once its RPC answers. It only reads: a stored status is changed by the code that owns it, never as a side effect of showing it. It tells whether a queue was shown.
-export async function updateConfirmTransactionView(getInstalledServices: GetInstalledServices, onlyIfNotAlreadyUpdating = false) {
-	try {
-		if (!await publishConfirmationQueue(getInstalledServices)) return false
-		await updateConfirmationSimulationView(getInstalledServices, onlyIfNotAlreadyUpdating)
-		return true
-	} catch(error: unknown) {
-		return await reportFailedWindowUpdate(error)
-	}
-}
 
 export const isConfirmTransactionFocused = async () => {
 	const pendingTransactions = await getPendingTransactionsAndMessages()
