@@ -13,7 +13,7 @@ import type { Website } from '../types/websiteAccessTypes.js'
 import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
 import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
 import { printError } from '../utils/errors.js'
-import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
+import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackRequestModes, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
@@ -221,6 +221,6 @@ export async function handleInterceptorError(request: InterceptorError) {
 	return { type: 'doNotReply' as const }
 }
 
-export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, simulationMode: boolean, simulationOverlayEnabled: boolean, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
-	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, simulationMode, simulationOverlayEnabled, websiteTabConnections, params, website, request, socket)
+export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, modes: SimulationStackRequestModes, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, modes, websiteTabConnections, params, website, request, socket)
 }

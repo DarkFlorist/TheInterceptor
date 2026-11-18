@@ -106,7 +106,7 @@ describe('fetch simulation stack dialog late confirmations', () => {
 
 	const openRejectedDialogThenNewDialog = async () => {
 		const modules = await fetchModulesPromise
-		const openDialog = (uniqueRequestIdentifier: UniqueRequestIdentifier) => modules.openFetchSimulationStackDialog(passthroughSnapshot, false, false, new Map(), uniqueRequestIdentifier, { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }, website)
+		const openDialog = (uniqueRequestIdentifier: UniqueRequestIdentifier) => modules.openFetchSimulationStackDialog(passthroughSnapshot, { simulationMode: false, simulationOverlayEnabled: false }, new Map(), uniqueRequestIdentifier, { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }, website)
 		const oldDialog = openDialog(oldIdentifier)
 		await waitForCondition(() => openWindows.size === 1)
 		await modules.resolveFetchSimulationStackRequest(passthroughSnapshot, new Map(), fetchConfirmation(oldIdentifier, false))

@@ -1,4 +1,4 @@
-/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. An inline style outranked every stylesheet rule; to keep that, these rules are in the `layout` cascade layer, which every stylesheet orders after `shared`, so a layout rule outranks every shared rule whatever its specificity or load order (an `!important` shared declaration still wins, as it did over inline styles). Browsers add no stylesheet of their own to these extension pages: Chromium injects none, and Firefox only with `browser_style`, which no page of this extension enables. The block is left unindented so the rules read like the other stylesheets. */
+/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. A component is styled either here or in the shared stylesheets, never in both, so its rules never span two cascade layers (uiAuditFixes.test.tsx checks this against the theme). An inline style outranked every stylesheet rule; to keep that, these rules are in the `layout` cascade layer, which every stylesheet orders after `shared`, so a layout rule outranks every shared rule whatever its specificity or load order (an `!important` shared declaration still wins, as it did over inline styles). Browsers add no stylesheet of their own to these extension pages: Chromium injects none, and Firefox only with `browser_style`, which no page of this extension enables. The block is left unindented so the rules read like the other stylesheets. */
 @layer shared, layout;
 @layer layout {
 
@@ -525,8 +525,6 @@
 .multiline-card--importance { --bg-color: var(--importance-box-color) }
 .multiline-card--muted { --bg-color: var(--address-muted-bg-color) }
 
-/* An address or ABI that does not parse is shown in the danger colour, also while the field is disabled. */
-.address-editor .input.address-editor-input--invalid { color: var(--danger-color) }
 
 /* Inline card icons */
 .inline-card-logo {
@@ -1002,6 +1000,33 @@
 	height: 3rem;
 }
 
+/* Segmented control: the track is a raised surface and only the active mode is filled. */
+.buttons.popup-home-mode-selector {
+	background-color: var(--surface-raised-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	display: inline-flex;
+	gap: 2px;
+	margin-bottom: 0;
+	padding: 3px;
+}
+
+.buttons.popup-home-mode-selector > .button {
+	border-radius: calc(var(--radius-control) - 1px);
+	height: 2.125em;
+	margin-right: 0;
+}
+
+.buttons.popup-home-mode-selector > .button.button--secondary {
+	background-color: transparent;
+	color: var(--subtitle-text-color);
+}
+
+.buttons.popup-home-mode-selector > .button.button--secondary:not([disabled]):hover {
+	background-color: var(--surface-highest-color);
+	color: var(--text-color);
+}
+
 .buttons.popup-home-mode-selector > .home-mode-button {
 	margin-bottom: 0px;
 	border-color: transparent;
@@ -1263,12 +1288,6 @@
 
 .error-checkbox-label { font-size: 1em }
 
-.unexpected-error-notification {
-	background-color: var(--error-box-color);
-	padding: 10px;
-	margin: 10px;
-}
-
 .error-unexpected-heading {
 	display: flex;
 	align-items: center;
@@ -1336,8 +1355,6 @@
 
 .dropdown-trigger-button { width: 100% }
 
-/* Both classes are only rendered by the DropDownMenu component, which anchors its menu to the trigger's right edge. */
-.dropdown-menu, .dropdown-content { right: 0 }
 
 /* Dino notification */
 .dino-avatar { margin-right: 0.2rem }
@@ -1369,6 +1386,36 @@
 /* Spinner */
 /* Only the Spinner component renders this class; it centres itself in whatever holds it. */
 .spinner { margin: auto }
+
+svg.spinner {
+	animation: 2s linear infinite svg-animation;
+	max-width: 100px;
+}
+
+@keyframes svg-animation {
+	0% { transform: rotateZ(0deg); }
+	100% { transform: rotateZ(360deg); }
+}
+
+svg.spinner > circle {
+	animation: 1.4s ease-in-out infinite both circle-animation;
+	display: block;
+	fill: transparent;
+	stroke: var(--accent-color);
+	stroke-linecap: round;
+	stroke-dasharray: 283;
+	stroke-dashoffset: 280;
+	stroke-width: 10px;
+	transform-origin: 50% 50%;
+}
+
+@keyframes circle-animation {
+	0%,
+	25% { stroke-dashoffset: 280; transform: rotate(0); }
+	50%,
+	75% { stroke-dashoffset: 75; transform: rotate(45deg); }
+	100% { stroke-dashoffset: 280; transform: rotate(360deg); }
+}
 
 .spinner-page-content {
 	display: grid;

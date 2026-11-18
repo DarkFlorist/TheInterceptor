@@ -242,8 +242,7 @@ describe('fetch simulation stack freshness', () => {
 		// Safe signing shows the overlay while the Interceptor is signing for real, so the dialog must be told the mode separately.
 		const pendingResult = modules.openFetchSimulationStackDialog(
 			initialSnapshot,
-			false,
-			true,
+			{ simulationMode: false, simulationOverlayEnabled: true },
 			new Map(),
 			uniqueRequestIdentifier,
 			{ method: 'interceptor_getSimulationStack', params: ['2.0.0'] },
@@ -282,17 +281,17 @@ describe('fetch simulation stack freshness', () => {
 			},
 		})
 
-		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, true, new Map(), params, website, createRequest(20), socket)
+		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, { simulationMode: true, simulationOverlayEnabled: true }, new Map(), params, website, createRequest(20), socket)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), reject(20))
 		const firstResult = await firstRequest
 		assert.ok('error' in firstResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, true, new Map(), params, website, createRequest(21), socket)
+		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, { simulationMode: true, simulationOverlayEnabled: true }, new Map(), params, website, createRequest(21), socket)
 		assert.ok('error' in cachedConfirmationResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, true, new Map(), params, website, createRequest(22), socket)
+		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, { simulationMode: true, simulationOverlayEnabled: true }, new Map(), params, website, createRequest(22), socket)
 		await modules.resolveFetchSimulationStackRequest(initialSnapshot, new Map(), reject(22))
 		await initialSnapshotRequest
 		assert.equal(popupWindowCreationCount, 2)

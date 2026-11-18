@@ -1373,6 +1373,9 @@ html, body {
 	cursor: not-allowed;
 }
 
+/* An address or ABI that does not parse is shown in the danger colour, also while the field is disabled: kept after the shared disabled-input rule above, which has the same weight. */
+.address-editor .input.address-editor-input--invalid { color: var(--danger-color) }
+
 .button:focus:not(:active) {
 	box-shadow: none;
 }
@@ -1621,6 +1624,9 @@ li {
 	padding: 10px;
 }
 
+/* Both classes are only rendered by the DropDownMenu component, which anchors its menu to the trigger's right edge. */
+.dropdown-menu, .dropdown-content { right: 0 }
+
 .dropdown-item {
 	color: var(--text-color);
 	background: transparent;
@@ -1698,35 +1704,6 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 	width: 18px;
 }
 
-svg.spinner {
-	animation: 2s linear infinite svg-animation;
-	max-width: 100px;
-}
-
-@keyframes svg-animation {
-	0% { transform: rotateZ(0deg); }
-	100% { transform: rotateZ(360deg); }
-}
-
-svg.spinner > circle {
-	animation: 1.4s ease-in-out infinite both circle-animation;
-	display: block;
-	fill: transparent;
-	stroke: var(--accent-color);
-	stroke-linecap: round;
-	stroke-dasharray: 283;
-	stroke-dashoffset: 280;
-	stroke-width: 10px;
-	transform-origin: 50% 50%;
-}
-
-@keyframes circle-animation {
-	0%,
-	25% { stroke-dashoffset: 280; transform: rotate(0); }
-	50%,
-	75% { stroke-dashoffset: 75; transform: rotate(45deg); }
-	100% { stroke-dashoffset: 280; transform: rotate(360deg); }
-}
 
 .popup-home-card {
 	margin: 10px;
@@ -1738,33 +1715,6 @@ svg.spinner > circle {
 	display: grid;
 	grid-template-columns: max-content max-content minmax(0, max-content);
 	place-content: space-between;
-}
-
-/* Segmented control: the track is a raised surface and only the active mode is filled. */
-.buttons.popup-home-mode-selector {
-	background-color: var(--surface-raised-color);
-	border: 1px solid var(--hairline-color);
-	border-radius: var(--radius-medium);
-	display: inline-flex;
-	gap: 2px;
-	margin-bottom: 0;
-	padding: 3px;
-}
-
-.buttons.popup-home-mode-selector > .button {
-	border-radius: calc(var(--radius-control) - 1px);
-	height: 2.125em;
-	margin-right: 0;
-}
-
-.buttons.popup-home-mode-selector > .button.button--secondary {
-	background-color: transparent;
-	color: var(--subtitle-text-color);
-}
-
-.buttons.popup-home-mode-selector > .button.button--secondary:not([disabled]):hover {
-	background-color: var(--surface-highest-color);
-	color: var(--text-color);
 }
 
 .popup-home-rpc-selector {
@@ -2052,6 +2002,12 @@ svg.spinner > circle {
 .error-notification, .unexpected-error-notification {
 	border: 1px solid var(--danger-line-color);
 	color: var(--danger-color);
+}
+
+.unexpected-error-notification {
+	background-color: var(--error-box-color);
+	padding: 10px;
+	margin: 10px;
 }
 
 .error-notification[data-severity='warning'] {

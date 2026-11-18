@@ -397,7 +397,7 @@ describe('UI audit fixes', () => {
 		assert.equal(getStoredRequestModeClass(false), getInterceptorModeClass(false))
 		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
 		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, settings\.simulationMode,/)
-		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), settings\.simulationMode,/)
+		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), \{ simulationMode: settings\.simulationMode, simulationOverlayEnabled \},/)
 	})
 
 	test('gives component layout its precedence through cascade layer order instead of load order or selector weight', async () => {
@@ -421,6 +421,25 @@ describe('UI audit fixes', () => {
 				assert.deepEqual(linkedStylesheets, [...stylesheetFilenames], file)
 			}
 		}
+	})
+
+	// Every class a stylesheet's selectors name, wherever it sits in the selector.
+	const getClassesStyled = (css: string) => new Set((stripCssComments(css).match(/[^;{}]+(?=\{)/g) ?? []).flatMap((selector) => [...selector.matchAll(/\.([A-Za-z][\w-]*)/g)].flatMap((match) => match[1] ?? [])))
+	// The component classes styled in both the layout and the theme stylesheet, leaving that component's rules in two cascade layers with different precedence.
+	const getComponentsInBothLayers = (layoutCss: string, themeCss: string, sharedBuildingBlocks: ReadonlySet<string>) => {
+		const themeClasses = getClassesStyled(themeCss)
+		return [...getClassesStyled(layoutCss)].filter((className) => themeClasses.has(className) && !sharedBuildingBlocks.has(className))
+	}
+	// The only classes both files may name: generic building blocks that a component restyles inside its own selector (the home mode selector's buttons in layout, the Safe signer's inline cards in the theme). Every other class, including ones the framework also styles such as dropdown-menu, belongs to one file.
+	const SHARED_BUILDING_BLOCKS: ReadonlySet<string> = new Set(['button', 'inline-card'])
+
+	test('styles each component in only one of the layout and theme stylesheets', async () => {
+		// A component class is found wherever it appears in a selector, and a class the framework also styles is still checked.
+		assert.deepEqual(getComponentsInBothLayers('.buttons.popup-home-mode-selector > .button { gap: 0 }', '.popup-home-mode-selector { gap: 1px }', SHARED_BUILDING_BLOCKS), ['popup-home-mode-selector'])
+		assert.deepEqual(getComponentsInBothLayers('.dropdown-menu { right: 0 }', '.address-editor-field .dropdown-menu { left: auto }', SHARED_BUILDING_BLOCKS), ['dropdown-menu'])
+		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
+		const themeCss = await Bun.file('app/css/interceptor-theme.css').text()
+		assert.deepEqual(getComponentsInBothLayers(layoutCss, themeCss, SHARED_BUILDING_BLOCKS), [])
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {

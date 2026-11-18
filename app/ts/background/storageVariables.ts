@@ -1,4 +1,3 @@
-import * as funtypes from 'funtypes'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -24,15 +23,10 @@ import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 
+// Reports a stored value that no longer decodes; the repository then reads it as its default (see createStoredValueRepository).
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
 	console.warn(error)
-}
-
-// Recovers only from a stored value that no longer decodes. A failing storage read is rethrown, so an update never writes the default value over records it could not read.
-const reportUndecodableStoredValue = (label: string) => async (error: unknown) => {
-	if (!(error instanceof funtypes.ValidationError)) throw error
-	await reportCorruptStoredValue(label)(error)
 }
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
@@ -112,7 +106,7 @@ const fetchSimulationStackRequestRepository = createStoredValueRepository<Pendin
 		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
 	},
 	getDefault: () => undefined,
-	recover: reportUndecodableStoredValue('Simulation stack request'),
+	recover: reportCorruptStoredValue('Simulation stack request'),
 })
 export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
 export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
@@ -122,7 +116,7 @@ const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly
 	write: async (pendingWatchAssetRequests) => { await browserStorageLocalSet({ pendingWatchAssetRequests }) },
 	getDefault: () => [],
 	// Requests that no longer decode are reported and dropped so later requests still queue. Requests queued before the mode travelled with the request still decode (see StoredWatchAssetRequest).
-	recover: reportUndecodableStoredValue('Pending watch asset requests'),
+	recover: reportCorruptStoredValue('Pending watch asset requests'),
 })
 export const getPendingWatchAssetRequests = pendingWatchAssetRequestsRepository.get
 export async function updatePendingWatchAssetRequests(update: (requests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) {
