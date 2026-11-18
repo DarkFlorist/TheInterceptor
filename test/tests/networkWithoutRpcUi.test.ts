@@ -49,10 +49,10 @@ describe('getNetworkWithoutRpcWarningText', () => {
 })
 
 describe('getTabSignerAvailability', () => {
-	// The routing forwards by whether the page has a wallet to forward to, which the tab stores as signerConnected; a named wallet the page cannot forward to is still missing.
-	test('takes the availability from signerConnected, not the signer name', () => {
-		assert.equal(getTabSignerAvailability({ signerConnected: true }), 'available')
-		assert.equal(getTabSignerAvailability({ signerConnected: false }), 'missing')
+	// The routing forwards by whether the page has a wallet to forward to, which the tab stores as signerReceivesRequests; a named wallet the page cannot forward to is still missing.
+	test('takes the availability from signerReceivesRequests, not the signer name or its session', () => {
+		assert.equal(getTabSignerAvailability({ signerReceivesRequests: true }), 'available')
+		assert.equal(getTabSignerAvailability({ signerReceivesRequests: false }), 'missing')
 		assert.equal(getTabSignerAvailability(undefined), 'missing')
 	})
 })

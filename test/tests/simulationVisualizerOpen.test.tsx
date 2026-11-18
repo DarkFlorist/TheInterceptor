@@ -299,6 +299,7 @@ function createHomePageUpdate(tabId: number, popupRefreshGeneration: number, ico
 				tabId,
 				website: { websiteOrigin: `https://tab-${ tabId }.example`, icon: undefined, title: `Tab ${ tabId }` },
 				signerConnected: false,
+				signerReceivesRequests: false,
 				signerName: 'NoSigner',
 				signerAccounts: [],
 				signerAccountError: undefined,

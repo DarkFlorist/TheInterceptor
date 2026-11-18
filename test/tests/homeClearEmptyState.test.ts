@@ -438,10 +438,11 @@ describe('Home popup clear empty state', () => {
 	const protectionPromises = [/never sent to the chain/, /simulated[^.]*instead of being sent/, /shows what it does before[^.]*signs/, /to be signed and sent to the chain/]
 	const findProtectionPromises = (text: string) => protectionPromises.filter((promise) => promise.test(text)).map((promise) => promise.source)
 	const networkWithoutRpc = { name: 'Unsupported Chain', chainId: 999n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
-	const createTabState = (signerName: TabState['signerName'], signerConnected = signerName === 'MetaMask'): TabState => ({
+	const createTabState = (signerName: TabState['signerName'], signerReceivesRequests = signerName === 'MetaMask'): TabState => ({
 		tabId: 1,
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
-		signerConnected,
+		signerConnected: signerName === 'MetaMask',
+		signerReceivesRequests,
 		signerName,
 		signerAccounts: signerName === 'MetaMask' ? [ACTIVE_ADDRESS] : [],
 		signerAccountError: undefined,
@@ -458,17 +459,17 @@ describe('Home popup clear empty state', () => {
 		{ state: 'a network without an RPC with a wallet', simulationMode: false, signerName: 'MetaMask', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcBypassToSigner' }), interceptionOff: true, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 		{ state: 'a network without an RPC with a wallet', simulationMode: true, signerName: 'MetaMask', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 		{ state: 'a network without an RPC without a wallet', simulationMode: false, signerName: 'NoSigner', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
-		// The page named a wallet but reported no wallet to forward to, so its requests carry usingInterceptorWithoutSigner and are still intercepted; the popup reads that same fact (signerConnected), not the name.
-		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerConnected: false, notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		// The page named a wallet but reported no wallet to forward to, so its requests carry usingInterceptorWithoutSigner and are still intercepted; the popup reads that same fact (signerReceivesRequests), not the name.
+		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerReceivesRequests: false, notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 	] as const
 	for (const unprotectedState of unprotectedStates) {
 		const { state, simulationMode, signerName, notice, interceptionOff, overrides, restore } = unprotectedState
-		const signerConnected = 'signerConnected' in unprotectedState ? unprotectedState.signerConnected : undefined
+		const signerReceivesRequests = 'signerReceivesRequests' in unprotectedState ? unprotectedState.signerReceivesRequests : undefined
 		test(`makes no protection promise anywhere on the page in ${ simulationMode ? 'simulation' : 'signing' } mode on ${ state } and restores it when protection returns`, async () => {
 			const dom = installDomMock()
 			const params = createHomeParams({
 				simulationMode: new Signal(simulationMode),
-				tabState: new Signal<TabState | undefined>(createTabState(signerName, signerConnected)),
+				tabState: new Signal<TabState | undefined>(createTabState(signerName, signerReceivesRequests)),
 				simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults())),
 				...overrides(),
 			})
@@ -1005,6 +1006,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: false,
+						signerReceivesRequests: false,
 						signerName: 'MetaMask',
 						signerAccounts: [ACTIVE_ADDRESS],
 						signerAccountError: undefined,
@@ -1039,6 +1041,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: false,
+						signerReceivesRequests: false,
 						signerName: 'NoSigner',
 						signerAccounts: [],
 						signerAccountError: undefined,
@@ -1075,6 +1078,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1132,6 +1136,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1192,6 +1197,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [],
 						signerAccountError: undefined,
@@ -1265,6 +1271,7 @@ test('changes the Safe simulation signer from the popup in simulation mode', asy
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1340,6 +1347,7 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1419,6 +1427,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1598,6 +1607,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [0x6000000000000000000000000000000000000006n, SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1654,6 +1664,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1694,6 +1705,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1739,8 +1751,9 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 					tabState: new Signal<TabState | undefined>(signerName === undefined ? undefined : {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
-						// As the signer handshake stores it: a tab without a detected signer is never connected to one.
+						// As the signer handshake stores it: a tab without a detected signer is never connected to one, nor receives requests.
 						signerConnected: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
+						signerReceivesRequests: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
 						signerName,
 						signerAccounts: [ACTIVE_ADDRESS],
 						signerAccountError: undefined,

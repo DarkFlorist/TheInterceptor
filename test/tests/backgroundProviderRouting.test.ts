@@ -619,6 +619,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [staleAccount],
 			signerChain: 1n,
 			signerAccountError: { code: 4001, message: 'Stale signer error' },
@@ -641,7 +642,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 90, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [false, 'NoSigner', 2],
+			params: [false, 'NoSigner', 2, false],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const noSignerState = await getTabState(socket.tabId)
@@ -676,7 +677,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 92, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 3],
+			params: [true, 'MetaMask', 3, true],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const identifiedSignerState = await getTabState(socket.tabId)
 		assert.equal(identifiedSignerState.signerName, 'MetaMask')
@@ -689,7 +690,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 94, requestSocket: childSocket },
 			method: 'connected_to_signer',
-			params: [false, 'NoSigner', 4],
+			params: [false, 'NoSigner', 4, false],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const stateAfterChildFrame = await getTabState(socket.tabId)
 		assert.equal(stateAfterChildFrame.signerName, 'MetaMask')
@@ -761,6 +762,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			...previousState,
 			signerName: 'Brave',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [braveAccount],
 			signerChain: 1n,
 			signerAccountError: { code: 4001, message: 'Stale Brave error' },
@@ -773,7 +775,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 200, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 2],
+			params: [true, 'MetaMask', 2, true],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const stateAfterMetaMaskSelection = await getTabState(socket.tabId)
@@ -812,7 +814,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 203, requestSocket: nextSocket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 1],
+			params: [true, 'MetaMask', 1, true],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const stateAfterNewPageConnection = await getTabState(nextSocket.tabId)
@@ -933,6 +935,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [staleAccount],
 			signerChain: 1n,
 			activeSigningAddress: staleAccount,
@@ -960,7 +963,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 301, requestSocket: restoredSocket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 1],
+			params: [true, 'MetaMask', 1, true],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await accountRequest
 
@@ -997,7 +1000,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 					usingInterceptorWithoutSigner: false,
 					uniqueRequestIdentifier: { requestId: 308, requestSocket: socket },
 					method: 'connected_to_signer',
-					params: [true, 'MetaMask', 2],
+					params: [true, 'MetaMask', 2, true],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 				await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,
@@ -1068,6 +1071,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [currentAccount],
 			signerChain: 5n,
 			signerAccountError: currentError,

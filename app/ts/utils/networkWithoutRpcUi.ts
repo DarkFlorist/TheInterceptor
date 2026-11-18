@@ -5,9 +5,9 @@ import { assertNever } from './typescript.js'
 // 'unknown' is for callers that cannot tell whether the requesting website has a signer, such as pages not tied to a website's tab.
 export type SignerAvailability = 'available' | 'missing' | 'unknown'
 
-// The one rule for whether a tab's page has a wallet to forward to, for every view of the routing (the popup's protection state and the toolbar icon): the tab's signerConnected, which the page reports from the same fact its requests carry to the background's routing (usingInterceptorWithoutSigner). A tab without state has no wallet.
-export function getTabSignerAvailability(tabState: { readonly signerConnected: boolean } | undefined): SignerAvailability {
-	return tabState?.signerConnected === true ? 'available' : 'missing'
+// The one rule for whether a tab's page has a wallet to forward to, for every view of the routing (the popup's protection state and the toolbar icon): the tab's signerReceivesRequests, which the page reports from the same fact its requests carry to the background's routing (usingInterceptorWithoutSigner). A tab without state has no wallet.
+export function getTabSignerAvailability(tabState: { readonly signerReceivesRequests: boolean } | undefined): SignerAvailability {
+	return tabState?.signerReceivesRequests === true ? 'available' : 'missing'
 }
 
 export type NetworkWithoutRpcWarning = { readonly kind: 'noRpcNeedsConfig' } | { readonly kind: 'noRpcBypassToSigner' } | { readonly kind: 'noRpcMayBypass' }

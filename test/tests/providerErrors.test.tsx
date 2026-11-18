@@ -13,6 +13,7 @@ function createTabState(signerName: SignerName): TabState {
 		tabId: 1,
 		website: undefined,
 		signerConnected: false,
+		signerReceivesRequests: false,
 		signerName,
 		signerAccounts: [],
 		signerChain: undefined,

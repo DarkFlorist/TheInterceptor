@@ -602,6 +602,7 @@ async function main() {
 					await browser.storage.local.set({ [key]: {
 						...current,
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [${ JSON.stringify(addressString(OWNER_ADDRESS)) }],
 						signerChain: '0x1',
@@ -722,6 +723,7 @@ async function main() {
 					await browser.storage.local.set({ [key]: {
 						...current,
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [${ JSON.stringify(addressString(OWNER_ADDRESS)) }],
 						signerChain: '0x1',

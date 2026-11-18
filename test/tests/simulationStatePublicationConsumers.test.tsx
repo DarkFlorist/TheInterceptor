@@ -106,6 +106,7 @@ const freshHomePageUpdate: UpdateHomePage = {
 			tabId,
 			website: { websiteOrigin: 'https://tab.example', icon: undefined, title: 'Tab' },
 			signerConnected: false,
+			signerReceivesRequests: false,
 			signerName: 'NoSigner',
 			signerAccounts: [],
 			signerAccountError: undefined,

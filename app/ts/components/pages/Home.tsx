@@ -237,13 +237,14 @@ type SignerExplanationParams = {
 	tabState: Signal<TabState | undefined>
 }
 
-function isSignerAvailable(tabState: TabState | undefined) {
+// Whether the wallet is connected to the page (its session or accounts), which the CONNECTED chip and the signer hints show. Whether requests are forwarded to it, which the protection status shows, is a separate fact (getTabSignerAvailability): a disconnected wallet still receives them.
+function isSignerConnectedToPage(tabState: TabState | undefined) {
 	return tabState !== undefined && (tabState.signerConnected || tabState.signerAccounts.length > 0)
 }
 
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
-	if (!isSignerAvailable(param.tabState.value)) {
+	if (!isSignerConnectedToPage(param.tabState.value)) {
 		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
 	}
@@ -540,7 +541,7 @@ function FirstCard(param: FirstCardParams) {
 		return safe.safeSignerAddresses.includes(signerAddress)
 	})
 	const signerAvailable = useComputed(() =>
-		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : selectedSignerAddress.value !== undefined
+		activeSafe.value === undefined ? isSignerConnectedToPage(param.tabState.value) : selectedSignerAddress.value !== undefined
 	)
 	const canRequestSignerAccounts = useComputed(() =>
 		param.tabState.value !== undefined
@@ -764,7 +765,7 @@ function FirstCard(param: FirstCardParams) {
 								text = { <WalletSelectedAddressStatus signerName = { getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } addressBookEntry = { selectedSignerAddressBookEntry.value } renameAddressCallBack = { param.renameAddressCallBack } cannotSignSafe = { true } /> }
 							/>
 						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
-							!isSignerAvailable(param.tabState.value)
+							!isSignerConnectedToPage(param.tabState.value)
 								? 'Connect a browser wallet to sign with the selected address.'
 								: activeSafe.value === undefined
 								? ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`

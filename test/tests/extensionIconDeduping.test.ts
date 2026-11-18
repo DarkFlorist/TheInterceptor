@@ -443,6 +443,7 @@ describe('extension icon deduping', () => {
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [staleAccount],
 			signerChain: 1n,
 			activeSigningAddress: staleAccount,
@@ -467,7 +468,7 @@ describe('extension icon deduping', () => {
 		assert.equal(tabState.activeSigningAddress, undefined)
 	})
 
-	async function getSigningTooltipOnNetworkWithoutRpc(signerName: 'MetaMask' | 'NoSigner', signerConnected = signerName !== 'NoSigner') {
+	async function getSigningTooltipOnNetworkWithoutRpc(signerName: 'MetaMask' | 'NoSigner', signerReceivesRequests = signerName !== 'NoSigner') {
 		const { setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const { changeSimulationMode, updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 		const signerAccount = 0x6363636363636363636363636363636363636363n
@@ -485,7 +486,8 @@ describe('extension icon deduping', () => {
 			...previousState,
 			signerName,
 			// As the signer handshake stores it: a tab without a detected signer is never connected to one.
-			signerConnected,
+			signerConnected: signerName !== 'NoSigner',
+			signerReceivesRequests,
 			signerAccounts: [signerAccount],
 			signerChain: 1n,
 			activeSigningAddress: signerAccount,

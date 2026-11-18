@@ -82,6 +82,7 @@ export function addSignerStateReplacementListener(listener: (signerStateToken: S
 export function clearSignerDerivedTabState(previousState: TabState) {
 	return modifyObject(previousState, {
 		signerConnected: false,
+		signerReceivesRequests: false,
 		signerName: 'NoSigner',
 		signerAccounts: [],
 		signerChain: undefined,

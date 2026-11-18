@@ -250,7 +250,15 @@ function normalizeLegacyTabStateIcons(items: unknown) {
 	}))
 }
 
-export const parseTabStateItems = (items: unknown) => TabStateItems.parse(normalizeLegacyTabStateIcons(items))
+// A tab state stored before signerReceivesRequests existed takes it from signerConnected, which then reported the same fact.
+function normalizeLegacyTabStateSignerRouting(items: unknown) {
+	if (typeof items !== 'object' || items === null) return items
+	return Object.fromEntries(Object.entries(items).map(([key, value]) => {
+		if (typeof value !== 'object' || value === null || 'signerReceivesRequests' in value || !('signerConnected' in value)) return [key, value]
+		return [key, { ...value, signerReceivesRequests: value.signerConnected }]
+	}))
+}
+export const parseTabStateItems = (items: unknown) => TabStateItems.parse(normalizeLegacyTabStateSignerRouting(normalizeLegacyTabStateIcons(items)))
 
 export async function getTabStateFromStorage(tabId: number) {
 	return parseTabStateItems(await browser.storage.local.get(getTabStateKey(tabId)))?.[getTabStateKey(tabId)] ?? undefined

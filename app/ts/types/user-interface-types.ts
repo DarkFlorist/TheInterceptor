@@ -204,7 +204,10 @@ export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
 	tabId: funtypes.Number,
 	website: funtypes.Union(Website, funtypes.Undefined),
+	// Whether the wallet is connected to the page (its session); a disconnect clears it.
 	signerConnected: funtypes.Boolean,
+	// Whether the page forwards requests to a wallet, as each of its requests tells the background's routing (usingInterceptorWithoutSigner); a disconnected wallet still receives them.
+	signerReceivesRequests: funtypes.Boolean,
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerAccountError: funtypes.Union(ErrorWithCodeAndOptionalData, funtypes.Undefined),

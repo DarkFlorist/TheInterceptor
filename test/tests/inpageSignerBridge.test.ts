@@ -1273,7 +1273,7 @@ describe('inpage signer bridge', () => {
 			signerUnavailable: true,
 			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
-		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1]])
+		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1, false]])
 	})
 
 	test('marks an in-place patched provider with isMetaMask false as MetaMask in compatibility mode', async () => {
@@ -1414,14 +1414,14 @@ describe('inpage signer bridge', () => {
 		assert.equal(secondGeneration > firstGeneration, true)
 	})
 
-	// The popup's protection status reads the handshake's signerConnected and the background routes by each request's usingInterceptorWithoutSigner, so a wallet disconnect must not make them disagree.
-	test('keeps reporting the wallet a disconnected signer still forwards to', async () => {
+	// The popup's protection status reads the handshake's signerReceivesRequests and the background routes by each request's usingInterceptorWithoutSigner, so a wallet disconnect must not make them disagree; it only ends the wallet's session (signerConnected).
+	test('ends the session but keeps reporting the wallet a disconnected signer still forwards to', async () => {
 		const handshakes: unknown[] = []
 		const requestsAfterDisconnect: boolean[] = []
 		let disconnected = false
 		const { fakeWindow, emitSignerEvent } = createFakeWindow({
 			handleRequest: (request, sendBackgroundReply) => {
-				if (request.method === 'connected_to_signer') handshakes.push(request.params?.[0])
+				if (request.method === 'connected_to_signer') handshakes.push([request.params?.[0], request.params?.[3]])
 				if (request.method === 'eth_blockNumber') {
 					if (disconnected) requestsAfterDisconnect.push(request.usingInterceptorWithoutSigner)
 					sendBackgroundReply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'eth_blockNumber', result: '0x1' })
@@ -1439,7 +1439,8 @@ describe('inpage signer bridge', () => {
 			await fakeWindow.ethereum.request({ method: 'eth_blockNumber' })
 		})
 
-		assert.deepEqual(handshakes, [true, true])
+		// [signerConnected, signerReceivesRequests]
+		assert.deepEqual(handshakes, [[true, true], [false, true]])
 		assert.deepEqual(requestsAfterDisconnect, [false])
 	})
 
@@ -3999,10 +4000,10 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === true && message.params?.[1] === 'CoinbaseWallet').length >= 1)
 			const handshakesBeforeDisconnect = backgroundMessages.filter((message) => message.method === 'connected_to_signer').length
 			signerEvents.disconnect!({ code: 4900, message: 'error' })
-			// A disconnect starts a new provider generation (which clears the signer's accounts and chain) but the page still forwards to this wallet, so it is still reported as connected.
+			// A disconnect ends the wallet's session, but the page still forwards to this wallet, so it still receives requests.
 			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer').length > handshakesBeforeDisconnect)
 			const disconnectHandshake = backgroundMessages.filter((message) => message.method === 'connected_to_signer').at(-1)
-			assert.deepEqual(disconnectHandshake?.params?.slice(0, 2), [true, 'CoinbaseWallet'])
+			assert.deepEqual([disconnectHandshake?.params?.[0], disconnectHandshake?.params?.[1], disconnectHandshake?.params?.[3]], [false, 'CoinbaseWallet', true])
 			signerEvents.accountsChanged!(['0x1111111111111111111111111111111111111111'])
 			assert.equal(typeof signerEvents.accountsChanged, 'function')
 			assert.equal(typeof signerEvents.chainChanged, 'function')

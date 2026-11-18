@@ -170,6 +170,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		tabId,
 		website: undefined,
 		signerConnected: false,
+		signerReceivesRequests: false,
 		signerName: await getDefaultSignerName(),
 		signerAccounts: [],
 		signerChain: undefined,
