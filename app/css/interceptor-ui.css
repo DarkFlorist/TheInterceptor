@@ -14,14 +14,6 @@
 	align-items: center;
 	padding: var(--py) var(--px);
 }
-.flexy-sm {
-	--pad-y: 0.5rem;
-	--gap-x: 1rem;
-}
-.flexy-lg {
-	--pad-y: 1rem;
-	--gap-x: 2rem;
-}
 
 /* Layout Component */
 :has(> .layout:first-child):not(dialog:not([open])) {
@@ -175,18 +167,5 @@ input[role=switch]:checked:before {
 	border-radius: 2px;
 	border: var(--outline);
 }
-
-.status-warn {
-	--bg-color: var(--status-warn-bg-color);
-	--fg-color: var(--status-warn-fg-color);
-}
-
-.status-danger {
-	--bg-color: var(--status-danger-bg-color);
-	--fg-color: var(--status-danger-fg-color);
-}
-
-.status-outline { --outline: 1px solid var(--status-danger-outline-color) }
-.status-lg { font-size: 1.5rem }
 
 }

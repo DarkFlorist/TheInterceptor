@@ -346,9 +346,10 @@ describe('UI audit fixes', () => {
 		// The inline card colours its own label; a tone is in the layout cascade layer, which makes it apply to the label as well.
 		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
 		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(layoutCss, new RegExp(`\\n\\.coin-text--${ tone } \\{`))
-		// The layout layer outranks the heavier themed paragraph spacing and card corner rules, so these layout rules need no extra selectors.
-		assert.match(layoutCss, /\n\.summary-transaction-input-label \{/)
+		// The layout layer outranks the heavier themed card corner rules, so this layout rule needs no extra selectors.
 		assert.match(layoutCss, /\n\.collapsible-card-content \{/)
+		// The simulation summary's rules are all in the shared layer, where the transaction input label's spacing follows the themed paragraph rule in load order.
+		assert.match(await Bun.file('app/css/interceptor-pages.css').text(), /\n\.summary-transaction-input-label \{/)
 		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
 		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ getToneClass\('coin-text', direction === 'pay' \? 'negative' : 'positive'\) \}`/)
 		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
@@ -420,8 +421,8 @@ describe('UI audit fixes', () => {
 		}
 	})
 
-	// Framework primitives that a component may extend with its own class in the same compound (`.buttons.popup-home-mode-selector`, `.tag.send-route-tag`); such a rule styles only that component.
-	const FRAMEWORK_PRIMITIVES: ReadonlySet<string> = new Set(['buttons', 'image', 'table', 'tag', 'navbar-item'])
+	// Framework and design-system primitives that a component may extend with its own class in the same compound (`.buttons.popup-home-mode-selector`, `.button.popup-loading-control`, `.tag.send-route-tag`); such a rule styles only that component.
+	const FRAMEWORK_PRIMITIVES: ReadonlySet<string> = new Set(['btn', 'button', 'buttons', 'card', 'image', 'input', 'table', 'tag', 'navbar-item'])
 	// The compounds that scope a rule's target: its rightmost compound and the ancestors it is nested in through descendant or child combinators. A sibling combinator ends the chain, as the target is not inside a sibling.
 	const getScopingCompounds = (selector: string) => {
 		const parts = selector.trim().replace(/:(?:not|is|where|has)\([^)]*\)/g, '').split(/(\s*[>+~]\s*|\s+)/)
@@ -463,6 +464,57 @@ describe('UI audit fixes', () => {
 		for (const sharedStylesheetPath of interceptorAppStylesheetPaths.filter((path) => !path.endsWith('interceptor-layout.css'))) {
 			assert.deepEqual(getClassesStyledInBothLayers(layoutCss, await Bun.file(sharedStylesheetPath).text()), [], sharedStylesheetPath)
 		}
+	})
+
+	// The classes styled by the vendored framework and control stylesheets, and the source file of every class name that only one source file mentions.
+	const getComponentClassContext = async () => {
+		const frameworkClasses = new Set([...(await Bun.file('app/css/interceptor-framework.css').text() + await Bun.file('app/css/interceptor-controls.css').text()).matchAll(/\.([A-Za-z][\w-]*)/g)].flatMap((match) => match[1] ?? []))
+		const filesByClass = new Map<string, Set<string>>()
+		for await (const sourcePath of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan()) {
+			// Every word of the source counts, not only class attributes, so a class a file builds in a helper or a condition is never missed; a word other files also use only makes the check stricter.
+			for (const word of new Set((await Bun.file(sourcePath).text()).match(/[A-Za-z][\w-]*/g) ?? [])) filesByClass.set(word, (filesByClass.get(word) ?? new Set()).add(sourcePath))
+		}
+		const sourceFileByClass = new Map([...filesByClass].flatMap(([className, files]) => files.size === 1 ? [[className, [...files][0] ?? '']] : []))
+		return { frameworkClasses, sourceFileByClass }
+	}
+	type ComponentClassContext = Awaited<ReturnType<typeof getComponentClassContext>>
+	// The component a selector belongs to, from its leftmost compound that names a class other than a framework primitive: the source file of a class in that compound that only one file uses, or else the compound's first such class, which several files share and is then its own component. A component's own selector may so adjust another component's class inside it (`.swap-price-cell .inline-card` belongs to the swap table), and a shared class in the component's compound does not take the rule over (`.btn.popup-loading-control` belongs to the home page).
+	const getSelectorComponent = (selector: string, { frameworkClasses, sourceFileByClass }: ComponentClassContext) => {
+		for (const compound of selector.trim().split(/\s*[>+~]\s*|\s+/)) {
+			const compoundClasses = [...compound.replace(/:(?:not|is|where|has)\([^)]*\)/g, '').matchAll(/\.([A-Za-z][\w-]*)/g)].map((match) => match[1] ?? '').filter((className) => !frameworkClasses.has(className))
+			const componentClass = compoundClasses.find((className) => sourceFileByClass.has(className))
+			if (componentClass !== undefined) return sourceFileByClass.get(componentClass)
+			if (compoundClasses[0] !== undefined) return compoundClasses[0]
+		}
+		return undefined
+	}
+	// The components whose selectors are in both cascade layers. Layer order rather than selector weight would then decide between the component's own rules, and moving one of its rules between the shared and layout stylesheets would silently change which declaration wins.
+	const getComponentsInBothLayers = (stylesheets: readonly { css: string, layer: string }[], context: ComponentClassContext) => {
+		const layersByComponent = new Map<string, Set<string>>()
+		for (const { css, layer } of stylesheets) {
+			for (const selectorList of stripCssComments(css).match(/[^;{}]+(?=\{)/g) ?? []) {
+				if (selectorList.trim().startsWith('@')) continue
+				for (const selector of selectorList.split(',')) {
+					const component = getSelectorComponent(selector, context)
+					if (component !== undefined) layersByComponent.set(component, (layersByComponent.get(component) ?? new Set()).add(layer))
+				}
+			}
+		}
+		return [...layersByComponent].filter(([, layers]) => layers.size > 1).map(([component]) => component)
+	}
+
+	test('keeps each component\'s rules in one cascade layer', async () => {
+		const context = { frameworkClasses: new Set(['button']), sourceFileByClass: new Map([['access-request-hero', 'InterceptorAccess.tsx'], ['access-request-card', 'InterceptorAccess.tsx'], ['inline-card', 'InlineCard.tsx'], ['swap-price-cell', 'SwapTransactions.tsx']]) }
+		assert.deepEqual(getComponentsInBothLayers([{ css: '.access-request-hero { gap: 0 }', layer: 'shared' }, { css: '.button.access-request-card { gap: 0 }', layer: 'layout' }], context), ['InterceptorAccess.tsx'])
+		// Another component's class adjusted inside a component's own selector belongs to the scoping component.
+		assert.deepEqual(getComponentsInBothLayers([{ css: '.inline-card { gap: 0 }', layer: 'shared' }, { css: '.swap-price-cell .inline-card { font-size: 14px }', layer: 'layout' }], context), [])
+		// A class several source files share is its own component, unless a component class in the same compound claims the rule.
+		assert.deepEqual(getComponentsInBothLayers([{ css: '.paragraph { margin: 0 }', layer: 'shared' }, { css: '.paragraph .inline-card { margin: 1px }', layer: 'layout' }], context), ['paragraph'])
+		assert.deepEqual(getComponentsInBothLayers([{ css: '.inline-card { margin: 0 }', layer: 'shared' }, { css: '.paragraph.inline-card { margin: 1px }', layer: 'layout' }], context), ['InlineCard.tsx'])
+		const appContext = await getComponentClassContext()
+		assert.equal(appContext.sourceFileByClass.get('access-request-hero'), 'app/ts/components/pages/InterceptorAccess.tsx')
+		const stylesheets = await Promise.all(interceptorAppStylesheetPaths.map(async (path) => ({ css: await Bun.file(path).text(), layer: getCascadeLayer(path) })))
+		assert.deepEqual(getComponentsInBothLayers(stylesheets, appContext), [])
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {

@@ -212,6 +212,8 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }
 
+// browserStorageLocalGet decodes what it reads with funtypes, so this error means a stored value no longer decodes; a storage failure surfaces as any other error.
+export const isUndecodableStoredValueError = (error: unknown) => error instanceof funtypes.ValidationError
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }

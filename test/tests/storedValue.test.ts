@@ -25,9 +25,12 @@ describe('stored value repository', () => {
 			read: async () => funtypes.Number.parse('corrupt value'),
 			write: async (value: number) => { calls.push(`write:${ value }`) },
 			getDefault: () => 4,
-			recover: async (error, defaultValue) => {
-				assert.equal(error instanceof funtypes.ValidationError, true)
-				calls.push(`recover:${ defaultValue }`)
+			recovery: {
+				isUnusableStoredValueError: (error) => error instanceof funtypes.ValidationError,
+				recover: async (error, defaultValue) => {
+					assert.equal(error instanceof funtypes.ValidationError, true)
+					calls.push(`recover:${ defaultValue }`)
+				},
 			},
 		})
 
@@ -35,15 +38,37 @@ describe('stored value repository', () => {
 		assert.deepEqual(calls, ['recover:4'])
 	})
 
-	// Recovery covers only a value that no longer decodes: an update after a failed storage read must not write the default over records it could not read.
-	test('rethrows a failed storage read even when recovery is configured', async () => {
+	// The repository has no notion of a decoding library: a reader that validates differently, or wraps its decode error, recovers through its own predicate.
+	test('recovers whatever read error the reader marks as an unusable stored value', async () => {
+		const unreadableRecord = new Error('record has an unknown shape')
+		const calls: string[] = []
+		const repository = createStoredValueRepository({
+			read: async () => { throw unreadableRecord },
+			write: async (value: number) => { calls.push(`write:${ value }`) },
+			getDefault: () => 7,
+			recovery: {
+				isUnusableStoredValueError: (error) => error === unreadableRecord,
+				recover: async (_error, defaultValue) => { calls.push(`recover:${ defaultValue }`) },
+			},
+		})
+
+		assert.equal(await repository.get(), 7)
+		assert.deepEqual((await repository.update((previous) => previous + 1)).current, 8)
+		assert.deepEqual(calls, ['recover:7', 'recover:7', 'write:8'])
+	})
+
+	// Recovery covers only the errors the reader marks as an unusable stored value: an update after a failed storage read must not write the default over records it could not read.
+	test('rethrows a read error the reader does not mark as an unusable stored value', async () => {
 		const readError = new Error('storage read failed')
 		const calls: string[] = []
 		const repository = createStoredValueRepository({
 			read: async () => { throw readError },
 			write: async (value: number) => { calls.push(`write:${ value }`) },
 			getDefault: () => 4,
-			recover: async () => { calls.push('recover') },
+			recovery: {
+				isUnusableStoredValueError: (error) => error instanceof funtypes.ValidationError,
+				recover: async () => { calls.push('recover') },
+			},
 		})
 
 		await assert.rejects(repository.get(), (error: unknown) => error === readError)

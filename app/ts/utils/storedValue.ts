@@ -1,12 +1,16 @@
-import * as funtypes from 'funtypes'
 import { Semaphore } from './semaphore.js'
+
+// How to recover a stored value that cannot be used. The storage reader knows which of its read errors mean "the stored value is unusable", so it supplies that decision: such an error is passed to `recover` and the value then reads as the default. Any other read failure is rethrown, never recovered, so an update cannot write the default over records it failed to read.
+export type StoredValueRecovery<T> = {
+	isUnusableStoredValueError: (error: unknown) => boolean
+	recover: (error: unknown, defaultValue: T) => Promise<void>
+}
 
 type StoredValueRepositoryOptions<T> = {
 	read: () => Promise<T | undefined>
 	write: (value: T) => Promise<void>
 	getDefault: () => T
-	// Called when the stored value no longer decodes; the value then reads as the default. Any other read failure is rethrown, never recovered, so an update cannot write the default over records it failed to read.
-	recover?: (error: funtypes.ValidationError, defaultValue: T) => Promise<void>
+	recovery?: StoredValueRecovery<T>
 }
 
 export type StoredValueRepository<T> = {
@@ -15,16 +19,16 @@ export type StoredValueRepository<T> = {
 	update: (updateValue: (previous: T) => T | Promise<T>) => Promise<{ previous: T, current: T }>
 }
 
-/** Owns the defaulting, corrupt-value recovery, and atomic update policy for one stored value: the one recovery policy is that only an undecodable stored value reads as the default. */
+/** Owns the defaulting, unusable-value recovery, and atomic update policy for one stored value. Which read errors are recoverable is the reader's decision (see StoredValueRecovery). */
 export function createStoredValueRepository<T>(options: StoredValueRepositoryOptions<T>): StoredValueRepository<T> {
 	const updateSemaphore = new Semaphore(1)
 	const get = async () => {
 		try {
 			return await options.read() ?? options.getDefault()
 		} catch (error: unknown) {
-			if (options.recover === undefined || !(error instanceof funtypes.ValidationError)) throw error
+			if (options.recovery === undefined || !options.recovery.isUnusableStoredValueError(error)) throw error
 			const defaultValue = options.getDefault()
-			await options.recover(error, defaultValue)
+			await options.recovery.recover(error, defaultValue)
 			return defaultValue
 		}
 	}

@@ -15,13 +15,6 @@
 	gap: 0.45ch;
 }
 
-.log-table-4 {
-	display: grid;
-	grid-template-columns: max-content auto auto auto;
-	width: 100%;
-	gap: 0.45ch;
-}
-
 /* Gas fee, creation time and simulation time below a transaction card. A long gas label (Gnosis Safe gas reimbursement) would squeeze fixed grid columns into ellipses, so the pieces wrap onto further rows instead. */
 .transaction-card-footer {
 	display: flex;
@@ -424,11 +417,6 @@
 	column-gap: 0.25em;
 }
 
-.swap-grid-1 {
-	grid-template-columns: auto;
-	display: grid;
-}
-
 .textbox {
 	background-color: var(--alpha-005);
 	padding: 6px 8px;
@@ -607,14 +595,6 @@
 	filter: blur(3px);
 }
 
-/* A quiet outline for content that is a prompt or a preview and not part of the request itself. */
-.dashed-notification {
-	background: unset;
-	border: 1px dashed var(--strong-hairline-color);
-	border-radius: var(--radius-large);
-	padding: 12px;
-}
-
 .safe-outcome-panel {
 	overflow: hidden;
 	margin-top: 12px;
@@ -695,19 +675,6 @@
 	color: var(--accent-color);
 	font-weight: 650;
 	text-align: center;
-}
-
-.popup-footer {
-	position: fixed;
-	left: 20px;
-	bottom: 0;
-	width: 480px;
-	height: 48px;
-	border: 1px solid var(--strong-hairline-color);
-	border-bottom: 0;
-	border-top-left-radius: var(--radius-medium);
-	border-top-right-radius: var(--radius-medium);
-	background-color: var(--surface-raised-color);
 }
 
 /* Keep semantic emphasis legible on dark and status-colored surfaces. */
@@ -880,16 +847,6 @@ summary:focus {
 	white-space: nowrap;
 }
 
-.rpc-add-button {
-	justify-self: start;
-	max-width: 100%;
-	height: auto;
-	min-height: 2.25em;
-	border-style: dashed;
-	white-space: normal;
-	text-align: center;
-}
-
 .dialog {
 	background: var(--card-bg-color);
 	color: var(--text-color);
@@ -956,13 +913,6 @@ summary:focus {
 	color: var(--label-color);
 	font-size: 0.75rem;
 	font-weight: 500;
-}
-
-.disclosure {
-	border: 1px dashed var(--danger-color);
-	color: var(--danger-color);
-	padding: 1rem;
-	border-radius: var(--radius-small);
 }
 
 .report {
