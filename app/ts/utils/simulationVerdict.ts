@@ -1,5 +1,3 @@
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
-
 // How a simulated request turned out. A failure outranks a flag: a request that fails is never reported as merely flagged.
 export type SimulationVerdict = 'succeeded' | 'flagged' | 'failed'
 
@@ -24,17 +22,4 @@ export function getTransactionVerdict(transaction: TransactionOutcome): Simulati
 export function getSignatureVerdict(signRequest: SignatureOutcome): SimulationVerdict {
 	if (signRequest.isValidMessage === false) return 'failed'
 	return signRequest.quarantine === true ? 'flagged' : 'succeeded'
-}
-
-// How much is known about an address, from the source of its address book entry.
-export type AddressTrust = 'addressBook' | 'known' | 'selfReported' | 'unknown'
-
-export function getAddressTrust(addressBookEntry: AddressBookEntry): AddressTrust {
-	switch (addressBookEntry.entrySource) {
-		case 'User': return 'addressBook'
-		case 'DarkFloristMetadata':
-		case 'Interceptor': return 'known'
-		case 'OnChain': return 'selfReported'
-		case 'FilledIn': return 'unknown'
-	}
 }

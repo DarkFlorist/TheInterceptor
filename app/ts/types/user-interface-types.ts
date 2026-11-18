@@ -105,7 +105,7 @@ export type FirstCardParams = {
 }
 
 // Whether the Interceptor simulates and reviews the active tab's requests; the popup makes no protection promise unless this is 'active'. A website the user disabled the Interceptor for gets no Interceptor provider ('disabledOnWebsite'). On a network without an RPC, signing mode with a wallet sends requests straight to the wallet ('unsupportedNetwork'), while otherwise requests are still intercepted but cannot be simulated until an RPC is configured ('networkWithoutRpc').
-export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork' | 'networkWithoutRpc'
+export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork' | 'networkWithoutRpc' | 'networkWithoutRpcMayBypass'
 
 export type SimulationStateParam = {
 	simulationMode: ReadonlySignal<boolean>

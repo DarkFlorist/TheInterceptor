@@ -1,5 +1,5 @@
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
-import { isBypassingInterceptorOnNetworkWithoutRpc } from '../../utils/requestRouting.js'
+import { getNetworkWithoutRpcWarningState } from '../../utils/networkWithoutRpcUi.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import type { HomeParams, FirstCardParams, HomeProtection, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
@@ -255,12 +255,18 @@ function getSignerDisplayName(signerName: SignerName) {
 	return isSignerMissing(signerName) ? 'your wallet' : getPrettySignerName(signerName)
 }
 
-// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it follows the background's routing (utils/requestRouting.ts): requests skip the Interceptor only when they are forwarded to a wallet, and whether the page has one is the tab's signerConnected, which the page reports from the same fact its requests carry to the routing.
+// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it takes the shared decision (getNetworkWithoutRpcWarningState, which follows the background's routing), with the tab's signerConnected as the signer availability: the page reports it from the same fact its requests carry to the routing, and a tab without state has no signer.
 function getHomeProtection(interceptorDisabled: boolean, simulationMode: boolean, tabState: TabState | undefined, rpcNetwork: RpcNetwork | undefined): HomeProtection {
 	if (interceptorDisabled) return 'disabledOnWebsite'
-	if (rpcNetwork === undefined || rpcNetwork.httpsRpc !== undefined) return 'active'
-	const signerAvailable = tabState?.signerConnected === true
-	return isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable }) ? 'unsupportedNetwork' : 'networkWithoutRpc'
+	if (rpcNetwork === undefined) return 'active'
+	const warningState = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, tabState?.signerConnected === true ? 'available' : 'missing')
+	switch (warningState.kind) {
+		case 'none': return 'active'
+		case 'noRpcBypassToSigner': return 'unsupportedNetwork'
+		case 'noRpcNeedsConfig': return 'networkWithoutRpc'
+		case 'noRpcMayBypass': return 'networkWithoutRpcMayBypass'
+		default: return assertNever(warningState)
+	}
 }
 
 // Shown instead of any protection promise while the protection state is not 'active'. Only the first two states turn the Interceptor off; without an RPC requests are still intercepted, so that text only asks for an RPC.
@@ -269,6 +275,7 @@ function getProtectionNoticeText(protection: Exclude<HomeProtection, 'active'>, 
 		case 'disabledOnWebsite': return `The website talks to ${ getSignerDisplayName(signerName) } directly, so its transactions are neither simulated nor reviewed.`
 		case 'unsupportedNetwork': return `Requests on a network without an RPC go to ${ getSignerDisplayName(signerName) } directly, so they are neither simulated nor reviewed.`
 		case 'networkWithoutRpc': return 'The selected network has no configured RPC. Select or configure an RPC for it so the Interceptor can simulate transactions.'
+		case 'networkWithoutRpcMayBypass': return 'Until an RPC is configured the Interceptor cannot simulate requests on this network; in signing mode with a connected wallet they go to the wallet directly.'
 		default: return assertNever(protection)
 	}
 }
@@ -278,6 +285,7 @@ function getProtectionNoticeTitle(protection: Exclude<HomeProtection, 'active'>)
 		case 'disabledOnWebsite': return 'Interceptor disabled on this website.'
 		case 'unsupportedNetwork': return 'Interceptor inactive on this network.'
 		case 'networkWithoutRpc': return 'No RPC for this network.'
+		case 'networkWithoutRpcMayBypass': return 'No RPC for this network.'
 		default: return assertNever(protection)
 	}
 }

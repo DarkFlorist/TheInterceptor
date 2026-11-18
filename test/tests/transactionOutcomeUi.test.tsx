@@ -26,9 +26,10 @@ import { installDomMock } from './domMock.js'
 import { readInterceptorAppCss } from './cssTestUtils.js'
 import { signal } from '@preact/signals'
 import { SimpleTokenApprovalVisualisation } from '../../app/ts/components/simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
-import { Erc721TokenIdApprovalChanges } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
+import { Erc20ApprovalChanges, Erc721TokenIdApprovalChanges } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { isPositiveEvent } from '../../app/ts/components/simulationExplaining/Transactions.js'
-import { getAddressTrust, getSignatureVerdict, getTransactionVerdict } from '../../app/ts/utils/simulationVerdict.js'
+import { getSignatureVerdict, getTransactionVerdict } from '../../app/ts/utils/simulationVerdict.js'
+import { getAddressTrust } from '../../app/ts/utils/addressBook.js'
 
 const website: Website = { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined }
 const rpcNetwork: RpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -391,6 +392,22 @@ describe('transaction outcome UI', () => {
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorRevocation] })).title, 'Remove NFT All Approval')
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [tokenIdGrant] })).title, '#7 NFT Approval')
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [tokenIdRevocation] })).title, 'Remove #7 NFT Approval')
+		// The account summary words an allowance removal as a removal and names only the token, like the approval visualisation.
+		const renderAllowanceChangeText = async (change: bigint) => {
+			const dom = installDomMock()
+			try {
+				await act(() => render(<Erc20ApprovalChanges erc20TokenApprovalChanges = { [{ ...usdc, approvals: [{ ...unknownAddress, change }] }] } positiveColor = 'green' negativeColor = 'red' isImportant = { signal(true) } renameAddressCallBack = { () => undefined }/>, dom.document.body))
+				return dom.document.body.textContent ?? ''
+			} finally {
+				render(null, dom.document.body)
+				dom.restore()
+			}
+		}
+		const allowanceGrantText = await renderAllowanceChangeText(5_000_000n)
+		assert.equal(allowanceGrantText.includes('Allow') && allowanceGrantText.includes('to spend') && allowanceGrantText.includes('5'), true)
+		const allowanceRemovalText = await renderAllowanceChangeText(0n)
+		assert.equal(allowanceRemovalText.includes('Stop allowing') && allowanceRemovalText.includes('from spending'), true)
+		assert.equal(allowanceRemovalText.includes('to spend') || allowanceRemovalText.includes(' 0 '), false)
 		// The token event rows colour a removal as good news for the owner and a grant as bad news.
 		for (const [approvalEvent, granted] of [[erc20Grant, true], [erc20Revocation, false], [operatorGrant, true], [operatorRevocation, false], [tokenIdGrant, true], [tokenIdRevocation, false]] as const) {
 			assert.equal(isPositiveEvent(approvalEvent.logInformation, sender.address), !granted)

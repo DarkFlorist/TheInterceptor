@@ -97,7 +97,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 	return <div class = { param.isImportant.value ? `summary-approval-change box token-box ${ grantsAllowance ? 'negative-box' : 'positive-box' }`: 'summary-approval-change' }>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> Allow</p>
+				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }>{ grantsAllowance ? ' Allow' : ' Stop allowing' }</p>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
@@ -107,10 +107,11 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> to spend </p>
+				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }>{ grantsAllowance ? ' to spend ' : ' from spending ' }</p>
 			</div>
 			<div class = 'log-cell log-cell--right'>
-				{ isUnlimitedErc20Approval(param.change) ?
+				{ /* A removal names the token only, as the approval visualisation does: a zero allowance next to "Stop allowing" would read as a contradiction. */ }
+				{ !grantsAllowance ? <></> : isUnlimitedErc20Approval(param.change) ?
 					<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> <b>ALL</b></p>
 					:
 					<TokenAmount

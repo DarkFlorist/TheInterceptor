@@ -468,7 +468,7 @@ describe('Home popup clear empty state', () => {
 		assert.doesNotMatch(inpageSource, /usingInterceptorWithoutSigner: (?!boolean\b|!this\.hasWalletToForwardTo\(\))/)
 		assert.match(inpageSource, /method: 'connected_to_signer', params: \[this\.hasWalletToForwardTo\(\), /)
 		assert.match(await Bun.file('app/ts/background/background.ts').text(), /signerAvailable: !request\.usingInterceptorWithoutSigner/)
-		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /const signerAvailable = tabState\?\.signerConnected === true/)
+		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /getNetworkWithoutRpcWarningState\(rpcNetwork, simulationMode, tabState\?\.signerConnected === true \? 'available' : 'missing'\)/)
 	})
 
 	for (const unprotectedState of unprotectedStates) {

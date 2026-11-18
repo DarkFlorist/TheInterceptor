@@ -393,7 +393,7 @@ describe('UI audit fixes', () => {
 		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getInterceptorModeClass\(request\.value\.simulationMode\)/)
 		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getInterceptorModeClass\(changeRequest\.value\.simulationMode\)/)
 		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
-		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, settings\.simulationMode,/)
+		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, \{ simulationMode: settings\.simulationMode, activeAddress \}\)/)
 		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), \{ simulationMode: settings\.simulationMode, simulationOverlayEnabled \},/)
 	})
 

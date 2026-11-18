@@ -5,7 +5,8 @@ import type { SimulatedAndVisualizedTransaction } from '../../types/visualizer-t
 import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 import { CheckMarkIcon, WarningSignIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { getToneClass, type StatusTone } from '../ui-utils.js'
-import { getAddressTrust, getTransactionVerdict } from '../../utils/simulationVerdict.js'
+import { getTransactionVerdict } from '../../utils/simulationVerdict.js'
+import { getAddressTrust } from '../../utils/addressBook.js'
 
 export type TransactionCheck = {
 	tone: StatusTone
