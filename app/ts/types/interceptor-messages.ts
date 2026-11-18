@@ -748,11 +748,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	})
 })
 
-export type ImportSettings = funtypes.Static<typeof ImportSettings>
-export const ImportSettings = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_import_settings'),
-	data: funtypes.ReadonlyObject({ fileContents: funtypes.String })
-})
+export { ImportSettings } from './popupSettingsRequests.js'
 
 export type ImportSettingsReply = funtypes.Static<typeof ImportSettingsReply>
 export const ImportSettingsReply = funtypes.ReadonlyObject({

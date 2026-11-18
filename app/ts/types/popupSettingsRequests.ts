@@ -32,6 +32,12 @@ export const ChangeActiveAddress = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+export type ImportSettings = funtypes.Static<typeof ImportSettings>
+export const ImportSettings = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_import_settings'),
+	data: funtypes.ReadonlyObject({ fileContents: funtypes.String })
+})
+
 export type PopupSettingsRequest = ModifyMakeMeRich | EnableSimulationMode | ChangeActiveChain | ChangeActiveAddress
 
 export type PopupSettingsRequestWithSharedReply = Exclude<PopupSettingsRequest, ChangeActiveAddress>

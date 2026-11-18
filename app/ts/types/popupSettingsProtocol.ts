@@ -1,6 +1,5 @@
 import * as funtypes from 'funtypes'
-import type { ImportSettings } from './interceptor-messages.js'
-import type { PopupSettingsRequest } from './popupSettingsRequests.js'
+import type { ImportSettings, PopupSettingsRequest } from './popupSettingsRequests.js'
 
 export type PopupSettingsAdmittedRequest = PopupSettingsRequest | ImportSettings
 
