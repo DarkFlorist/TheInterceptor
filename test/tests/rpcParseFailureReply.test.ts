@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
-import { getObjectFieldCodec } from '../../app/ts/background/funtypesFailureExplanation.js'
+import * as funtypesFailureExplanation from '../../app/ts/background/funtypesFailureExplanation.js'
+import { FUNTYPES_ADAPTER_ENABLED, getObjectFieldCodec } from '../../app/ts/background/funtypesFailureExplanation.js'
 import { getInvalidRpcParamsReply, getMethodSpecificParseFailureReply } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EIP712MessageDescription } from '../../app/ts/types/eip721.js'
 import { EthereumJsonRpcRequest, findEthereumJsonRpcRequestCodec, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
@@ -117,7 +118,29 @@ function getReplyMessageWithChangedCodec(method: string, params: unknown[], getC
 	}
 }
 
-describe('readable RPC parse failure replies', () => {
+// With the adapter disabled for an emergency funtypes upgrade (docs/readable-rpc-param-errors.md), the reply carries funtypes' own failure text and never walks the failure through funtypes internals.
+test('a disabled funtypes adapter answers with the method codec failure and does not explain it', () => {
+	const request = createRequest('eth_sendTransaction', [{ from: address, to: '0x1234', value: '0x1' }])
+	const requestCodec = findEthereumJsonRpcRequestCodec(request.method)
+	if (requestCodec === undefined) throw new Error('eth_sendTransaction has no request codec')
+	const parseResult = requestCodec.safeParse(request)
+	if (parseResult.success) throw new Error('The request should fail to parse')
+	const explainSpy = spyOn(funtypesFailureExplanation, 'explainValueFailure')
+	const layoutSpy = spyOn(funtypesFailureExplanation, 'isCodecLayoutRecognized')
+	try {
+		const reply = getInvalidRpcParamsReply(request, requestCodec, parseResult, false)
+		assert.ok('error' in reply)
+		assert.equal(reply.error.code, -32602)
+		assert.ok(reply.error.message.startsWith('Invalid eth_sendTransaction parameters'))
+		assert.equal(explainSpy.mock.calls.length, 0)
+		assert.equal(layoutSpy.mock.calls.length, 0)
+	} finally {
+		explainSpy.mockRestore()
+		layoutSpy.mockRestore()
+	}
+})
+
+describe.skipIf(!FUNTYPES_ADAPTER_ENABLED)('readable RPC parse failure replies', () => {
 	test('reports a wrong number of parameters with the expected parameter list', () => {
 		assert.equal(
 			getInvalidParamsError('eth_getBalance', [address, 'latest', '0x1']),

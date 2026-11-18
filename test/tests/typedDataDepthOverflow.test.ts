@@ -5,6 +5,7 @@ import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
+import { FUNTYPES_ADAPTER_ENABLED } from '../../app/ts/background/funtypesFailureExplanation.js'
 
 // Far past the deepest limit measured on any engine (about 4600 levels), so these tests do not depend on the stack size.
 const NESTING_LEVELS = 100_000
@@ -67,7 +68,8 @@ describe('typed data nested past the call stack limit', () => {
 		assert.equal(EIP712Message.safeParse(shallowTypedDataJson).success, true)
 	})
 
-	test('a deep document gets the invalid params reply instead of an unknown error', async () => {
+	// Asserts the detailed invalid-params wording, which a disabled funtypes adapter does not produce (docs/readable-rpc-param-errors.md).
+	test.skipIf(!FUNTYPES_ADAPTER_ENABLED)('a deep document gets the invalid params reply instead of an unknown error', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://deep-typed-data.example'

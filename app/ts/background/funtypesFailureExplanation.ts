@@ -37,6 +37,9 @@ const MAX_EXPLANATION_VALIDATIONS = 16
 // The funtypes version the internals read here were validated against. Only the upgrade test reads it; change it after re-validating them, not to silence that test.
 export const FUNTYPES_ADAPTER_VERSION = '5.1.0'
 
+// Whether invalid-params replies are worded through this adapter. Set it to false, leaving FUNTYPES_ADAPTER_VERSION as validated, when funtypes must be upgraded before the adapter is re-validated (docs/readable-rpc-param-errors.md): replies then carry funtypes' own failure text without walking any failure through funtypes internals, and the tests of the adapter and of its wording are skipped.
+export const FUNTYPES_ADAPTER_ENABLED: boolean = true
+
 // Every funtypes codec tag, by how this module handles it. This is the authoritative list that the tests check funtypes and the real RPC codecs against.
 export const CODEC_TAGS_BY_HANDLING = {
 	// Validate a value with their `underlying` codec before applying their own check. Lazy codecs store a function that returns the underlying codec.

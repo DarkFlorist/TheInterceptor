@@ -6,7 +6,7 @@ import { EIP712MessageDescription } from '../types/eip721.js'
 import { CanonicalEthereumQuantityDescription, EthereumAddressDescription, EthereumBlockTagDescription, EthereumBytes32Description, EthereumDataDescription, EthereumInputDescription, EthereumQuantityDescription } from '../types/wire-types.js'
 import type { ReflectedCodec } from '../types/codecDescription.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
-import { explainValueFailure, formatAlternatives, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, type ValueFailure, type ValuePath, type UndecodableJsonDocument, type ValueProblem } from './funtypesFailureExplanation.js'
+import { explainValueFailure, formatAlternatives, FUNTYPES_ADAPTER_ENABLED, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, type ValueFailure, type ValuePath, type UndecodableJsonDocument, type ValueProblem } from './funtypesFailureExplanation.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { assertNever } from '../utils/typescript.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
@@ -144,9 +144,9 @@ function describeParamsProblem(request: InterceptedRequest, requestCodec: Reflec
 	return formatParameterProblem(method, formatParameterName(parameterIndex, parameterCodec), { ...problem, path: parameterPath })
 }
 
-function describeInvalidRpcParams(request: InterceptedRequest, requestCodec: SupportedEthereumJsonRpcRequestCodec, requestCodecFailure: ValueFailure) {
-	// Wording built from a codec layout this module does not recognise could be wrong, so such a codec gets the method codec failure below, which funtypes worded itself.
-	const paramsCodec = isCodecLayoutRecognized(CODEC_DESCRIPTIONS, requestCodec) ? getObjectFieldCodec(requestCodec, 'params') : undefined
+function describeInvalidRpcParams(request: InterceptedRequest, requestCodec: SupportedEthereumJsonRpcRequestCodec, requestCodecFailure: ValueFailure, adapterEnabled: boolean) {
+	// Wording built from a codec layout this module does not recognise could be wrong, and a disabled adapter is not used at all, so either case gets the method codec failure below, which funtypes worded itself.
+	const paramsCodec = adapterEnabled && isCodecLayoutRecognized(CODEC_DESCRIPTIONS, requestCodec) ? getObjectFieldCodec(requestCodec, 'params') : undefined
 	const paramsProblem = paramsCodec === undefined ? undefined : describeParamsProblem(request, requestCodec, requestCodecFailure, paramsCodec)
 	if (paramsProblem !== undefined) return paramsProblem
 	// Fall back to the failure of this method's own codec, which is far more specific than the failure of the whole request union.
@@ -154,14 +154,14 @@ function describeInvalidRpcParams(request: InterceptedRequest, requestCodec: Sup
 	return `Invalid ${ request.method } parameters${ location }: ${ toSentenceFragment(requestCodecFailure.message) }.`
 }
 
-// Invalid-params reply for a supported method whose request failed to parse with that method's own codec.
-export function getInvalidRpcParamsReply(request: InterceptedRequest, requestCodec: SupportedEthereumJsonRpcRequestCodec, requestCodecFailure: funtypes.Failure): RPCReply {
+// Invalid-params reply for a supported method whose request failed to parse with that method's own codec. adapterEnabled is FUNTYPES_ADAPTER_ENABLED except in the test of the disabled adapter.
+export function getInvalidRpcParamsReply(request: InterceptedRequest, requestCodec: SupportedEthereumJsonRpcRequestCodec, requestCodecFailure: funtypes.Failure, adapterEnabled = FUNTYPES_ADAPTER_ENABLED): RPCReply {
 	return {
 		type: 'result',
 		method: request.method,
 		error: {
 			code: JSON_RPC_ERROR_CODE_INVALID_PARAMS,
-			message: describeInvalidRpcParams(request, requestCodec, requestCodecFailure),
+			message: describeInvalidRpcParams(request, requestCodec, requestCodecFailure, adapterEnabled),
 		},
 	}
 }

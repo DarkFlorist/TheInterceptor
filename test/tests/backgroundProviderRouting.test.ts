@@ -4,6 +4,7 @@ import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.j
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
+import { FUNTYPES_ADAPTER_ENABLED } from '../../app/ts/background/funtypesFailureExplanation.js'
 
 async function captureConsoleWarnings(run: () => Promise<unknown>) {
 	const warnings: unknown[][] = []
@@ -557,7 +558,8 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 
-	test('returns readable invalid params errors for malformed supported methods', async () => {
+	// Asserts the detailed invalid-params wording, which a disabled funtypes adapter does not produce (docs/readable-rpc-param-errors.md).
+	test.skipIf(!FUNTYPES_ADAPTER_ENABLED)('returns readable invalid params errors for malformed supported methods', async () => {
 		installBrowserMock()
 		const { defaultActiveAddresses, handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'

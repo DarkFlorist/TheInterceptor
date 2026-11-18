@@ -3,7 +3,7 @@ import { describe, spyOn, test } from 'bun:test'
 import * as funtypes from 'funtypes'
 import { CODEC_DESCRIPTIONS } from '../../app/ts/background/rpcParseFailureReply.js'
 import { EthereumJsonRpcRequest, WalletRevokePermissions } from '../../app/ts/types/JsonRpc-types.js'
-import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, FUNTYPES_ADAPTER_VERSION, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, isReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
+import { CODEC_TAGS_BY_HANDLING, type CodecDescriptions, explainValueFailure, FUNTYPES_ADAPTER_ENABLED, FUNTYPES_ADAPTER_VERSION, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, isReflectedCodec, type ValueProblem } from '../../app/ts/background/funtypesFailureExplanation.js'
 import type { ReflectedCodec } from '../../app/ts/types/codecDescription.js'
 
 // These tests pin the funtypes internals the adapter reads, so a funtypes upgrade that changes them fails here instead of silently degrading invalid-params errors.
@@ -143,7 +143,7 @@ function collectReachableCodecs(roots: readonly unknown[]) {
 	return codecs
 }
 
-describe('funtypes failure explanation', () => {
+describe.skipIf(!FUNTYPES_ADAPTER_ENABLED)('funtypes failure explanation', () => {
 	test('follows failure keys through object fields and tuple components', () => {
 		const codec = funtypes.ReadonlyObject({ pair: funtypes.ReadonlyTuple(funtypes.Number, funtypes.Number) })
 		assert.deepEqual(explain(codec, { pair: [1, 'x'] }), { kind: 'wrongFormat', path: ['pair', 1], expected: 'a number', received: 'x' })
@@ -312,7 +312,7 @@ describe('funtypes failure explanation', () => {
 	test('is re-validated before the funtypes version changes', async () => {
 		const packageManifest = await Bun.file(new URL('../../package.json', import.meta.url).pathname).json()
 		const pinnedVersion: unknown = packageManifest.dependencies.funtypes
-		assert.equal(pinnedVersion, FUNTYPES_ADAPTER_VERSION, `package.json pins funtypes ${ pinnedVersion }, but app/ts/background/funtypesFailureExplanation.ts was validated against ${ FUNTYPES_ADAPTER_VERSION }. Re-validate its tags (CODEC_TAGS_BY_HANDLING), the members it reads (isCodecLayoutRecognized) and the Failure.key grammar against the new version, keep the pins in this test passing, then update FUNTYPES_ADAPTER_VERSION (see docs/readable-rpc-param-errors.md, which also covers a security upgrade).`)
+		assert.equal(pinnedVersion, FUNTYPES_ADAPTER_VERSION, `package.json pins funtypes ${ pinnedVersion }, but app/ts/background/funtypesFailureExplanation.ts was validated against ${ FUNTYPES_ADAPTER_VERSION }. Re-validate its tags (CODEC_TAGS_BY_HANDLING), the members it reads (isCodecLayoutRecognized) and the Failure.key grammar against the new version, keep the pins in this test passing, then update FUNTYPES_ADAPTER_VERSION; for a security upgrade that cannot wait, set FUNTYPES_ADAPTER_ENABLED to false instead (docs/readable-rpc-param-errors.md).`)
 	})
 
 	test('falls back to the generic expectation for a tag it does not classify', () => {
