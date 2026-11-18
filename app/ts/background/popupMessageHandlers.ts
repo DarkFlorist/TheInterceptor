@@ -1,3 +1,6 @@
+import { createRpcConfigurationUnavailableError, isRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
+import { getConfirmationWindowRequests } from '../utils/confirmationQueue.js'
+import { reconcileCommittedAccessChange } from './accessManagement.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -115,9 +118,9 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 	}
 }
 
-export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = confirmation.data.action === 'accept'
-		? (await getPendingTransactionsAndMessages()).find((entry) =>
+		? (getConfirmationWindowRequests(await getPendingTransactionsAndMessages())).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
 		)
 		: undefined
@@ -131,8 +134,6 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
-	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }
 
@@ -166,7 +167,7 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			}
 		}
 		case 'confirmTransaction': {
-			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const pendingTransactions = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 			const firstPendingTransaction = pendingTransactions[0]
 			if (firstPendingTransaction === undefined) return undefined
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
@@ -292,12 +293,12 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
-	const { ethereum } = simulationServicesOwner.getCurrent()
+export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService | undefined, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	try {
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
 			try {
+				if (ethereum === undefined) throw createRpcConfigurationUnavailableError()
 				if (entry.data.chainId !== ethereum.getChainId()) {
 					return {
 						type: 'AddOrModifyAddressBookEntryReply' as const,
@@ -335,11 +336,12 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
+		// Reconciled against approvals read after the write; the admitted snapshot may predate a website access revocation and Safe validation can take a long time.
+		if (entryToStore.useAsActiveAddress) await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'address-book' }, { simulationServicesOwner, promptForAccesses: true, throwOnError: true, notifyWebsiteAccessChanged: false })
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
-		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {
+		if (!isExpectedInfrastructureError(error) && !isRpcConfigurationUnavailableError(error)) await reportUnexpectedError(error, {
 			source: 'address_book_save',
 			code: 'address_book_save_failed',
 			displayMessage: 'Failed to save address-book entry.',
@@ -353,11 +355,11 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 }
 
 export async function setSafeSimulationSigner(
-	simulationServicesOwner: SimulationServicesOwner,
+	ethereum: EthereumClientService,
+	accessPromptSimulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
 ) {
-	const { ethereum } = simulationServicesOwner.getCurrent()
 	if (request.data.chainId !== ethereum.getChainId()) {
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
@@ -413,7 +415,8 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		// The Safe entry is an active address, so reconcile website approvals against the updated entry and prompt websites that now need an access decision, like the other address-book handlers. Settings are read after the write because the active address may have changed while Safe validation and the write awaited.
+		await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'address-book' }, { simulationServicesOwner: accessPromptSimulationServicesOwner, promptForAccesses: true, throwOnError: false, notifyWebsiteAccessChanged: false })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -526,7 +529,7 @@ let latestConfirmationMetadataRefresh = 0
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined, dependencies: ConfirmTransactionMetadataDependencies = {}) {
 	latestConfirmationMetadataRefresh += 1
 	const thisConfirmationMetadataRefresh = latestConfirmationMetadataRefresh
-	const [first] = await getPendingTransactionsAndMessages()
+	const [first] = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	if (first === undefined) return
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
@@ -555,7 +558,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 				}
 			}
 			// The request can be resolved during the awaits above; the popup needs a non-empty queue, and it closes by itself once the queue is empty.
-			const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+			const pendingTransactionAndSignableMessages = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 			if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
 			const [currentFirst] = pendingTransactionAndSignableMessages
 			if (currentFirst === undefined || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
@@ -601,7 +604,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 					}
 				}
 				// Read after every await, so the dialog is sent the pending requests as stored now. A newer metadata refresh that started meanwhile sends its own update, which this older one must not follow. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
-				const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+				const pendingTransactionAndSignableMessages = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 				if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
 				if (pendingTransactionAndSignableMessages.length === 0) return // the dialog expects at least one pending request, as in updateConfirmTransactionView
 				const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
@@ -643,7 +646,7 @@ async function formPendingTransactionAgain(ethereum: EthereumClientService, pend
 }
 
 export async function refreshPopupConfirmTransactionSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	const [firstTxn] = await getPendingTransactionsAndMessages()
+	const [firstTxn] = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || (firstTxn.transactionOrMessageCreationStatus !== 'Simulated' && firstTxn.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return
 	const refresh = getPendingTransactionRefresh(firstTxn)
 	switch (refresh.kind) {
@@ -920,11 +923,11 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
-	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
+	return await requestNewHomeData(simulationServicesOwner.requireCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
-	const pendingTransactions = await getPendingTransactionsAndMessages()
+	const pendingTransactions = getConfirmationWindowRequests(await getPendingTransactionsAndMessages())
 	const transaction = pendingTransactions.find((tx) => tx.type === 'Transaction' && tx.transactionIdentifier === request.data.transactionIdentifier)
 	if (transaction === undefined || transaction.type !== 'Transaction') throw new Error(`Could not find transactionIdentifier: ${ request.data.transactionIdentifier }`)
 	const governanceContractExecutionVisualisation = await simulateGovernanceContractExecution(transaction, ethereum, tokenPriceService)

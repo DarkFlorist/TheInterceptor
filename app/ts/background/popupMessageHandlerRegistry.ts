@@ -30,6 +30,6 @@ export function popupSnapshotMessageHandler<Method extends PopupMessage['method'
 ): PopupMessageHandler {
 	return popupMessageHandler(method, async (context, request) => {
 		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
-		return await handler({ ...executionContext, services: simulationServicesOwner.getCurrent() }, request)
+		return await handler({ ...executionContext, services: simulationServicesOwner.requireCurrent() }, request)
 	})
 }

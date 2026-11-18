@@ -22,7 +22,7 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { advanceOutstandingSafeSignerReplies, onCloseWindowOrTab, recoverPendingConfirmationState } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -35,7 +35,7 @@ import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
-import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
+import { removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
@@ -52,7 +52,7 @@ const latestReceivedBridgeRequestIds = new Map<string, number>()
 
 function getSimulationServices() {
 	if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
-	return simulationServicesOwner.getCurrent()
+	return simulationServicesOwner.requireCurrent()
 }
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
@@ -241,6 +241,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			retrying: ethereumClientService.isBlockPolling(),
 		}
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
+		if (isNewBlock) void catchAllErrorsAndCall(async () => await advanceOutstandingSafeSignerReplies(getSimulationServices(), websiteTabConnections))
 		if (isNewBlock) {
 			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
 			const settings = await getSettings()
@@ -284,7 +285,7 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
-	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
 	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
@@ -300,9 +301,7 @@ async function startup() {
 
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
-		const { ethereum, tokenPriceService } = getSimulationServices()
-		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
-		await prunePendingTerminalRepliesForMissingTabs()
+		await recoverPendingConfirmationState(simulationServicesOwner?.getCurrent(), websiteTabConnections)
 	},
 	onFailure: (error) => {
 		reportLocalRecoveryBestEffort(error, {
