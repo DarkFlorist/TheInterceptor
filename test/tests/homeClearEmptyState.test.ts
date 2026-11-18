@@ -469,7 +469,7 @@ describe('Home popup clear empty state', () => {
 		assert.doesNotMatch(inpageSource, /usingInterceptorWithoutSigner: (?!boolean\b|!this\.hasWalletToForwardTo\(\))/)
 		assert.match(inpageSource, /method: 'connected_to_signer', params: \[this\.hasWalletToForwardTo\(\), /)
 		assert.match(await Bun.file('app/ts/background/background.ts').text(), /signerAvailable: !request\.usingInterceptorWithoutSigner/)
-		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /getNetworkWithoutRpcWarningState\(rpcNetwork, simulationMode, tabState\?\.signerConnected === true \? 'available' : 'missing'\)/)
+		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /getNetworkWithoutRpcWarningState\(rpcNetwork, simulationMode, getTabSignerAvailability\(tabState\)\)/)
 		// The no-RPC wording has one owner, getNetworkWithoutRpcWarningText; the home page has no sentences of its own for it.
 		assert.doesNotMatch(await Bun.file('app/ts/components/pages/Home.tsx').text(), /configured RPC|not a supported network|network without an RPC go/)
 	})

@@ -1,5 +1,5 @@
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
-import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText } from '../../utils/networkWithoutRpcUi.js'
+import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText, getTabSignerAvailability } from '../../utils/networkWithoutRpcUi.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import type { HomeParams, FirstCardParams, HomeProtection, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
@@ -255,11 +255,11 @@ function getSignerDisplayName(signerName: SignerName) {
 	return isSignerMissing(signerName) ? 'your wallet' : getPrettySignerName(signerName)
 }
 
-// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it takes the shared decision (getNetworkWithoutRpcWarningState, which follows the background's routing), with the tab's signerConnected as the signer availability: the page reports it from the same fact its requests carry to the routing, and a tab without state has no signer.
+// Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it takes the shared decision (getNetworkWithoutRpcWarningState, which follows the background's routing) with the shared signer availability (getTabSignerAvailability), as the toolbar icon does.
 function getHomeProtection(interceptorDisabled: boolean, simulationMode: boolean, tabState: TabState | undefined, rpcNetwork: RpcNetwork | undefined): HomeProtection {
 	if (interceptorDisabled) return { kind: 'disabledOnWebsite' }
 	if (rpcNetwork === undefined) return { kind: 'active' }
-	const warning = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, tabState?.signerConnected === true ? 'available' : 'missing')
+	const warning = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, getTabSignerAvailability(tabState))
 	return warning.kind === 'none' ? { kind: 'active' } : { kind: 'networkWithoutRpc', networkName: rpcNetwork.name, warning }
 }
 

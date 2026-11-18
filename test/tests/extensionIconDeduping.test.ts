@@ -484,7 +484,8 @@ describe('extension icon deduping', () => {
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			signerName,
-			signerConnected: true,
+			// As the signer handshake stores it: a tab without a detected signer is never connected to one.
+			signerConnected: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
 			signerAccounts: [signerAccount],
 			signerChain: 1n,
 			activeSigningAddress: signerAccount,
