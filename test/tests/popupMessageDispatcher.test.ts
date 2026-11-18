@@ -762,7 +762,7 @@ describe('settings import installs the imported network', () => {
 		assert.ok(getPopupMessages().some((message) => message.method === 'popup_chain_update'))
 	})
 
-	for (const entryPoint of ['popup', 'direct', 'import'] as const) {
+	for (const entryPoint of ['popup', 'direct', 'import', 'rpc list', 'direct list'] as const) {
 		test(`an import excludes overlapping ${ entryPoint } network changes until its transition completes`, async () => {
 			const context = createDispatcherContextWithInstalledServices()
 			const entered = createDeferredValue<void>()
@@ -779,11 +779,13 @@ describe('settings import installs the imported network', () => {
 			}
 			const importing = dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork) } })
 			await entered.promise
-			const nextNetwork = { ...settings.activeRpcNetwork, httpsRpc: 'https://later.example' }
-			if (entryPoint !== 'direct') {
+			const nextNetwork = { ...settings.activeRpcNetwork, chainId: entryPoint === 'direct list' ? 11155111n : settings.activeRpcNetwork.chainId, httpsRpc: 'https://later.example' }
+			if (entryPoint !== 'direct' && entryPoint !== 'direct list') {
 				try {
-					if (entryPoint === 'popup') {
-						const result = await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: nextNetwork })
+					if (entryPoint === 'popup' || entryPoint === 'rpc list') {
+						const result = entryPoint === 'popup'
+							? await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: nextNetwork })
+							: await dispatchPopupMessage(context, { method: 'popup_set_rpc_list', data: [nextNetwork] })
 						assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
 					} else {
 						await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile({ ...importedSepoliaNetwork, httpsRpc: 'https://rejected.example' }) } })
@@ -797,7 +799,10 @@ describe('settings import installs the imported network', () => {
 			} else {
 				const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 				let finished = false
-				const changing = changeActiveAddressAndChain(context.simulationServicesOwner, context.websiteTabConnections, { simulationMode: true, rpcNetwork: nextNetwork }).then(() => { finished = true })
+				const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+				const changing = (entryPoint === 'direct list'
+					? setNewRpcList(context.simulationServicesOwner, context.websiteTabConnections, { method: 'popup_set_rpc_list', data: [nextNetwork] })
+					: changeActiveAddressAndChain(context.simulationServicesOwner, context.websiteTabConnections, { simulationMode: true, rpcNetwork: nextNetwork })).then(() => { finished = true })
 				try {
 					await new Promise((resolve) => setTimeout(resolve, 0))
 					assert.equal(finished, false)

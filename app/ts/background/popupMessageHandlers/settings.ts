@@ -1,4 +1,4 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { ImportSettings, ImportSettingsReply, SetRpcList } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
@@ -6,10 +6,10 @@ import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, changeSimulationMode } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
+import { getRpcEntryIdentityKey, getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import { runActiveSettingsTransition } from '../activeSettings.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
@@ -65,11 +65,16 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
-	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary === undefined) return
-	const outcome = simulationServicesOwner.ensureNetwork(primary, { updateMetadata: true })
-	if (outcome === 'replaced' && (settings.simulationMode || settings.activeSigningSafeAddress !== undefined)) await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList) {
+	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+		const settings = await getSettings()
+		await setRpcList(request.data)
+		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+		// Preserve an exact configured selection before matching an endpoint whose metadata may have been edited.
+		const selected = request.data.find((entry) => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(settings.activeRpcNetwork))
+			?? request.data.find((entry) => !getRpcNetworkChange(settings.activeRpcNetwork, entry).endpointChanged)
+		const network = selected ?? await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
+		if (network !== undefined) await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
+		return true
+	}, { updateNetworkMetadata: true })
 }

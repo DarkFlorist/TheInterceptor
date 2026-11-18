@@ -9,6 +9,7 @@ export const popupSettingsOperations = {
 	popup_enableSimulationMode: { operation: 'mode', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_changeActiveRpc: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_modifyMakeMeRich: { operation: 'rich', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
+	popup_set_rpc_list: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', method: 'popup_initiate_export_settings_reply' } },
 } as const satisfies Record<PopupSettingsAdmittedRequest['method'], {
 	operation: string

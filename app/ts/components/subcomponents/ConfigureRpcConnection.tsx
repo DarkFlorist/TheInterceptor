@@ -5,7 +5,6 @@ import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import type { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
-import { sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
@@ -123,7 +122,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
 		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcInfo, rpcEntries.value, activeRpcNetwork,
-			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
+			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}
@@ -131,7 +130,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const removeRpcEntry = async (entry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
 		await removeRpcEntryAndKeepActiveRpcConsistent(entry, rpcEntries.value, activeRpcNetwork,
-			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
+			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}

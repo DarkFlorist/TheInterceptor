@@ -1,5 +1,5 @@
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
-import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
@@ -759,11 +759,7 @@ export const ImportSettingsReply = funtypes.ReadonlyObject({
 	)
 })
 
-export type SetRpcList = funtypes.Static<typeof SetRpcList>
-export const SetRpcList = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),
-	data: RpcEntries,
-})
+export { SetRpcList } from './popupSettingsRequests.js'
 
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({

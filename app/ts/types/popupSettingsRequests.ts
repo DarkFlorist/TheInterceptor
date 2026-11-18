@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress } from './wire-types.js'
-import { RpcEntry } from './rpc.js'
+import { RpcEntry, RpcEntries } from './rpc.js'
 
 export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
 export const ModifyMakeMeRich = funtypes.ReadonlyObject({
@@ -38,6 +38,12 @@ export const ImportSettings = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ fileContents: funtypes.String })
 })
 
-export type PopupSettingsRequest = ModifyMakeMeRich | EnableSimulationMode | ChangeActiveChain | ChangeActiveAddress
+export type SetRpcList = funtypes.Static<typeof SetRpcList>
+export const SetRpcList = funtypes.ReadonlyObject({
+	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),
+	data: RpcEntries,
+})
+
+export type PopupSettingsRequest = ModifyMakeMeRich | EnableSimulationMode | ChangeActiveChain | ChangeActiveAddress | SetRpcList
 
 export type PopupSettingsRequestWithSharedReply = Exclude<PopupSettingsRequest, ChangeActiveAddress>

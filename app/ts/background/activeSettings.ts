@@ -74,7 +74,7 @@ export async function runActiveSettingsTransition(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	commit: () => Promise<boolean>,
-	options: { readonly signingPreference?: SigningAddressPreference, readonly promptForAccessesIfNeeded?: boolean, readonly refreshAlways?: boolean } = {},
+	options: { readonly signingPreference?: SigningAddressPreference, readonly promptForAccessesIfNeeded?: boolean, readonly refreshAlways?: boolean, readonly updateNetworkMetadata?: boolean } = {},
 ): Promise<void> {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
@@ -91,7 +91,7 @@ export async function runActiveSettingsTransition(
 					// The preference belongs to the committed selection, even if later provider preparation fails.
 					if (options.signingPreference !== undefined) await rememberSigningAddressSelection(options.signingPreference)
 					try {
-						networkOutcome = simulationServicesOwner.ensureNetwork(updatedSettings.activeRpcNetwork)
+						networkOutcome = simulationServicesOwner.ensureNetwork(updatedSettings.activeRpcNetwork, { updateMetadata: options.updateNetworkMetadata })
 					} catch (error) {
 						// Only failed provider installation invalidates simulation output here.
 						await publishFailedPopupVisualisation()

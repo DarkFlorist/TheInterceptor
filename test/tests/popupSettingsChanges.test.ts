@@ -299,6 +299,27 @@ describe('popup settings changes', () => {
 		assert.equal(announced, true)
 	})
 
+	test('RPC-list preference edits preserve an exact selection among entries sharing an endpoint', async () => {
+		installBrowserMock()
+		const { getSettings, changeSimulationMode } = await loadModules()
+		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+		const initial = (await getSettings()).activeRpcNetwork
+		if (initial.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const selected = { ...initial, name: 'Selected twin', primary: false, currencyTicker: 'SELECTED' }
+		const other = { ...initial, name: 'Other twin', primary: true, currencyTicker: 'OTHER', blockExplorer: { apiUrl: 'https://other.example/api', apiKey: '' } }
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: selected })
+		const owner = createSimulationServicesOwner(selected, async () => undefined, async (_ethereum, error) => { throw error })
+		const captured = owner.getCurrent()
+		try {
+			const edited = { ...selected, minimized: !selected.minimized }
+			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [other, edited] })
+			assert.deepEqual((await getSettings()).activeRpcNetwork, edited)
+			assert.equal(owner.getCurrent(), captured)
+			assert.equal(owner.getCurrent().ethereum.getRpcEntry().currencyTicker, selected.currencyTicker)
+		} finally { owner.getCurrent().ethereum.cleanup() }
+	})
+
 	test('RPC-list metadata edits replace installed metadata and refresh without changing captured clients', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { getSettings } = await loadModules()
@@ -308,18 +329,20 @@ describe('popup settings changes', () => {
 		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
 		const captured = owner.getCurrent()
-		const edited = { ...settings.activeRpcNetwork, primary: true, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
+		const edited = { ...settings.activeRpcNetwork, primary: false, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
+		const otherPrimary = { ...edited, primary: true, httpsRpc: 'https://other-primary.example' }
 		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
 		try {
 			const before = refreshCount()
-			await setNewRpcList(owner, { method: 'popup_set_rpc_list', data: [edited] }, settings)
+			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, edited] })
 			assert.deepEqual(owner.getCurrent().ethereum.getRpcEntry(), edited)
+			assert.deepEqual((await getSettings()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
 			assert.notEqual(owner.getCurrent(), captured)
 			assert.deepEqual(captured.ethereum.getRpcEntry(), settings.activeRpcNetwork)
 			assert.ok(refreshCount() > before)
 			const installed = owner.getCurrent()
 			const refreshed = refreshCount()
-			await setNewRpcList(owner, { method: 'popup_set_rpc_list', data: [{ ...edited, minimized: !edited.minimized }] }, settings)
+			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, { ...edited, minimized: !edited.minimized }] })
 			assert.equal(owner.getCurrent(), installed, 'List preferences do not reinstall services')
 			assert.equal(refreshCount(), refreshed)
 		} finally { owner.getCurrent().ethereum.cleanup() }
