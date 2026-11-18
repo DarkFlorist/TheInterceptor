@@ -144,7 +144,7 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 
 /**
  * A transaction of a simulation input, which prepareSimulationInputForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
- * Only the preparation sets executedTransaction. The simulation stack, its imports and pending transactions hold PreSimulationTransaction, whose parser drops the field, so no stored or imported transaction can run a call other than the one it shows.
+ * Only the preparation sets executedTransaction. The simulation stack, its imports and pending transactions hold PreSimulationTransaction, whose parser drops the field, so a file cannot supply arbitrary replacement calldata. Safe execution preparation derives its executor call from the displayed Safe call, including hypothetical approvals in imported simulation scenarios; activeStackContext excludes those scenarios from signing-mode inputs.
  */
 export type SimulationInputTransaction = funtypes.Static<typeof SimulationInputTransaction>
 export const SimulationInputTransaction = PreSimulationTransaction.And(funtypes.ReadonlyPartial({

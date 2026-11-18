@@ -1070,3 +1070,26 @@ for (const { description, imported } of importCases) {
 		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), imported)
 	})
 }
+
+
+test('an imported hypothetical Safe approval stays out of signing-mode simulation inputs', async () => {
+	configureSafe()
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	const { getCurrentSimulationInput, prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	await changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
+	await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS))
+	const hypotheticalInput = await getCurrentSimulationInput([])
+	assert.equal(hypotheticalInput.flatMap((block) => block.transactions).length, 1)
+	const preparedHypothetical = await prepareSafeExecutionsForRpc(hypotheticalInput, ethereum)
+	assert.equal(preparedHypothetical.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+
+	for (const activeSigningSafeAddress of [undefined, SAFE_ADDRESS]) {
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress })
+		const signingInput = await getCurrentSimulationInput([])
+		assert.deepEqual(signingInput, [], 'neither EOA nor Safe signing uses imported hypothetical transactions as base state')
+		assert.deepEqual(await prepareSafeExecutionsForRpc(signingInput, ethereum), [])
+	}
+	await changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
+	assert.equal((await getCurrentSimulationInput([])).flatMap((block) => block.transactions).length, 1, 'switching back preserves the imported scenario')
+})

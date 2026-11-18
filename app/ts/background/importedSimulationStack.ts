@@ -12,7 +12,7 @@ const withoutImportedMessageRequestOrigins = (operations: readonly InterceptorSt
 	return modifyObject(operation, { signedMessageTransaction })
 })
 
-// Every imported-stack admission rule lives here. Signers and supported simulation options are scenario inputs, including hypothetical Safe approvals.
+// Every imported-stack admission rule lives here. Signers and supported simulation options are scenario inputs, including hypothetical Safe approvals. These calls have no safeTransaction, so activeStackContext includes them only in simulation mode, never as the base state of signing previews.
 export function admitImportedSimulationStackOperations(operations: readonly InterceptorStackOperation[]): ImportedSimulationStackAdmission {
 	// Gnosis Safe proposals carry signatures that must stay synchronized with the Safe stack, which only Import Gnosis Safe keeps.
 	if (operations.some((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction !== undefined)) {
