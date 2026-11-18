@@ -254,6 +254,7 @@ describe('pages that show RPC connections follow popup_update_rpc_list', () => {
 	})
 
 	test('ConfirmTransaction updates the chain selector of its address editor', async () => {
+		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const created = new Date('2024-01-01T00:00:00.000Z')
 		const originalRequestParameters: OriginalSendRequestParameters = { method: 'eth_sendTransaction', params: [{ from: knownAddress.address, to: 0x2222222222222222222222222222222222222222n, value: 0n, input: new Uint8Array() }] }
 		const transactionToSimulate: FailedToCreateWebsiteCreatedEthereumTransaction = { website, created, originalRequestParameters, transactionIdentifier: 1n, success: false, error: { code: -32000, message: 'simulation failed' } }
@@ -280,6 +281,7 @@ describe('pages that show RPC connections follow popup_update_rpc_list', () => {
 					uniqueRequestIdentifier,
 					transactionToSimulate,
 					signerName: 'NoSignerDetected',
+					confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 					error: { code: -32000, message: 'simulation failed', decodedErrorMessage: 'simulation failed' },
 					simulationState: { blockNumber: 123n, simulationConductedTimestamp: created },
 				},
@@ -287,7 +289,8 @@ describe('pages that show RPC connections follow popup_update_rpc_list', () => {
 		}
 		const pendingTransactionsUpdate: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-			data: { pendingTransactionAndSignableMessages: [failedTransaction], currentBlockNumber: 123n, rpcConnectionStatus: undefined },
+			// As the background sends it: stamped with the stored request's reviewed-result id.
+			data: { pendingTransactionAndSignableMessages: [toPopupPendingTransactionOrSignableMessage(failedTransaction)], currentBlockNumber: 123n, rpcConnectionStatus: undefined },
 		}
 		await assertChainSelectorFollowsRpcListUpdates({
 			page: ConfirmTransaction,

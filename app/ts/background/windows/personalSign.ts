@@ -1,7 +1,7 @@
 import { SafeMessage } from '../../safe/safeMessage.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
-import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { type OpenSeaOrderMessage, type Permit2SignatureTransferKind, type Permit2Witness, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest, findPermit2WitnessField, getPermit2SignatureTransferKind } from '../../types/personal-message-definitions.js'
 import { assertNever } from '../../utils/typescript.js'
 import { extractEIP712Message, validateEIP712Types } from '../../utils/eip712Parsing.js'
 import { getTabState } from '../storageVariables.js'
@@ -14,6 +14,9 @@ import { parseInputData } from '../../simulation/parsing.js'
 import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
+import type { EIP712Message } from '../../types/eip721.js'
+import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
+import { getSiweLookalikeQuarantineReasons, getSiweQuarantineReasons, parseSiweMessage } from '../../utils/siwe.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
 	return {
@@ -25,8 +28,30 @@ async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientSe
 	 }
 }
 
-export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined): { quarantine: boolean, quarantineReasons: readonly string[] } {
-	const quarantineReasons: string[] = []
+// Rejects only tokens positively identified as NFTs. Contracts that do not answer the ERC20 and ERC165 probes, addresses without code and address book contacts pass, and the signing page shows them under the unidentified token warning.
+async function identifyPermitToken(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, tokenAddress: bigint) {
+	const token = await identifyAddress(ethereumClientService, requestAbortController, tokenAddress)
+	if (token.type === 'ERC721') throw new Error('Attempted to perform Permit to an ERC721')
+	if (token.type === 'ERC1155') throw new Error('Attempted to perform Permit to an ERC1155')
+	return token
+}
+
+async function extractPermit2Witness(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, typedData: EIP712Message, transferKind: Permit2SignatureTransferKind): Promise<Permit2Witness | undefined> {
+	if (!transferKind.hasWitness) return undefined
+	const witnessTypeField = findPermit2WitnessField(transferKind.structFields)
+	if (witnessTypeField === undefined) throw new Error('Permit2 witness transfer must declare exactly one witness field besides permitted, spender, nonce and deadline')
+	// The witness struct is integrator defined, so it is enriched with the generic EIP-712 extractor from the original request instead of a dedicated runtime type.
+	const enrichedTypedData = await extractEIP712Message(ethereumClientService, requestAbortController, typedData)
+	const witnessValue = enrichedTypedData.message[witnessTypeField.name]
+	if (witnessValue === undefined) throw new Error(`Permit2 witness field "${ witnessTypeField.name }" is missing from the message`)
+	return { fieldName: witnessTypeField.name, typeName: witnessTypeField.type, value: witnessValue }
+}
+
+// The signed payload exactly as the website sent it, never a parsed form whose bigints would be re-encoded as hex, so the raw message view means the same for every message type.
+const serializeSignedPayload = (signedPayload: unknown) => ({ stringifiedMessage: stringifyJSONWithBigInts(signedPayload, 4), rawMessage: stringifyJSONWithBigInts(signedPayload) })
+
+export function getSigningQuarantineCodes(messageChainId: bigint | undefined, activeChainId: bigint, accountAddress: bigint, activeAddress: bigint, ownerAddress: bigint | undefined, additionalReasons: readonly string[] = []): { quarantine: boolean, quarantineReasons: readonly string[] } {
+	const quarantineReasons = [...additionalReasons]
 	if (messageChainId !== undefined && messageChainId !== activeChainId) quarantineReasons.push(`The signature request is for a different chain (${ getChainName(messageChainId) }) than what is currently active (${ getChainName(activeChainId) }).`)
 	if (accountAddress !== activeAddress || (ownerAddress !== undefined && accountAddress !== ownerAddress)) quarantineReasons.push('The signature request is for an account that is different from your active address.')
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
@@ -59,8 +84,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			account,
 			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
-			rawMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0]),
+			...serializeSignedPayload(originalParams.originalRequestParameters.params[0]),
 			isValidMessage: isValid.valid,
 			messageHash: undefined,
 		}
@@ -68,18 +92,33 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	if (originalParams.originalRequestParameters.method === 'personal_sign') {
 		const account = await identifyAddress(ethereumClientService, requestAbortController, originalParams.originalRequestParameters.params[1])
-		return {
+		const decodedMessage = decodePersonalSignMessage(originalParams.originalRequestParameters.params[0])
+		const siweMessage = parseSiweMessage(decodedMessage)
+		const personalSignParams = {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
 			rpcNetwork,
-			type: 'NotParsed' as const,
-			message: originalParams.originalRequestParameters.params[0],
 			account,
-			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 			rawMessage: originalParams.originalRequestParameters.params[0],
 			isValidMessage: isValid.valid,
 			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
+		}
+		if (siweMessage !== undefined) {
+			return {
+				...personalSignParams,
+				type: 'SignInWithEthereum' as const,
+				message: siweMessage,
+				signInAccount: await identifyAddress(ethereumClientService, requestAbortController, siweMessage.address),
+				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address, getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin)),
+				stringifiedMessage: decodedMessage,
+			}
+		}
+		return {
+			...personalSignParams,
+			type: 'NotParsed' as const,
+			message: originalParams.originalRequestParameters.params[0],
+			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined, getSiweLookalikeQuarantineReasons(decodedMessage)),
+			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }
@@ -94,8 +133,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message: stringifyJSONWithBigInts(namedParams.param, 4),
 			account,
 			quarantine: true, quarantineReasons: [isValid.reason],
-			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
-			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			...serializeSignedPayload(namedParams.param),
 			isValidMessage: isValid.valid,
 			messageHash: undefined,
 		}
@@ -117,8 +155,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message,
 			account,
 			...getSigningQuarantineCodes(chainid, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(namedParams.param, 4),
-			rawMessage: stringifyJSONWithBigInts(namedParams.param),
+			...serializeSignedPayload(namedParams.param),
 			isValidMessage: isValid.valid,
 			...hashes,
 		}
@@ -127,10 +164,8 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 	const parsed = maybeParsed.value
 	switch (parsed.primaryType) {
 		case 'Permit': {
-			const token = await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract)
+			const token = await identifyPermitToken(ethereumClientService, requestAbortController, parsed.domain.verifyingContract)
 			const owner = await identifyAddress(ethereumClientService, requestAbortController, parsed.message.owner)
-			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
-			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
@@ -141,17 +176,14 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				owner,
 				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
 				verifyingContract: token,
-				...getSigningQuarantineCodes(BigInt(parsed.domain.chainId), rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, owner.address),
-				rawMessage: stringifyJSONWithBigInts(parsed, 4),
-				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
+				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, owner.address),
+				...serializeSignedPayload(namedParams.param),
 				isValidMessage: isValid.valid,
 				...hashes,
 			}
 		}
 		case 'PermitSingle': {
-			const token = await identifyAddress(ethereumClientService, requestAbortController, parsed.message.details.token)
-			if (token.type === 'ERC721') throw 'Attempted to perform Permit to an ERC721'
-			if (token.type === 'ERC1155') throw 'Attempted to perform Permit to an ERC1155'
+			const token = await identifyPermitToken(ethereumClientService, requestAbortController, parsed.message.details.token)
 			return {
 				method: originalParams.originalRequestParameters.method,
 				...basicParams,
@@ -163,8 +195,49 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
 				verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
 				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-				rawMessage: stringifyJSONWithBigInts(parsed),
+				...serializeSignedPayload(namedParams.param),
+				isValidMessage: isValid.valid,
+				...hashes,
+			}
+		}
+		case 'PermitBatch': return {
+			method: originalParams.originalRequestParameters.method,
+			...basicParams,
+			rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+			type: 'Permit2Batch' as const,
+			message: parsed,
+			account,
+			details: await promiseAllMapAbortSafe(parsed.message.details, async (details) => ({ ...details, token: await identifyPermitToken(ethereumClientService, requestAbortController, details.token) })),
+			spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
+			verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
+			...serializeSignedPayload(namedParams.param),
+			isValidMessage: isValid.valid,
+			...hashes,
+		}
+		case 'PermitTransferFrom':
+		case 'PermitBatchTransferFrom':
+		case 'PermitWitnessTransferFrom':
+		case 'PermitBatchWitnessTransferFrom': {
+			const transferKind = getPermit2SignatureTransferKind(parsed)
+			return {
+				method: originalParams.originalRequestParameters.method,
+				...basicParams,
+				rpcNetwork: rpcNetwork.chainId !== parsed.domain.chainId ? await getRpcNetworkForChain(parsed.domain.chainId) : rpcNetwork,
+				type: 'Permit2SignatureTransfer' as const,
+				// `parsed` drops the witness and its struct types, so retain the full signing input.
+				signedPayload: namedParams.param,
+				isBatch: transferKind.isBatch,
+				chainId: parsed.domain.chainId,
+				nonce: parsed.message.nonce,
+				deadline: parsed.message.deadline,
+				account,
+				permitted: await promiseAllMapAbortSafe(transferKind.permitted, async (permission) => ({ ...permission, token: await identifyPermitToken(ethereumClientService, requestAbortController, permission.token) })),
+				spender: await identifyAddress(ethereumClientService, requestAbortController, parsed.message.spender),
+				verifyingContract: await identifyAddress(ethereumClientService, requestAbortController, parsed.domain.verifyingContract),
+				witness: await extractPermit2Witness(ethereumClientService, requestAbortController, namedParams.param, transferKind),
+				...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
+				...serializeSignedPayload(namedParams.param),
 				isValidMessage: isValid.valid,
 				...hashes,
 			}
@@ -188,8 +261,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 				...addresses,
 				quarantine: false,
 				quarantineReasons: [],
-				stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-				rawMessage: stringifyJSONWithBigInts(parsed),
+				...serializeSignedPayload(namedParams.param),
 				parsedMessageData,
 				parsedMessageDataAddressBookEntries: await promiseAllMapAbortSafe(addressesInEventsAndInputData, (address) => identifyAddress(ethereumClientService, requestAbortController, address)),
 				isValidMessage: isValid.valid,
@@ -205,8 +277,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			message: await addMetadataToOpenSeaOrder(ethereumClientService, requestAbortController, parsed.message),
 			account,
 			...getSigningQuarantineCodes(parsed.domain.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),
-			stringifiedMessage: stringifyJSONWithBigInts(parsed, 4),
-			rawMessage: stringifyJSONWithBigInts(parsed),
+			...serializeSignedPayload(namedParams.param),
 			isValidMessage: isValid.valid,
 			...hashes,
 		}
