@@ -11,7 +11,6 @@ import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
-import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
@@ -106,18 +105,6 @@ const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'ac
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress', EthereumAddressOrMissing)
 const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress', activeSigningSafeAddress)
 const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress', independentActiveSimulationAddress)
-// An outbox entry: a terminal reply and the id of the pending request instance it answers, stored together so delivery after a restart still knows which request the reply completes.
-const QueuedTerminalReplyEntry = funtypes.ReadonlyObject({ reply: InterceptedRequestForward, answeredInstanceId: funtypes.String })
-// Entries stored before instance ids existed are bare replies. That version removed a request in the write after queueing its reply and had no popup-close state that kept a request waiting for its reply, so such a reply answers no request still pending: it parses as answering no instance, is delivered, and is then removed from the outbox alone.
-const LegacyQueuedTerminalReply = InterceptedRequestForward.withParser({
-	parse: (reply) => ({ success: true, value: { reply, answeredInstanceId: undefined } }),
-	// A withParser serializer returns the underlying runtype's parsed value, which funtypes then serializes with InterceptedRequestForward itself, so the reply is stored in its wire form (storedPendingTerminalReplies.test.ts rewrites a legacy entry and reads it back).
-	serialize: (entry: { readonly reply: InterceptedRequestForward, readonly answeredInstanceId: undefined }) => ({ success: true, value: entry.reply }),
-})
-export type QueuedTerminalReply = funtypes.Static<typeof QueuedTerminalReply>
-const QueuedTerminalReply = funtypes.Union(QueuedTerminalReplyEntry, LegacyQueuedTerminalReply)
-// The terminal reply outbox's stored form, shared by the outbox's own reads and writes and by the write that stores it with the pending requests.
-export const StoredPendingTerminalReplies = funtypes.ReadonlyArray(QueuedTerminalReply)
 
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	...startupStoragePartialCodecs,
@@ -147,7 +134,6 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
-	pendingTerminalReplies: StoredPendingTerminalReplies,
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
@@ -190,7 +176,6 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('pendingWatchAssetRequests'),
 	funtypes.Literal('popupRefreshGeneration'),
-	funtypes.Literal('pendingTerminalReplies'),
 )
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
@@ -208,7 +193,12 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-export async function browserStorageLocalSet(items: LocalStorageItems) {
+// Keys that only their owners write, in the pending-request storage transaction: storageVariables.ts owns the pending requests and pendingTerminalReplies.ts the reply outbox. The generic codecs leave them out, and the write helper refuses them, as the codecs' presence-aware address properties let any key through structurally.
+const PENDING_REQUEST_TRANSACTION_KEYS = ['pendingTransactionsAndMessages', 'pendingTerminalReplies'] as const
+export type GenericStorageItems = LocalStorageItems & { readonly [Key in typeof PENDING_REQUEST_TRANSACTION_KEYS[number]]?: never }
+
+export async function browserStorageLocalSet(items: GenericStorageItems) {
+	if (PENDING_REQUEST_TRANSACTION_KEYS.some((key) => key in items)) throw new Error('The pending requests and the reply outbox are written only by their owners, in the pending-request storage transaction.')
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }
 

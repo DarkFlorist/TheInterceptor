@@ -602,7 +602,7 @@ test('a terminal reply is stored with its decision only: a decision that leaves 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const queued = await modules.getPendingTerminalReplies()
 	assert.equal(queued.length, 1)
-	assert.equal(queued[0]?.answeredInstanceId, pending.instanceId, 'the queued reply records the instance it answers')
+	assert.deepEqual(queued[0]?.completes, { kind: 'pendingRequestInstance', instanceId: pending.instanceId }, 'the queued reply records the instance it answers')
 	const queuedReply = queued[0]?.reply
 	assert.equal(isRecord(queuedReply) && isRecord(queuedReply.error) && queuedReply.error.code, 4100)
 })
@@ -774,7 +774,7 @@ test('after a restart, a reconnecting page gets a queued popup-close rejection o
 	const pending = await getOnlyPendingRequest()
 	// What the popup-close claim write leaves when the background stops before delivering: the request marked ClosedWithoutResponse and its rejection queued with the instance it answers, with none of the in-memory delivery state a restart loses.
 	await modules.updateStoredPendingRequest(pageRequestIdentifier, (current) => ({ ...current, approvalStatus: { status: 'ClosedWithoutResponse' } }))
-	await modules.browserStorageLocalSet({ pendingTerminalReplies: [{ reply: rejectionOf(pending), answeredInstanceId: pending.instanceId }] })
+	browserMock.storageState.pendingTerminalReplies = [{ reply: modules.serialize(InterceptedRequestForward, rejectionOf(pending)), answeredInstanceId: pending.instanceId }]
 
 	// The page reconnects and its queued replies are flushed.
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket), 1)
@@ -812,7 +812,7 @@ test('an outbox entry stored before instance ids existed is delivered once and r
 	const pending = await getOnlyPendingRequest()
 	// Older versions stored the bare reply, without the instance it answers.
 	browserMock.storageState.pendingTerminalReplies = [modules.serialize(InterceptedRequestForward, rejectionOf(pending))]
-	assert.deepEqual((await modules.getPendingTerminalReplies()).map(({ answeredInstanceId }) => answeredInstanceId), [undefined])
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map(({ completes }) => completes), [{ kind: 'noPendingRequest' }])
 
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket), 1)
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
@@ -839,7 +839,7 @@ test('a reader that saw a corrupt reply outbox does not erase a reply queued whi
 		outboxRead.release()
 		outboxRead.restore()
 	}
-	assert.deepEqual((await modules.getPendingTerminalReplies()).map(({ answeredInstanceId }) => answeredInstanceId), [pending.instanceId], 'the queued rejection survives the recovery')
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map(({ completes }) => completes), [{ kind: 'pendingRequestInstance', instanceId: pending.instanceId }], 'the queued rejection survives the recovery')
 	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(page.connections, rejectionOf(pending), pending), true)
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
 })

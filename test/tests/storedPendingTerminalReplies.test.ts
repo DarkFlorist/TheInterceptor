@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { StoredPendingTerminalReplies } from '../../app/ts/utils/storageUtils.js'
+import { StoredPendingTerminalReplies } from '../../app/ts/background/pendingTerminalReplies.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
 // A reply as an older version stored it: a bare reply, here with a bigint connection name and result, which the stored form carries as hex.
