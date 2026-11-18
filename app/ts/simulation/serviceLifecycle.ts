@@ -1,5 +1,5 @@
 import type { EthereumBlockHeader } from '../types/wire-types.js'
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, getRpcEntryIdentityKey, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
@@ -64,10 +64,12 @@ export function resetSimulationServices(
 	)
 }
 
+export type SimulationNetworkReconciliation = 'replaced' | 'unchanged' | 'signerOnly'
+
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
-	// Reconcile against the installed endpoint; return true only when services were replaced. Signer-only selections retain the fallback.
-	readonly ensureNetwork: (rpcNetwork: RpcNetwork) => boolean
+	// Reconcile the installed endpoint; RPC-list edits can also request fresh metadata without mutating captured clients.
+	readonly ensureNetwork: (rpcNetwork: RpcNetwork, options?: { readonly updateMetadata?: boolean }) => SimulationNetworkReconciliation
 }
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
@@ -88,10 +90,13 @@ export function createSimulationServicesOwnerForServices(initial: SimulationServ
 	let current = initial
 	return {
 		getCurrent: () => current,
-		ensureNetwork: (nextNetwork) => {
-			if (nextNetwork.httpsRpc === undefined || !getRpcNetworkChange(current.ethereum.getRpcEntry(), nextNetwork).endpointChanged) return false
+		ensureNetwork: (nextNetwork, options = {}) => {
+			if (isSignerOnlyNetwork(nextNetwork)) return 'signerOnly'
+			const installedNetwork = current.ethereum.getRpcEntry()
+			const entryChanged = options.updateMetadata && getRpcEntryIdentityKey(installedNetwork) !== getRpcEntryIdentityKey(nextNetwork)
+			if (!entryChanged && !getRpcNetworkChange(installedNetwork, nextNetwork).endpointChanged) return 'unchanged'
 			current = replace(current, nextNetwork)
-			return true
+			return 'replaced'
 		},
 	}
 }

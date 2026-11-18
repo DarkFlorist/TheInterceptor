@@ -299,6 +299,32 @@ describe('popup settings changes', () => {
 		assert.equal(announced, true)
 	})
 
+	test('RPC-list metadata edits replace installed metadata and refresh without changing captured clients', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+		const settings = await getSettings()
+		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
+		const captured = owner.getCurrent()
+		const edited = { ...settings.activeRpcNetwork, primary: true, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
+		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
+		try {
+			const before = refreshCount()
+			await setNewRpcList(owner, { method: 'popup_set_rpc_list', data: [edited] }, settings)
+			assert.deepEqual(owner.getCurrent().ethereum.getRpcEntry(), edited)
+			assert.notEqual(owner.getCurrent(), captured)
+			assert.deepEqual(captured.ethereum.getRpcEntry(), settings.activeRpcNetwork)
+			assert.ok(refreshCount() > before)
+			const installed = owner.getCurrent()
+			const refreshed = refreshCount()
+			await setNewRpcList(owner, { method: 'popup_set_rpc_list', data: [{ ...edited, minimized: !edited.minimized }] }, settings)
+			assert.equal(owner.getCurrent(), installed, 'List preferences do not reinstall services')
+			assert.equal(refreshCount(), refreshed)
+		} finally { owner.getCurrent().ethereum.cleanup() }
+	})
+
 	test('refreshes when persisted network selection is unchanged but installed services must be replaced', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { getSettings, activateAddressSelection } = await loadModules()

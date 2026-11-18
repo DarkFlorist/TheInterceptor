@@ -9,6 +9,7 @@ import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariabl
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
 import { runActiveSettingsTransition } from '../activeSettings.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
@@ -68,5 +69,7 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.ensureNetwork(primary)
+	if (primary === undefined) return
+	const outcome = simulationServicesOwner.ensureNetwork(primary, { updateMetadata: true })
+	if (outcome === 'replaced' && (settings.simulationMode || settings.activeSigningSafeAddress !== undefined)) await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 }
