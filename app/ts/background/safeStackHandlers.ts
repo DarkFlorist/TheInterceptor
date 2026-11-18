@@ -1,7 +1,7 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { assertInterceptorSafeTransactionPolicy, assertUniqueSafeTransactionStacks, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { getSafeTransactionStackInvariantViolation, mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState, recoverSafeTransactionStackFromLocalOperations } from '../safe/safeStack.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { SafeStackExport, type SafeTransactionStack } from '../types/safeTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { getErrorMessage } from '../utils/errors.js'
@@ -74,7 +74,7 @@ export async function importSafeStack(
 		await updateTransactionState((previousState) => {
 			let reconciledState = previousState
 			for (const { importedStack, safeState } of validatedImports) {
-				reconciledState = reconcileSafeTransactionState(reconciledState, importedStack.chainId, importedStack.safeAddress, safeState.nonce)
+				reconciledState = reconcileSafeTransactionState(reconciledState, importedStack.chainId, importedStack.safeAddress, safeState.nonce).state
 			}
 			const mergedStacks: SafeTransactionStack[] = [...reconciledState.safeTransactionStacks]
 			for (const { importedStack, safeState } of validatedImports) {
