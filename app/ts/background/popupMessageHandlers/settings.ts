@@ -10,8 +10,6 @@ import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeApps
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { runActiveSettingsTransition } from '../activeSettings.js'
-import { popupSettingsOperations } from '../../types/popupSettingsProtocol.js'
-import { popupSettingsCoordinator } from '../popupSettingsAdmission.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
@@ -49,14 +47,13 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 
-// Imports use the same admission, commit lock and post-commit effects as ordinary active-settings changes.
+// The popup command boundary owns admission; this workflow shares the active-settings commit and post-commit effects.
 export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
-	const admission = await popupSettingsCoordinator.run(popupSettingsOperations.popup_import_settings.operation, async () => await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
 		const reply = await importSettings(request, websiteTabConnections)
 		await sendPopupMessageToOpenWindows(reply)
 		return reply.data.success
-	}, { refreshAlways: true }))
-	if (!admission.accepted) await sendPopupMessageToOpenWindows({ method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Another popup is changing settings. Please wait for it to finish, then try again.' } })
+	}, { refreshAlways: true })
 }
 
 export async function exportSettings() {

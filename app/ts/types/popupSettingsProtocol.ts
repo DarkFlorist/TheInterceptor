@@ -2,14 +2,23 @@ import * as funtypes from 'funtypes'
 import type { ImportSettings } from './interceptor-messages.js'
 import type { PopupSettingsRequest } from './popupSettingsRequests.js'
 
+export type PopupSettingsAdmittedRequest = PopupSettingsRequest | ImportSettings
+
 // Exhaustive over admitted settings commands and imports: admission and shared status use this definition.
 export const popupSettingsOperations = {
-	popup_changeActiveAddress: { operation: 'wallet', replyType: 'ChangeActiveAddressReply' },
-	popup_enableSimulationMode: { operation: 'mode', replyType: 'PopupSettingsChangeReply' },
-	popup_changeActiveRpc: { operation: 'rpc', replyType: 'PopupSettingsChangeReply' },
-	popup_modifyMakeMeRich: { operation: 'rich', replyType: 'PopupSettingsChangeReply' },
-	popup_import_settings: { operation: 'import', replyType: 'popup_initiate_export_settings_reply' },
-} as const satisfies Record<PopupSettingsRequest['method'] | ImportSettings['method'], { operation: string, replyType: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' | 'popup_initiate_export_settings_reply' }>
+	popup_changeActiveAddress: { operation: 'wallet', reply: { transport: 'direct', type: 'ChangeActiveAddressReply' } },
+	popup_enableSimulationMode: { operation: 'mode', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
+	popup_changeActiveRpc: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
+	popup_modifyMakeMeRich: { operation: 'rich', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
+	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', method: 'popup_initiate_export_settings_reply' } },
+} as const satisfies Record<PopupSettingsAdmittedRequest['method'], {
+	operation: string
+	reply: { transport: 'direct', type: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' } | { transport: 'broadcast', method: 'popup_initiate_export_settings_reply' }
+}>
+
+export type DirectPopupSettingsMethod = {
+	[Method in keyof typeof popupSettingsOperations]: typeof popupSettingsOperations[Method]['reply'] extends { transport: 'direct' } ? Method : never
+}[keyof typeof popupSettingsOperations]
 
 const operations = Object.values(popupSettingsOperations)
 export type PopupSettingsOperation = typeof operations[number]['operation']

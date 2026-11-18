@@ -1,6 +1,5 @@
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
-import type { PopupSettingsRequest } from './popupSettingsRequests.js'
-import type { popupSettingsOperations } from './popupSettingsProtocol.js'
+import type { popupSettingsOperations, DirectPopupSettingsMethod } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
@@ -285,7 +284,7 @@ type PopupSettingsReplyCodecs = {
 
 // Settings commands with direct replies use their descriptor codec; imports deliver their reply by broadcast.
 type PopupSettingsRepliesMap = {
-	[Method in PopupSettingsRequest['method']]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['replyType']]
+	[Method in DirectPopupSettingsMethod]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['reply']['type']]
 }
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {

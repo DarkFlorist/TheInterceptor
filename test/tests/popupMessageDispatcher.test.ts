@@ -762,7 +762,7 @@ describe('settings import installs the imported network', () => {
 		assert.ok(getPopupMessages().some((message) => message.method === 'popup_chain_update'))
 	})
 
-	for (const entryPoint of ['popup', 'direct'] as const) {
+	for (const entryPoint of ['popup', 'direct', 'import'] as const) {
 		test(`an import excludes overlapping ${ entryPoint } network changes until its transition completes`, async () => {
 			const context = createDispatcherContextWithInstalledServices()
 			const entered = createDeferredValue<void>()
@@ -780,13 +780,20 @@ describe('settings import installs the imported network', () => {
 			const importing = dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork) } })
 			await entered.promise
 			const nextNetwork = { ...settings.activeRpcNetwork, httpsRpc: 'https://later.example' }
-			if (entryPoint === 'popup') {
+			if (entryPoint !== 'direct') {
 				try {
-					const result = await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: nextNetwork })
-					assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
+					if (entryPoint === 'popup') {
+						const result = await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: nextNetwork })
+						assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
+					} else {
+						await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile({ ...importedSepoliaNetwork, httpsRpc: 'https://rejected.example' }) } })
+						const rejection = getPopupMessages().find((message) => message.method === 'popup_initiate_export_settings_reply')
+						if (rejection?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected an import rejection broadcast')
+						assert.deepEqual(rejection.data, { success: false, errorMessage: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
+					}
 				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
 				await importing
-				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().chainId, 11155111n)
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, importedSepoliaNetwork.httpsRpc)
 			} else {
 				const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
 				let finished = false
