@@ -1,10 +1,10 @@
 import type { SimulationServices, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
-import { getActiveStackContext } from '../utils/activeStackContext.js'
+import { activeStackContextsEqual, getActiveStackContext } from '../utils/activeStackContext.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { getCommittedNetworkChangeGeneration } from './networkChangeGeneration.js'
+import { getCommittedNetworkChangeGeneration, snapshotNetworkIsActive } from './networkChangeGeneration.js'
 import { getSettings } from './settings.js'
 import { reconcileSimulationStackChain } from './simulationStackChain.js'
 import { getInterceptorTransactionStack } from './storageVariables.js'
@@ -228,9 +228,13 @@ export async function readNetworkSnapshotForServices(services: SimulationService
 }
 
 
-// Serialize stack writes with network changes; the returned read owns the following refresh.
+// Storage-only stack mutations validate their admitted context and commit under the same lock as network changes. RPC simulation and popup delivery run afterwards on the returned snapshot.
 export async function runSimulationStackMutation<T>(admitted: NetworkSnapshot, write: () => Promise<T>) {
 	return await runNetworkTransition(async (reads) => {
+		if (admitted.simulation.kind === 'unavailable') throw admitted.simulation.error
+		const current = snapshotOfCoherentRead(await captureNetworkRead(() => admitted.services))
+		if (current === undefined || !snapshotNetworkIsActive(admitted.simulation) || !activeStackContextsEqual(getActiveStackContext(admitted.settings), getActiveStackContext(current.settings))) return undefined
+		if (current.simulation.kind === 'unavailable') throw current.simulation.error
 		const value = await write()
 		return { value, network: await reads.captureNetworkSnapshot(() => admitted.services) }
 	})
