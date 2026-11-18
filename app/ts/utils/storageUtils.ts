@@ -1,17 +1,17 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
+import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
+import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
+import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
+import { Page } from '../types/exportedSettingsTypes.js'
+import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import { RpcEntries, RpcNetwork } from '../types/rpc.js'
+import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
-import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
-import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
-import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
-import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
-import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
@@ -108,6 +108,7 @@ const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAdd
 const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress', independentActiveSimulationAddress)
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	...startupStoragePartialCodecs,
+	simulationStackChainId: EthereumQuantity,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
@@ -148,6 +149,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('useSignersAddressAsActiveAddress'),
 	funtypes.Literal('websiteAccess'),
 	funtypes.Literal('activeRpcNetwork'),
+	funtypes.Literal('simulationStackChainId'),
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeCurrentAddressRich'),

@@ -1,17 +1,27 @@
 import * as assert from 'assert'
-import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { afterEach, describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { afterEach, describe, test } from 'bun:test'
-import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock, type RenderedTreeNode } from './domMock.js'
-import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
-import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
-import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
-import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
+import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { bytes32String } from '../../app/ts/utils/bigint.js'
+import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock, type RenderedTreeNode } from './domMock.js'
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
+
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async (services: Parameters<typeof import('../../app/ts/background/networkTransitionLock.js').readNetworkSnapshotForServices>[0]) => {
+	// A read pairs a client with the stack only if it serves the active network, so these fixtures make it the active one.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: services.ethereum.getRpcEntry() })
+	return await readTestNetworkSnapshot(services)
+}
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type CurrentWindowProvider = () => Promise<{ id: number }>
@@ -979,7 +989,7 @@ describe('ConfirmTransaction', () => {
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+			await refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator))
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()
@@ -1237,16 +1247,18 @@ describe('ConfirmTransaction', () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
 		const simulator = await createFakeSimulator()
+		const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: simulator.ethereum.getRpcEntry() })
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeSimulatedPendingTransaction(0n)] })
+		await browserStorageLocalSet2({ activeRpcNetwork: simulator.ethereum.getRpcEntry(), simulationMode: true, pendingTransactionsAndMessages: [makeSimulatedPendingTransaction(0n)] })
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 		const resolved = Promise.withResolvers<void>()
 		browser.setConfirmDialogHandler(async (message) => {
-			await resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), TransactionConfirmation.parse(message))
+			await resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000)), await readTestNetworkSnapshot({ ethereum: simulator.ethereum, tokenPriceService: new TokenPriceService(simulator.ethereum, 60_000) }), new Map(), TransactionConfirmation.parse(message))
 			resolved.resolve()
 		})
 
@@ -1272,6 +1284,8 @@ describe('ConfirmTransaction', () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
 		const simulator = await createFakeSimulator()
+		const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: simulator.ethereum.getRpcEntry() })
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
@@ -1279,7 +1293,7 @@ describe('ConfirmTransaction', () => {
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const reviewed = makeSimulatedPendingTransaction(0n, revertedOutcome)
 		const refreshed = makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } })
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [reviewed] })
+		await browserStorageLocalSet2({ activeRpcNetwork: simulator.ethereum.getRpcEntry(), simulationMode: true, pendingTransactionsAndMessages: [reviewed] })
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		const windowRequested = Promise.withResolvers<void>()
@@ -1292,7 +1306,7 @@ describe('ConfirmTransaction', () => {
 		const acceptReachedBackground = Promise.withResolvers<{ accept: unknown, resolution: Promise<boolean | undefined> }>()
 		browser.setConfirmDialogHandler(async (message) => {
 			const accept = TransactionConfirmation.parse(message)
-			const resolution = resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), accept)
+			const resolution = resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000)), await readTestNetworkSnapshot({ ethereum: simulator.ethereum, tokenPriceService: new TokenPriceService(simulator.ethereum, 60_000) }), new Map(), accept)
 			acceptReachedBackground.resolve({ accept, resolution })
 			await resolution
 		})

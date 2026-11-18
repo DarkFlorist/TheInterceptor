@@ -1,28 +1,30 @@
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
-import type { PendingFetchSimulationStackRequestPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
-import { clearFetchSimulationStackRequestPromiseIfOwnedBy, getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
-import { type InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
-import type { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
-import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
-import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
-import { assertNever } from '../../utils/typescript.js'
-import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
+import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
+import type { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
+import type { PendingFetchSimulationStackRequestPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
+import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
+import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
+import { type InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
+import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
+import { assertNever } from '../../utils/typescript.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
+import { replyToInterceptedRequest } from '../messageSending.js'
+import { clearFetchSimulationStackRequestPromiseIfOwnedBy, getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
+import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 
 export type SimulationStackSnapshot = {
 	simulationInput: ResolvedSimulationInput
 	simulationState: ResolvedSimulationState
+	// Read with the simulation input, so 1.0.x replies name the address that the simulation made rich.
+	activeAddressMadeRich: bigint | undefined
 }
 
 type FetchSimulationStackReply = {
 	confirmation: FetchSimulationStackRequestConfirmation
-	snapshot: SimulationStackSnapshot
+	// The stack at confirmation time. A rejection sends no stack, so it has none and is remembered for the stack the dialog opened with.
+	snapshot: SimulationStackSnapshot | undefined
 }
 
 // Only this background instance's waiter: the stored request is the copy that survives a restart and feeds the dialog page, and openedDialog is the window, not the request
@@ -40,19 +42,25 @@ export async function updateFetchSimulationStackRequestWithPendingRequest() {
 	return
 }
 
-export async function getSimulationStack(simulationState: ResolvedSimulationState, version: SimulationStackVersion) {
+export function getSimulationStack(snapshot: SimulationStackSnapshot, version: SimulationStackVersion) {
 	switch (version) {
-		case '2.0.0': return { version, payload: getSimulatedStackV2(simulationState) } as const
+		case '2.0.0': return { version, payload: getSimulatedStackV2(snapshot.simulationState) } as const
 		case '1.0.0':
-		case '1.0.1': {
-			const addressToMakeRich = await getAddressToMakeRich()
-			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } as const
-		}
+		case '1.0.1': return { version, payload: getSimulatedStackV1(snapshot.simulationState, snapshot.activeAddressMadeRich, version) } as const
 		default: assertNever(version)
 	}
 }
 
 export async function resolveFetchSimulationStackRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+	await resolveFetchSimulationStackDecision(snapshot, websiteTabConnections, confirmation)
+}
+
+// A rejection needs no network read or simulation but shares approval's request ownership and cleanup.
+export async function rejectFetchSimulationStackRequest(websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
+	await resolveFetchSimulationStackDecision(undefined, websiteTabConnections, confirmation)
+}
+
+async function resolveFetchSimulationStackDecision(snapshot: SimulationStackSnapshot | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	if (pendForUserReply !== undefined) {
 		// A confirmation waits for its snapshot, so it can arrive after its dialog closed and a newer request started waiting
 		pendForUserReply.tryResolve(confirmation.data.uniqueRequestIdentifier, { confirmation, snapshot })
@@ -78,17 +86,19 @@ async function runExclusiveFetchSimulationStackResolution(resolution: () => Prom
 }
 
 // The reply is prepared first so a failed extraction leaves the request stored and retryable. The clear precedes the close so a request arriving while the dialog closes finds the slot free instead of being refused
-async function resolveStoredRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
+async function resolveStoredRequest(snapshot: SimulationStackSnapshot | undefined, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
 	const { uniqueRequestIdentifier, simulationStackVersion, popupOrTabId } = storedRequest
-	const reply: FetchSimulationStackRequestResult = confirmation.data.accept
-		? { type: 'result', method: 'interceptor_getSimulationStack', result: await getSimulationStack(snapshot.simulationState, simulationStackVersion) }
+	if (confirmation.data.accept && snapshot === undefined) throw new Error('An accepted simulation stack request requires a snapshot')
+	const reply: FetchSimulationStackRequestResult = confirmation.data.accept && snapshot !== undefined
+		? { type: 'result', method: 'interceptor_getSimulationStack', result: getSimulationStack(snapshot, simulationStackVersion) }
 		: { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error }
-	// Preparing the reply can wait on storage, so a newer request may hold the slot by now. It only got there because openFetchSimulationStackDialog found this request's dialog gone, which makes the close below a no-op in that case
+	// Clear only this request: a newer request may have acquired the slot while storage was read.
 	await clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier)
 	replyToInterceptedRequest(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
 	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
 	await closePopupOrTabById(popupOrTabId)
 }
+
 
 function getRejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, simulationStackVersion: SimulationStackVersion) {
 	return {
@@ -183,14 +193,15 @@ export const openFetchSimulationStackDialog = async (
 		}
 		const reply = await pendingReply.reply
 		await setFetchSimulationStackRequestPromise(undefined)
+		const replySnapshot = reply.snapshot ?? initialSnapshot
 		if (reply.confirmation.data.accept) {
 			return {
 				outcome: 'accepted',
-				result: await getSimulationStack(reply.snapshot.simulationState, params.params[0]),
-				simulationStackHash: getSimulationStackHash(reply.snapshot.simulationInput),
+				result: getSimulationStack(replySnapshot, params.params[0]),
+				simulationStackHash: getSimulationStackHash(replySnapshot.simulationInput),
 			}
 		}
-		return getRejectedDialogResult(reply.snapshot)
+		return getRejectedDialogResult(replySnapshot)
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined
@@ -209,7 +220,7 @@ export async function openFetchSimulationStackDialogOrGetCachedResult(initialSna
 	const newHash = getSimulationStackHash(initialSnapshot.simulationInput)
 	const previousDecision = simulationStackDecisions.find((x) => x.identifier === identifier)
 	if (previousDecision !== undefined && previousDecision.hash === newHash) {
-		if (previousDecision.accept) return { type: 'result', method: params.method, result: await getSimulationStack(initialSnapshot.simulationState, params.params[0]) }
+		if (previousDecision.accept) return { type: 'result', method: params.method, result: getSimulationStack(initialSnapshot, params.params[0]) }
 		return { type: 'result', method: params.method, error: userDeniedChange.error }
 	}
 	const result = await openFetchSimulationStackDialog(initialSnapshot, simulationOverlayEnabled, websiteTabConnections, request.uniqueRequestIdentifier, params, website)

@@ -31,7 +31,7 @@ async function createApprovedSubscriberHarness({ onPostMessage }: { readonly onP
 		method,
 		params: [...params],
 	}, websiteTabConnections, noopPublishRpcConnectionStatus)
-	const sendNewBlock = async () => await sendSubscriptionMessagesForNewBlock(8443561n, ethereum, true, websiteTabConnections, async () => PASSTHROUGH_STATE)
+	const sendNewBlock = async () => await sendSubscriptionMessagesForNewBlock(8443561n, ethereum, true, websiteTabConnections, async () => PASSTHROUGH_STATE, () => true)
 	return { modules, messages, getBlockCalls, sendRequest, sendNewBlock, socket, websiteTabConnections }
 }
 

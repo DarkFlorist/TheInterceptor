@@ -1,22 +1,22 @@
+import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
+import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
+import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
+import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
+import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
+import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
+import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
+import { EIP712Message } from '../../app/ts/types/eip721.js'
+import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
+import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
+import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
+import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
 import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
-import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
-import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
-import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
-import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
-import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
-import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
-import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
-import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
-import { EIP712Message } from '../../app/ts/types/eip721.js'
-import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
-import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
-import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
-import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
-import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
-import { serialize } from '../../app/ts/types/wire-types.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -143,6 +143,13 @@ export function createBrowserMock() {
 			async setTitle() { return undefined },
 			async setBadgeText() { return undefined },
 			async setBadgeBackgroundColor() { return undefined },
+		},
+		// Network and website access changes refresh request blocking; these flows have no blocked requests to check.
+		declarativeNetRequest: {
+			async getDynamicRules() { return [] },
+			async getSessionRules() { return [] },
+			async updateDynamicRules() { return undefined },
+			async updateSessionRules() { return undefined },
 		},
 	}
 	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
@@ -723,6 +730,9 @@ export const getPendingSafeProposal = (pending: PendingTransactionOrSignableMess
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()
 	resetFakeSafeContractState()
+	// The active network is the shared simulator's, as it is for installed services, so snapshots read in these flows can be simulated on it.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: fakeRpcNetwork })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 }

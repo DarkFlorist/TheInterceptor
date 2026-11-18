@@ -138,6 +138,13 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 	}
 }
 
+async function readRemovalNetwork() {
+	const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
+	const { readNetworkSnapshot } = await import('../../app/ts/background/networkTransitionLock.js')
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	return await readNetworkSnapshot(simulationServicesOwner)
+}
+
 describe('removeTransactionOrSignedMessage', () => {
 	test('keeps later raw transactions unchanged when removing an earlier same-sender transaction', async () => {
 		const modules = await loadModules()
@@ -149,7 +156,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage(await readRemovalNetwork(), {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -171,7 +178,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage(await readRemovalNetwork(), {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -193,7 +200,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage(await readRemovalNetwork(), {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -215,7 +222,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage(await readRemovalNetwork(), {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -238,7 +245,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage(await readRemovalNetwork(), {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -258,7 +265,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage(await readRemovalNetwork(), {
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})

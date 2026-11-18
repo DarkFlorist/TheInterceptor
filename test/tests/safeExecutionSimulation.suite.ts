@@ -1,25 +1,31 @@
+import { keccak_256 } from '@noble/hashes/sha3'
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { keccak_256 } from '@noble/hashes/sha3'
-import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
 import { createSafeTxFromMessage } from '../../app/ts/safe/safeCore.js'
 import { decodeSafeExecution } from '../../app/ts/safe/safeExecution.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
-import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
-import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
-import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { classifyCaughtError } from '../../app/ts/utils/errors.js'
-import { createSafeNonceAfterInputReader, estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { describeSafeExecutionFailure } from '../../app/ts/safe/safeExecutionFailure.js'
 import { SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../../app/ts/safe/safeExecutionRouting.js'
-import { prepareSafeTransactionConfirmation } from '../../app/ts/background/safeTransactionConfirmation.js'
+import { createSafeNonceAfterInputReader, estimateSafeExecutionGas, prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { createExecutionSimulationState, createSimulationState, getNonceFixedSimulationStateInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
+import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
+import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, type SimulationStateInputMinimalData, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
+import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
+import { decodeEthereumError } from '../../app/ts/utils/errorDecoding.js'
+import { classifyCaughtError } from '../../app/ts/utils/errors.js'
 import { getGasFeePaidByTransactionSender } from '../../app/ts/utils/transactionGasAccounting.js'
-import { activeAddress, addressString, created, pendingTransaction, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole, createAcceptConfirmation } from './confirmTransactionTestHarness.js'
+import { fixedServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { activeAddress, addressString, simulator as confirmationSimulator, createAcceptConfirmation, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, makeFakeBlock, makeFakeEthSimulateResult, modules, pendingTransaction, recipientAddress, SAFE_EXECUTION_ABI, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { readActiveSimulationInput, readTestNetworkSnapshot } from './simulationInputTestHelper.js'
+
+// Like a request snapshot, confirmations read the settings together with the simulation stack built from them, under the network transition lock.
+const readNetworkState = async (services: Parameters<typeof import('../../app/ts/background/networkTransitionLock.js').readNetworkSnapshotForServices>[0]) => await readTestNetworkSnapshot(services)
+
 
 // createSafeAddressBookEntry configures the Safe at activeAddress, the address the fake RPC gives code.
 const SAFE_ADDRESS = activeAddress
@@ -376,8 +382,8 @@ test('drops the zero base fee flag of a Safe proposal stored by an earlier versi
 	if (loadedOperation?.type !== 'Transaction') throw new Error('Expected the stored proposal')
 	assert.deepEqual(loadedOperation.preSimulationTransaction.simulationOptions, { requiredChainId: fakeRpcNetwork.chainId })
 	await modules.updateInterceptorTransactionStack(() => loadedStack)
-	const { getCurrentSimulationInput, prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
-	const stackInput = await getCurrentSimulationInput()
+	const { prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const stackInput = await readActiveSimulationInput()
 	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
 	const preparedInput = await prepareSafeExecutionsForRpc(stackInput, ethereum)
 	assert.equal(preparedInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
@@ -396,7 +402,7 @@ async function getOpenedAndRefreshedGasPayments(transactionParams: SendTransacti
 	// As the confirmation does, a preparation failure is shown instead of forming the transaction.
 	const transactionToSimulate = preparation.preparationMessage !== undefined
 		? { website, created, originalRequestParameters: preparation.effectiveTransactionParams, transactionIdentifier: 1n, success: false as const, error: { code: -32700, message: preparation.preparationMessage } }
-		: await modules.formEthSendTransaction(ethereum, undefined, preparation.transactionExecutor, website, preparation.effectiveTransactionParams, created, 1n, simulationMode, preparation.gasPayment)
+		: await modules.formEthSendTransaction((await readNetworkState(confirmationSimulator)).simulation, undefined, preparation.transactionExecutor, website, preparation.effectiveTransactionParams, created, 1n, simulationMode, preparation.gasPayment)
 	const { safeFlow } = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
 	const pending = { ...pendingTransaction, safeFlow }
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
@@ -438,8 +444,8 @@ async function openSigningModeSafeConfirmation(simulator: ReturnType<typeof crea
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
+		await readNetworkState(simulator),
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
 		{ kind: 'transaction', parameters: transactionParams, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
 		false,
@@ -465,7 +471,7 @@ async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransa
 		assertPending(pending, stage)
 	}
 	await assertFailure('when the confirmation opens')
-	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator)))
 	await assertFailure('after a refresh')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
@@ -500,7 +506,7 @@ for (const { description, outcome } of safeProposalFormationFailures) {
 		const simulator = createRecordingSimulator('fake-node', () => executorCall.outcome)
 		// Without a gas limit, so forming the transaction estimates its gas.
 		await openSigningModeSafeConfirmation(simulator, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), { operation: 0 })
-		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator)))
 		const assertProposalRetried = async (stage: string) => {
 			const pending = await getFirstPendingTransaction(stage)
 			assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
@@ -531,7 +537,7 @@ test('keeps a Gnosis Safe proposal whose transaction did not form as it is when 
 	assert.deepEqual(opened.safeFlow, { kind: 'proposal', state: 'formationFailed' })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 	const simulatedCallCount = simulator.simulatedCalls.length
-	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator)))
 	assert.deepEqual(await getFirstPendingTransaction('after the refresh'), opened)
 	assert.equal(simulator.simulatedCalls.length, simulatedCallCount, 'nothing is formed or simulated')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -851,8 +857,8 @@ async function openSimulationModeConfirmation(simulator: ReturnType<typeof creat
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService),
+		await readNetworkState(simulator),
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
 		{ kind: 'transaction', parameters: transactionParams },
 		true,
@@ -891,22 +897,22 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const visualizedTransaction = pending.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	assert.deepEqual(visualizedTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator))
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.deepEqual(refreshedPending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'a refresh forms the transaction as a Safe execution again')
 
-	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation())
+	await modules.resolvePendingTransactionOrMessage(fixedServicesOwner(simulator.ethereum, simulator.tokenPriceService), await readNetworkState(simulator), websiteTabConnections, await createAcceptConfirmation())
 	const [stackedOperation] = (await modules.getInterceptorTransactionStack()).operations
 	if (stackedOperation?.type !== 'Transaction') throw new Error('Expected the Safe transaction on the simulation stack')
 	assert.deepEqual(stackedOperation.preSimulationTransaction.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
-	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
-	const stackInput = await getCurrentSimulationInput()
+	const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const stackInput = await readActiveSimulationInput()
 	assert.equal(stackInput.at(-1)?.simulateWithZeroBaseFee, false)
 	const preparedStackInput = await prepareSimulationInputForRpc(stackInput, simulator.ethereum)
 	assert.equal(preparedStackInput.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the stacked transaction keeps running through the Safe')
 	const { requestInterceptorSimulationInput } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const simulationExport = await requestInterceptorSimulationInput(simulator.ethereum)
+	const simulationExport = await requestInterceptorSimulationInput(await readNetworkState(simulator))
 	if (!simulationExport.ok) throw new Error(simulationExport.message)
 	const exportedRequest: unknown = JSON.parse(simulationExport.ethSimulateV1InputString)
 	const exportedSimulation = isRecord(exportedRequest) && isRecord(exportedRequest.eth_simulateV1) && Array.isArray(exportedRequest.eth_simulateV1.params) ? exportedRequest.eth_simulateV1.params[0] : undefined
@@ -919,7 +925,7 @@ const SAFE_CALL_WEBSITE = { websiteOrigin: 'https://example.com', icon: undefine
 
 // Forms a transaction the way the confirmation does and stacks it as accepting it does, through getSignedTransactionForSimulation.
 async function stackFormedTransaction(simulator: ReturnType<typeof createRecordingSimulator>, transactionParams: SendTransactionParams, transactionIdentifier: bigint, gasPayment: 'simulated-safe-executor' | 'transaction-sender') {
-	const formed = await modules.formEthSendTransaction(simulator.ethereum, undefined, SAFE_ADDRESS, SAFE_CALL_WEBSITE, transactionParams, created, transactionIdentifier, true, gasPayment)
+	const formed = await modules.formEthSendTransaction((await readNetworkState(simulator)).simulation, undefined, SAFE_ADDRESS, SAFE_CALL_WEBSITE, transactionParams, created, transactionIdentifier, true, gasPayment)
 	if (!formed.success) throw new Error(`Forming the transaction failed: ${ formed.error.message }`)
 	const preSimulationTransaction: PreSimulationTransaction = {
 		signedTransaction: getSignedTransactionForSimulation(formed),
@@ -944,8 +950,8 @@ async function startSafeExecutionStack() {
 // Checks that every stacked transaction is found by its own hash, both as a transaction and as a receipt.
 async function assertEachFoundByOwnHash(simulator: ReturnType<typeof createRecordingSimulator>, stackedTransactions: readonly PreSimulationTransaction[]) {
 	assert.equal(new Set(stackedTransactions.map((transaction) => transaction.signedTransaction.hash)).size, stackedTransactions.length, 'every stacked transaction has its own hash')
-	const { getCurrentSimulationInput, prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
-	const preparedInput = await prepareSimulationInputForRpc(await getCurrentSimulationInput(), simulator.ethereum)
+	const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const preparedInput = await prepareSimulationInputForRpc(await readActiveSimulationInput(), simulator.ethereum)
 	const executionState = await createExecutionSimulationState(simulator.ethereum, undefined, preparedInput)
 	for (const stacked of stackedTransactions) {
 		const lookedUp = await getSimulatedTransactionByHashFromInput(simulator.ethereum, undefined, toResolvedSimulationInput(preparedInput), stacked.signedTransaction.hash)
@@ -975,7 +981,7 @@ test('keeps the hashes of identical Gnosis Safe executions distinct after one is
 	const transactionParams = await createTransferParams({})
 	await stackFormedTransaction(simulator, transactionParams, 1n, 'simulated-safe-executor')
 	await stackFormedTransaction(simulator, transactionParams, 2n, 'simulated-safe-executor')
-	await (await import('../../app/ts/background/popupMessageHandlers.js')).removeTransactionOrSignedMessage(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
+	await (await import('../../app/ts/background/popupMessageHandlers.js')).removeTransactionOrSignedMessage(await readNetworkState(simulator), { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: 1n } })
 	const [survivorOperation] = (await modules.getInterceptorTransactionStack()).operations
 	if (survivorOperation?.type !== 'Transaction') throw new Error('Expected the surviving Safe execution')
 	const survivor = survivorOperation.preSimulationTransaction
@@ -1009,7 +1015,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 	assert.equal(pending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined)
 	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false, 'no executor calls the Safe\'s execTransaction')
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(await readNetworkState(simulator))
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.equal(refreshedPending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined, 'a refresh keeps the ordinary simulation')
@@ -1019,7 +1025,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 const isSimulationModeSafeExecution = async (selectedActiveAddress: bigint, transactionParams: SendTransactionParams | SendRawTransactionParams) => {
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: transactionParams }, true, selectedActiveAddress, undefined)
-	return preparation.gasPayment === 'simulated-safe-executor'
+	return preparation.rejection === undefined && preparation.gasPayment === 'simulated-safe-executor'
 }
 
 const simulationModeCases = [
@@ -1048,7 +1054,7 @@ async function importStackedTransaction(transaction: PreSimulationTransaction) {
 	const { importSimulationStack } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const eth_simulateV1 = await ethereum.ethSimulateV1Input([], 123n, undefined)
 	// Storing the stack comes before visualizing it, whose result doesn't matter here.
-	await withSilencedConsole(async () => await importSimulationStack(ethereum, new modules.TokenPriceService(ethereum, 60_000), {
+	await withSilencedConsole(async () => await importSimulationStack(await readNetworkState({ ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 60_000) }), {
 		method: 'popup_importSimulationStack',
 		data: { name: 'Interceptor Simulation Export', version: '1.0.0', eth_simulateV1, interceptorSimulateStack: { operations: [{ type: 'Transaction', preSimulationTransaction: transaction }] } },
 	}))

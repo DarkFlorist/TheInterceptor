@@ -17,6 +17,7 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	visualizedPersonalSignRequest: true,
 	activeAddress: true,
 	simulationMode: true,
+	simulationChainId: true,
 	website: true,
 	created: true,
 	safeFlow: true,

@@ -1,30 +1,31 @@
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
-import type { RpcNetwork } from '../types/rpc.js'
+import type { SimulationServicesOwner, SimulationServicesReader } from '../simulation/serviceLifecycle.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
-import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
-import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
-import { applyWalletSwitchReply } from './walletSwitch.js'
-import { withSuppressedUnscopedConnectionEventsForSocketAsync } from './websiteConnectionEvents.js'
-import { verifyAccess } from './accessManagement.js'
-import type { ProviderMessage } from '../utils/requests.js'
+import type { RpcNetwork } from '../types/rpc.js'
+import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
+import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
-import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
-import { modifyObject } from '../utils/typescript.js'
-import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { ProviderMessage } from '../utils/requests.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
+import { modifyObject } from '../utils/typescript.js'
+import { verifyAccess } from './accessManagement.js'
+import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
+import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { getActiveAddressEntryForChain } from './metadataUtils.js'
+import { readNetworkSnapshot, readNetworkSnapshotForPendingRequest } from './networkTransitionLock.js'
+import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
-import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
-import { getActiveAddressEntryForChain } from './metadataUtils.js'
-import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
+import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { applyWalletSwitchReply } from './walletSwitch.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
+import { withSuppressedUnscopedConnectionEventsForSocketAsync } from './websiteConnectionEvents.js'
+import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
+import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -107,8 +108,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
+		await refreshPendingSafeSignerSelectionErrors(await readNetworkSnapshot(simulationServicesOwner), tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
@@ -208,7 +208,7 @@ export async function walletSwitchEthereumChainReply(simulationServicesOwner: Si
 	return returnValue
 }
 
-export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+export async function connectedToSigner(_simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
@@ -277,14 +277,13 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	return result
 }
 
-export async function signerReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function signerReply(simulationServicesOwner: SimulationServicesReader, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const signerReply = SignerReply.parse(request)
 	const params = signerReply.params[0]
 	const doNotReply = { type: 'doNotReply' as const }
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		if (params.forwardRequest.method === 'wallet_watchAsset') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
@@ -299,6 +298,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			await resolveWatchAssetSignerReply(context.uniqueRequestIdentifier, context.signerIdentity, params)
 			return doNotReply
 		}
+		// The wallet has already answered, so its answer reaches the request whatever state the network is in.
+		const network = await readNetworkSnapshotForPendingRequest(simulationServicesOwner)
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
 		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }
 		const tabConnection = websiteTabConnections.get(socket.tabId)
@@ -307,7 +308,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			await updateConfirmTransactionView(network)
 			return doNotReply
 		}
 		switch(params.forwardRequest.method) {
@@ -321,7 +322,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_sendTransaction': {
 				if (params.success) {
 					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
+						await resolvePendingTransactionOrMessage(simulationServicesOwner, network, websiteTabConnections, {
 							method: 'popup_confirmDialog',
 							data: {
 								uniqueRequestIdentifier,
@@ -336,11 +337,11 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 				}
 				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
+					await updateConfirmTransactionView(network)
 					return doNotReply
 				}
 				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				await updateConfirmTransactionView(network)
 				return doNotReply
 			}
 		}

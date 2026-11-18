@@ -1,10 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import type { SimulationStackSnapshot } from '../../app/ts/background/windows/fetchSimulationStack.js'
+import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import type { ChainChangeConfirmation, FetchSimulationStackRequestConfirmation } from '../../app/ts/types/interceptor-messages.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { InterceptedRequest, UniqueRequestIdentifier } from '../../app/ts/utils/requests.js'
-import type { SimulationStackSnapshot } from '../../app/ts/background/windows/fetchSimulationStack.js'
-import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 
 const storageState: Record<string, unknown> = {}
 const openWindows = new Set<number>()
@@ -124,6 +124,18 @@ describe('fetch simulation stack dialog late confirmations', () => {
 
 		assert.equal(await isStillWaiting(newDialog), true)
 		await modules.resolveFetchSimulationStackRequest(passthroughSnapshot, new Map(), fetchConfirmation(newIdentifier, false))
+		assert.equal((await newDialog).outcome, 'rejected')
+	})
+
+	// Rejections reach the dialog through rejectFetchSimulationStackRequest (popupMessageHandlers routes every non-accept there), which must also only answer the request it names.
+	test('a late rejection through the reject path for the old request leaves the new request waiting', async () => {
+		resetDialogEnvironment()
+		const { modules, newDialog } = await openRejectedDialogThenNewDialog()
+
+		await modules.rejectFetchSimulationStackRequest(new Map(), fetchConfirmation(oldIdentifier, false))
+
+		assert.equal(await isStillWaiting(newDialog), true)
+		await modules.rejectFetchSimulationStackRequest(new Map(), fetchConfirmation(newIdentifier, false))
 		assert.equal((await newDialog).outcome, 'rejected')
 	})
 

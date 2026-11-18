@@ -5,6 +5,8 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
+// Events sent to connected websites. This module stays below the access dialogs and the network transitions, which both send them.
+
 const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
 
 function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
@@ -44,14 +46,14 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 	}
 }
 
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
+export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack, deliveredPorts?: Set<browser.runtime.Port>) {
 	// inform all the tabs about the address change
 	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
 		for (const key in tabConnection.connections) {
 			const connection = tabConnection.connections[key]
 			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
+			if (!connection.approved || deliveredPorts?.has(connection.port)) continue
+			if (sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })) deliveredPorts?.add(connection.port)
 		}
 	}
 }

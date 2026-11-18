@@ -1,3 +1,4 @@
+import { readTestNetworkSnapshot } from './simulationInputTestHelper.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -5,7 +6,10 @@ import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
@@ -77,6 +81,9 @@ installBrowser()
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/background/activeSettings.js'),
+		...await import('../../app/ts/background/networkTransition.js'),
+		...await import('../../app/ts/background/networkTransitionLock.js'),
 		...await import('../../app/ts/components/pages/ImportSimulationStack.js'),
 		...await import('../../app/ts/background/windows/personalSign.js'),
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -105,9 +112,13 @@ const exportPayload = {
 }
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
-const expectedInfrastructureEthereum = {
-	getBlock: async () => { throw NEW_BLOCK_ABORT },
-}
+// Serves the default network, which the empty test storage selects.
+const expectedInfrastructureEthereum = new EthereumClientService({
+	rpcUrl: DEFAULT_RPCS[0].httpsRpc,
+	clearCache: () => undefined,
+	jsonRpcRequest: async () => { throw NEW_BLOCK_ABORT },
+}, async () => undefined, async () => undefined, DEFAULT_RPCS[0])
+const tokenPriceService = new TokenPriceService(expectedInfrastructureEthereum, 60_000)
 
 const create7702ExportPayload = () => ({
 	name: 'Interceptor Simulation Export' as const,
@@ -308,7 +319,7 @@ describe('import simulation stack', () => {
 			Object.assign(storageState, items)
 		}
 
-		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: exportPayload })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: exportPayload })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -323,7 +334,7 @@ describe('import simulation stack', () => {
 			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
 		)
 
-		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, false)
@@ -339,7 +350,9 @@ describe('import simulation stack', () => {
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
 		storageState.simulationMode = true
 		let exportedSimulationInput: unknown
+		const { activeRpcNetwork } = await (await import('../../app/ts/background/settings.js')).getSettings()
 		const ethereum = {
+			isRetired: () => false, getRpcEntry: () => activeRpcNetwork,
 			async getBlockNumber() { return 1n },
 			async ethSimulateV1Input(simulationInput: unknown) {
 				exportedSimulationInput = simulationInput
@@ -347,7 +360,7 @@ describe('import simulation stack', () => {
 			},
 		}
 
-		const reply = await modules.requestInterceptorSimulationInput(ethereum as never)
+		const reply = await modules.requestInterceptorSimulationInput(await readTestNetworkSnapshot({ ethereum, tokenPriceService: {} }))
 
 		assert.equal(reply.ok, true)
 		if (!reply.ok) throw new Error(reply.message)
@@ -367,7 +380,7 @@ describe('import simulation stack', () => {
 			interceptorSimulateStack: { operations: [createSiweMessageOperation(2n, 'https://example.com')] },
 		}))
 
-		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.ok, true)
 		const [observedOperation, importedOperation] = InterceptorTransactionStack.parse(storageState.interceptorTransactionStack).operations
@@ -389,7 +402,7 @@ describe('import simulation stack', () => {
 		const serializedExport = InterceptorSimulationExport.serialize(create7702ExportPayload())
 		const parsedExport = InterceptorSimulationExport.parse(serializedExport)
 
-		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+		const reply = await modules.importSimulationStack(await readTestNetworkSnapshot({ ethereum: expectedInfrastructureEthereum, tokenPriceService }), { method: 'popup_importSimulationStack', data: parsedExport })
 
 		assert.equal(reply.type, 'ImportSimulationStackReply')
 		assert.equal(reply.ok, true)

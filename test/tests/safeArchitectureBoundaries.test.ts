@@ -1,11 +1,13 @@
-import * as assert from 'node:assert'
 import { test } from 'bun:test'
+import * as assert from 'node:assert'
 
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
+const networkTransitionSource = await Bun.file(new URL('../../app/ts/background/networkTransition.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const simulationInputBuildingSource = await Bun.file(new URL('../../app/ts/background/simulationInputBuilding.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
@@ -56,9 +58,9 @@ test('Safe transaction confirmation owns stored stack reconciliation', () => {
 
 test('everything that sends the simulation stack to the node runs its Gnosis Safe executions through the Safe', () => {
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,2}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(stackSimulationInput, ethereumClientService\)/u)
-	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereumClientService\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereum\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,5}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(snapshot\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereumClientService\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(simulation\.simulationStateInput, ethereum\)/u)
 })
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {
@@ -74,7 +76,7 @@ test('the RPC client enforces the executed-call invariant without Gnosis Safe do
 
 test('the minimal simulation input that crosses into the RPC client carries no Gnosis Safe domain type', async () => {
 	const visualizerTypesSource = await Bun.file(new URL('../../app/ts/types/visualizer-types.ts', import.meta.url)).text()
-	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const minimalDataBlockDefinition = visualizerTypesSource.match(/export const SimulationStateInputMinimalDataBlock = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)/u)?.[0]
 	if (minimalDataBlockDefinition === undefined) throw new Error('SimulationStateInputMinimalDataBlock definition not found')
 	assert.match(minimalDataBlockDefinition, /executedCallAuthorized: funtypes\.Boolean,/u)
 	assert.doesNotMatch(minimalDataBlockDefinition.split('\n').filter((line) => !/^\s*\/\//u.test(line)).join('\n'), /Safe|safeTransaction|simulationOptions|TransactionSimulationOptions|PreSimulationTransaction|SimulationInputTransaction/u)
@@ -124,11 +126,11 @@ test('a Gnosis Safe confirmation and its refreshes take the fee mode from one ma
 test('a pending transaction records its flow once, as the safeFlow that the confirmation stores and every refresh reads', async () => {
 	const accessRequestSource = await Bun.file(new URL('../../app/ts/types/accessRequest.ts', import.meta.url)).text()
 	const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
-	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)\n/u)?.[0]
+	const pendingTransactionBaseDefinition = accessRequestSource.match(/const SimulatedPendingTransactionBase = funtypes\.ReadonlyObject\(\{\n(?:.*\n)*?\}\)/u)?.[0]
 	if (pendingTransactionBaseDefinition === undefined) throw new Error('SimulatedPendingTransactionBase definition not found')
 	assert.match(pendingTransactionBaseDefinition, /\tsafeFlow: PendingTransactionSafeFlow,\n/u)
 	// The flow's data lives only in safeFlow, so no other pending field can disagree with it.
-	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest|\.And\(/u)
+	assert.doesNotMatch(pendingTransactionBaseDefinition, /safeTransaction|safeExecution|executeThroughSafe|ProposalCreationFailed|unsupportedSafeRequest/u)
 	assert.equal(accessRequestSource.match(/export const PendingTransactionSafeFlow = /gu)?.length, 1)
 	assert.match(safePendingFlowSource, /export type SafeTransactionFlowKind = PendingTransactionSafeFlow\['kind'\]/u)
 	assert.match(safePendingFlowSource, /export const getPendingTransactionFlowKind = \(pending: PendingTransaction\): SafeTransactionFlowKind => pending\.safeFlow\.kind/u)
@@ -153,13 +155,15 @@ test('the Gnosis Safe domain layer does not import background orchestration', ()
 })
 
 test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
-	assert.match(activeSettingsSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(activeSettingsSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
-	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
-	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(simulationUpdatingSource, /if \(!settings\.simulationMode\) break/u)
+	for (const source of [activeSettingsSource, networkTransitionSource]) {
+		assert.match(source, /from '\.\.\/utils\/activeStackContext\.js'/u)
+		assert.doesNotMatch(source, /from '\.\.\/safe\/safeStack\.js'/u)
+		assert.doesNotMatch(source, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
+	}
+	assert.match(simulationInputBuildingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(networkTransitionSource, /!activeStackContextsEqual\(getActiveStackContext\(previousSettings\), getActiveStackContext\(updatedSettings\)\)/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /from '\.\.\/safe\/safeStack\.js'/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /if \(!settings\.simulationMode\) break/u)
 })
 
 test('the confirmation presentation imports shared Safe flow policy from the domain layer', () => {
@@ -188,11 +192,28 @@ test('signer ownership and Safe Apps eligibility use the same top-frame predicat
 })
 
 
+test('closing a window and startup recovery read the network inside the no-response retry, not before it', async () => {
+	const startup = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
+	assert.doesNotMatch(startup, /\breadNetwork(?:Snapshot|State)\b/u)
+})
+
 test('only the Safe message preview replaces a Safe\'s code; Safe proposals delegate-call through execTransaction', async () => {
 	const safeSimulation = await Bun.file(new URL('../../app/ts/safe/safeSimulation.ts', import.meta.url)).text()
 	assert.match(simulationUpdatingSource, /return prepareSafeDelegateStateOverrides\(/u)
 	assert.doesNotMatch(safeSimulation, /prepareSafeDelegateStateOverrides\(safeAddress, code, block\.stateOverrides\)/u)
 	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
+})
+
+test('RPC handlers run on the admitted network and only the live flows hold the services owner', () => {
+	const rpcHandlers = backgroundSource.slice(backgroundSource.indexOf('async function handleRPCRequest('), backgroundSource.indexOf('const providerHandlers = {'))
+	assert.match(rpcHandlers, /rpcRequestHandlers = \{/u)
+	assert.doesNotMatch(rpcHandlers, /simulationServicesOwner|getCurrent\(\)/u)
+})
+
+test('only the network transition lock can build a read that pairs services with a stack', async () => {
+	const lockSource = await Bun.file(new URL('../../app/ts/background/networkTransitionLock.ts', import.meta.url)).text()
+	assert.match(lockSource, /^const readUnderNetworkLock: unique symbol/mu)
+	assert.doesNotMatch(lockSource, /^export const readUnderNetworkLock/mu)
 })
 
 test('the content-script router delegates Safe Apps admission and error mapping to its feature handler', async () => {

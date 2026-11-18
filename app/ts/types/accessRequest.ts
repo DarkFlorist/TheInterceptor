@@ -1,16 +1,16 @@
 import * as funtypes from 'funtypes'
-import { PopupOrTabId, Website } from './websiteAccessTypes.js'
-import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
-import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
-import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
-import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
-import { SignMessageParams } from './jsonRpc-signing-types.js'
-import { DecodedError } from './error.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
+import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
+import { AddressBookEntry } from './addressBookTypes.js'
+import { DecodedError } from './error.js'
+import { SignMessageParams } from './jsonRpc-signing-types.js'
+import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
 import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionRequestContext, SafeTransactionSigningRequest } from './safeTypes.js'
+import { SignerName } from './signerTypes.js'
+import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
+import { PopupOrTabId, Website } from './websiteAccessTypes.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -142,7 +142,10 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	approvalStatus: PendingTransactionApprovalStatus,
 	// Required, so a pending transaction stored by a version without it does not parse, and the corrupt-storage recovery of pendingTransactionsAndMessages (readPendingTransactionsAndMessagesWithRecovery) clears it instead of a refresh forming it as another kind of transaction.
 	safeFlow: PendingTransactionSafeFlow,
-})
+}).And(funtypes.ReadonlyPartial({
+	// The chain this confirmation was admitted on; simulation-mode refreshes and appends stay on it.
+	simulationChainId: EthereumQuantity,
+}))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(
@@ -191,7 +194,11 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
+	}).And(funtypes.ReadonlyPartial({
+		safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot,
+		// The chain the request was admitted on; the displayed network can instead be the typed data domain's chain.
+		simulationChainId: EthereumQuantity,
+	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })

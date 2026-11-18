@@ -1,22 +1,22 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
-import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
-import { keccak256 } from '../../utils/ethereumPrimitives.js'
-import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
-import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
-import { simulatePersonalSign } from './simulationPersonalSigning.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
-import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
+import { type BlockCalls, type BlockOverrides, type EthSimulateV1Params, EthSimulateV1Result } from '../../types/ethSimulate-types.js'
+import { EthGetFeeHistoryResponse, type EthGetLogsRequest, EthGetLogsResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import type { RpcEntry } from '../../types/rpc.js'
 import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
-import type { MessageHashAndSignature } from '../../utils/eip712.js'
+import { EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBlockTag, type EthereumBytes32, EthereumData, EthereumQuantity, type EthereumSendableSignedTransaction, EthereumSignedTransactionWithBlockData } from '../../types/wire-types.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
-import { getCurrentTimestampString } from '../../utils/time.js'
+import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
+import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
+import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
+import { keccak256 } from '../../utils/ethereumPrimitives.js'
+import { getCurrentTimestampString } from '../../utils/time.js'
+import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
+import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
+import { simulatePersonalSign } from './simulationPersonalSigning.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -153,6 +153,12 @@ export class EthereumClientService {
 	}
 
 	public readonly getRpcEntry = () => this.rpcEntry
+
+	// A new name, currency or explorer for the same endpoint: this client keeps serving it, so work in flight and snapshots of this network stay valid.
+	public readonly updateRpcEntryMetadata = (rpcEntry: RpcEntry) => {
+		if (rpcEntry.httpsRpc !== this.rpcEntry.httpsRpc || rpcEntry.chainId !== this.rpcEntry.chainId) throw new Error('Only the metadata of an installed RPC entry can be updated')
+		this.rpcEntry = rpcEntry
+	}
 
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback

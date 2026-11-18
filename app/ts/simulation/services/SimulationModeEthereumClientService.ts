@@ -1,39 +1,37 @@
-import type { Settings } from '../../types/interceptor-messages.js'
-import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
-import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
-import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
-import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import { authorizesExecutedCall, type SimulatedTransaction, type SimulationState, type TokenBalancesAfter, type PreSimulationTransaction, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, toSimulationStateInputMinimalData, toSimulationStateInputMinimalTransaction } from '../../types/visualizer-types.js'
-import type { Abi } from '../../utils/ethereumPrimitives.js'
-import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
-import type { EthGetLogsResponse, EthGetLogsRequest, EthGetStorageAtResponse, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
-import { assertNever, modifyObject } from '../../utils/typescript.js'
-import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
-import type { BlockCalls as SimulateBlockCalls } from '../../types/ethSimulate-types.js'
-import { stripLeadingZeros } from '../../utils/typed-arrays.js'
-import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
-import { JsonRpcResponseError } from '../../utils/errors.js'
-import { deduplicateByFunction, last } from '../../utils/array.js'
-import { promiseAllMapAbortSafe } from '../../utils/requests.js'
-import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
-import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
-import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
-import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
-import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
-import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
+import { getMakeCurrentAddressRich } from '../../background/settings.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
-import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
+import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
+import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, BlockCalls as SimulateBlockCalls, StateOverrides } from '../../types/ethSimulate-types.js'
+import type { Settings } from '../../types/interceptor-messages.js'
+import type { EthGetFeeHistoryResponse, EthGetLogsRequest, EthGetLogsResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, FeeHistory, PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { authorizesExecutedCall, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type PreSimulationTransaction, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type SimulatedTransaction, type SimulationState, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type TokenBalancesAfter, toSimulationStateInputMinimalData, toSimulationStateInputMinimalTransaction } from '../../types/visualizer-types.js'
+import { type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, type EthereumBlockTag, EthereumBytes32, EthereumData, EthereumQuantity, type EthereumSendableSignedTransaction, type EthereumSignedTransactionWithBlockData } from '../../types/wire-types.js'
+import { Erc1155ABI, Erc20ABI } from '../../utils/abi.js'
+import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
+import { deduplicateByFunction, last } from '../../utils/array.js'
+import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, GAS_PER_BLOB, MOCK_ADDRESS, MULTICALL3, Multicall3ABI } from '../../utils/constants.js'
+import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { JsonRpcResponseError } from '../../utils/errors.js'
+import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
+import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
+import type { Abi } from '../../utils/ethereumPrimitives.js'
+import { keccak256, stringToBytes } from '../../utils/ethereumPrimitives.js'
+import { promiseAllMapAbortSafe } from '../../utils/requests.js'
+import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
+import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { stripLeadingZeros } from '../../utils/typed-arrays.js'
+import { assertNever, modifyObject } from '../../utils/typescript.js'
+import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
+import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
+import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
-import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
+import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
+import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 
-export { getSignedTransactionForSimulation, mockSignTransaction }
-export { getMessageHashForPersonalSign, simulatePersonalSign }
+export { getMessageHashForPersonalSign, getSignedTransactionForSimulation, mockSignTransaction, simulatePersonalSign }
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
@@ -437,8 +435,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 }
 
-export const getAddressToMakeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
+export const getAddressToMakeRich = async (settings: Settings) => {
 	if (!settings.simulationMode) return undefined
 	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
 }

@@ -1,27 +1,26 @@
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
-import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
-import { Semaphore } from '../utils/semaphore.js'
-import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
-import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
-import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
-import { isValidEnsName } from '../utils/ens.js'
-import { modifyObject } from '../utils/typescript.js'
-import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
+import { type AddressBookEntries, AddressBookEntry, type ChainIdWithUniversal, doAddressBookChainIdsMatch, LegacyErc20TokenEntry } from '../types/addressBookTypes.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
+import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
-import { createStoredValueRepository } from '../utils/storedValue.js'
-import { isValidErc20Decimals } from '../utils/erc20.js'
+import type { SignerName } from '../types/signerTypes.js'
+import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
+import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
+import { isValidEnsName } from '../utils/ens.js'
+import { isValidErc20Decimals } from '../utils/erc20.js'
+import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
+import { alwaysWrite, getLargeStateValue, type LargeStateWriteCondition, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
+import { doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
+import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
+import { Semaphore } from '../utils/semaphore.js'
+import { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, type PartialIdsOfOpenedTabs, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { createStoredValueRepository } from '../utils/storedValue.js'
+import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { modifyObject } from '../utils/typescript.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
@@ -137,17 +136,22 @@ export async function getPopupVisualisationState() {
 	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
-export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
+// The outcome of a write of the stored visualisation: 'written' with the new results, 'unchanged' with the stored results when the update returned nothing newer, or 'obsolete' with the stored results when isCurrent failed and nothing was written.
+export type PopupVisualisationWrite = { readonly status: 'written' | 'unchanged' | 'obsolete', readonly results: CompleteVisualizedSimulation }
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
-	return await simulationResultsSemaphore.execute(async () => {
+// The one serialized update of the stored visualisation. isCurrent is checked before the write is queued, and evaluated again by the large state store immediately before it starts the write, after every lock and wait; a write that passes there is ordered before any network change that invalidates it, whose own refresh then overwrites it. Writes that are never obsolete pass alwaysWrite.
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>, isCurrent: LargeStateWriteCondition): Promise<PopupVisualisationWrite> {
+	return await simulationResultsSemaphore.execute(async (): Promise<PopupVisualisationWrite> => {
 		const oldResults = await getPopupVisualisationState()
-		const newRequests = await update(oldResults)
-		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
-		return newRequests
+		const newResults = await update(oldResults)
+		if (newResults === undefined || newResults.simulationId < oldResults.simulationId) return { status: 'unchanged', results: oldResults } // do not update state with older state
+		if (!isCurrent()) return { status: 'obsolete', results: oldResults }
+		const written = await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newResults, isCurrent)
+		return written ? { status: 'written', results: newResults } : { status: 'obsolete', results: oldResults }
 	})
 }
+
+export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation, isCurrent: LargeStateWriteCondition) => await updatePopupVisualisationWithCallBack(async () => newResults, isCurrent)
 
 const defaultSignerNameRepository = createStoredValueRepository<SignerName>({
 	read: async () => (await browserStorageLocalGet('signerName')).signerName,
@@ -403,10 +407,14 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 		const prevStack = await getInterceptorTransactionStack()
 		const interceptorTransactionStack = updateFunc(prevStack)
 		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
-		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
+		// Serialized with every other update of the transaction state, so it is never obsolete.
+		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack, alwaysWrite)
 		return interceptorTransactionStack
 	})
 }
+
+export const getSimulationStackChainId = async () => (await browserStorageLocalGet('simulationStackChainId')).simulationStackChainId
+export const setSimulationStackChainId = async (simulationStackChainId: bigint) => await browserStorageLocalSet({ simulationStackChainId })
 
 export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
 
@@ -433,7 +441,7 @@ export async function updateTransactionState(updateFunc: (previousState: Transac
 		await setLargeStateValues([
 			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),
 			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, updatedState.safeTransactionStacks),
-		])
+		], alwaysWrite)
 		return updatedState
 	})
 }
