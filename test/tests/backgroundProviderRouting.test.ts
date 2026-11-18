@@ -642,7 +642,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 90, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [false, 'NoSigner', 2, false],
+			params: [{ signerConnected: false, signerName: 'NoSigner', signerProviderGeneration: 2, signerReceivesRequests: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const noSignerState = await getTabState(socket.tabId)
@@ -677,7 +677,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 92, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 3, true],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 3, signerReceivesRequests: true }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const identifiedSignerState = await getTabState(socket.tabId)
 		assert.equal(identifiedSignerState.signerName, 'MetaMask')
@@ -690,7 +690,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 94, requestSocket: childSocket },
 			method: 'connected_to_signer',
-			params: [false, 'NoSigner', 4, false],
+			params: [{ signerConnected: false, signerName: 'NoSigner', signerProviderGeneration: 4, signerReceivesRequests: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const stateAfterChildFrame = await getTabState(socket.tabId)
 		assert.equal(stateAfterChildFrame.signerName, 'MetaMask')
@@ -775,7 +775,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 200, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 2, true],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 2, signerReceivesRequests: true }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const stateAfterMetaMaskSelection = await getTabState(socket.tabId)
@@ -814,7 +814,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 203, requestSocket: nextSocket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 1, true],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 1, signerReceivesRequests: true }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const stateAfterNewPageConnection = await getTabState(nextSocket.tabId)
@@ -963,7 +963,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 301, requestSocket: restoredSocket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 1, true],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 1, signerReceivesRequests: true }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await accountRequest
 
@@ -1000,7 +1000,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 					usingInterceptorWithoutSigner: false,
 					uniqueRequestIdentifier: { requestId: 308, requestSocket: socket },
 					method: 'connected_to_signer',
-					params: [true, 'MetaMask', 2, true],
+					params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 2, signerReceivesRequests: true }],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 				await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,

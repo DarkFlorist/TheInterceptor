@@ -18,6 +18,8 @@ type FakeWindowOptions = {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+// The connected_to_signer payload: one object naming the wallet facts.
+const getSignerHandshake = (params: readonly unknown[] | undefined): Record<string, unknown> => isRecord(params?.[0]) ? params[0] : {}
 
 function sendSafeAppsCompatibility(sendBackgroundMessage: (data: unknown) => void, enabled: boolean) {
 	sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled } })
@@ -1064,7 +1066,7 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow, signerAccounts, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method === 'connected_to_signer') {
-					connectedSignerNames.push(request.params?.[1])
+					connectedSignerNames.push(getSignerHandshake(request.params).signerName)
 					return false
 				}
 				if (request.method === 'eth_requestAccounts' && request.internal !== true) {
@@ -1184,7 +1186,7 @@ describe('inpage signer bridge', () => {
 		let resolveBraveAccounts: ((accounts: string[]) => void) | undefined
 		const { fakeWindow, signerAccounts, backgroundEthAccountsReplies, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
-				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(getSignerHandshake(request.params).signerName)
 				return false
 			},
 		})
@@ -1273,7 +1275,7 @@ describe('inpage signer bridge', () => {
 			signerUnavailable: true,
 			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
-		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1, false]])
+		assert.deepEqual(connectedToSignerParams, [[{ signerConnected: false, signerName: 'NoSigner', signerProviderGeneration: 1, signerReceivesRequests: false }]])
 	})
 
 	test('marks an in-place patched provider with isMetaMask false as MetaMask in compatibility mode', async () => {
@@ -1358,9 +1360,9 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => connectedToSignerParams.length === 2)
 		})
 
-		const firstGeneration = connectedToSignerParams[0]?.[2]
-		const secondGeneration = connectedToSignerParams[1]?.[2]
-		assert.equal(connectedToSignerParams[1]?.[1], 'MetaMask')
+		const firstGeneration = getSignerHandshake(connectedToSignerParams[0]).signerProviderGeneration
+		const secondGeneration = getSignerHandshake(connectedToSignerParams[1]).signerProviderGeneration
+		assert.equal(getSignerHandshake(connectedToSignerParams[1]).signerName, 'MetaMask')
 		assert.equal(typeof firstGeneration, 'number')
 		assert.equal(typeof secondGeneration, 'number')
 		if (typeof firstGeneration !== 'number' || typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
@@ -1406,8 +1408,8 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundEthAccountsReplies.length === 1)
 		})
 
-		const firstGeneration = connectedToSignerParams[0]?.[2]
-		const secondGeneration = connectedToSignerParams[1]?.[2]
+		const firstGeneration = getSignerHandshake(connectedToSignerParams[0]).signerProviderGeneration
+		const secondGeneration = getSignerHandshake(connectedToSignerParams[1]).signerProviderGeneration
 		assert.equal(typeof firstGeneration, 'number')
 		assert.equal(typeof secondGeneration, 'number')
 		if (typeof firstGeneration !== 'number' || typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
@@ -1421,7 +1423,7 @@ describe('inpage signer bridge', () => {
 		let disconnected = false
 		const { fakeWindow, emitSignerEvent } = createFakeWindow({
 			handleRequest: (request, sendBackgroundReply) => {
-				if (request.method === 'connected_to_signer') handshakes.push([request.params?.[0], request.params?.[3]])
+				if (request.method === 'connected_to_signer') handshakes.push([getSignerHandshake(request.params).signerConnected, getSignerHandshake(request.params).signerReceivesRequests])
 				if (request.method === 'eth_blockNumber') {
 					if (disconnected) requestsAfterDisconnect.push(request.usingInterceptorWithoutSigner)
 					sendBackgroundReply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'eth_blockNumber', result: '0x1' })
@@ -1595,7 +1597,7 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method === 'connected_to_signer') {
-					const generation = request.params?.[2]
+					const generation = getSignerHandshake(request.params).signerProviderGeneration
 					if (typeof generation === 'number') signerProviderGeneration = generation
 					return false
 				}
@@ -2526,7 +2528,7 @@ describe('inpage signer bridge', () => {
 			const announcedSignerRequests: string[] = []
 			const { fakeWindow } = createFakeWindow({
 				handleRequest: (request) => {
-					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+					if (request.method === 'connected_to_signer') connectedSignerNames.push(getSignerHandshake(request.params).signerName)
 					return false
 				},
 			})
@@ -2622,8 +2624,8 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method !== 'connected_to_signer') return false
-				connectedSignerNames.push(request.params?.[1])
-				const delay = request.params?.[1] === 'NoSigner' ? 10 : 0
+				connectedSignerNames.push(getSignerHandshake(request.params).signerName)
+				const delay = getSignerHandshake(request.params).signerName === 'NoSigner' ? 10 : 0
 				setTimeout(() => sendBackgroundMessage({
 					interceptorApproved: true,
 					requestId: request.requestId,
@@ -2670,7 +2672,7 @@ describe('inpage signer bridge', () => {
 			let announcedProviderSubscriptionCount = 0
 			const { fakeWindow } = createFakeWindow({
 				handleRequest: (request) => {
-					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+					if (request.method === 'connected_to_signer') connectedSignerNames.push(getSignerHandshake(request.params).signerName)
 					return false
 				},
 			})
@@ -2709,7 +2711,7 @@ describe('inpage signer bridge', () => {
 		let announcedProviderSubscriptionCount = 0
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
-				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(getSignerHandshake(request.params).signerName)
 				return false
 			},
 		})
@@ -3279,7 +3281,7 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3339,7 +3341,7 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3397,7 +3399,7 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3443,7 +3445,7 @@ describe('inpage signer bridge', () => {
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3511,7 +3513,7 @@ describe('inpage signer bridge', () => {
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3582,7 +3584,7 @@ describe('inpage signer bridge', () => {
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3656,7 +3658,7 @@ describe('inpage signer bridge', () => {
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3728,7 +3730,7 @@ describe('inpage signer bridge', () => {
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3800,7 +3802,7 @@ describe('inpage signer bridge', () => {
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3869,7 +3871,7 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					signerName = request.params?.[1] as string
+					signerName = String(getSignerHandshake(request.params).signerName)
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
@@ -3997,13 +3999,14 @@ describe('inpage signer bridge', () => {
 			assert.equal(mappedOnKinds.includes('disconnect'), true)
 			assert.equal(mappedOnKinds.includes('chainChanged'), true)
 			signerEvents.connect!({ chainId: '0x99' })
-			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === true && message.params?.[1] === 'CoinbaseWallet').length >= 1)
+			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && getSignerHandshake(message.params).signerConnected === true && getSignerHandshake(message.params).signerName === 'CoinbaseWallet').length >= 1)
 			const handshakesBeforeDisconnect = backgroundMessages.filter((message) => message.method === 'connected_to_signer').length
 			signerEvents.disconnect!({ code: 4900, message: 'error' })
 			// A disconnect ends the wallet's session, but the page still forwards to this wallet, so it still receives requests.
 			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer').length > handshakesBeforeDisconnect)
 			const disconnectHandshake = backgroundMessages.filter((message) => message.method === 'connected_to_signer').at(-1)
-			assert.deepEqual([disconnectHandshake?.params?.[0], disconnectHandshake?.params?.[1], disconnectHandshake?.params?.[3]], [false, 'CoinbaseWallet', true])
+			const { signerConnected, signerName, signerReceivesRequests } = getSignerHandshake(disconnectHandshake?.params)
+			assert.deepEqual([signerConnected, signerName, signerReceivesRequests], [false, 'CoinbaseWallet', true])
 			signerEvents.accountsChanged!(['0x1111111111111111111111111111111111111111'])
 			assert.equal(typeof signerEvents.accountsChanged, 'function')
 			assert.equal(typeof signerEvents.chainChanged, 'function')

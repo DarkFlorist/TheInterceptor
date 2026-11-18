@@ -208,7 +208,7 @@ export async function walletSwitchEthereumChainReply(simulationServicesOwner: Si
 }
 
 export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
-	const [signerConnected, signerName, signerProviderGeneration, signerReceivesRequests] = ConnectedToSigner.parse(request).params
+	const [{ signerConnected, signerName, signerProviderGeneration, signerReceivesRequests }] = ConnectedToSigner.parse(request).params
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket

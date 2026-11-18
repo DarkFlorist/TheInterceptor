@@ -1005,7 +1005,7 @@ class InterceptorMessageListener {
 				if (this.signerWindowEthereumProvider !== provider) return
 				// The wallet's session ends, but the page still forwards requests to it, so it still receives them.
 				const signerProviderGeneration = this.advanceSignerProviderGeneration()
-				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName, signerProviderGeneration, this.hasWalletToForwardTo()] })
+				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [{ signerConnected: false, signerName, signerProviderGeneration, signerReceivesRequests: this.hasWalletToForwardTo() }] })
 			})
 			register('chainChanged', (chainId: string) => {
 				if (this.signerWindowEthereumProvider !== provider) return
@@ -1842,7 +1842,7 @@ class InterceptorMessageListener {
 		}
 		const selectionGeneration = ++this.signerSelectionGeneration
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName !== 'NoSigner', signerName, signerProviderGeneration, this.hasWalletToForwardTo()] })
+			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [{ signerConnected: signerName !== 'NoSigner', signerName, signerProviderGeneration, signerReceivesRequests: this.hasWalletToForwardTo() }] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
