@@ -350,7 +350,7 @@ describe('simulation mode forward guard', () => {
 
 	test('raw storage writes stay in the canonical storage modules', async () => {
 		const rawWrites = (await readAppSources()).flatMap(({ path, source }) => getRawStorageWriteArguments(source).map((writtenItems) => ({ path, writtenItems })))
-		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['utils/largeStateStore.ts', 'utils/storageUtils.ts'])
+		assert.deepEqual([...new Set(rawWrites.map(({ path }) => path))].sort(), ['utils/localStorageWrites.ts'])
 		assert.deepEqual(rawWrites.filter(({ path, writtenItems }) => path !== 'utils/storageUtils.ts' && writtenItems.includes('simulationMode')), [])
 	})
 

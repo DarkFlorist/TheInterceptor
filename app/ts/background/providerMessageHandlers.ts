@@ -7,7 +7,6 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
-import { refuseSignerForwardGuard } from '../utils/simulationModeGuard.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -328,7 +327,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 								action: 'signerIncluded',
 								signerReply: params.reply,
 							}
-						}, refuseSignerForwardGuard)
+						})
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}

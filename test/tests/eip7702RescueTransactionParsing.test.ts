@@ -362,12 +362,10 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			{ browserStorageLocalSet2 },
 			{ formSendRawTransaction, resolvePendingTransactionOrMessage },
 			{ getInterceptorTransactionStack },
-			{ captureSimulationModeGuard },
 		] = await Promise.all([
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/windows/confirmTransaction.js'),
 			import('../../app/ts/background/storageVariables.js'),
-			import('../../app/ts/utils/simulationModeGuard.js'),
 		])
 		const request = SendRawTransactionParams.parse({
 			method: 'eth_sendRawTransaction',
@@ -390,7 +388,6 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			{} as never,
 			browserMock.websiteTabConnections,
 			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(pendingTransaction), forceSend: false } },
-			captureSimulationModeGuard(),
 		)
 
 		const [postedMessage] = browserMock.postedMessages

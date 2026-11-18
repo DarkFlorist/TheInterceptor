@@ -1,3 +1,4 @@
+import { writeLocalStorage } from './localStorageWrites.js'
 import type * as funtypes from 'funtypes'
 import { serialize } from '../types/wire-types.js'
 import { Semaphore } from './semaphore.js'
@@ -188,14 +189,14 @@ async function removeLegacyLocalValue(key: LargeStateStorageKey) {
 }
 
 async function setLegacyLocalDeleted(key: LargeStateStorageKey) {
-	await browser.storage.local.set({
+	await writeLocalStorage({
 		[getLegacyDeleteMarkerKey(key)]: true,
 		[getLegacyMigratedMarkerKey(key)]: true,
 	})
 }
 
 async function setLegacyLocalMigrated(key: LargeStateStorageKey) {
-	await browser.storage.local.set({
+	await writeLocalStorage({
 		[getLegacyDeleteMarkerKey(key)]: false,
 		[getLegacyMigratedMarkerKey(key)]: true,
 	})
@@ -208,7 +209,7 @@ async function setLegacyLocalValues(writes: readonly PreparedLargeStateWrite[]) 
 		values[getLegacyDeleteMarkerKey(write.key)] = false
 		values[getLegacyMigratedMarkerKey(write.key)] = false
 	}
-	await browser.storage.local.set(values)
+	await writeLocalStorage(values)
 }
 
 async function setLegacyLocalValuesMigrated(writes: readonly PreparedLargeStateWrite[]) {
@@ -217,7 +218,7 @@ async function setLegacyLocalValuesMigrated(writes: readonly PreparedLargeStateW
 		values[getLegacyDeleteMarkerKey(write.key)] = false
 		values[getLegacyMigratedMarkerKey(write.key)] = true
 	}
-	await browser.storage.local.set(values)
+	await writeLocalStorage(values)
 }
 
 function parseSerializedValue<T>(codec: funtypes.Codec<T>, value: unknown) {
