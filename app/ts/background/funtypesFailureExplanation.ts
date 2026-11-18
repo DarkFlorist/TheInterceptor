@@ -1,5 +1,6 @@
 // The only adapter over funtypes internals: it words a rejection funtypes already made and never decides validity, using parts of funtypes that are not documented API because funtypes has no public way to walk a failure, namely the codec `tag` names, the `underlying`, `fields`, `alternatives`, `components`, `intersectees`, `element` and `value` members, and the grammar of `Failure.key`. An upgrade is gated twice. FUNTYPES_ADAPTER_VERSION names the funtypes version these internals were validated against, and test/tests/funtypesFailureExplanation.test.ts fails on any other package.json pin until the pins there are re-validated. If that is skipped, or a security fix forces a bump first, the reply calls isCodecLayoutRecognized before wording anything and answers with the generic `Invalid <method> parameters` message for a tag or member layout it does not recognise, so the reply loses detail instead of stating something wrong. That check only reads codecs, never the page's values, and returns a boolean, so it adds no failure path to this dapp-facing reply. A changed `Failure.key` grammar is not detected by it, but only stops the explanation at an enclosing value.
 import type { CodecDescription, JsonDocumentDescription, ReflectedCodec } from '../types/codecDescription.js'
+import { isStackOverflowError } from '../utils/caughtErrors.js'
 
 // A funtypes failure of one codec for one value. The key is the path from that value to the failing value, for example `params.[0].to`.
 export type ValueFailure = {
@@ -25,8 +26,10 @@ export type ValueProblem =
 	| { readonly kind: 'missing', readonly path: ValuePath }
 	| { readonly kind: 'wrongFormat', readonly path: ValuePath, readonly expected: string, readonly received: unknown }
 	| { readonly kind: 'rejected', readonly path: ValuePath, readonly reason: string }
-	// documentProblem is undefined when the string is not JSON at all.
-	| { readonly kind: 'invalidJsonDocument', readonly path: ValuePath, readonly document: JsonDocumentDescription, readonly documentProblem: ValueProblem | undefined }
+	// documentProblem says why the decoded document is invalid, or why the string does not decode: it is not JSON, or its nesting is too deep for the parser's stack.
+	| { readonly kind: 'invalidJsonDocument', readonly path: ValuePath, readonly document: JsonDocumentDescription, readonly documentProblem: ValueProblem | UndecodableJsonDocument }
+
+export type UndecodableJsonDocument = 'notJson' | 'nestedTooDeeply'
 
 // funtypes drops the failure key at unions, so every union the explanation descends into validates the remaining subtree again, which is quadratic in the nesting depth of recursive values such as EIP-712 messages. Capping the validations keeps an explanation within a fixed multiple of one parse of the value.
 const MAX_EXPLANATION_VALIDATIONS = 16
@@ -326,19 +329,20 @@ const locateProblemIfInvalid = (context: ExplanationContext, node: ValueNode) =>
 	return failure === undefined ? undefined : locateValueProblem(context, node, failure)
 }
 
-// Decodes a JSON document with the document's own parser. A SyntaxError means text that is not JSON and a RangeError means nesting a page made too deep for the stack, so both mean the string does not decode; anything else is a programming error and propagates.
-function decodeJsonDocument(parse: (text: string) => unknown, text: string): { readonly success: true, readonly value: unknown } | { readonly success: false } {
+// Decodes a JSON document with the document's own parser. A SyntaxError means text that is not JSON and a stack overflow means nesting a page made too deep for the stack, so both mean the string does not decode; anything else, other RangeErrors included, is a programming error and propagates.
+function decodeJsonDocument(parse: (text: string) => unknown, text: string): { readonly success: true, readonly value: unknown } | { readonly success: false, readonly reason: UndecodableJsonDocument } {
 	try {
 		return { success: true, value: parse(text) }
 	} catch (error: unknown) {
-		if (error instanceof SyntaxError || error instanceof RangeError) return { success: false }
+		if (error instanceof SyntaxError) return { success: false, reason: 'notJson' }
+		if (isStackOverflowError(error)) return { success: false, reason: 'nestedTooDeeply' }
 		throw error
 	}
 }
 
 function explainJsonDocumentFailure(context: ExplanationContext, node: ValueNode, text: string, document: JsonDocumentDescription, failure: ValueFailure): ValueProblem {
 	const decodedDocument = decodeJsonDocument(document.parse, text)
-	if (!decodedDocument.success) return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem: undefined }
+	if (!decodedDocument.success) return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem: decodedDocument.reason }
 	const documentProblem = locateProblemIfInvalid(context, { codec: document.codec, value: decodedDocument.value, path: [] })
 	if (documentProblem === undefined) return { kind: 'rejected', path: node.path, reason: failure.message }
 	return { kind: 'invalidJsonDocument', path: node.path, document, documentProblem }
@@ -389,7 +393,7 @@ export function explainValueFailure(descriptions: CodecDescriptions, codec: Refl
 		return isBudgetExhausted(context.budget) ? undefined : problem
 	} catch (error: unknown) {
 		// funtypes recurses once per nesting level of the values it validates, so a page can overflow the stack here. Only that is caught, so programming errors still surface.
-		if (error instanceof RangeError) return undefined
+		if (isStackOverflowError(error)) return undefined
 		throw error
 	}
 }

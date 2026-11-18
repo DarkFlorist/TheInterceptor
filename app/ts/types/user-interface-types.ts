@@ -137,6 +137,8 @@ export type NonLogAnalysisParams = {
 export type RenameAddressCallBack = (addressBookEntry: AddressBookEntry) => void
 
 type SocketConnection = {
+	// Captured with websiteOrigin when the port connects; absent origins fail the SIWE check closed.
+	readonly requestOrigin?: string,
 	port: browser.runtime.Port,
 	socket: WebsiteSocket,
 	websiteOrigin: string,

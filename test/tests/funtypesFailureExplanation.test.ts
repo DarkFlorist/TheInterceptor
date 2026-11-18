@@ -210,18 +210,25 @@ describe('funtypes failure explanation', () => {
 		const descriptions = indexCodecDescriptions([{ codec: SettingsText, label: 'settings', expected: 'settings as a JSON string', jsonDocument }])
 		const codec = funtypes.ReadonlyTuple(SettingsText)
 		assert.deepEqual(explain(codec, ['{"version":"1"}'], descriptions), { kind: 'invalidJsonDocument', path: [0], document: jsonDocument, documentProblem: { kind: 'wrongFormat', path: ['version'], expected: 'a number', received: '1' } })
-		assert.deepEqual(explain(codec, ['{"version":'], descriptions), { kind: 'invalidJsonDocument', path: [0], document: jsonDocument, documentProblem: undefined })
+		assert.deepEqual(explain(codec, ['{"version":'], descriptions), { kind: 'invalidJsonDocument', path: [0], document: jsonDocument, documentProblem: 'notJson' })
 		assert.deepEqual(explain(codec, ['{"version":1}'], descriptions), { kind: 'rejected', path: [0], reason: 'is not settings JSON' })
 	})
 
-	test('treats a syntax error or stack overflow of the document parser as a string that does not decode', () => {
+	test('tells a document that is not JSON from one nested too deeply for the parser, and propagates other parser errors', () => {
 		const Settings = funtypes.ReadonlyObject({ version: funtypes.Number })
 		const SettingsText = funtypes.String.withConstraint(() => 'is not settings JSON')
-		for (const parseError of [new SyntaxError('not JSON'), new RangeError('Maximum call stack size exceeded')]) {
+		const explainWithParseError = (parseError: Error) => {
 			const jsonDocument = { name: 'settings', shape: 'a JSON object', codec: Settings, parse: () => { throw parseError } }
 			const descriptions = indexCodecDescriptions([{ codec: SettingsText, label: 'settings', expected: 'settings as a JSON string', jsonDocument }])
-			assert.deepEqual(explain(SettingsText, '{}', descriptions), { kind: 'invalidJsonDocument', path: [], document: jsonDocument, documentProblem: undefined })
+			return { jsonDocument, problem: () => explain(SettingsText, '{}', descriptions) }
 		}
+		for (const [parseError, documentProblem] of [[new SyntaxError('not JSON'), 'notJson'], [new RangeError('Maximum call stack size exceeded'), 'nestedTooDeeply']] as const) {
+			const { jsonDocument, problem } = explainWithParseError(parseError)
+			assert.deepEqual(problem(), { kind: 'invalidJsonDocument', path: [], document: jsonDocument, documentProblem })
+		}
+		// A RangeError that is not a stack overflow is a programming error, not a property of the page's string.
+		const programmerError = new RangeError('Invalid array length')
+		assert.throws(() => explainWithParseError(programmerError).problem(), (error: unknown) => error === programmerError)
 	})
 
 	test('gives up on a stack overflow, which nesting that a page controls can cause, but not on a programming error', () => {

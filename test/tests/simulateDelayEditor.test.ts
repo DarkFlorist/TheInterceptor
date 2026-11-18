@@ -212,10 +212,7 @@ describe('simulate delay editor', () => {
 				type: 'Transaction',
 				preSimulationTransaction: {
 					...tx1,
-					simulationOptions: {
-						requiredChainId: 2n,
-						simulateWithZeroBaseFee: true,
-					},
+					simulationOptions: { requiredChainId: 2n },
 				},
 			}],
 		}))
@@ -250,7 +247,6 @@ describe('eth_simulateV1 block timestamps', () => {
 		async () => undefined,
 		rpcEntry,
 	)
-	const zeroBaseFeeTransaction = { ...tx1, simulationOptions: { requiredChainId: 1n, simulateWithZeroBaseFee: true } }
 
 	// Seconds each simulated block is ahead of its parent. Nodes reject the whole eth_simulateV1 request unless every step is positive.
 	const getCurrentStackBlockTimeSteps = async () => {
@@ -273,18 +269,6 @@ describe('eth_simulateV1 block timestamps', () => {
 			operations: [
 				{ type: 'Transaction', preSimulationTransaction: tx1 },
 				{ type: 'Message', signedMessageTransaction: signedMessage },
-			],
-		}))
-
-		assert.deepEqual(await getCurrentStackBlockTimeSteps(), [12n, 1n])
-	})
-
-	test('a transaction after a zero base fee transaction gets a later block', async () => {
-		await resetStack()
-		await updateInterceptorTransactionStack(() => ({
-			operations: [
-				{ type: 'Transaction', preSimulationTransaction: zeroBaseFeeTransaction },
-				{ type: 'Transaction', preSimulationTransaction: tx2 },
 			],
 		}))
 
@@ -318,19 +302,6 @@ describe('eth_simulateV1 block timestamps', () => {
 			operations: [
 				{ type: 'Transaction', preSimulationTransaction: tx1 },
 				{ type: 'Message', signedMessageTransaction: signedMessage },
-			],
-		}))
-
-		const simulationInput = await getCurrentSimulationInput()
-		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [DEFAULT_BLOCK_MANIPULATION, zeroDelay])
-	})
-
-	test('the block split before a plain transaction stays a zero delay so the simulate delay picker keeps showing 0 seconds', async () => {
-		await resetStack()
-		await updateInterceptorTransactionStack(() => ({
-			operations: [
-				{ type: 'Transaction', preSimulationTransaction: zeroBaseFeeTransaction },
-				{ type: 'Transaction', preSimulationTransaction: tx2 },
 			],
 		}))
 

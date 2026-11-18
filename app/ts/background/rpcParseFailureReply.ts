@@ -6,7 +6,7 @@ import { EIP712MessageDescription } from '../types/eip721.js'
 import { CanonicalEthereumQuantityDescription, EthereumAddressDescription, EthereumBlockTagDescription, EthereumBytes32Description, EthereumDataDescription, EthereumInputDescription, EthereumQuantityDescription } from '../types/wire-types.js'
 import type { ReflectedCodec } from '../types/codecDescription.js'
 import { JSON_RPC_ERROR_CODE_INVALID_PARAMS } from '../utils/constants.js'
-import { explainValueFailure, formatAlternatives, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, type ValueFailure, type ValuePath, type ValueProblem } from './funtypesFailureExplanation.js'
+import { explainValueFailure, formatAlternatives, getCodecLabel, getObjectFieldCodec, getTupleVariants, indexCodecDescriptions, isCodecLayoutRecognized, type ValueFailure, type ValuePath, type UndecodableJsonDocument, type ValueProblem } from './funtypesFailureExplanation.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { assertNever } from '../utils/typescript.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
@@ -78,8 +78,10 @@ function describeDocumentProblem(problem: ValueProblem): string {
 	}
 }
 
-function describeJsonDocumentProblem(document: { readonly name: string, readonly shape: string }, documentProblem: ValueProblem | undefined) {
-	const reason = documentProblem === undefined ? 'the string is not valid JSON' : `the JSON string is not valid ${ document.name } (${ describeDocumentProblem(documentProblem) })`
+function describeJsonDocumentProblem(document: { readonly name: string, readonly shape: string }, documentProblem: ValueProblem | UndecodableJsonDocument) {
+	const reason = documentProblem === 'notJson' ? 'the string is not valid JSON'
+		: documentProblem === 'nestedTooDeeply' ? 'the JSON string is nested too deeply to validate'
+		: `the JSON string is not valid ${ document.name } (${ describeDocumentProblem(documentProblem) })`
 	return `${ reason }; ${ document.name } must be ${ document.shape }`
 }
 
