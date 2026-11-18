@@ -110,7 +110,11 @@ export async function sendSubscriptionMessagesForNewBlock(
 	websiteTabConnections: WebsiteTabConnections,
 	getSimulationState: (ethereumClientService: EthereumClientService) => Promise<ResolvedExecutionSimulationState>,
 ) {
-	const ethereumSubscriptionsAndFilters = await getEthereumSubscriptionsAndFilters()
+	const storedSubscriptions = await getEthereumSubscriptionsAndFilters()
+	const isConnected = (subscription: EthereumSubscriptionsAndFilters[number]) => websiteTabConnections.get(subscription.subscriptionCreatorSocket.tabId)
+		?.connections[websiteSocketToString(subscription.subscriptionCreatorSocket)] !== undefined
+	// Prune in one repository update instead of serializing and writing the remaining list once per stale entry. Recheck connectivity inside the update so concurrent reconnections are preserved.
+	if (storedSubscriptions.some((subscription) => !isConnected(subscription))) await updateEthereumSubscriptionsAndFilters((subscriptions) => subscriptions.filter(isConnected))
 	let liveBlockPromise: Promise<LiveBlock> | undefined
 	let simulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	let simulatedBlocksPromise: Promise<readonly SimulatedBlock[]> | undefined
@@ -139,12 +143,10 @@ export async function sendSubscriptionMessagesForNewBlock(
 		return await simulatedBlocksPromise
 	}
 	const newBlockSources = { isSimulation, getLiveBlock, getSimulatedBlocks }
-	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
-		const tabConnection = websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId)
-		if (tabConnection?.connections[websiteSocketToString(subscriptionOrFilter.subscriptionCreatorSocket)] === undefined) { // connection removed
-			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
-			continue
-		}
+	// Notify only subscribers present when this block started; pruning must not admit a subscription whose reply is still pending.
+	for (const subscriptionOrFilter of storedSubscriptions) {
+		// A socket can disconnect while an earlier subscriber's block fetch is in flight; the next block's bulk cleanup will prune it.
+		if (!isConnected(subscriptionOrFilter)) continue
 		if (subscriptionOrFilter.type === 'eth_newFilter') continue // filters are polled through eth_getFilterChanges instead
 		await ethSubscriptionTypes[subscriptionOrFilter.type].sendNewBlockMessages(websiteTabConnections, subscriptionOrFilter, newBlockSources)
 	}

@@ -1,11 +1,16 @@
 import type { RpcNetwork } from '../types/rpc.js'
 
-// Whether the background forwards a website's requests to its wallet: only in signing mode, and only when the page has a wallet to forward to. The page states that fact once, as its wallet request function being present: each request carries it (usingInterceptorWithoutSigner, read by the background's routing) and the signer handshake stores it as the tab's signerConnected (read by the popup).
-export function isForwardingRequestsToSigner(simulationMode: boolean, signerAvailable: boolean) {
+export type RequestRoutingState = {
+	readonly simulationMode: boolean
+	readonly signerAvailable: boolean
+}
+
+// Signing mode with an available signer lets the signer answer requests the Interceptor does not handle itself. The page states whether it has a wallet once (hasWalletToForwardTo): each request carries it as usingInterceptorWithoutSigner, read by the background's routing, and the signer handshake stores it as the tab's signerConnected, read by the popup.
+export function isForwardingRequestsToSigner({ simulationMode, signerAvailable }: RequestRoutingState) {
 	return !simulationMode && signerAvailable
 }
 
-// Whether requests skip the Interceptor and go straight to the wallet because the selected network has no RPC to simulate them with. In simulation mode, or without a wallet, requests on such a network are still intercepted.
-export function isBypassingInterceptorOnNetworkWithoutRpc(forwardingRequestsToSigner: boolean, rpcNetwork: RpcNetwork) {
-	return forwardingRequestsToSigner && rpcNetwork.httpsRpc === undefined
+// Without an Interceptor RPC, signing mode passes requests straight to the signer; simulation mode (or a missing signer) still intercepts them.
+export function isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork: Pick<RpcNetwork, 'httpsRpc'>, routingState: RequestRoutingState) {
+	return rpcNetwork.httpsRpc === undefined && isForwardingRequestsToSigner(routingState)
 }

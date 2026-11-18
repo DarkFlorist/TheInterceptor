@@ -9,7 +9,7 @@ import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
 import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SignedMessageTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -467,7 +467,7 @@ describe('Home popup clear empty state', () => {
 		// Every value the page sends for the flag (type annotations aside) comes from hasWalletToForwardTo.
 		assert.doesNotMatch(inpageSource, /usingInterceptorWithoutSigner: (?!boolean\b|!this\.hasWalletToForwardTo\(\))/)
 		assert.match(inpageSource, /method: 'connected_to_signer', params: \[this\.hasWalletToForwardTo\(\), /)
-		assert.match(await Bun.file('app/ts/background/background.ts').text(), /isForwardingRequestsToSigner\(settings\.simulationMode, !request\.usingInterceptorWithoutSigner\)/)
+		assert.match(await Bun.file('app/ts/background/background.ts').text(), /signerAvailable: !request\.usingInterceptorWithoutSigner/)
 		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /const signerAvailable = tabState\?\.signerConnected === true/)
 	})
 
@@ -1725,5 +1725,71 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	const signerOnlyNetwork: RpcNetwork = {
+		name: 'Signer only',
+		chainId: 5n,
+		httpsRpc: undefined,
+		currencyName: 'Ether?',
+		currencyTicker: 'ETH?',
+		primary: false,
+		minimized: true,
+	}
+	// The mode banner is the home page's protection status on a network without an RPC (getHomeProtection).
+	const interceptorInactiveTitle = 'Interceptor inactive on this network.'
+	const configureRpcTitle = 'No RPC for this network.'
+
+	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName'] | undefined) {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					rpcNetwork: new Signal<RpcNetwork | undefined>(signerOnlyNetwork),
+					simulationMode: new Signal(simulationMode),
+					tabState: new Signal<TabState | undefined>(signerName === undefined ? undefined : {
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						// As the signer handshake stores it: a tab without a detected signer is never connected to one.
+						signerConnected: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
+						signerName,
+						signerAccounts: [ACTIVE_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: signerOnlyNetwork.chainId,
+						tabIconDetails: { icon: simulationMode ? ICON_SIMULATING : ICON_SIGNING, iconReason: 'Test tab.' },
+						activeSigningAddress: ACTIVE_ADDRESS,
+					}),
+				})), dom.document.body)
+			})
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+			return dom.document.body.textContent ?? ''
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	}
+
+	test('does not claim the Interceptor is disabled on a network without an RPC in simulation mode', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(true, 'MetaMask')
+		assert.equal(text.includes(interceptorInactiveTitle), false)
+		assert.equal(text.includes(configureRpcTitle), true)
+	})
+
+	test('does not claim the Interceptor is disabled on a network without an RPC when signing mode has no signer', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, 'NoSignerDetected')
+		assert.equal(text.includes(interceptorInactiveTitle), false)
+		assert.equal(text.includes(configureRpcTitle), true)
+	})
+
+	test('treats a missing tab state as having no signer on a network without an RPC in signing mode', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, undefined)
+		assert.equal(text.includes(interceptorInactiveTitle), false)
+		assert.equal(text.includes(configureRpcTitle), true)
+	})
+
+	test('says the Interceptor is inactive on a network without an RPC when signing mode forwards to the signer', async () => {
+		const text = await renderHomeOnNetworkWithoutRpc(false, 'MetaMask')
+		assert.equal(text.includes(interceptorInactiveTitle), true)
+		assert.equal(text.includes(configureRpcTitle), false)
 	})
 })

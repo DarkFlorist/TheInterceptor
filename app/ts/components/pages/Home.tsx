@@ -1,5 +1,5 @@
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
-import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../../utils/requestRouting.js'
+import { isBypassingInterceptorOnNetworkWithoutRpc } from '../../utils/requestRouting.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import type { HomeParams, FirstCardParams, HomeProtection, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
@@ -260,7 +260,7 @@ function getHomeProtection(interceptorDisabled: boolean, simulationMode: boolean
 	if (interceptorDisabled) return 'disabledOnWebsite'
 	if (rpcNetwork === undefined || rpcNetwork.httpsRpc !== undefined) return 'active'
 	const signerAvailable = tabState?.signerConnected === true
-	return isBypassingInterceptorOnNetworkWithoutRpc(isForwardingRequestsToSigner(simulationMode, signerAvailable), rpcNetwork) ? 'unsupportedNetwork' : 'networkWithoutRpc'
+	return isBypassingInterceptorOnNetworkWithoutRpc(rpcNetwork, { simulationMode, signerAvailable }) ? 'unsupportedNetwork' : 'networkWithoutRpc'
 }
 
 // Shown instead of any protection promise while the protection state is not 'active'. Only the first two states turn the Interceptor off; without an RPC requests are still intercepted, so that text only asks for an RPC.
