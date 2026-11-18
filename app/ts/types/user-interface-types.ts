@@ -4,6 +4,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimesta
 import type { SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import type { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
+import type { NetworkWithoutRpcWarning } from '../utils/networkWithoutRpcUi.js'
 import { type AddressBookEntries, type AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -104,8 +105,11 @@ export type FirstCardParams = {
 	isFreshHomeDataLoaded: Signal<boolean>
 }
 
-// Whether the Interceptor simulates and reviews the active tab's requests; the popup makes no protection promise unless this is 'active'. A website the user disabled the Interceptor for gets no Interceptor provider ('disabledOnWebsite'). On a network without an RPC, signing mode with a wallet sends requests straight to the wallet ('unsupportedNetwork'), while otherwise requests are still intercepted but cannot be simulated until an RPC is configured ('networkWithoutRpc').
-export type HomeProtection = 'active' | 'disabledOnWebsite' | 'unsupportedNetwork' | 'networkWithoutRpc' | 'networkWithoutRpcMayBypass'
+// Whether the Interceptor simulates and reviews the active tab's requests; the popup makes no protection promise unless this is 'active'. A website the user disabled the Interceptor for gets no Interceptor provider ('disabledOnWebsite'). A network without an RPC carries the shared warning (utils/networkWithoutRpcUi.ts), which says whether its requests still are intercepted and whose wording getNetworkWithoutRpcWarningText owns.
+export type HomeProtection =
+	| { readonly kind: 'active' }
+	| { readonly kind: 'disabledOnWebsite' }
+	| { readonly kind: 'networkWithoutRpc', readonly networkName: string, readonly warning: NetworkWithoutRpcWarning }
 
 export type SimulationStateParam = {
 	simulationMode: ReadonlySignal<boolean>

@@ -6,6 +6,7 @@ import { act } from 'preact/test-utils'
 import { Home } from '../../app/ts/components/pages/Home.js'
 import { installDomMock } from './domMock.js'
 import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -454,11 +455,11 @@ describe('Home popup clear empty state', () => {
 	const unprotectedStates = [
 		{ state: 'a disabled website', simulationMode: true, signerName: 'MetaMask', notice: 'Interceptor disabled on this website.', interceptionOff: true, overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: restoreWebsiteProtection },
 		{ state: 'a disabled website', simulationMode: false, signerName: 'MetaMask', notice: 'Interceptor disabled on this website.', interceptionOff: true, overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: restoreWebsiteProtection },
-		{ state: 'a network without an RPC with a wallet', simulationMode: false, signerName: 'MetaMask', notice: 'Interceptor inactive on this network.', interceptionOff: true, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
-		{ state: 'a network without an RPC with a wallet', simulationMode: true, signerName: 'MetaMask', notice: 'No RPC for this network.', interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
-		{ state: 'a network without an RPC without a wallet', simulationMode: false, signerName: 'NoSigner', notice: 'No RPC for this network.', interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC with a wallet', simulationMode: false, signerName: 'MetaMask', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcBypassToSigner' }), interceptionOff: true, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC with a wallet', simulationMode: true, signerName: 'MetaMask', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC without a wallet', simulationMode: false, signerName: 'NoSigner', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 		// The page named a wallet but reported no wallet to forward to, so its requests carry usingInterceptorWithoutSigner and are still intercepted; the popup reads that same fact (signerConnected), not the name.
-		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerConnected: false, notice: 'No RPC for this network.', interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerConnected: false, notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 	] as const
 	// The routing and the popup read the page's wallet fact from different messages; both values come from the page's one hasWalletToForwardTo, so neither side re-derives it.
 	test('takes the routing and the protection status from the page\'s one wallet fact', async () => {
@@ -469,6 +470,8 @@ describe('Home popup clear empty state', () => {
 		assert.match(inpageSource, /method: 'connected_to_signer', params: \[this\.hasWalletToForwardTo\(\), /)
 		assert.match(await Bun.file('app/ts/background/background.ts').text(), /signerAvailable: !request\.usingInterceptorWithoutSigner/)
 		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /getNetworkWithoutRpcWarningState\(rpcNetwork, simulationMode, tabState\?\.signerConnected === true \? 'available' : 'missing'\)/)
+		// The no-RPC wording has one owner, getNetworkWithoutRpcWarningText; the home page has no sentences of its own for it.
+		assert.doesNotMatch(await Bun.file('app/ts/components/pages/Home.tsx').text(), /configured RPC|not a supported network|network without an RPC go/)
 	})
 
 	for (const unprotectedState of unprotectedStates) {
@@ -489,9 +492,8 @@ describe('Home popup clear empty state', () => {
 				const unprotectedText = dom.document.body.textContent ?? ''
 				assert.deepEqual(findProtectionPromises(unprotectedText), [])
 				assert.equal(unprotectedText.includes(notice), true)
-				// The banner is the page's only protection status, so nothing else claims the Interceptor is disabled while it still intercepts.
-				assert.equal(unprotectedText.includes('The Interceptor is disabled while'), false)
-				assert.equal(unprotectedText.includes('neither simulated nor reviewed'), interceptionOff)
+				// The banner is the page's only protection status, and it says the Interceptor is off exactly when it is: the website is disabled, or requests on a network without an RPC go straight to the wallet.
+				assert.equal(unprotectedText.includes('neither simulated nor reviewed') || unprotectedText.includes('The Interceptor is disabled while'), interceptionOff)
 				// The empty state or signing hint is still shown, with the notice instead of a promise.
 				assert.equal(unprotectedText.includes(simulationMode ? 'Nothing simulated yet' : 'Nothing to review'), true)
 				await act(() => { restore(params) })
@@ -1736,9 +1738,9 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		primary: false,
 		minimized: true,
 	}
-	// The mode banner is the home page's protection status on a network without an RPC (getHomeProtection).
-	const interceptorInactiveTitle = 'Interceptor inactive on this network.'
-	const configureRpcTitle = 'No RPC for this network.'
+	// The mode banner is the home page's protection status on a network without an RPC, worded by the shared getNetworkWithoutRpcWarningText.
+	const interceptorDisabledText = getNetworkWithoutRpcWarningText(signerOnlyNetwork.name, { kind: 'noRpcBypassToSigner' })
+	const configureRpcText = getNetworkWithoutRpcWarningText(signerOnlyNetwork.name, { kind: 'noRpcNeedsConfig' })
 
 	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName'] | undefined) {
 		const dom = installDomMock()
@@ -1771,25 +1773,25 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 
 	test('does not claim the Interceptor is disabled on a network without an RPC in simulation mode', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(true, 'MetaMask')
-		assert.equal(text.includes(interceptorInactiveTitle), false)
-		assert.equal(text.includes(configureRpcTitle), true)
+		assert.equal(text.includes(interceptorDisabledText), false)
+		assert.equal(text.includes(configureRpcText), true)
 	})
 
 	test('does not claim the Interceptor is disabled on a network without an RPC when signing mode has no signer', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(false, 'NoSignerDetected')
-		assert.equal(text.includes(interceptorInactiveTitle), false)
-		assert.equal(text.includes(configureRpcTitle), true)
+		assert.equal(text.includes(interceptorDisabledText), false)
+		assert.equal(text.includes(configureRpcText), true)
 	})
 
 	test('treats a missing tab state as having no signer on a network without an RPC in signing mode', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(false, undefined)
-		assert.equal(text.includes(interceptorInactiveTitle), false)
-		assert.equal(text.includes(configureRpcTitle), true)
+		assert.equal(text.includes(interceptorDisabledText), false)
+		assert.equal(text.includes(configureRpcText), true)
 	})
 
-	test('says the Interceptor is inactive on a network without an RPC when signing mode forwards to the signer', async () => {
+	test('says the Interceptor is disabled on a network without an RPC when signing mode forwards to the signer', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(false, 'MetaMask')
-		assert.equal(text.includes(interceptorInactiveTitle), true)
-		assert.equal(text.includes(configureRpcTitle), false)
+		assert.equal(text.includes(interceptorDisabledText), true)
+		assert.equal(text.includes(configureRpcText), false)
 	})
 })

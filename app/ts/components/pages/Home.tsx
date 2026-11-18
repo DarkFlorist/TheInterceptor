@@ -1,5 +1,5 @@
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
-import { getNetworkWithoutRpcWarningState } from '../../utils/networkWithoutRpcUi.js'
+import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText } from '../../utils/networkWithoutRpcUi.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import type { HomeParams, FirstCardParams, HomeProtection, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
@@ -257,42 +257,34 @@ function getSignerDisplayName(signerName: SignerName) {
 
 // Derives the one protection state that every protection promise on the home page is chosen from. A disabled website is reported first because it is specific to the active tab. On a network without an RPC it takes the shared decision (getNetworkWithoutRpcWarningState, which follows the background's routing), with the tab's signerConnected as the signer availability: the page reports it from the same fact its requests carry to the routing, and a tab without state has no signer.
 function getHomeProtection(interceptorDisabled: boolean, simulationMode: boolean, tabState: TabState | undefined, rpcNetwork: RpcNetwork | undefined): HomeProtection {
-	if (interceptorDisabled) return 'disabledOnWebsite'
-	if (rpcNetwork === undefined) return 'active'
-	const warningState = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, tabState?.signerConnected === true ? 'available' : 'missing')
-	switch (warningState.kind) {
-		case 'none': return 'active'
-		case 'noRpcBypassToSigner': return 'unsupportedNetwork'
-		case 'noRpcNeedsConfig': return 'networkWithoutRpc'
-		case 'noRpcMayBypass': return 'networkWithoutRpcMayBypass'
-		default: return assertNever(warningState)
-	}
+	if (interceptorDisabled) return { kind: 'disabledOnWebsite' }
+	if (rpcNetwork === undefined) return { kind: 'active' }
+	const warning = getNetworkWithoutRpcWarningState(rpcNetwork, simulationMode, tabState?.signerConnected === true ? 'available' : 'missing')
+	return warning.kind === 'none' ? { kind: 'active' } : { kind: 'networkWithoutRpc', networkName: rpcNetwork.name, warning }
 }
 
-// Shown instead of any protection promise while the protection state is not 'active'. Only the first two states turn the Interceptor off; without an RPC requests are still intercepted, so that text only asks for an RPC.
-function getProtectionNoticeText(protection: Exclude<HomeProtection, 'active'>, signerName: SignerName) {
-	switch (protection) {
+type InactiveHomeProtection = Exclude<HomeProtection, { readonly kind: 'active' }>
+
+// Shown instead of any protection promise while the protection state is not active. A network without an RPC is worded by getNetworkWithoutRpcWarningText, the single source of that wording, which says whether its requests are still intercepted.
+function getProtectionNoticeText(protection: InactiveHomeProtection, signerName: SignerName) {
+	switch (protection.kind) {
 		case 'disabledOnWebsite': return `The website talks to ${ getSignerDisplayName(signerName) } directly, so its transactions are neither simulated nor reviewed.`
-		case 'unsupportedNetwork': return `Requests on a network without an RPC go to ${ getSignerDisplayName(signerName) } directly, so they are neither simulated nor reviewed.`
-		case 'networkWithoutRpc': return 'The selected network has no configured RPC. Select or configure an RPC for it so the Interceptor can simulate transactions.'
-		case 'networkWithoutRpcMayBypass': return 'Until an RPC is configured the Interceptor cannot simulate requests on this network; in signing mode with a connected wallet they go to the wallet directly.'
+		case 'networkWithoutRpc': return getNetworkWithoutRpcWarningText(protection.networkName, protection.warning)
 		default: return assertNever(protection)
 	}
 }
 
-function getProtectionNoticeTitle(protection: Exclude<HomeProtection, 'active'>) {
-	switch (protection) {
+function getProtectionNoticeTitle(protection: InactiveHomeProtection) {
+	switch (protection.kind) {
 		case 'disabledOnWebsite': return 'Interceptor disabled on this website.'
-		case 'unsupportedNetwork': return 'Interceptor inactive on this network.'
 		case 'networkWithoutRpc': return 'No RPC for this network.'
-		case 'networkWithoutRpcMayBypass': return 'No RPC for this network.'
 		default: return assertNever(protection)
 	}
 }
 
 // States what the current mode does with a confirmed transaction. Home mounts it only after the initial home data has loaded, so it never shows the pre-load default mode.
 function ModeBanner({ simulationMode, signerName, protection }: { simulationMode: boolean, signerName: SignerName, protection: HomeProtection }) {
-	if (protection !== 'active') return <p class = 'popup-mode-banner' role = 'note'>
+	if (protection.kind !== 'active') return <p class = 'popup-mode-banner' role = 'note'>
 		<strong>{ getProtectionNoticeTitle(protection) }</strong> { getProtectionNoticeText(protection, signerName) }
 	</p>
 	return <p class = 'popup-mode-banner' role = 'note'>
@@ -881,12 +873,12 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack
 }
 
 function EmptySimulationStack({ protection, signerName }: { protection: HomeProtection, signerName: SignerName }) {
-	if (protection !== 'active') return <EmptyState title = 'Nothing simulated yet' text = { getProtectionNoticeText(protection, signerName) }/>
+	if (protection.kind !== 'active') return <EmptyState title = 'Nothing simulated yet' text = { getProtectionNoticeText(protection, signerName) }/>
 	return <EmptyState title = 'Give me some transactions to munch on!' text = 'Use a dapp as usual. Each transaction it sends is simulated and stacked here instead of being sent.'/>
 }
 
 function SigningModeHint({ protection, signerName }: { protection: HomeProtection, signerName: SignerName }) {
-	if (protection !== 'active') return <EmptyState title = 'Nothing to review' text = { getProtectionNoticeText(protection, signerName) }/>
+	if (protection.kind !== 'active') return <EmptyState title = 'Nothing to review' text = { getProtectionNoticeText(protection, signerName) }/>
 	return <EmptyState title = 'Nothing to review yet' text = { `When a dapp asks for a transaction or a signature, the Interceptor shows what it does before ${ getSignerDisplayName(signerName) } signs it.` }/>
 }
 
