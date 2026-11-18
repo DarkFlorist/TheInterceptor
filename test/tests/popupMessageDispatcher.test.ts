@@ -1,4 +1,4 @@
-import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createPort, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
@@ -130,6 +130,11 @@ const [
 	import('../../app/ts/simulation/serviceLifecycle.js'),
 	import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 ])
+
+const getPopupMessages = () => sentMessages.flatMap((message) => {
+	const parsed = MessageToPopup.safeParse(message)
+	return parsed.success ? [parsed.value] : []
+})
 
 const settings: Settings = {
 	activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
@@ -452,7 +457,7 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'popup_import_settings', data: { fileContents: 'not json' } },
 		)
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages().filter((message) => message.method === 'popup_initiate_export_settings_reply')
 		assert.equal(messages.length, 1)
 		const importFailure = messages[0]
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
@@ -500,7 +505,7 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages().filter((message) => message.method === 'popup_initiate_export_settings_reply' || message.method === 'popup_settingsUpdated')
 		assert.equal(messages.length, 2)
 		const importSuccess = messages[0]
 		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
@@ -526,7 +531,7 @@ describe('popup message dispatcher seams', () => {
 		const dynamicRuleEventIndex = dispatcherEvents.findIndex((event) => event.type === 'dynamicRuleUpdate')
 		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
 		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
-		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
+		assert.ok(settingsUpdatedEventIndex < dynamicRuleEventIndex)
 
 		const registrationOperationCount = contentScriptRegistrationOperations.length
 		reloadedTabs.splice(0, reloadedTabs.length)
@@ -584,7 +589,7 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		))
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages()
 		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected import broadcast.')
@@ -645,7 +650,7 @@ describe('popup message dispatcher seams', () => {
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
-		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const messages = getPopupMessages()
 		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
@@ -702,7 +707,7 @@ describe('settings import installs the imported network', () => {
 		primary: true,
 		minimized: true,
 	}
-	const buildImportFile = (rpcNetwork: Record<string, unknown>) => JSON.stringify({
+	const buildImportFile = (rpcNetwork: Record<string, unknown>, websiteAccess: WebsiteAccessArray = []) => JSON.stringify({
 		name: 'InterceptorSettingsAndAddressBook',
 		version: '1.4',
 		exportedDate: '2026-11-08',
@@ -711,7 +716,7 @@ describe('settings import installs the imported network', () => {
 			rpcNetwork,
 			openedPage: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
-			websiteAccess: [],
+			websiteAccess,
 			simulationMode: true,
 			addressBookEntries: [],
 			useTabsInsteadOfPopup: false,
@@ -720,7 +725,7 @@ describe('settings import installs the imported network', () => {
 	})
 
 	const getImportedSettingsBroadcast = () => {
-		const importedSettings = sentMessages.map((message) => MessageToPopup.parse(message)).find((message) => message.method === 'popup_settingsUpdated')
+		const importedSettings = getPopupMessages().find((message) => message.method === 'popup_settingsUpdated')
 		if (importedSettings?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
 		return importedSettings
 	}
@@ -742,6 +747,57 @@ describe('settings import installs the imported network', () => {
 			const fileContents = scenario === 'failed import' ? 'invalid settings' : buildImportFile(network)
 			await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents } })
 			assert.deepEqual((await getInterceptorTransactionStack()).operations, scenario === 'different chain' ? [] : originalStack.operations)
+		})
+	}
+
+	test('notifies approved connections and popup clients when an import changes chains', async () => {
+		const context = createDispatcherContextWithInstalledServices()
+		const { websiteSocketToString } = await import('../../app/ts/background/backgroundUtils.js')
+		const { port, messages } = createPort(1)
+		const socket = { tabId: 1, connectionName: 0n }
+		const websiteOrigin = 'https://imported-chain.example'
+		context.websiteTabConnections.set(1, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } })
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork, [{ website: { websiteOrigin }, access: true, addressAccess: undefined }]) } })
+		assert.ok(messages.some((message) => message.method === 'chainChanged' && message.result === '0xaa36a7'))
+		assert.ok(getPopupMessages().some((message) => message.method === 'popup_chain_update'))
+	})
+
+	for (const entryPoint of ['popup', 'direct'] as const) {
+		test(`an import excludes overlapping ${ entryPoint } network changes until its transition completes`, async () => {
+			const context = createDispatcherContextWithInstalledServices()
+			const entered = createDeferredValue<void>()
+			const release = createDeferredValue<void>()
+			const originalSet = browser.storage.local.set.bind(browser.storage.local)
+			let paused = false
+			browser.storage.local.set = async (items) => {
+				await originalSet(items)
+				if (!paused && 'activeRpcNetwork' in items) {
+					paused = true
+					entered.resolve(undefined)
+					await release.promise
+				}
+			}
+			const importing = dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedSepoliaNetwork) } })
+			await entered.promise
+			const nextNetwork = { ...settings.activeRpcNetwork, httpsRpc: 'https://later.example' }
+			if (entryPoint === 'popup') {
+				try {
+					const result = await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: nextNetwork })
+					assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings. Please wait for it to finish, then try again.' })
+				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
+				await importing
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().chainId, 11155111n)
+			} else {
+				const { changeActiveAddressAndChain } = await import('../../app/ts/background/activeSettings.js')
+				let finished = false
+				const changing = changeActiveAddressAndChain(context.simulationServicesOwner, context.websiteTabConnections, { simulationMode: true, rpcNetwork: nextNetwork }).then(() => { finished = true })
+				try {
+					await new Promise((resolve) => setTimeout(resolve, 0))
+					assert.equal(finished, false)
+				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
+				await Promise.all([importing, changing])
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, nextNetwork.httpsRpc)
+			}
 		})
 	}
 

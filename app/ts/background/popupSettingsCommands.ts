@@ -1,5 +1,4 @@
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { createPopupSettingsCoordinator } from './popupSettingsCoordinator.js'
+import { popupSettingsCoordinator as settingsCoordinator } from './popupSettingsAdmission.js'
 import { popupSettingsOperations } from '../types/popupSettingsProtocol.js'
 import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
@@ -9,7 +8,6 @@ import { getSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 
-const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
 function settingsCommand<Method extends PopupSettingsRequest['method']>(method: Method, action: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
 	return popupMessageHandler(method, async (context, request) => {

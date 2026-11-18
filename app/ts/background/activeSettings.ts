@@ -16,7 +16,7 @@ import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
-export async function clearSimulationStateFromConfig() {
+async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
@@ -70,46 +70,25 @@ type ActiveSettingsTransition = {
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
-async function runActiveSettingsChange(
+export async function runActiveSettingsTransition(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
-	transition: ActiveSettingsTransition,
+	commit: () => Promise<boolean>,
+	options: { readonly signingPreference?: SigningAddressPreference, readonly promptForAccessesIfNeeded?: boolean, readonly refreshAlways?: boolean } = {},
 ): Promise<void> {
-	const { change } = transition
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			if (transition.simulationSignerSelection !== undefined) {
-				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
-				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
-			}
-			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 			const previousSettings = await getSettings()
-
-			if (change.simulationMode) {
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			} else {
-				if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
-				const selectsSafe = change.signingAddressSelection === 'safe'
-				await changeSimulationMode({
-					simulationMode: change.simulationMode,
-					...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-					...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
-					...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
-				})
-			}
+			if (!await commit()) return
 
 			const updatedSettings = await getSettings()
 			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
 				try {
 					// The preference belongs to the committed selection, even if later provider preparation fails.
-					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
+					if (options.signingPreference !== undefined) await rememberSigningAddressSelection(options.signingPreference)
 					try {
 						simulationServicesOwner.ensureNetwork(updatedSettings.activeRpcNetwork)
 					} catch (error) {
@@ -133,7 +112,7 @@ async function runActiveSettingsChange(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
@@ -141,9 +120,39 @@ async function runActiveSettingsChange(
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
+			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, options.promptForAccessesIfNeeded ?? true)
 		}
 	}
+}
+
+async function runActiveSettingsChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: ActiveSettingsTransition) {
+	const { change } = transition
+	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+		if (transition.simulationSignerSelection !== undefined) {
+			const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
+			await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
+		}
+		if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
+
+		if (change.simulationMode) {
+			await changeSimulationMode({
+				simulationMode: change.simulationMode,
+				...('activeAddress' in change ? { activeSimulationAddress: change.activeAddress } : {}),
+				...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+			})
+		} else {
+			if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
+			const selectsSafe = change.signingAddressSelection === 'safe'
+			await changeSimulationMode({
+				simulationMode: change.simulationMode,
+				...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+				...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
+				...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
+			})
+		}
+
+		return true
+	}, { signingPreference: transition.signingPreference, promptForAccessesIfNeeded: change.promptForAccessesIfNeeded })
 }
 
 export async function changeActiveAddressAndChain(

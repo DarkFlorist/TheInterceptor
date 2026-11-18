@@ -10,8 +10,8 @@ export const popupSettingsOperations = {
 } as const satisfies Record<PopupSettingsRequest['method'], { operation: string, replyType: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' }>
 
 const operations = Object.values(popupSettingsOperations)
-export type PopupSettingsOperation = typeof operations[number]['operation']
-export const PopupSettingsOperation = funtypes.String.withGuard((value): value is PopupSettingsOperation => operations.some(entry => entry.operation === value))
+export type PopupSettingsOperation = typeof operations[number]['operation'] | 'import'
+export const PopupSettingsOperation = funtypes.String.withGuard((value): value is PopupSettingsOperation => value === 'import' || operations.some(entry => entry.operation === value))
 
 export type PopupSettingsChangeStatus = funtypes.Static<typeof PopupSettingsChangeStatus>
 export const PopupSettingsChangeStatus = funtypes.ReadonlyObject({
