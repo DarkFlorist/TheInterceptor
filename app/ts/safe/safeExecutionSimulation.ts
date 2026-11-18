@@ -120,8 +120,7 @@ function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumS
 		nonce: executorNonce,
 		maxFeePerGas,
 		maxPriorityFeePerGas: EXECUTOR_MAX_PRIORITY_FEE_PER_GAS,
-		// The Safe passes on at most 63/64 of the remaining gas to its call.
-		gas: safeCall.gas * 64n / 63n + SAFE_EXECUTION_GAS_ALLOWANCE,
+		gas: getSafeExecutorGasLimit(safeCall.gas),
 		to: execution.safeAddress,
 		value: 0n,
 		// The SafeTx as the owners sign it, a delegate call included. With safeTxGas and gasPrice zero, as Interceptor creates them, execTransaction reverts if the Safe's call fails.
