@@ -312,7 +312,7 @@ describe('funtypes failure explanation', () => {
 	test('is re-validated before the funtypes version changes', async () => {
 		const packageManifest = await Bun.file(new URL('../../package.json', import.meta.url).pathname).json()
 		const pinnedVersion: unknown = packageManifest.dependencies.funtypes
-		assert.equal(pinnedVersion, FUNTYPES_ADAPTER_VERSION, `package.json pins funtypes ${ pinnedVersion }, but app/ts/background/funtypesFailureExplanation.ts was validated against ${ FUNTYPES_ADAPTER_VERSION }. Re-validate its tags (CODEC_TAGS_BY_HANDLING), the members it reads (isCodecLayoutRecognized) and the Failure.key grammar against the new version, keep the pins in this test passing, then update FUNTYPES_ADAPTER_VERSION.`)
+		assert.equal(pinnedVersion, FUNTYPES_ADAPTER_VERSION, `package.json pins funtypes ${ pinnedVersion }, but app/ts/background/funtypesFailureExplanation.ts was validated against ${ FUNTYPES_ADAPTER_VERSION }. Re-validate its tags (CODEC_TAGS_BY_HANDLING), the members it reads (isCodecLayoutRecognized) and the Failure.key grammar against the new version, keep the pins in this test passing, then update FUNTYPES_ADAPTER_VERSION (see docs/readable-rpc-param-errors.md, which also covers a security upgrade).`)
 	})
 
 	test('falls back to the generic expectation for a tag it does not classify', () => {
