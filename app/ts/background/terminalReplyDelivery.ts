@@ -1,17 +1,16 @@
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
-import { doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
+import { getUniqueRequestIdentifierString, type WebsiteSocket } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removePendingTerminalReply, removePendingTerminalReplyWithAnsweredRequest } from './pendingTerminalReplies.js'
+import { appendPendingTerminalReplyWithPendingRequestDecision, getPendingTerminalReplies, removeDeliveredPendingTerminalReply } from './pendingTerminalReplies.js'
 import type { DecidePendingRequestInstance, PendingRequestInstance } from './pendingRequestDecisions.js'
-import { getPendingTransactionsAndMessages } from './storageVariables.js'
 import { createBackoffRetryScheduler } from '../utils/retryScheduler.js'
 
-// A terminal reply is identified by its request id together with the pending request instance it answers, as each instance gets at most one terminal reply: a reply to a new request under a reused id is never taken for an earlier one, and the same reply queued again, as the popup-close retry does, is still recognised as delivered. A reply queued before a restart whose request already left the queue has no known instance.
+// A terminal reply is identified by its request id together with the pending request instance it answers, which its outbox entry records, as each instance gets at most one terminal reply: a reply to a new request under a reused id is never taken for an earlier one, and the same reply queued again, as the popup-close retry does, is still recognised as delivered. A reply stored before instance ids existed answers no known instance.
 type TerminalReply = { readonly message: InterceptedRequestForward, readonly instanceId: string | undefined }
 const terminalReplyKey = ({ message, instanceId }: TerminalReply) => JSON.stringify({ requestIdentifier: getUniqueRequestIdentifierString(message.uniqueRequestIdentifier), instanceId })
 
@@ -19,30 +18,11 @@ const terminalReplyKey = ({ message, instanceId }: TerminalReply) => JSON.string
 const terminalReplyProductions = new Map<string, Promise<boolean | undefined>>()
 const terminalReplyReservations = new Set<string>()
 const completedTerminalReplies = new Set<string>()
-// The pending request instance whose reply this background last queued under each request id, which is the reply the outbox holds under that id.
-const queuedTerminalReplyInstanceIds = new Map<string, string>()
+// Taken before the pending-request storage lock, never inside it.
 const terminalReplySemaphore = new Semaphore(1)
 const terminalReplyFlushRetries = new Map<string, { port: browser.runtime.Port, scheduler: ReturnType<typeof createBackoffRetryScheduler> }>()
 
-// Only a popup-close rejection keeps its request pending until it is delivered, marked ClosedWithoutResponse; every other terminal reply removes its request in the storage write that queues the reply. Read from storage, so a delivery after a restart finds it too.
-const findRequestAwaitingDelivery = async (message: InterceptedRequestForward) => (await getPendingTransactionsAndMessages()).find((pending) => pending.approvalStatus.status === 'ClosedWithoutResponse' && doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, message.uniqueRequestIdentifier))
-
-// The instance whose reply the outbox holds under a request id: the one this background last queued there, else, for a reply queued before a restart, the popup-close request still awaiting it.
-const getQueuedTerminalReplyInstanceId = (identifier: string, requestAwaitingDelivery: PendingRequestInstance | undefined) => queuedTerminalReplyInstanceIds.get(identifier) ?? requestAwaitingDelivery?.instanceId
-
-async function identifyQueuedTerminalReply(message: InterceptedRequestForward): Promise<TerminalReply> {
-	return { message, instanceId: getQueuedTerminalReplyInstanceId(getUniqueRequestIdentifierString(message.uniqueRequestIdentifier), await findRequestAwaitingDelivery(message)) }
-}
-
-// Drops a delivered reply from the outbox and, in the same storage write, the request still awaiting it, so every delivery path, including a flush after a restart, leaves neither behind. A reply to a new request under the same id that has since replaced it in the outbox is kept, with its request.
-async function removeDeliveredTerminalReply(reply: TerminalReply) {
-	const identifier = getUniqueRequestIdentifierString(reply.message.uniqueRequestIdentifier)
-	const requestAwaitingDelivery = await findRequestAwaitingDelivery(reply.message)
-	if (getQueuedTerminalReplyInstanceId(identifier, requestAwaitingDelivery) !== reply.instanceId) return
-	if (requestAwaitingDelivery === undefined || requestAwaitingDelivery.instanceId !== reply.instanceId) await removePendingTerminalReply(reply.message.uniqueRequestIdentifier)
-	else await removePendingTerminalReplyWithAnsweredRequest(reply.message.uniqueRequestIdentifier, requestAwaitingDelivery)
-	queuedTerminalReplyInstanceIds.delete(identifier)
-}
+const removeDeliveredTerminalReply = async (reply: TerminalReply) => await removeDeliveredPendingTerminalReply(reply.message.uniqueRequestIdentifier, reply.instanceId)
 
 async function finishPreviouslyDeliveredTerminalReply(reply: TerminalReply) {
 	const key = terminalReplyKey(reply)
@@ -60,7 +40,7 @@ async function recordSuccessfulTerminalReplyDelivery(reply: TerminalReply, keepC
 	if (!keepCompletionMarker) completedTerminalReplies.delete(key)
 }
 
-// Queues the terminal reply in the same storage write as the decision on the pending request instance it answers. Whether a crash or a failed write comes before or after that write, the reply is queued exactly when the decision happened: a website is never answered for an instance that stayed pending, and an instance never leaves the queue with its reply lost. Waits for terminalReplySemaphore without holding the pending-request lock. The crash guarantee relies on a multi-key storage.local.set committing atomically, which current Chromium and Firefox do but neither documents.
+// Queues the terminal reply in the same storage write as the decision on the pending request instance it answers. Whether a crash or a failed write comes before or after that write, the reply is queued exactly when the decision happened: a website is never answered for an instance that stayed pending, and an instance never leaves the queue with its reply lost. Waits for terminalReplySemaphore without holding the pending-request storage lock. The crash guarantee relies on a multi-key storage.local.set committing atomically, which current Chromium and Firefox do but neither documents.
 export async function queueTerminalReplyWithPendingRequestDecision(message: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
 	const reply = { message, instanceId: instance.instanceId }
 	const key = terminalReplyKey(reply)
@@ -70,7 +50,6 @@ export async function queueTerminalReplyWithPendingRequestDecision(message: Inte
 			const decided = await appendPendingTerminalReplyWithPendingRequestDecision(message, instance, decide)
 			// Nothing was queued, so no delivery follows that would finish this reply, which a flush may have delivered from an earlier queueing while this reservation kept its completion marker.
 			if (decided === 'unchanged') await finishPreviouslyDeliveredTerminalReply(reply)
-			else queuedTerminalReplyInstanceIds.set(getUniqueRequestIdentifierString(message.uniqueRequestIdentifier), instance.instanceId)
 			return decided
 		})
 		if (outcome === 'unchanged') terminalReplyReservations.delete(key)
@@ -109,10 +88,10 @@ export async function flushPendingTerminalRepliesForSocket(websiteTabConnections
 	return await terminalReplySemaphore.execute(async () => {
 		const pendingReplies = await getPendingTerminalReplies()
 		let deliveredReplies = 0
-		for (const message of pendingReplies) {
+		for (const { reply: message, answeredInstanceId } of pendingReplies) {
 			const replySocket = message.uniqueRequestIdentifier.requestSocket
 			if (replySocket.tabId !== socket.tabId || replySocket.connectionName !== socket.connectionName) continue
-			const reply = await identifyQueuedTerminalReply(message)
+			const reply = { message, instanceId: answeredInstanceId }
 			const key = terminalReplyKey(reply)
 			if (completedTerminalReplies.has(key)) {
 				await removeDeliveredTerminalReply(reply)

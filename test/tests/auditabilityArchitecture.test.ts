@@ -249,19 +249,6 @@ test('the import cycle guard passes modules that import in one direction only', 
 	assertNoImportCycle(graph, '/fixture/storage.ts', '/fixture/outbox.ts')
 })
 
-// Building a PendingTerminalRepliesWrite needs this symbol's value, so limiting who names it limits who can build one. Comments do not count.
-test('only the outbox module and its declaration name the pending terminal replies write brand', async () => {
-	const filesNamingBrand = new Set<string>()
-	for await (const path of new Bun.Glob('**/*.{ts,tsx}').scan(appSourceDirectory)) {
-		const visit = (node: ts.Node) => {
-			if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text === 'pendingTerminalRepliesWriteBrand') filesNamingBrand.add(path)
-			ts.forEachChild(node, visit)
-		}
-		visit(await parseAppSource(path))
-	}
-	assert.deepEqual([...filesNamingBrand].sort(), ['background/pendingTerminalReplies.ts', 'utils/storageUtils.ts'])
-})
-
 // The background owns the confirmation queue and sends it over the message protocol, so the window neither reads browser storage nor imports the background's storage module.
 test('the confirmation page gets its queue over the message protocol, never from storage', () => {
 	assert.doesNotMatch(confirmTransactionPageSource, /browser\.storage|storageVariables|pendingTransactionsAndMessages|storageUtils/u)

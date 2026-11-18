@@ -106,8 +106,17 @@ const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'ac
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress', EthereumAddressOrMissing)
 const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress', activeSigningSafeAddress)
 const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress', independentActiveSimulationAddress)
+// An outbox entry: a terminal reply and the id of the pending request instance it answers, stored together so delivery after a restart still knows which request the reply completes.
+const QueuedTerminalReplyEntry = funtypes.ReadonlyObject({ reply: InterceptedRequestForward, answeredInstanceId: funtypes.String })
+// Entries stored before instance ids existed are bare replies. That version removed a request in the write after queueing its reply and had no popup-close state that kept a request waiting for its reply, so such a reply answers no request still pending: it parses as answering no instance, is delivered, and is then removed from the outbox alone.
+const LegacyQueuedTerminalReply = InterceptedRequestForward.withParser({
+	parse: (reply) => ({ success: true, value: { reply, answeredInstanceId: undefined } }),
+	serialize: (entry: { readonly reply: InterceptedRequestForward, readonly answeredInstanceId: undefined }) => ({ success: true, value: entry.reply }),
+})
+export type QueuedTerminalReply = funtypes.Static<typeof QueuedTerminalReply>
+const QueuedTerminalReply = funtypes.Union(QueuedTerminalReplyEntry, LegacyQueuedTerminalReply)
 // The terminal reply outbox's stored form, shared by the outbox's own reads and writes and by the write that stores it with the pending requests.
-export const StoredPendingTerminalReplies = funtypes.ReadonlyArray(InterceptedRequestForward)
+export const StoredPendingTerminalReplies = funtypes.ReadonlyArray(QueuedTerminalReply)
 
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	...startupStoragePartialCodecs,
@@ -198,16 +207,6 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-// Marks a reply outbox write that pendingTerminalReplies.ts prepared under its lock. It is declared here, beside the storage layer both modules use, so storageVariables.ts can accept it without importing the outbox module; an architecture test holds that only pendingTerminalReplies.ts uses it, so no other module can build one.
-export const pendingTerminalRepliesWriteBrand: unique symbol = Symbol('pendingTerminalRepliesWriteBrand')
-
-// A reply outbox write leased by pendingTerminalReplies.ts, the outbox key's only owner: the outbox's storage items, serialized by that module from an outbox it read under its lock, and whether that lock is still held. storageVariables.ts only adds the items to its pending-request write, and refuses the lease once the lock is released, so the combined write cannot store an outbox read outside the lock or after another outbox write.
-export type PendingTerminalRepliesWrite = {
-	readonly [pendingTerminalRepliesWriteBrand]: true
-	readonly storageItems: Readonly<Record<string, unknown>>
-	readonly isOutboxLockHeld: () => boolean
-}
-
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }

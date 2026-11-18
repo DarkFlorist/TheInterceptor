@@ -754,7 +754,8 @@ describe('settings import', () => {
 	})
 
 	test('the settings storage lock is created in exactly one place', () => {
-		assert.equal(fs.readFileSync(settingsStorageModulePaths.settingsStorageTransaction, 'utf8').match(/new Semaphore\(/g)?.length, 1)
+		// Each storage transaction runner owns one lock, so creating the settings runner once creates its lock once.
+		assert.equal(fs.readFileSync(settingsStorageModulePaths.settingsStorageTransaction, 'utf8').match(/createStorageTransactionRunner(<[^>]*>)?\(/g)?.length, 1)
 		for (const path of [settingsStorageModulePaths.settings, settingsStorageModulePaths.storageVariables, settingsStorageModulePaths.settingsImport]) {
 			assert.doesNotMatch(fs.readFileSync(path, 'utf8'), /(websiteAccess|signingAddressPreferences|userAddressBookEntries)\w*Semaphore/, `${ path } keeps its own lock for a settings storage writer`)
 		}

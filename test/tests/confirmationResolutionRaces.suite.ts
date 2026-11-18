@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import { InterceptedRequestForward } from '../../app/ts/types/interceptor-messages.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, waitForPendingTransactionsToClear, withSilencedConsole, EIP712Message, getStoredAcceptReview, getPendingSafeProposal } from './confirmTransactionTestHarness.js'
 
 // A page chooses its own JSON-RPC request ids, so it can send a new request under the id of one whose popup was just closed.
@@ -546,22 +547,34 @@ test('a terminal reply waiting for the reply outbox does not hold up other pendi
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map(({ instanceId }) => instanceId), ['unrelated instance'])
 })
 
-test('a wallet reply is not queued for a request that left the signer while the reply waited for the reply outbox', async () => {
+test('a wallet reply is not queued for a request that left the signer while the reply waited for the pending-request storage lock', async () => {
 	const messagesPostedToPage: unknown[] = []
 	const page = await startPageConnection(messagesPostedToPage)
 	await sendPersonalSignFromPage(page, 'first message')
 	await approveAndForwardToSigner(page)
 	delete browserMock.storageState.pendingTerminalReplies
-	const outboxRead = holdNextStorageRead((key) => key === 'pendingTerminalReplies')
+	// A wallet failure is being stored, and its write is held, so it keeps the pending-request storage lock while the wallet reply arrives.
+	const failureWriteReached = Promise.withResolvers<void>()
+	const failureWriteReleased = Promise.withResolvers<void>()
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items) {
+			browserMock.setStorageSetHandler(undefined)
+			failureWriteReached.resolve()
+			await failureWriteReleased.promise
+		}
+		writeStoredItems()
+	})
 	try {
+		const failure = modules.updateStoredPendingRequest(pageRequestIdentifier, (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 123, message: 'wallet failed' } }))
+		await failureWriteReached.promise
 		const walletReply = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, page.connections, { method: 'popup_confirmDialog', data: { action: 'signerIncluded', signerReply: OLD_SIGNATURE, uniqueRequestIdentifier: pageRequestIdentifier } })
-		await outboxRead.reached
-		assert.equal(await settledOrBlocked(modules.updateStoredPendingRequest(pageRequestIdentifier, (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 123, message: 'wallet failed' } }))), true)
-		outboxRead.release()
+		assert.equal(await settledOrBlocked(walletReply), 'blocked')
+		failureWriteReleased.resolve()
+		assert.equal(await failure, true)
 		assert.equal(await walletReply, false)
 	} finally {
-		outboxRead.release()
-		outboxRead.restore()
+		failureWriteReleased.resolve()
+		browserMock.setStorageSetHandler(undefined)
 	}
 	assert.equal((await getOnlyPendingRequest()).approvalStatus.status, 'SignerError')
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
@@ -589,7 +602,9 @@ test('a terminal reply is stored with its decision only: a decision that leaves 
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	const queued = await modules.getPendingTerminalReplies()
 	assert.equal(queued.length, 1)
-	assert.equal(isRecord(queued[0]) && isRecord(queued[0].error) && queued[0].error.code, 4100)
+	assert.equal(queued[0]?.answeredInstanceId, pending.instanceId, 'the queued reply records the instance it answers')
+	const queuedReply = queued[0]?.reply
+	assert.equal(isRecord(queuedReply) && isRecord(queuedReply.error) && queuedReply.error.code, 4100)
 })
 
 test('a decision that queues nothing still finishes an earlier reply delivered while it waited, so the next reply under the id reaches the page', async () => {
@@ -757,9 +772,9 @@ test('after a restart, a reconnecting page gets a queued popup-close rejection o
 	const page = await startPageConnection(messagesPostedToPage)
 	await sendPersonalSignFromPage(page, 'first message')
 	const pending = await getOnlyPendingRequest()
-	// What the popup-close claim write leaves when the background stops before delivering: the request marked ClosedWithoutResponse and its rejection queued, with none of the in-memory delivery state a restart loses.
+	// What the popup-close claim write leaves when the background stops before delivering: the request marked ClosedWithoutResponse and its rejection queued with the instance it answers, with none of the in-memory delivery state a restart loses.
 	await modules.updateStoredPendingRequest(pageRequestIdentifier, (current) => ({ ...current, approvalStatus: { status: 'ClosedWithoutResponse' } }))
-	await modules.browserStorageLocalSet({ pendingTerminalReplies: [rejectionOf(pending)] })
+	await modules.browserStorageLocalSet({ pendingTerminalReplies: [{ reply: rejectionOf(pending), answeredInstanceId: pending.instanceId }] })
 
 	// The page reconnects and its queued replies are flushed.
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket), 1)
@@ -770,4 +785,37 @@ test('after a restart, a reconnecting page gets a queued popup-close rejection o
 	browserMock.setLiveWindowIds([])
 	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, page.connections)
 	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+})
+
+test('rejecting one of two requests stored under one request id without instance ids removes it, reports the removal and answers the website', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	// Storage written before instance ids and the duplicate-id refusal existed can hold two requests under one request id, and both parse as the legacy instance id.
+	const [storedRequest] = Array.isArray(browserMock.storageState.pendingTransactionsAndMessages) ? browserMock.storageState.pendingTransactionsAndMessages : []
+	if (!isRecord(storedRequest)) throw new Error('Expected a stored request')
+	const { instanceId: _instanceId, ...legacyRequest } = storedRequest
+	browserMock.storageState.pendingTransactionsAndMessages = [legacyRequest, { ...legacyRequest }]
+	const legacyRequests = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(legacyRequests.map((pending) => pending.instanceId), ['legacy', 'legacy'])
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, page.connections, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: pageRequestIdentifier, instanceId: 'legacy' } }), true)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, 'only the rejected request left the queue')
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1, 'the website got its rejection')
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+})
+
+test('an outbox entry stored before instance ids existed is delivered once and removed alone, as it answers no pending request', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	// Older versions stored the bare reply, without the instance it answers.
+	browserMock.storageState.pendingTerminalReplies = [modules.serialize(InterceptedRequestForward, rejectionOf(pending))]
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map(({ answeredInstanceId }) => answeredInstanceId), [undefined])
+
+	assert.equal(await modules.flushPendingTerminalRepliesForSocket(page.connections, pageRequestIdentifier.requestSocket), 1)
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map(({ instanceId, approvalStatus }) => [instanceId, approvalStatus.status]), [[pending.instanceId, 'WaitingForUser']], 'a reply that names no instance completes no pending request')
 })

@@ -850,7 +850,7 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 	assert.equal(await modules.prunePendingTerminalRepliesForMissingTabs(), 1)
 	const remainingReplies = await modules.getPendingTerminalReplies()
 	assert.equal(remainingReplies.length, 1)
-	assert.equal(remainingReplies[0]?.uniqueRequestIdentifier.requestSocket.tabId, liveTabId)
+	assert.equal(remainingReplies[0]?.reply.uniqueRequestIdentifier.requestSocket.tabId, liveTabId)
 	assert.equal(browserMock.storageState.popupRefreshGeneration, 23)
 	delete browserMock.storageState.pendingTerminalReplies
 })
