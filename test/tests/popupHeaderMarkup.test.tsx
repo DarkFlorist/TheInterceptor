@@ -300,8 +300,7 @@ describe('popup header markup', () => {
 		await act(() => {
 			render(h(CheckBoxes, {
 				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
-				approvalAcknowledgement: new Signal(undefined),
-				acknowledgedApprovalKey: new Signal<string | undefined>(undefined),
+				forceSend: new Signal(false),
 			}), dom.document.body)
 		})
 
@@ -341,8 +340,7 @@ describe('popup header markup', () => {
 		await act(() => {
 			render(h(CheckBoxes, {
 				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
-				approvalAcknowledgement: new Signal(undefined),
-				acknowledgedApprovalKey: new Signal<string | undefined>(undefined),
+				forceSend: new Signal(false),
 				addressBookEntries: [fromEntry],
 			}), dom.document.body)
 		})
@@ -380,8 +378,7 @@ describe('popup header markup', () => {
 		await act(() => {
 			render(h(CheckBoxes, {
 				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
-				approvalAcknowledgement: new Signal(undefined),
-				acknowledgedApprovalKey: new Signal<string | undefined>(undefined),
+				forceSend: new Signal(false),
 				addressBookEntries: [fromEntry, toEntry],
 			}), dom.document.body)
 		})
