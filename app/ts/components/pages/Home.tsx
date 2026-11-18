@@ -1026,11 +1026,8 @@ export function Home(param: HomeParams) {
 	}
 	if (param.rpcNetwork.value === undefined) return <></>
 
+	// A network without an RPC is reported by the mode banner (getHomeProtection), which says whether its requests are still intercepted.
 	return <>
-		{ param.rpcNetwork.value.httpsRpc === undefined ?
-			<ErrorComponent text = { `${ param.rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ param.rpcNetwork.value.name }.` }/>
-		: <></> }
-
 		<FirstCard
 			isActiveAddressChanging = { param.isActiveAddressChanging }
 			isActiveAddressChangePending = { param.isActiveAddressChangePending }

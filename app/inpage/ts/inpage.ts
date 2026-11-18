@@ -732,6 +732,8 @@ class InterceptorMessageListener {
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
+	// The page's one statement of whether it has a wallet to forward requests to. Every request carries it as usingInterceptorWithoutSigner, which the background routes by, and the signer handshake reports it as signerConnected, which the popup's protection status reads, so the two cannot disagree.
+	private readonly hasWalletToForwardTo = () => this.signerWindowEthereumRequest !== undefined
 	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private extensionMessagePort: MessagePort | undefined = undefined
 	private readonly subscribedSignerProviders = new WeakSet<object>()
@@ -885,7 +887,7 @@ class InterceptorMessageListener {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
 				params: messageMethodAndParams.params,
-				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
+				usingInterceptorWithoutSigner: !this.hasWalletToForwardTo(),
 				requestId: pendingRequestId,
 				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
 				...(replayOnDisconnect ? { replayOnDisconnect: true as const } : {}),
@@ -929,7 +931,7 @@ class InterceptorMessageListener {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: 'InterceptorError',
 				params: [diagnostics],
-				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
+				usingInterceptorWithoutSigner: !this.hasWalletToForwardTo(),
 				requestId: -1,
 				internal: true,
 			}
@@ -1798,8 +1800,8 @@ class InterceptorMessageListener {
 		}
 		const selectionGeneration = ++this.signerSelectionGeneration
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			// Reports whether the page has a wallet to forward to by the same fact every request carries as usingInterceptorWithoutSigner, so the tab's stored signerConnected and the background's routing never disagree.
-			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [this.signerWindowEthereumRequest !== undefined, signerName, signerProviderGeneration] })
+			// signerConnected is hasWalletToForwardTo, the same fact every request carries as usingInterceptorWithoutSigner.
+			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [this.hasWalletToForwardTo(), signerName, signerProviderGeneration] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {

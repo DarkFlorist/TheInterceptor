@@ -460,6 +460,17 @@ describe('Home popup clear empty state', () => {
 		// The page named a wallet but reported no wallet to forward to, so its requests carry usingInterceptorWithoutSigner and are still intercepted; the popup reads that same fact (signerConnected), not the name.
 		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerConnected: false, notice: 'No RPC for this network.', interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 	] as const
+	// The routing and the popup read the page's wallet fact from different messages; both values come from the page's one hasWalletToForwardTo, so neither side re-derives it.
+	test('takes the routing and the protection status from the page\'s one wallet fact', async () => {
+		const inpageSource = await Bun.file('app/inpage/ts/inpage.ts').text()
+		assert.equal([...inpageSource.matchAll(/usingInterceptorWithoutSigner: !this\.hasWalletToForwardTo\(\),/g)].length, 2)
+		// Every value the page sends for the flag (type annotations aside) comes from hasWalletToForwardTo.
+		assert.doesNotMatch(inpageSource, /usingInterceptorWithoutSigner: (?!boolean\b|!this\.hasWalletToForwardTo\(\))/)
+		assert.match(inpageSource, /method: 'connected_to_signer', params: \[this\.hasWalletToForwardTo\(\), /)
+		assert.match(await Bun.file('app/ts/background/background.ts').text(), /isForwardingRequestsToSigner\(settings\.simulationMode, !request\.usingInterceptorWithoutSigner\)/)
+		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /const signerAvailable = tabState\?\.signerConnected === true/)
+	})
+
 	for (const unprotectedState of unprotectedStates) {
 		const { state, simulationMode, signerName, notice, interceptionOff, overrides, restore } = unprotectedState
 		const signerConnected = 'signerConnected' in unprotectedState ? unprotectedState.signerConnected : undefined
@@ -478,6 +489,8 @@ describe('Home popup clear empty state', () => {
 				const unprotectedText = dom.document.body.textContent ?? ''
 				assert.deepEqual(findProtectionPromises(unprotectedText), [])
 				assert.equal(unprotectedText.includes(notice), true)
+				// The banner is the page's only protection status, so nothing else claims the Interceptor is disabled while it still intercepts.
+				assert.equal(unprotectedText.includes('The Interceptor is disabled while'), false)
 				assert.equal(unprotectedText.includes('neither simulated nor reviewed'), interceptionOff)
 				// The empty state or signing hint is still shown, with the notice instead of a promise.
 				assert.equal(unprotectedText.includes(simulationMode ? 'Nothing simulated yet' : 'Nothing to review'), true)

@@ -15,7 +15,7 @@ export type PageDefinition = {
 }
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
-// The stylesheets every page loads; a later file overrides an earlier one at equal specificity. `interceptor-layout.css` scopes its rules under `:root`, so its classes outrank shared rules of the same weight without relying on being last.
+// The stylesheets every page loads. Every one declares the cascade layer order `@layer shared, layout;`: the shared stylesheets' rules are in `shared`, where a later file overrides an earlier one at equal specificity, and `interceptor-layout.css` is in `layout`, which outranks every shared rule whatever its position in this list.
 export const stylesheetFilenames = [
 	'interceptor-framework.css',
 	'interceptor-controls.css',

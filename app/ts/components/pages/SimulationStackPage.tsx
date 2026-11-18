@@ -407,7 +407,7 @@ export function SimulationStackPage() {
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 				{ rpcNetwork.value?.httpsRpc === undefined && rpcNetwork.value !== undefined ?
-					<ErrorComponent text = { `${ rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.value.name }.` }/>
+					<ErrorComponent text = { `${ rpcNetwork.value.name } has no configured RPC, so the Interceptor cannot simulate its transactions.` }/>
 				: <></> }
 				<CenterToPageTextSpinner/>
 			</> : <>
@@ -424,7 +424,7 @@ export function SimulationStackPage() {
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					{ rpcNetwork.value?.httpsRpc === undefined && rpcNetwork.value !== undefined ?
-						<ErrorComponent text = { `${ rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.value.name }.` }/>
+						<ErrorComponent text = { `${ rpcNetwork.value.name } has no configured RPC, so the Interceptor cannot simulate its transactions.` }/>
 					: <></> }
 					<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
 					{ !stackModeActive.value ?
