@@ -22,7 +22,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getWethForChainId, getSettingsSnapshot, requireReadableSettings } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -49,7 +49,7 @@ const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bi
 }
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
+	const settings = settingsSnapshot ?? requireReadableSettings(await getSettingsSnapshot())
 	if (!settings.simulationMode) return []
 	const currentAddressBeingRich = await getAddressToMakeRich(settings)
 	const makeRichAddressList = await getFixedAddressRichList()
@@ -58,7 +58,7 @@ export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => 
 
 export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
 	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		settingsSnapshot ?? getSettings(),
+		settingsSnapshot ?? getSettingsSnapshot().then(requireReadableSettings),
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
@@ -133,8 +133,8 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
-	const settings = await getSettings()
+export async function captureSimulationSnapshot(settingsSnapshot?: Settings): Promise<SimulationSnapshot> {
+	const settings = settingsSnapshot ?? requireReadableSettings(await getSettingsSnapshot())
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
@@ -554,7 +554,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		return entry
 	}
 	const weth = await getWeth()
-	const settings = await getSettings()
+	const settings = requireReadableSettings(await getSettingsSnapshot())
 	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(

@@ -1,3 +1,4 @@
+import { getRequiredSettings } from './requiredSettings.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
@@ -17,7 +18,8 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 	const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
 	const setIconCalls: browser.action._SetIconDetails[] = []
 	const setTitleCalls: browser.action._SetTitleDetails[] = []
-	const dynamicRules: { readonly id: number, readonly condition: { readonly initiatorDomains?: readonly string[] } }[] = []
+	type DynamicRule = { readonly id: number, readonly condition: { readonly initiatorDomains?: readonly string[] } }
+	const dynamicRules: DynamicRule[] = []
 
 	globalThis.browser = {
 		runtime: {
@@ -88,9 +90,10 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 		declarativeNetRequest: {
 			async getDynamicRules() { return [...dynamicRules] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules(update: { readonly removeRuleIds?: readonly number[], readonly addRules?: readonly { readonly id: number, readonly condition: { readonly initiatorDomains?: readonly string[] } }[] }) {
-				const remaining = dynamicRules.filter((rule) => update.removeRuleIds?.includes(rule.id) !== true)
-				dynamicRules.splice(0, dynamicRules.length, ...remaining, ...(update.addRules ?? []))
+			async updateDynamicRules(update: { readonly removeRuleIds?: readonly number[], readonly addRules?: readonly DynamicRule[] }) {
+				const remainingRules = dynamicRules.filter((rule) => update.removeRuleIds?.includes(rule.id) !== true)
+				dynamicRules.splice(0, dynamicRules.length, ...remainingRules, ...(update.addRules ?? []))
+				return undefined
 			},
 			async updateSessionRules() { return undefined },
 		},
@@ -109,9 +112,11 @@ function installBrowserMock(tabs: readonly MockTab[]) {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
+		...await import('../../app/ts/background/requestBlocking.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/iconHandler.js'),
 		...await import('../../app/ts/background/settings.js'),
+		getRequiredSettings,
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
@@ -147,11 +152,11 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 1)
 	})
@@ -169,7 +174,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 0)
 		assert.equal(setTitleCalls.length, 1)
 		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
@@ -188,7 +193,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
+		await updateExtensionIcon(1, 'example.test')
 		assert.equal(setIconCalls.length, 1)
 		assert.equal(setTitleCalls.length, 0)
 		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
@@ -204,6 +209,8 @@ describe('extension icon deduping', () => {
 			access: false,
 			declarativeNetRequestBlockMode: 'block-all',
 		}])
+		// The icon reports applied blocking only, so the site rule is applied first.
+		await updateDeclarativeNetRequestBlocks(new Map())
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			tabIconDetails: {
@@ -212,8 +219,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateDeclarativeNetRequestBlocks(new Map())
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(1, 'example.test', 0)
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
@@ -221,7 +227,7 @@ describe('extension icon deduping', () => {
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -245,7 +251,7 @@ describe('extension icon deduping', () => {
 		await updateWebsiteApprovalAccesses(
 			undefined,
 			websiteTabConnections,
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 			0,
 		)
@@ -257,7 +263,7 @@ describe('extension icon deduping', () => {
 
 	test('access refresh updates stale icons for tabs without active connections', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -272,7 +278,7 @@ describe('extension icon deduping', () => {
 		await updateWebsiteApprovalAccesses(
 			undefined,
 			new Map(),
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 			0,
 		)
@@ -285,7 +291,7 @@ describe('extension icon deduping', () => {
 	})
 
 	test('imported mode change updates tabs without active connections', async () => {
-		const { changeSimulationMode, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const importedSettingsReply = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
@@ -322,18 +328,18 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } }, new Map())
+		const { reply: importSettingsReply } = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } }, new Map())
 		assert.equal(importSettingsReply.data.success, true)
 		await updateWebsiteApprovalAccesses(
 			undefined,
 			new Map(),
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 			0,
 		)
 		await flushAsyncWork()
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(settings.simulationMode, false)
 
@@ -495,7 +501,7 @@ describe('extension icon deduping', () => {
 			activeSigningAddress: signerAccount,
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(1, 'example.test', 0)
 		return setTitleCalls.at(-1)?.title ?? ''
 	}
 

@@ -1,3 +1,5 @@
+import { getContentScriptInjectionConfiguration as readContentScriptInjectionConfiguration } from '../background/contentScriptInjectionConfigurationLoader.js'
+
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
@@ -53,11 +55,13 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async ({ injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
+export const updateContentScriptInjectionStrategyManifestV3 = async (configuration?: ContentScriptRegistrationConfiguration) => {
+	const { injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } } = configuration ?? await readContentScriptInjectionConfiguration()
 	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 	let previousRegisteredContentScripts: RegisteredContentScript[] | undefined
 	let registrationMutationStarted = false
+
 	try {
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -130,6 +134,7 @@ type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptRegistr
 const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
 	const { injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } } = await getContentScriptInjectionConfiguration()
+
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
@@ -151,8 +156,13 @@ const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScr
 
 let registeredManifestV2InjectLogic: ReturnType<typeof createInjectLogic> | undefined
 
-export const updateContentScriptInjectionStrategyManifestV2 = async (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => {
+export const updateContentScriptInjectionStrategyManifestV2 = async (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration = readContentScriptInjectionConfiguration) => {
 	if (registeredManifestV2InjectLogic !== undefined) browser.webNavigation.onCommitted.removeListener(registeredManifestV2InjectLogic)
 	registeredManifestV2InjectLogic = createInjectLogic(getContentScriptInjectionConfiguration)
 	browser.webNavigation.onCommitted.addListener(registeredManifestV2InjectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
 }
+
+// Explicit reconciliation callers need registration failures to reach their failure collector.
+export const updateContentScriptInjectionStrategy = async () => browser.runtime.getManifest().manifest_version === 3
+	? await updateContentScriptInjectionStrategyManifestV3()
+	: await updateContentScriptInjectionStrategyManifestV2()

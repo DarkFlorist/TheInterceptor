@@ -22,7 +22,9 @@
 				"app/inpage/ts/listenContentScriptBootstrap.ts",
 				"app/ts/simulationStack.ts",
 				"test/tests/*.test.ts",
-				"test/tests/*.ts"
+				"test/tests/*.ts",
+				// accessReconciliationArchitecture.test.ts compiles these with the TypeScript API instead of importing them
+				"test/fixtures/accessReconciliation/*.ts"
 			],
 			"project": [
 				"app/ts/**/*.{ts,tsx}",

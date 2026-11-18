@@ -89,7 +89,7 @@ async function bootstrapConfirmTransactionDialog(
 ) {
 	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS && !isBootstrapDone(); attempt++) {
 		const handshake = sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
-			if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+			if (reply?.method === 'popup_readyAndListening' && reply.ok && reply.data.confirmTransactionBootstrap !== undefined) {
 				applyBootstrapData(reply.data.confirmTransactionBootstrap)
 			}
 		})
@@ -874,7 +874,7 @@ export function ConfirmTransaction() {
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
+				if (parsed.data.rpcStatus.available) rpcEntries.value = parsed.data.rpcStatus.rpcEntries
 				return false
 			}
 			if (parsed.method === 'popup_UnexpectedErrorOccured') {

@@ -5,7 +5,7 @@ import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot, updateWebsiteAccess, requireReadableSettings } from './settings.js'
-import { grantWithLiveSettings } from './connectionGrant.js'
+import { assertLiveSettingsInGrantWindow, type LiveSettings, grantWithLiveSettings } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -98,7 +98,8 @@ type VerifyAccessOptions = {
 }
 
 // Can approve the connection and announce the settings' chain to the page, so it takes LiveSettings, which only grantWithLiveSettings's synchronous grant receives.
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: LiveSettings, options: VerifyAccessOptions = {}): ApprovalState {
+	assertLiveSettingsInGrantWindow(settings)
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
@@ -112,7 +113,7 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 		)
 		// No caller waits for these, so their failures are reported here; the icon follows the reconciled blocks whether or not the follow-ups failed.
 		void (async () => {
-			const failures = await runEachIndependently([async () => await grantFollowUps, async () => await updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, popupRefreshGeneration)], async (step) => await step())
+			const failures = await runEachIndependently([async () => await grantFollowUps, async () => await updateExtensionIcon(socket.tabId, websiteOrigin, popupRefreshGeneration)], async (step) => await step())
 			await surfaceFailures(failures, reportAsUnexpectedError, { throwFirst: false })
 		})()
 		return 'hasAccess'
@@ -196,9 +197,10 @@ const collectFailure = (step: () => void): readonly unknown[] => {
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	settings: Settings,
+	settings: LiveSettings,
 	connectWithActiveAddress: bigint | undefined,
 ): Promise<void> {
+	assertLiveSettingsInGrantWindow(settings)
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
@@ -367,7 +369,7 @@ async function withAccessReconciliationLock<Result>(websiteTabConnections: Websi
 }
 
 // The access reconciliation rule. Runs are serialized under accessReconciliationLocks. Access is granted only from the current persisted state read inside the lock: the unpinned settings snapshot (active RPC network and approvals, so connection events use the current network too) and, per connection, tab state, address book and signer state; a run that waited for the lock therefore never applies state older than an earlier run's, and the reconciliation that follows a committed write applies after every run already in flight. Anything that keeps the settings read from producing available settings (an unavailable snapshot or a rejected read) makes the run revoke-only with `committedSettings`, which the caller read after its committed write. Every connection is reconciled, and each step's failure (request-block update, a rejected settings read, active-address lookup, disconnect or connect notification) is collected independently, in order: this function surfaces them itself, and the collecting variant returns them to the committed-write operation's single collector.
-export async function reconcileWebsiteApprovalAccesses(
+async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	committedSettings: Settings,
 	throwOnError = false,
@@ -439,7 +441,7 @@ export async function finishWebsiteAccessUpdate(
 			addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
 		}
 		await Promise.all([...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
-			updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, update.popupRefreshGeneration)
+			updateExtensionIcon(tabId, websiteOrigin, update.popupRefreshGeneration)
 		))
 	} catch (error) {
 		if (throwOnError) throw error
@@ -556,12 +558,3 @@ export async function reconcileCommittedAccessChangeCollectingFailures(websiteTa
 		return [error]
 	}
 }
-
-// Compatibility for existing write callers; replaced by scoped committed-change entry points in the admission layer.
-export async function finalizeWebsiteAccessChange(simulationServicesOwner: SimulationServicesOwner | undefined, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded: boolean): Promise<Settings> {
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settings, promptForAccessesIfNeeded)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return settings
-}
-export { updateDeclarativeNetRequestBlocks } from './requestBlocking.js'
-export { areWeBlocking } from './requestBlocking.js'

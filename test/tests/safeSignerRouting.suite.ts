@@ -128,7 +128,89 @@ test('settles a direct signing reply while RPC services are unavailable', async 
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
+test('replays a Safe signature deferred while only the RPC configuration was unreadable once retrying recovers it', async () => {
+	const { retryRpcConfiguration } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+	const socket = { tabId: 1, connectionName: 47n }
+	const requestIdentifier = { requestId: 88, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: { connectionName: socket.connectionName, confirmed: true, generation: 3, providerGeneration: 8 },
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+			signerRequestChainId: fakeRpcNetwork.chainId,
+			safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: safeTestOwnerAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeTestOwnerAddress], threshold: 2n },
+				safeTxHash,
+				safeTx,
+			} },
+		}],
+	})
+	// The owner keeps its installed services for the whole outage; only reading the RPC configuration fails.
+	let deferredReplay: Promise<void> | undefined
+	const simulationServicesOwner = createSimulationServicesOwner(fakeRpcNetwork, async () => undefined, async () => undefined, {}, () => {
+		deferredReplay = modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+	})
+	let rpcConfigurationReadable = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!rpcConfigurationReadable && Array.isArray(keys) && keys.includes('rpcEntries')) throw new Error('Storage read failed')
+		return readStoredItems()
+	})
 
+	await modules.signerReply(simulationServicesOwner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: 'eth_signTypedData_v4',
+				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
+				requestId: requestIdentifier.requestId,
+			},
+			reply: signature,
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 89, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+	assert.notEqual(simulationServicesOwner.getCurrent(), undefined)
+	// The website has its proposal hash right away; the signed proposal waits in the outbox, not in the pending queue.
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual((await modules.getPendingSafeProposalStores()).map((entry) => entry.signerReply), [signature])
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+
+	rpcConfigurationReadable = true
+	await retryRpcConfiguration(simulationServicesOwner, new Map(), undefined, async () => [])
+	await deferredReplay
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await modules.getPendingSafeProposalStores(), [])
+	const [persistedStack] = await modules.getSafeTransactionStacks()
+	assert.deepEqual(persistedStack?.transactions[0]?.signatures, [{ signer: safeTestOwnerAddress, signature }])
+	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId && message.result === modules.EthereumBytes32.serialize(safeTxHash)).length, 1)
+	simulationServicesOwner.clear()
+})
 
 // Runs `interleaved` once, the first time the signer reply reads the pending requests (after it captured its services, before it writes its deferral).
 function runOnceWhenTheSignerReplyReadsItsRequest(interleaved: () => Promise<void>) {
@@ -767,7 +849,27 @@ test('claims and settles a Safe signature once after writing its claim failed tr
 })
 
 // During an RPC outage the popup's Reject is admitted without RPC services or settings, and the rejection lifecycle answers the website and removes the request.
+test('a popup Reject during an RPC outage rejects the website and removes the request', async () => {
+	const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+	const proposal = await storeSafeProposalAwaitingSignerOnChainA(140, 75n)
+	const owner = createTestSimulationServicesOwner(simulator)
+	owner.clear()
+	const context = {
+		websiteTabConnections: proposal.websiteTabConnections,
+		simulationServicesOwner: owner,
+		settings: undefined,
+		rpcConfiguration: { status: 'unavailable' as const, reason: 'corrupt' as const },
+		publishRpcConnectionStatus: async () => undefined,
+		simulationAbortController: new AbortController(),
+		confirmTransactionAbortController: new AbortController(),
+		resetSimulationState: async () => { throw new Error('reset must not run') },
+	}
 
+	assert.equal(await dispatchPopupMessage(context, { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: proposal.requestIdentifier } }), undefined)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	await assertOnlyTheRejectionAnswered(proposal)
+})
 
 // A recovery pass advances each request and outbox entry as its own step. A claimed request whose validation fails transiently (only for its Safe) comes first, and an outbox proposal whose Safe now reverts on every call comes before a healthy one: the answered request after the claim is finished with its own reply, the healthy outbox proposal is stored, and the reverting one is dropped with a visible failure (its website already has its reply) instead of being retried on every block. The pass still fails with the transient error, and the claim stays for its retries.
 test('a recovery pass finishes later requests and the outbox while earlier items keep failing', async () => {

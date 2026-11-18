@@ -1,49 +1,87 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
-import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { importSettingsAndAddressBook } from '../settingsImport.js'
+import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
+import type { ImportSettings, ImportSettingsReply, PopupRpcStatus, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
-import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { Semaphore } from '../../utils/semaphore.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
-import { importSettingsAndAddressBook } from '../settingsImport.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, settingsEvenIfRpcConfigurationUnusable, type SettingsSnapshot } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
+import { DEFAULT_RPCS } from '../../config/defaults.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { applyRpcServicesChange, readRpcConfigurationRetry, type RpcListTransitionResult, transitionRpcList } from '../rpcConfigurationLifecycle.js'
+import { reconcileAfterIndependentSteps, throwAfterFollowUp } from '../committedWriteReconciliation.js'
+import { rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationAvailability.js'
 
-export async function settingsOpened() {
-	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
-	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
-	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
-	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
-	await sendPopupMessageToOpenWindows({
-		method: 'popup_requestSettingsReply' as const,
-		data: {
-			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
-			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
-			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
-			rpcEntries: await rpcEntriesPromise,
-			activeRpcNetwork: (await settingsPromise).activeRpcNetwork
+type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings | undefined, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<readonly unknown[]>
+
+// Published when the RPC configuration could not be read at all: the Settings RPC section then offers Retry and Restore.
+const UNREADABLE_RPC_STATUS: PopupRpcStatus = { available: false, readableActiveRpcNetwork: undefined }
+
+function getPopupRpcStatus(settingsSnapshot: SettingsSnapshot, simulationServicesOwner: SimulationServicesOwner): PopupRpcStatus {
+	const { rpcConfiguration } = settingsSnapshot
+	if (!rpcConfigurationIsReady(rpcConfiguration) || !rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)) return { available: false, readableActiveRpcNetwork: settingsEvenIfRpcConfigurationUnusable(settingsSnapshot)?.activeRpcNetwork }
+	return { available: true, rpcEntries: rpcConfiguration.rpcEntries, activeRpcNetwork: rpcConfiguration.activeRpcNetwork }
+}
+
+// Every RPC status the Settings page is sent (the settings reply and every RPC list update) is read and published inside this lock, from the configuration stored when the lock is held. Publications therefore go out in the order they were read, so a slow request can never publish a status older than one already published.
+const rpcStatusPublicationSemaphore = new Semaphore(1)
+
+const publishRpcListUpdate = async (rpcStatus: PopupRpcStatus) => await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: rpcStatus })
+
+// A failed storage read is not thrown: getSettingsSnapshot returns it as the 'read-failed' unavailable configuration, published here as an unavailable status, and the Settings alert with Retry and Restore is how it is surfaced (deliberately not as an unexpected error). The catch handles only an unexpected exception while reading or forming the status: it still publishes the unreadable status so the RPC section leaves loading, then rethrows for the caller to report once.
+async function publishCurrentRpcStatus(simulationServicesOwner: SimulationServicesOwner, publish: (rpcStatus: PopupRpcStatus) => Promise<void> = publishRpcListUpdate) {
+	await rpcStatusPublicationSemaphore.execute(async () => {
+		let rpcStatus: PopupRpcStatus
+		try {
+			rpcStatus = getPopupRpcStatus(await getSettingsSnapshot(), simulationServicesOwner)
+		} catch (unexpectedError: unknown) {
+			return await throwAfterFollowUp(unexpectedError, async () => await publishRpcListUpdate(UNREADABLE_RPC_STATUS))
 		}
+		await publish(rpcStatus)
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
+// The preference getters read storage directly and take no lock, so they are safe to read inside the publication lock.
+async function readSettingsPreferences() {
+	const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode] = await Promise.all([getUseTabsInsteadOfPopup(), getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode()])
+	return { useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode }
+}
+
+// The reply's RPC status and preferences are both read and published inside the publication lock, so replies go out in the order they were read and none shows values older than an earlier reply. An unreadable RPC configuration is part of the reply (see publishCurrentRpcStatus). When the preferences cannot be read, the RPC status is still published, as an RPC list update, so the RPC section leaves loading, and the preference error reaches the caller, which reports it.
+export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
+	await publishCurrentRpcStatus(simulationServicesOwner, async (rpcStatus) => {
+		const preferences = await readSettingsPreferences().catch(async (preferenceError: unknown) => await throwAfterFollowUp(preferenceError, async () => await publishRpcListUpdate(rpcStatus)))
+		await sendPopupMessageToOpenWindows({ method: 'popup_requestSettingsReply', data: { ...preferences, rpcStatus } })
+	})
+}
+
+type SettingsImportOutcome = { readonly reply: ImportSettingsReply, readonly postCommitFailures: readonly unknown[] }
+
+// A failed followup cannot turn a committed import into a failed write: the registry must still install services and revoke imported denials.
+export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<SettingsImportOutcome> {
 	if (!isJSON(settingsData.data.fileContents)) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }, postCommitFailures: [] }
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }, postCommitFailures: [] }
 	}
+	const committedReply: ImportSettingsReply = { method: 'popup_initiate_export_settings_reply', data: { success: true } }
+	let committed = false
 	try {
-		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
+		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => {
+			await importSettingsAndAddressBook(parsed.value)
+			committed = true
+		})
 	} catch (error: unknown) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
+		if (committed) return { reply: committedReply, postCommitFailures: [error] }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }, postCommitFailures: [] }
 	}
-	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
+	return { reply: committedReply, postCommitFailures: [] }
 }
 
 export async function exportSettings() {
@@ -54,9 +92,27 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
-	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
+// A committed RPC configuration write runs under the committed-write rule with one failure collector (reconcileAfterIndependentSteps): its services change and then its RPC status publication are independent steps, its recovery publication (which reconciles website access and returns its own failures) always runs after them, and their failures are surfaced afterwards in the order they occurred, the first thrown and the rest reported.
+async function completeRpcListTransition(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, transition: RpcListTransitionResult, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
+	await reconcileAfterIndependentSteps([
+		async () => applyRpcServicesChange(simulationServicesOwner, transition.servicesChange),
+		async () => await publishCurrentRpcStatus(simulationServicesOwner),
+	], async () => transition.publishRecovery ? await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, transition.activeRpcNetwork, transition.forceChainChanged) : [])
+}
+
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
+	await completeRpcListTransition(simulationServicesOwner, websiteTabConnections, await transitionRpcList(simulationServicesOwner, request.data, 'edit'), settings, publishRecovery)
+}
+
+export async function restoreDefaultRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
+	await completeRpcListTransition(simulationServicesOwner, websiteTabConnections, await transitionRpcList(simulationServicesOwner, DEFAULT_RPCS, 'restore-defaults'), settings, publishRecovery)
+}
+
+// Retry writes nothing, but follows the same rule: the services change and the RPC status publication are independent steps, and a ready configuration is then published as recovered even if either failed. Like Restore and saving the list, it publishes through publishRecovery, which reconciles website approvals as well as request blocks, so access changes saved during the outage (a denial, for example) are applied to open connections once the configuration is readable again.
+export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings | undefined, publishRecovery: PublishRpcConfigurationRecovery) {
+	const { retriedConfiguration, servicesChange } = await readRpcConfigurationRetry()
+	await reconcileAfterIndependentSteps([
+		async () => applyRpcServicesChange(simulationServicesOwner, servicesChange),
+		async () => await publishCurrentRpcStatus(simulationServicesOwner),
+	], async () => retriedConfiguration === undefined ? [] : await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, retriedConfiguration.activeRpcNetwork))
 }
