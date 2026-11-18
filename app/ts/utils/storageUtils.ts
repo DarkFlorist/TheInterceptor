@@ -111,6 +111,7 @@ const QueuedTerminalReplyEntry = funtypes.ReadonlyObject({ reply: InterceptedReq
 // Entries stored before instance ids existed are bare replies. That version removed a request in the write after queueing its reply and had no popup-close state that kept a request waiting for its reply, so such a reply answers no request still pending: it parses as answering no instance, is delivered, and is then removed from the outbox alone.
 const LegacyQueuedTerminalReply = InterceptedRequestForward.withParser({
 	parse: (reply) => ({ success: true, value: { reply, answeredInstanceId: undefined } }),
+	// A withParser serializer returns the underlying runtype's parsed value, which funtypes then serializes with InterceptedRequestForward itself, so the reply is stored in its wire form (storedPendingTerminalReplies.test.ts rewrites a legacy entry and reads it back).
 	serialize: (entry: { readonly reply: InterceptedRequestForward, readonly answeredInstanceId: undefined }) => ({ success: true, value: entry.reply }),
 })
 export type QueuedTerminalReply = funtypes.Static<typeof QueuedTerminalReply>
