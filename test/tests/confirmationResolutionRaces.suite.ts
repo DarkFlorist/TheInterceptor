@@ -819,3 +819,27 @@ test('an outbox entry stored before instance ids existed is delivered once and r
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 	assert.deepEqual((await modules.getPendingTransactionsAndMessages()).map(({ instanceId, approvalStatus }) => [instanceId, approvalStatus.status]), [[pending.instanceId, 'WaitingForUser']], 'a reply that names no instance completes no pending request')
 })
+
+test('a reader that saw a corrupt reply outbox does not erase a reply queued while it was recovering', async () => {
+	const messagesPostedToPage: unknown[] = []
+	const page = await startPageConnection(messagesPostedToPage)
+	await sendPersonalSignFromPage(page, 'first message')
+	const pending = await getOnlyPendingRequest()
+	browserMock.storageState.pendingTerminalReplies = 'corrupt'
+	const outboxRead = holdNextStorageRead((key) => key === 'pendingTerminalReplies')
+	try {
+		// A reader outside any storage transaction, as flushing and startup pruning are, has read the corrupt outbox.
+		const recoveringRead = withSilencedConsole(async () => await modules.getPendingTerminalReplies())
+		await outboxRead.reached
+		// Meanwhile a transaction repairs the outbox and queues a rejection with the decision that removes its request.
+		assert.equal(await withSilencedConsole(async () => await modules.queueTerminalReplyWithPendingRequestDecision(rejectionOf(pending), pending, () => ({ type: 'remove' }))), 'removed')
+		outboxRead.release()
+		await recoveringRead
+	} finally {
+		outboxRead.release()
+		outboxRead.restore()
+	}
+	assert.deepEqual((await modules.getPendingTerminalReplies()).map(({ answeredInstanceId }) => answeredInstanceId), [pending.instanceId], 'the queued rejection survives the recovery')
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(page.connections, rejectionOf(pending), pending), true)
+	assert.equal(getTerminalRepliesTo(messagesPostedToPage, pageRequestIdentifier.requestId).length, 1)
+})

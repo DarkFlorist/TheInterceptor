@@ -12,40 +12,58 @@ const outboxStorageWrite = (pendingTerminalReplies: readonly QueuedTerminalReply
 
 const withoutReplyTo = (pendingTerminalReplies: readonly QueuedTerminalReply[], uniqueRequestIdentifier: UniqueRequestIdentifier) => pendingTerminalReplies.filter((entry) => !doesUniqueRequestIdentifiersMatch(entry.reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
 
+// Reads the outbox for a plan of runPendingRequestStorageTransaction, which must already hold its lock, so a corrupt outbox is replaced with an empty one only while no transaction can queue a reply in between. Reports whether it discarded corrupt data, for the caller to report once the lock is released.
+async function readOutboxInTransaction() {
+	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
+	if (parsedStorage !== undefined) return { pendingTerminalReplies: parsedStorage.pendingTerminalReplies ?? [], discardedCorruptOutbox: false }
+	await browser.storage.local.set(outboxStorageWrite([]))
+	return { pendingTerminalReplies: [], discardedCorruptOutbox: true }
+}
+
+const reportDiscardedCorruptOutbox = async () => await reportLocalRecovery(new Error('Stored pending terminal replies failed runtime validation.'), {
+	source: 'pending_terminal_replies',
+	code: 'pending_terminal_replies_corrupt',
+	message: 'Discarded corrupt pending terminal replies so wallet requests can continue.',
+})
+
+// Runs a plan of the pending-request storage transaction with the outbox as stored under its lock, and reports a discarded corrupt outbox after the lock is released.
+async function runWithOutbox<Result>(plan: (pendingTerminalReplies: readonly QueuedTerminalReply[]) => Promise<{ readonly writes: readonly PendingRequestStorageWrite[], readonly result: Result }>) {
+	const { result, discardedCorruptOutbox } = await runPendingRequestStorageTransaction(async () => {
+		const outbox = await readOutboxInTransaction()
+		const planned = await plan(outbox.pendingTerminalReplies)
+		return { writes: planned.writes, result: { result: planned.result, discardedCorruptOutbox: outbox.discardedCorruptOutbox } }
+	})
+	if (discardedCorruptOutbox) await reportDiscardedCorruptOutbox()
+	return result
+}
+
+// Reads the outbox outside any storage transaction. Only corrupt data takes the transaction lock, to read again and repair under it, so a reader that saw corrupt data never overwrites a reply a transaction queued meanwhile; it must not be called from inside a transaction plan, which would wait for that lock forever.
 export async function getPendingTerminalReplies(): Promise<readonly QueuedTerminalReply[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
 	if (parsedStorage !== undefined) return parsedStorage.pendingTerminalReplies ?? []
-	const validationError = new Error('Stored pending terminal replies failed runtime validation.')
-	await browser.storage.local.set(outboxStorageWrite([]))
-	await reportLocalRecovery(validationError, {
-		source: 'pending_terminal_replies',
-		code: 'pending_terminal_replies_corrupt',
-		message: 'Discarded corrupt pending terminal replies so wallet requests can continue.',
-	})
-	return []
+	return await runWithOutbox(async (pendingTerminalReplies) => ({ writes: [], result: pendingTerminalReplies }))
 }
 
 async function updatePendingTerminalReplies(update: (pendingReplies: readonly QueuedTerminalReply[]) => readonly QueuedTerminalReply[]) {
-	return await runPendingRequestStorageTransaction(async () => {
-		const pendingTerminalReplies = update(await getPendingTerminalReplies())
+	return await runWithOutbox(async (current) => {
+		const pendingTerminalReplies = update(current)
 		return { writes: [outboxStorageWrite(pendingTerminalReplies)], result: pendingTerminalReplies }
 	})
 }
 
 // Queues the reply for the pending request instance it answers in the same storage write as the decision on that instance, and neither when the decision leaves the instance 'unchanged'. The entry records the instance, so a later delivery, also after a restart, completes only that instance. A queued reply replaces any earlier one under the same request id.
 export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance): Promise<PendingRequestInstanceOutcome> {
-	return await runPendingRequestStorageTransaction(async () => {
+	return await runWithOutbox(async (queued) => {
 		const decided = decidePendingRequestInstance(await readPendingRequestsInTransaction(), instance, decide)
 		if (decided.outcome === 'unchanged') return { writes: [], result: decided.outcome }
-		const pendingTerminalReplies = [...withoutReplyTo(await getPendingTerminalReplies(), reply.uniqueRequestIdentifier), { reply, answeredInstanceId: instance.instanceId }]
+		const pendingTerminalReplies = [...withoutReplyTo(queued, reply.uniqueRequestIdentifier), { reply, answeredInstanceId: instance.instanceId }]
 		return { writes: [pendingRequestsStorageWrite(decided.pendingTransactionsOrMessages), outboxStorageWrite(pendingTerminalReplies)], result: decided.outcome }
 	})
 }
 
 // Removes a delivered reply from the outbox, together with the request instance still waiting for it (a popup-close rejection keeps its request ClosedWithoutResponse until delivered) in the same storage write, so a failure leaves both and a retry finds the reply delivered instead of posting it again. Does nothing when the outbox now holds a reply to another instance under that request id, which a newer request queued.
 export async function removeDeliveredPendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier, answeredInstanceId: string | undefined) {
-	await runPendingRequestStorageTransaction(async () => {
-		const queued = await getPendingTerminalReplies()
+	await runWithOutbox(async (queued) => {
 		const delivered = queued.find((entry) => doesUniqueRequestIdentifiersMatch(entry.reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (delivered === undefined || delivered.answeredInstanceId !== answeredInstanceId) return { writes: [], result: undefined }
 		const outboxWrite = outboxStorageWrite(withoutReplyTo(queued, uniqueRequestIdentifier))
