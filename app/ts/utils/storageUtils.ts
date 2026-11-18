@@ -178,8 +178,19 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('popupRefreshGeneration'),
 )
 
+// Keys that only their owners read and write, in the pending-request storage transaction: storageVariables.ts owns the pending requests and pendingTerminalReplies.ts the reply outbox. The generic codecs leave them out, and every generic helper refuses them at runtime, as the codecs' presence-aware address properties let any key through structurally and a caller can cast around the key types.
+const PENDING_REQUEST_TRANSACTION_KEYS: readonly string[] = ['pendingTransactionsAndMessages', 'pendingTerminalReplies']
+const OWNED_KEY_ERROR = 'The pending requests and the reply outbox are read and written only by their owners, in the pending-request storage transaction.'
+// Called before any storage access, so a refused key never reaches browser storage.
+const assertGenericStorageKeys = (keys: readonly string[]) => {
+	if (keys.some((key) => PENDING_REQUEST_TRANSACTION_KEYS.includes(key))) throw new Error(OWNED_KEY_ERROR)
+}
+const toKeyList = (keys: LocalStorageKey | LocalStorageKey[]): LocalStorageKey[] => Array.isArray(keys) ? keys : [keys]
+
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
-	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	const keyList = toKeyList(keys)
+	assertGenericStorageKeys(keyList)
+	return LocalStorageItems.parse(await browser.storage.local.get(keyList))
 }
 export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
 	const parsed = LocalStorageItems.safeParse(items)
@@ -187,18 +198,20 @@ export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems 
 	return undefined
 }
 export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
-	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	const keyList = toKeyList(keys)
+	assertGenericStorageKeys(keyList)
+	return browserStorageLocalSafeParse(await browser.storage.local.get(keyList))
 }
 
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
-	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
+	const keyList = toKeyList(keys)
+	assertGenericStorageKeys(keyList)
+	return await browser.storage.local.remove(keyList)
 }
-// Keys that only their owners write, in the pending-request storage transaction: storageVariables.ts owns the pending requests and pendingTerminalReplies.ts the reply outbox. The generic codecs leave them out, and the write helper refuses them, as the codecs' presence-aware address properties let any key through structurally.
-const PENDING_REQUEST_TRANSACTION_KEYS = ['pendingTransactionsAndMessages', 'pendingTerminalReplies'] as const
-export type GenericStorageItems = LocalStorageItems & { readonly [Key in typeof PENDING_REQUEST_TRANSACTION_KEYS[number]]?: never }
+export type GenericStorageItems = LocalStorageItems & { readonly pendingTransactionsAndMessages?: never, readonly pendingTerminalReplies?: never }
 
 export async function browserStorageLocalSet(items: GenericStorageItems) {
-	if (PENDING_REQUEST_TRANSACTION_KEYS.some((key) => key in items)) throw new Error('The pending requests and the reply outbox are written only by their owners, in the pending-request storage transaction.')
+	assertGenericStorageKeys(Object.keys(items))
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }
 

@@ -19,13 +19,31 @@ test('the generic storage helpers cannot read or write the keys of the pending-r
 	assert.deepEqual([...new Set(errorLines)].sort((first, second) => first - second), expectedLines)
 })
 
-test('the generic storage codecs drop the pending-request transaction keys and the generic write refuses them', async () => {
-	const { browserStorageLocalSafeParse, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+test('the generic storage codecs drop the pending-request transaction keys and every generic helper refuses them before touching storage', async () => {
+	const { browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 	assert.deepEqual(browserStorageLocalSafeParse({ simulationMode: true, pendingTerminalReplies: 'outbox', pendingTransactionsAndMessages: 'requests' }), { simulationMode: true })
-	// Values the type system refuses are what a caller that cast around it would pass.
-	const ownedKeyWrites: readonly unknown[] = [{ pendingTerminalReplies: [] }, { pendingTransactionsAndMessages: [] }]
-	for (const items of ownedKeyWrites) {
-		if (!isRecord(items)) throw new Error('Expected storage items')
-		await assert.rejects(browserStorageLocalSet(items), /written only by their owners/u)
+	const storageCalls: string[] = []
+	const recordStorageCall = (name: string) => async () => { storageCalls.push(name); return {} }
+	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: { storage: { local: { get: recordStorageCall('get'), set: recordStorageCall('set'), remove: recordStorageCall('remove') } } } })
+	try {
+		// Values the type system refuses are what a caller that cast around it would pass; key lists that mix in an allowed key are refused too.
+		const ownedKeyRequests: readonly unknown[] = ['pendingTerminalReplies', 'pendingTransactionsAndMessages', ['simulationMode', 'pendingTerminalReplies'], ['pendingTransactionsAndMessages']]
+		for (const keys of ownedKeyRequests) {
+			if (typeof keys !== 'string' && !(Array.isArray(keys) && keys.every((key) => typeof key === 'string'))) throw new Error('Expected storage keys')
+			const keyList: string[] = typeof keys === 'string' ? [keys] : keys
+			for (const helper of [browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalRemove]) {
+				await assert.rejects(Reflect.apply(helper, undefined, [keyList]), /read and written only by their owners/u)
+			}
+		}
+		const ownedKeyWrites: readonly unknown[] = [{ pendingTerminalReplies: [] }, { pendingTransactionsAndMessages: [] }]
+		for (const items of ownedKeyWrites) {
+			if (!isRecord(items)) throw new Error('Expected storage items')
+			await assert.rejects(browserStorageLocalSet(items), /read and written only by their owners/u)
+		}
+		assert.deepEqual(storageCalls, [])
+	} finally {
+		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', previousBrowser)
 	}
 })
