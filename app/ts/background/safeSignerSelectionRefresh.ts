@@ -430,13 +430,13 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
 			|| current.approvalStatus.status !== 'SignerError' || current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
 			|| stringifyJSONWithBigInts(current.signedMessageTransaction.safeMessageReview) !== stringifyJSONWithBigInts(pending.signedMessageTransaction.safeMessageReview)
-			|| stringifyJSONWithBigInts(current.originalRequestParameters) !== stringifyJSONWithBigInts(pending.originalRequestParameters)) return current
+			|| stringifyJSONWithBigInts(current.originalRequestParameters) !== stringifyJSONWithBigInts(pending.originalRequestParameters)) return undefined
 		if (refreshResult.status === 'refreshed' && refreshResult.pending.type === 'SignableMessage') {
 			persistedPending = { ...current, safeMessageCoSignSnapshot: refreshResult.pending.safeMessageCoSignSnapshot, approvalStatus: refreshResult.pending.approvalStatus }
 		} else if (refreshResult.status === 'blocked' && !isSameSafeSignerError(current, refreshResult)) {
 			persistedPending = { ...current, approvalStatus: refreshResult.approvalStatus }
 		}
-		return persistedPending ?? current
+		return persistedPending
 	})
 	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
@@ -482,8 +482,8 @@ export async function refreshAndPersistSafeSignerSelection(
 	// Stored only into the request instance the refresh started from, never a request the page sent later under the same request id.
 	await updatePendingTransactionOrMessageInstance(pending, (current) => {
 		const currentFlow = getSafePendingFlow(current)
-		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
-		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
+		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return undefined
+		if (!pendingSafeRefreshBaseMatches(current, pending)) return undefined
 		persistedPending = refreshResult.status === 'refreshed'
 			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })

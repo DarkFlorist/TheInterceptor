@@ -684,13 +684,13 @@ async function simulateAndStoreRefreshedTransaction(
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
-				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return transactionOrMessage
+				if (transactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated' && transactionOrMessage.transactionOrMessageCreationStatus !== 'FailedToSimulate') return undefined
 				// Keeps a simulation that ran later than this refresh's; see "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 				const currentTimestamp = getSimulationConductedTimestamp(transactionOrMessage.popupVisualisation)
 				const nextTimestamp = getSimulationConductedTimestamp(refreshMessage)
-				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return transactionOrMessage
+				if (currentTimestamp !== undefined && nextTimestamp !== undefined && nextTimestamp.getTime() < currentTimestamp.getTime()) return undefined
 				// The proposal prepared again replaces only the unformed proposal it was prepared from.
-				if (preparedSafeProposal !== undefined && getPendingTransactionRefresh(transactionOrMessage).kind !== 'prepareSafeProposal') return transactionOrMessage
+				if (preparedSafeProposal !== undefined && getPendingTransactionRefresh(transactionOrMessage).kind !== 'prepareSafeProposal') return undefined
 				if (transactionToSimulate.success) {
 					return {
 						...transactionOrMessage,

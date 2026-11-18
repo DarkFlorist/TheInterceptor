@@ -187,8 +187,8 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 		if (pending.approvalStatus.status === 'WaitingForUser' && signerMismatch === undefined) continue
 		// Written only to the instance read above, so a request the page sent under the same id while the mismatch check awaited keeps its own approval status.
 		await updatePendingTransactionOrMessageInstance(pending, (current) => {
-			if (isPastUserDecision(current.approvalStatus)) return current
-			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return current
+			if (isPastUserDecision(current.approvalStatus)) return undefined
+			if (current.approvalStatus.status === 'SignerError' && current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return undefined
 			pendingStateChanged = true
 			return modifyObject(current, {
 				approvalStatus: signerMismatch ?? { status: 'WaitingForUser' as const },
@@ -334,7 +334,7 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 			const originalRequestParameters = modifyObject(transaction.originalRequestParameters, { params: [modifyObject(transaction.originalRequestParameters.params[0], { gas: gasLimit })] })
 			return modifyObject(transaction, { originalRequestParameters: originalRequestParameters })
 		}
-		return transaction
+		return undefined
 	})
 }
 
@@ -881,13 +881,13 @@ export async function openConfirmTransactionDialogForMessage(
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessageInstance(pendingMessage, (message) => {
-				if (message.type !== 'SignableMessage') return message
+				if (message.type !== 'SignableMessage') return undefined
 				return modifyObject(message, { transactionOrMessageCreationStatus: 'Simulating' as const } )
 			})
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
 
 			await updatePendingTransactionOrMessageInstance(pendingMessage, (message) => {
-				if (message.type !== 'SignableMessage') return message
+				if (message.type !== 'SignableMessage') return undefined
 				return { ...message, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' as const }
 			})
 			await updateConfirmTransactionView(ethereumClientService, tokenPriceService)
@@ -1042,11 +1042,11 @@ export async function openConfirmTransactionDialogForTransaction(
 			// Refreshes skip a confirmation that is still simulating, so a run that ended without a result is stored as a failed simulation, which refreshes simulate again, instead of leaving the confirmation simulating with no run left to finish it.
 			const popupVisualisation = simulationResult ?? createInterruptedConfirmTransactionSimulation(transactionExecutor, simulationMode, request.uniqueRequestIdentifier, transactionToSimulate, signerTabState.signerName, simulationStartedTimestamp)
 			await updatePendingTransactionOrMessageInstance(pendingTransaction, (transaction) => {
-				if (transaction.type !== 'Transaction') return transaction
+				if (transaction.type !== 'Transaction') return undefined
 				if (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate') {
 					// A result another run stored meanwhile is kept over this run's interruption.
-					if (simulationResult === undefined) return transaction
-					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return transaction
+					if (simulationResult === undefined) return undefined
+					if ('popupVisualisation' in transaction && !shouldReplacePopupVisualisation(transaction.popupVisualisation, popupVisualisation)) return undefined
 				}
 				if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 				return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
