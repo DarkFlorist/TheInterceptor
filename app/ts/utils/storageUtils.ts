@@ -69,20 +69,22 @@ const startupStorageCodecs = {
 export type StartupStorageValues = { [Key in keyof typeof startupStorageCodecs]: funtypes.Static<typeof startupStorageCodecs[Key]> }
 const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
 
-// Explicit writers preserve each storage key's value type when repairing corrupt startup data.
-const startupStorageDefaultWriters: { [Key in keyof StartupStorageValues]: (value: StartupStorageValues[Key]) => Promise<void> } = {
+// Tracked keys have one write owner: the tracked local-storage facade. Other storage schemas and read-time repair exclude them, so a stale read cannot overwrite an explicit mode change.
+type TrackedLocalStorageValues = Pick<StartupStorageValues, 'simulationMode'>
+type TrackedLocalStorageKey = keyof TrackedLocalStorageValues
+type StartupStorageRepairWriters = { [Key in keyof StartupStorageValues]?: (value: StartupStorageValues[Key]) => Promise<void> }
+// Repair is optional: absent writers return the fallback without persisting it.
+const startupStorageDefaultWriters: StartupStorageRepairWriters = {
 	independentActiveSimulationAddress: async (value) => await browserStorageLocalSet({ independentActiveSimulationAddress: value }),
 	activeSigningSafeAddress: async (value) => await browserStorageLocalSet({ activeSigningSafeAddress: value }),
 	openedPageV2: async (value) => await browserStorageLocalSet({ openedPageV2: value }),
 	useSignersAddressAsActiveAddress: async (value) => await browserStorageLocalSet({ useSignersAddressAsActiveAddress: value }),
 	websiteAccess: async (value) => await browserStorageLocalSet({ websiteAccess: value }),
-	// Reads fail closed without writing: a popup's repair must never overwrite a later explicit background mode switch.
-	simulationMode: async () => undefined,
 	activeRpcNetwork: async (value) => await browserStorageLocalSet({ activeRpcNetwork: value }),
 	makeCurrentAddressRich: async (value) => await browserStorageLocalSet({ makeCurrentAddressRich: value }),
 	fixedAddressRichList: async (value) => await browserStorageLocalSet({ fixedAddressRichList: value }),
 	signingAddressPreferences: async (value) => await browserStorageLocalSet({ signingAddressPreferences: value }),
-}
+} satisfies StartupStorageRepairWriters & { readonly [Key in TrackedLocalStorageKey]?: never }
 
 export async function getStartupStorageValueOrDefault<Key extends keyof StartupStorageValues>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
 	const rawValue = storedItems[key]
@@ -92,7 +94,7 @@ export async function getStartupStorageValueOrDefault<Key extends keyof StartupS
 	if (parsedValue.success) return parsedValue.value
 	console.warn(`${ key } was corrupt:`)
 	console.warn(rawValue)
-	await startupStorageDefaultWriters[key](defaultValue)
+	await startupStorageDefaultWriters[key]?.(defaultValue)
 	return defaultValue
 }
 
@@ -182,11 +184,13 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('pendingTerminalReplies'),
 )
 
+const localStorageItems2Codecs = {
+	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
+} satisfies Record<string, unknown> & { readonly [Key in TrackedLocalStorageKey]?: never }
+
 const LocalStorageItems2Runtype: funtypes.Partial<{
 	pendingTransactionsAndMessages: funtypes.ReadonlyArray<typeof PendingTransactionOrSignableMessage>
-}, true> = funtypes.ReadonlyPartial({
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
-})
+}, true> = funtypes.ReadonlyPartial(localStorageItems2Codecs)
 type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2Runtype>
 const LocalStorageItems2: typeof LocalStorageItems2Runtype = LocalStorageItems2Runtype
 
@@ -231,7 +235,7 @@ export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalSto
 }
 // One storage owner records all writes. Higher-level consumers capture only the typed key/value relevant to their decision; the writer knows no domain-specific policy.
 const localStorageWrites = createStorageWriteTracking()
-export const captureLocalStorageWritesTo = <Key extends keyof LocalStorageItems & string>(key: Key, value: LocalStorageItems[Key] & StorageWriteValue) => localStorageWrites.capture(key, value)
+export const captureLocalStorageWritesTo = <Key extends TrackedLocalStorageKey>(key: Key, value: TrackedLocalStorageValues[Key] & StorageWriteValue) => localStorageWrites.capture(key, value)
 
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	const serialized = serialize(LocalStorageItems, items)
