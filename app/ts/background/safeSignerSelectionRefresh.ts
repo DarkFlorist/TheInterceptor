@@ -317,13 +317,14 @@ function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, ref
 		&& pending.approvalStatus.message === refreshResult.approvalStatus.message
 }
 
+// Undefined when the stored request no longer has the refreshed request's kind of Safe flow, so there is nothing to merge and nothing is written.
 function mergeSafeSignerSelectionRefresh(
 	current: PendingTransactionOrSignableMessage,
 	refreshed: PendingTransactionOrSignableMessage,
-): PendingTransactionOrSignableMessage {
+): PendingTransactionOrSignableMessage | undefined {
 	const currentFlow = getSafePendingFlow(current)
 	const refreshedFlow = getSafePendingFlow(refreshed)
-	if (currentFlow === undefined || refreshedFlow === undefined || currentFlow.kind !== refreshedFlow.kind) return current
+	if (currentFlow === undefined || refreshedFlow === undefined || currentFlow.kind !== refreshedFlow.kind) return undefined
 	if (currentFlow.kind === 'messageCoSign' && refreshedFlow.kind === 'messageCoSign') return modifyObject(currentFlow.pending, {
 		safeMessageCoSignSnapshot: refreshedFlow.pending.safeMessageCoSignSnapshot,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
@@ -345,7 +346,7 @@ function mergeSafeSignerSelectionRefresh(
 		safeFlow: refreshedFlow.pending.safeFlow,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
-	return current
+	return undefined
 }
 
 // Stores a Gnosis Safe confirmation refresh on the request as it is stored now: only the Safe fields and approval status the refresh rebuilt, so other changes made meanwhile are kept. A request forwarded to the signer meanwhile is left for the signer's reply. Returns whether the refresh was stored.
