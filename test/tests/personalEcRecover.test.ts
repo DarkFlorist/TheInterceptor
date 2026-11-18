@@ -275,6 +275,20 @@ describe('personal_ecRecover recovery', () => {
 		assert.notEqual(otherMessageReply.result, simulatedSigner)
 	})
 
+	// (r, s, yParity) and (r, n - s, 1 - yParity) are the same ECDSA signature and recover the same address, so the high-s form of a simulated signature still names the simulated signer.
+	test('maps the high-s form of a simulated personal_sign signature back to the simulated signer', async () => {
+		const secp256k1GroupOrder = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n
+		const socket = { tabId: 1, connectionName: 0n }
+		const signedMessage = createSignedMessage(simulatedSigner, helloMessage, socket)
+		const signature = await getSimulatedSignature(signedMessage)
+		const r = signature.slice(2, 66)
+		const s = BigInt(`0x${ signature.slice(66, 130) }`)
+		const yParity = Number.parseInt(signature.slice(130, 132), 16) % 27
+		const highSSignature = `0x${ r }${ (secp256k1GroupOrder - s).toString(16).padStart(64, '0') }${ (27 + 1 - yParity).toString(16) }`
+		assert.notEqual(highSSignature, signature)
+		assert.deepEqual(await personalEcRecover(parsePersonalEcRecover([helloMessage, highSSignature]), [signedMessage], websiteOrigin), { type: 'result', method: 'personal_ecRecover', result: simulatedSigner })
+	})
+
 	test('maps simulated plain-text personal_sign signatures back to the simulated signer', async () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const recoveredSimulatedSigner = { type: 'result', method: 'personal_ecRecover', result: simulatedSigner }

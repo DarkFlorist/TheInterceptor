@@ -46,7 +46,17 @@ export const simulatePersonalSign = async (params: SignMessageParams, signingAdd
 	}
 }
 
-const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => first.r === second.r && first.s === second.s && first.yParity === second.yParity
+// The order n of the secp256k1 group. It is spelled out rather than read from @noble/curves, which only utils/ethereumRecovery.ts may import so the curve code stays out of the extension pages.
+const SECP256K1_GROUP_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n
+
+// A signature (r, s, yParity) and its high-s twin (r, n - s, 1 - yParity) recover the same signer, so signatures are compared in their low-s form.
+const toLowSSignature = ({ r, s, yParity }: RecoverableMessageSignature) => s > SECP256K1_GROUP_ORDER / 2n ? { r, s: SECP256K1_GROUP_ORDER - s, yParity: 1 - yParity } : { r, s, yParity }
+
+const areSameSignatures = (first: RecoverableMessageSignature, second: RecoverableMessageSignature) => {
+	const firstLowS = toLowSSignature(first)
+	const secondLowS = toLowSSignature(second)
+	return firstLowS.r === secondLowS.r && firstLowS.s === secondLowS.s && firstLowS.yParity === secondLowS.yParity
+}
 
 // The simulated signer whose personal_sign produced this signature over what a personal_ecRecover message names. A signing matches the same message string, which it decoded exactly as it would decode this one; the same hex bytes under its own decoding, which reads '0X6869' as 0x6869; or recoveredMessageHash, the hash of the bytes the caller's decoding gives, so 'hello' finds a signing of '0x68656c6c6f'. Non-hex messages are compared only as strings, never decoded here.
 export const findSimulatedPersonalSignSigner = async (signedMessages: readonly SignedMessageTransaction[], message: string, recoveredMessageHash: Hex, signature: RecoverableMessageSignature) => {
