@@ -16,9 +16,9 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import { runConfirmationSimulation, simulateConfirmationRun, toPreSimulationTransaction } from './confirmationSimulationRun.js'
 import { captureStackSimulationContext, createSimulationStateWithNonceAndBaseFeeFixing, getSimulationInputForStack, getPreparedGovernanceVote, getStackSimulationInputFingerprint, type PendingGovernanceVote, type StackSimulationContext, toStackSimulationContext } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStackUnlessRefused, updatePendingTransactionOrMessage } from './storageVariables.js'
-import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError } from './walletSendCalls.js'
+import { getWalletSendCallsTransactionParams, walletSendCallsIdInUseError, type WalletSendCallsError } from './walletSendCalls.js'
 import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSendCallTransactionIdentifier, isWalletSendCallsIdInUse, releasePendingTransactionBatch, removeApprovedTransactionBatch } from './walletSendCallsBatchIds.js'
-import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount } from './walletSendCallsBinding.js'
+import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount, type WalletSendCallsAccountLookup } from './walletSendCallsBinding.js'
 import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
 import { refreshSimulatedConfirmationVisualisation, refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
@@ -255,6 +255,39 @@ async function setPendingApprovalStatus(ethereum: EthereumClientService, tokenPr
 	await updateConfirmTransactionView(ethereum, tokenPriceService)
 }
 
+type TransactionBatchCommit =
+	| { readonly kind: 'resultChanged' }
+	| { readonly kind: 'bindingChanged', readonly error: WalletSendCallsError }
+	| { readonly kind: 'simulationContextChanged' | 'committed', readonly claimedBatch: PendingTransactionBatch }
+
+// Checks the accept against the stored batch and adds the stored batch's calls to the simulation stack inside one update of the confirmation queue. Every preview writer stores through that queue's lock (storeTransactionBatchSimulation, refreshConfirmationMetadata), so a preview stored after the check cannot be the one approved, as claimAcceptedRequest in windows/confirmTransaction.ts ensures for other requests. The queue's lock may be held while writing the stack (see the lock order in storageVariables.ts), and nothing is awaited between the check and the stack write besides that write. The claimed batch has the reviewed-result id the earlier approval checks passed for, so it has the binding, calls and preview they checked.
+async function commitAcceptedTransactionBatch(uniqueRequestIdentifier: UniqueRequestIdentifier, accept: { readonly reviewedResultId: string, readonly forceSend: boolean }, accountLookup: WalletSendCallsAccountLookup): Promise<TransactionBatchCommit> {
+	let commit: TransactionBatchCommit | undefined
+	await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => {
+		if (current.type !== 'TransactionBatch' || current.transactionOrMessageCreationStatus !== 'Simulated' || !isAcceptForStoredResult(current, accept)) return undefined
+		const batchOperations = current.transactionsToSimulate
+			.filter((transaction): transaction is WebsiteCreatedEthereumTransaction => transaction.success)
+			.map(toWalletSendCallStackOperation)
+		const commitRefusal = await updateInterceptorTransactionStackUnlessRefused(
+			// The commit boundary. Settings writers do not wait for stack writes, so everything the binding and the preview depend on besides the stack (settings, website access, time manipulation and rich addresses) is taken from the snapshot that storageVariables.ts reads under the stack's write lock right before the write: a change saved after that read counts as made after approval.
+			(currentStack, snapshot) => {
+				// A changed binding means the batch cannot be approved at all, so it takes precedence over a preview that only needs simulating again.
+				const bindingError = getWalletSendCallsBindingError(current, accountLookup, snapshot)
+				if (bindingError !== undefined) return { reason: 'bindingChanged' as const, error: bindingError }
+				// Another approval, or a change to the time manipulation or rich addresses, may have changed what the batch would run on since the preview.
+				return getStackSimulationInputFingerprint(toStackSimulationContext(snapshot, currentStack), batchOperations) === current.simulatedInputFingerprint ? undefined : { reason: 'simulationContextChanged' as const }
+			},
+			(prevStack) => ({ operations: [...prevStack.operations, ...batchOperations] }),
+		)
+		commit = commitRefusal === undefined ? { kind: 'committed', claimedBatch: current }
+			: commitRefusal.reason === 'bindingChanged' ? { kind: 'bindingChanged', error: commitRefusal.error }
+			: { kind: 'simulationContextChanged', claimedBatch: current }
+		// The batch stays queued: finishApprovedTransactionBatch removes it once the website is answered, and until then its calls on the stack mark it approved (resolveTransactionBatchSerially).
+		return undefined
+	})
+	return commit ?? { kind: 'resultChanged' }
+}
+
 // Approval re-validates the admission binding, then adds every call to the simulation stack.
 async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, pendingBatch: PendingTransactionBatch) {
 	const uniqueRequestIdentifier = confirmation.data.uniqueRequestIdentifier
@@ -281,29 +314,24 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 			}
 			const approvalError = await getWalletSendCallsApprovalError(websiteTabConnections, ethereum, pendingBatch)
 			if (approvalError !== undefined) return await invalidateApproval(approvalError)
-			const batchOperations = pendingBatch.transactionsToSimulate
-				.filter((transaction): transaction is WebsiteCreatedEthereumTransaction => transaction.success)
-				.map(toWalletSendCallStackOperation)
-			// The account is looked up before the stack's write lock is taken, so other stack writers never wait for it. getWalletSendCallsBindingError then confirms against the commit snapshot that the settings it was resolved with still hold.
+			// The account is looked up before the locks of the commit are taken, so other queue and stack writers never wait for it. getWalletSendCallsBindingError then confirms against the commit snapshot that the settings it was resolved with still hold.
 			const accountLookup = await lookUpWalletSendCallsAccount(websiteTabConnections, pendingBatch)
-			const commitRefusal = await updateInterceptorTransactionStackUnlessRefused(
-				// The commit boundary. Settings writers do not wait for stack writes, so everything the binding and the preview depend on besides the stack (settings, website access, time manipulation and rich addresses) is taken from the snapshot that storageVariables.ts reads under the stack's write lock right before the write: a change saved after that read counts as made after approval.
-				(currentStack, snapshot) => {
-					// A changed binding means the batch cannot be approved at all, so it takes precedence over a preview that only needs simulating again.
-					const bindingError = getWalletSendCallsBindingError(pendingBatch, accountLookup, snapshot)
-					if (bindingError !== undefined) return { reason: 'bindingChanged' as const, error: bindingError }
-					// Another approval, or a change to the time manipulation or rich addresses, may have changed what the batch would run on since the preview.
-					return getStackSimulationInputFingerprint(toStackSimulationContext(snapshot, currentStack), batchOperations) === pendingBatch.simulatedInputFingerprint ? undefined : { reason: 'simulationContextChanged' as const }
-				},
-				(prevStack) => ({ operations: [...prevStack.operations, ...batchOperations] }),
-			)
-			if (commitRefusal?.reason === 'bindingChanged') return await invalidateApproval(commitRefusal.error)
-			if (commitRefusal?.reason === 'simulationContextChanged') {
-				// The batch is simulated again on top of the current stack, and the user approves that preview instead.
-				await refreshUnapprovedTransactionBatchPreview(ethereum, tokenPriceService, pendingBatch)
-				return false
+			const commit = await commitAcceptedTransactionBatch(uniqueRequestIdentifier, confirmation.data, accountLookup)
+			switch (commit.kind) {
+				case 'resultChanged': {
+					// A preview stored during the awaits above replaced the reviewed one, so the user reviews the stored batch before approving again.
+					await updateConfirmTransactionView(ethereum, tokenPriceService)
+					return false
+				}
+				case 'bindingChanged': return await invalidateApproval(commit.error)
+				case 'simulationContextChanged': {
+					// The batch is simulated again on top of the current stack, and the user approves that preview instead.
+					await refreshUnapprovedTransactionBatchPreview(ethereum, tokenPriceService, commit.claimedBatch)
+					return false
+				}
+				case 'committed': return await finishApprovedTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, commit.claimedBatch)
+				default: return assertNever(commit)
 			}
-			return await finishApprovedTransactionBatch(ethereum, tokenPriceService, websiteTabConnections, pendingBatch)
 		}
 		default: assertNever(confirmation.data)
 	}

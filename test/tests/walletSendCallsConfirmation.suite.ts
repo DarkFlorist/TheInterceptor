@@ -1644,6 +1644,56 @@ test('approving the displayed preview is refused while a refreshed preview is st
 	assert.equal((await getStackBatchTransactions()).length, 4)
 })
 
+// The stored batch with every successful call result marked quarantined or not, which changes what the user reviews but not the simulation input the preview ran on.
+function withCallsQuarantined(batch: Awaited<ReturnType<typeof getPendingBatch>>, quarantine: boolean) {
+	if (batch.popupVisualisation.statusCode !== 'success' || !batch.popupVisualisation.data.visualizedSimulationState.success) throw new Error('Missing batch simulation')
+	const data = batch.popupVisualisation.data
+	const visualizedSimulationState = data.visualizedSimulationState
+	const visualizedBlocks = visualizedSimulationState.visualizedBlocks.map((block) => ({ ...block, simulatedAndVisualizedTransactions: block.simulatedAndVisualizedTransactions.map((call) => call.transactionStatus === 'Transaction Succeeded' ? { ...call, quarantine, quarantineReasons: quarantine ? ['A protector flagged the replaced preview.'] : [] } : call) }))
+	return { ...batch, popupVisualisation: { ...batch.popupVisualisation, data: { ...data, visualizedSimulationState: { ...visualizedSimulationState, visualizedBlocks } } } }
+}
+
+// Each case stores a preview, approves it, and replaces the stored preview while approval waits on its account lookup, between its check of the accept and its stack write. The replacement keeps the simulation input fingerprint, so only the reviewed-result check can refuse it.
+const previewReplacedDuringApprovalCases = [
+	{ name: 'with other reviewed content', getShown: (batch: Awaited<ReturnType<typeof getPendingBatch>>) => batch, getReplacement: (batch: Awaited<ReturnType<typeof getPendingBatch>>) => ({ ...batch, created: new Date(batch.created.getTime() + 1000) }), forceSend: true },
+	{ name: 'with a quarantine that needs send-anyway consent', getShown: (batch: Awaited<ReturnType<typeof getPendingBatch>>) => withCallsQuarantined(batch, false), getReplacement: (batch: Awaited<ReturnType<typeof getPendingBatch>>) => withCallsQuarantined(batch, true), forceSend: false },
+]
+for (const { name, getShown, getReplacement, forceSend } of previewReplacedDuringApprovalCases) {
+	test(`approval is refused when the stored preview is replaced ${ name } while the approval looks up the account`, async () => {
+		const { postedMessages, websiteTabConnections } = await setUpWalletSendCallsTest()
+		await requestBatch(websiteTabConnections)
+		const original = await getPendingBatch()
+		const shown = getShown(original)
+		const replacement = getReplacement(original)
+		await updatePendingBatch(() => shown)
+		assert.equal(replacement.simulatedInputFingerprint, shown.simulatedInputFingerprint)
+		assert.notEqual(getPopupReviewedResultId(replacement), getPopupReviewedResultId(shown))
+		let replaced = false
+		// The approval's first settings read is its account lookup, which runs after the accept was checked against the shown preview.
+		browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+			if (!replaced && Array.isArray(keys) && keys.includes('simulationMode')) {
+				replaced = true
+				await updatePendingBatch(() => replacement)
+			}
+			return readStoredItems()
+		})
+		try {
+			assert.equal(await approveBatch(websiteTabConnections, batchRequestIdentifier, shown, forceSend), false)
+		} finally {
+			browserMock.setStorageGetHandler(undefined)
+		}
+		assert.equal(replaced, true)
+		assert.deepEqual(await getStackBatchTransactions(), [])
+		assert.equal(getWalletSendCallsReply(postedMessages), undefined)
+		const stored = await getPendingBatch()
+		assert.equal(getPopupReviewedResultId(stored), getPopupReviewedResultId(replacement))
+		assert.equal(stored.approvalStatus.status, 'WaitingForUser')
+		// Approving the stored preview, with the send-anyway override it needs, succeeds.
+		assert.equal(await approveBatch(websiteTabConnections), true)
+		assert.equal((await getStackBatchTransactions()).length, 2)
+	})
+}
+
 // One stack block whose transactions exceed the block gas limit is split over two RPC blocks. A batch call is estimated in the last of them while it has gas left, and otherwise in the next RPC block, as preparation places it.
 for (const stackTransactionGas of [2_000_000n, 20_000_000n, 30_000_000n]) {
 	test(`a batch call after a stack block of two ${ stackTransactionGas.toString() } gas transactions is estimated in the RPC block that preparation puts it in`, async () => {
