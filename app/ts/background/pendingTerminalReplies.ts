@@ -1,17 +1,22 @@
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { serialize } from '../types/wire-types.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet, pendingTerminalRepliesWriteBrand } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet, type PendingTerminalRepliesWrite, pendingTerminalRepliesWriteBrand, StoredPendingTerminalReplies } from '../utils/storageUtils.js'
 import { type DecidePendingRequestInstance, type PendingRequestInstance, writePendingRequestsWithTerminalReplies } from './pendingRequestDecisions.js'
 
 const pendingTerminalRepliesSemaphore = new Semaphore(1)
+
+// The outbox's storage items. Every write of the outbox key, alone or with the pending requests, stores these, so its storage format has one owner.
+const toOutboxStorageItems = (pendingTerminalReplies: readonly InterceptedRequestForward[]) => ({ pendingTerminalReplies: serialize(StoredPendingTerminalReplies, pendingTerminalReplies) })
+const writeOutbox = async (pendingTerminalReplies: readonly InterceptedRequestForward[]) => { await browser.storage.local.set(toOutboxStorageItems(pendingTerminalReplies)) }
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
 	if (parsedStorage !== undefined) return parsedStorage.pendingTerminalReplies ?? []
 	const validationError = new Error('Stored pending terminal replies failed runtime validation.')
-	await browserStorageLocalSet({ pendingTerminalReplies: [] })
+	await writeOutbox([])
 	await reportLocalRecovery(validationError, {
 		source: 'pending_terminal_replies',
 		code: 'pending_terminal_replies_corrupt',
@@ -23,25 +28,38 @@ export async function getPendingTerminalReplies(): Promise<readonly InterceptedR
 async function updatePendingTerminalReplies(update: (pendingReplies: readonly InterceptedRequestForward[]) => readonly InterceptedRequestForward[]) {
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
 		const pendingTerminalReplies = update(await getPendingTerminalReplies())
-		await browserStorageLocalSet({ pendingTerminalReplies })
+		await writeOutbox(pendingTerminalReplies)
 		return pendingTerminalReplies
 	})
 }
 
-// Stores the reply and the decision on the pending request instance it answers in one storage write, and neither when the decision leaves the instance 'unchanged'. This module decides the outbox's contents under its lock; storageVariables.ts makes the write because the pending-request lock is private to it. The outbox is read before that lock is taken, so that lock only spans its own read and the write.
-export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
+// Runs work under the outbox lock with the outbox as stored now. leaseWrite turns an outbox derived from that read into the write storageVariables.ts stores with the pending requests; the lease is valid only until this lock is released.
+async function withOutboxWriteLease<T>(work: (current: readonly InterceptedRequestForward[], leaseWrite: (next: readonly InterceptedRequestForward[]) => PendingTerminalRepliesWrite) => Promise<T>) {
 	return await pendingTerminalRepliesSemaphore.execute(async () => {
-		const otherReplies = (await getPendingTerminalReplies()).filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
-		return await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, pendingTerminalReplies: [...otherReplies, reply] }, instance, decide)
+		let outboxLockHeld = true
+		try {
+			const leaseWrite = (next: readonly InterceptedRequestForward[]): PendingTerminalRepliesWrite => ({ [pendingTerminalRepliesWriteBrand]: true, storageItems: toOutboxStorageItems(next), isOutboxLockHeld: () => outboxLockHeld })
+			return await work(await getPendingTerminalReplies(), leaseWrite)
+		} finally {
+			outboxLockHeld = false
+		}
+	})
+}
+
+// Stores the reply and the decision on the pending request instance it answers in one storage write, and neither when the decision leaves the instance 'unchanged'. This module decides and serializes the outbox under its lock; storageVariables.ts makes the write because the pending-request lock is private to it. The outbox is read before that lock is taken, so that lock only spans its own read and the write.
+export async function appendPendingTerminalReplyWithPendingRequestDecision(reply: InterceptedRequestForward, instance: PendingRequestInstance, decide: DecidePendingRequestInstance) {
+	return await withOutboxWriteLease(async (current, leaseWrite) => {
+		const otherReplies = current.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier))
+		return await writePendingRequestsWithTerminalReplies(leaseWrite([...otherReplies, reply]), instance, decide)
 	})
 }
 
 // Removes a delivered reply from the outbox and the request still awaiting it, while that request is still ClosedWithoutResponse, in one storage write, so a failure leaves both and a retry finds the reply delivered instead of posting it again. Once the request is gone, only the reply is removed.
 export async function removePendingTerminalReplyWithAnsweredRequest(uniqueRequestIdentifier: UniqueRequestIdentifier, answeredRequest: PendingRequestInstance) {
-	await pendingTerminalRepliesSemaphore.execute(async () => {
-		const pendingTerminalReplies = (await getPendingTerminalReplies()).filter((reply) => !doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		const outcome = await writePendingRequestsWithTerminalReplies({ [pendingTerminalRepliesWriteBrand]: true, pendingTerminalReplies }, answeredRequest, (current) => current.approvalStatus.status === 'ClosedWithoutResponse' ? { type: 'remove' } : undefined)
-		if (outcome === 'unchanged') await browserStorageLocalSet({ pendingTerminalReplies })
+	await withOutboxWriteLease(async (current, leaseWrite) => {
+		const pendingTerminalReplies = current.filter((reply) => !doesUniqueRequestIdentifiersMatch(reply.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		const outcome = await writePendingRequestsWithTerminalReplies(leaseWrite(pendingTerminalReplies), answeredRequest, (current) => current.approvalStatus.status === 'ClosedWithoutResponse' ? { type: 'remove' } : undefined)
+		if (outcome === 'unchanged') await writeOutbox(pendingTerminalReplies)
 	})
 }
 

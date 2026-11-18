@@ -198,11 +198,15 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
-// Marks a reply outbox that pendingTerminalReplies.ts prepared under its lock. It is declared here, beside the storage layer both modules use, so storageVariables.ts can accept it without importing the outbox module; an architecture test holds that only pendingTerminalReplies.ts uses it, so no other module can build one.
+// Marks a reply outbox write that pendingTerminalReplies.ts prepared under its lock. It is declared here, beside the storage layer both modules use, so storageVariables.ts can accept it without importing the outbox module; an architecture test holds that only pendingTerminalReplies.ts uses it, so no other module can build one.
 export const pendingTerminalRepliesWriteBrand: unique symbol = Symbol('pendingTerminalRepliesWriteBrand')
 
-// The reply outbox to store under its own key in the same storage write as a pending request decision.
-export type PendingTerminalRepliesWrite = { readonly [pendingTerminalRepliesWriteBrand]: true, readonly pendingTerminalReplies: readonly InterceptedRequestForward[] }
+// A reply outbox write leased by pendingTerminalReplies.ts, the outbox key's only owner: the outbox's storage items, serialized by that module from an outbox it read under its lock, and whether that lock is still held. storageVariables.ts only adds the items to its pending-request write, and refuses the lease once the lock is released, so the combined write cannot store an outbox read outside the lock or after another outbox write.
+export type PendingTerminalRepliesWrite = {
+	readonly [pendingTerminalRepliesWriteBrand]: true
+	readonly storageItems: Readonly<Record<string, unknown>>
+	readonly isOutboxLockHeld: () => boolean
+}
 
 export async function browserStorageLocalSet(items: LocalStorageItems) {
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))

@@ -5,7 +5,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { browserStorageLocalSafeParseGet, type PendingTerminalRepliesWrite, StoredPendingTerminalReplies } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet, type PendingTerminalRepliesWrite } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
@@ -60,20 +60,16 @@ async function readPendingTransactionsAndMessages() {
 	}
 }
 
-// The pending requests and the reply outbox under their own declared keys, for the one storage write that stores both.
-const StoredPendingRequestsWithTerminalReplies = funtypes.ReadonlyObject({
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage),
-	pendingTerminalReplies: StoredPendingTerminalReplies,
-})
-
 // Stores the pending requests, and when given the reply outbox, both in one storage.local.set call, which Chromium applies as one leveldb write batch and Firefox as one IndexedDB transaction, so a crash or a failed write stores both or neither.
 async function writePendingRequests(pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[], terminalReplies?: PendingTerminalRepliesWrite) {
+	const items: StoredPendingRequests = { pendingTransactionsAndMessages }
 	if (terminalReplies === undefined) {
-		const items: StoredPendingRequests = { pendingTransactionsAndMessages }
 		await browser.storage.local.set(serialize(StoredPendingRequests, items))
 		return
 	}
-	await browser.storage.local.set(serialize(StoredPendingRequestsWithTerminalReplies, { pendingTransactionsAndMessages, pendingTerminalReplies: terminalReplies.pendingTerminalReplies }))
+	// The outbox items are pendingTerminalReplies.ts's: this module neither builds nor serializes the outbox, and stores it only while the outbox lock its lease came from is held.
+	if (!terminalReplies.isOutboxLockHeld()) throw new Error('A reply outbox write was used after the outbox lock it was prepared under was released.')
+	await browser.storage.local.set({ ...serialize(StoredPendingRequests, items), ...terminalReplies.storageItems })
 }
 
 async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonly PendingTransactionOrSignableMessage[]> {
