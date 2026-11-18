@@ -12,7 +12,7 @@ export const settingsPopupMessageHandlers = {
 		return await openManagementPage('home')
 	}),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
-		const importSettingsReply = await importSettings(request)
+		const importSettingsReply = await importSettings(request, context.websiteTabConnections)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
 		const importedSettings = await getSettings()

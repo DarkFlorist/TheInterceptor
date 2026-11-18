@@ -12,6 +12,13 @@ export { createInterceptorInternalError, getErrorMessage, hasInterceptorInternal
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
 
+// Preserve step identifiers and original causes separately from the diagnostic message.
+export type WorkflowStepFailure = { readonly code: string, readonly error: unknown }
+export function createWorkflowStepsError(failures: readonly WorkflowStepFailure[]) {
+	const details = failures.map(({ code, error }) => `${ code }: ${ getErrorMessage(error) ?? 'unknown error' }`).join('; ')
+	return Object.assign(new AggregateError(failures.map(({ error }) => error), `Workflow steps failed: ${ details }`), { code: 'workflow_steps_failed', failures: [...failures] })
+}
+
 type ErrorReportMetadata = {
 	source?: string
 	code?: string
