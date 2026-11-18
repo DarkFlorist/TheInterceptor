@@ -351,7 +351,12 @@ async function claimAcceptedRequest(instance: PendingRequestInstance, accept: Ex
 	// Claims only the instance the resolution started from; a request another resolution already forwarded or closed is not claimed again.
 	await updatePendingTransactionOrMessageInstance(instance, (current) => {
 		if (current.transactionOrMessageCreationStatus !== 'Simulated' || isPastUserDecision(current.approvalStatus) || !isAcceptForStoredResult(current, accept)) return undefined
-		acceptedPending = current.simulationMode ? current : modifyObject(current, { approvalStatus: { status: 'WaitingForSigner' as const } })
+		// A simulation-mode request is accepted as stored and removed once added to the simulation, so claiming it writes nothing.
+		if (current.simulationMode) {
+			acceptedPending = current
+			return undefined
+		}
+		acceptedPending = modifyObject(current, { approvalStatus: { status: 'WaitingForSigner' as const } })
 		return acceptedPending
 	})
 	return acceptedPending
