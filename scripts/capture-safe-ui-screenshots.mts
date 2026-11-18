@@ -284,7 +284,7 @@ try {
 	const destinationAddress = 0x9876543210987654321098765432109876543210n
 	const created = new Date('2026-07-28T00:00:00.000Z')
 	const uniqueRequestIdentifier = { requestId: 42, requestSocket: { tabId: 7, connectionName: 0n } }
-	const confirmationRunId = { lifetime: 'safe-ui-screenshots', sequence: 1 }
+	const confirmationLifetime = 'safe-ui-screenshots'
 	const originalRequestParameters = {
 		method: 'eth_sendTransaction' as const,
 		params: [{
@@ -324,7 +324,7 @@ try {
 		popupVisualisation: {
 			statusCode: 'failed',
 			data: {
-				confirmationRunId,
+				confirmationRunId: { lifetime: confirmationLifetime, sequence: 1 },
 				activeAddress: safeAddress,
 				simulationMode: false,
 				simulationStartedTimestamp: created,
@@ -372,8 +372,7 @@ try {
 	await captureScenario(failedConfirm, 'safe-confirm-transaction-failed')
 	await failedConfirm.close()
 
-	// Both confirmation captures show the same successfully simulated proposal.
-
+	// A successful simulation enables the "Sign & add" and "Add unsigned" actions needed by the success and signing-request screenshots.
 	const mainnet = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const safeEntry = { type: 'contact' as const, name: 'Treasury Safe', address: safeAddress, entrySource: 'User' as const, chainId: 1n }
 	const destinationEntry = { type: 'contact' as const, name: 'Uniswap Router', address: destinationAddress, entrySource: 'User' as const, chainId: 1n }
@@ -387,13 +386,14 @@ try {
 		transaction: unsignedTransaction,
 	}
 	const simulatedProposal: PendingTransactionOrSignableMessage = {
+		// Keep the created proposal identity while replacing its simulation result.
 		...pendingSafeTransaction,
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: simulatedTransactionToSimulate,
 		popupVisualisation: {
 			statusCode: 'success',
 			data: {
-				confirmationRunId,
+				confirmationRunId: { lifetime: confirmationLifetime, sequence: 2 },
 				activeAddress: safeAddress,
 				simulationMode: false,
 				simulationStartedTimestamp: created,
