@@ -1,7 +1,6 @@
-import type { ConfirmationRunId } from '../../app/ts/types/accessRequest.js'
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
-import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, isRecord, modules, pendingTransaction, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createDisconnectedPort, createSafeAddressBookEntry, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, isRecord, modules, pendingTransaction, recipientAddress, simulator, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { InterceptorStackOperation } from '../../app/ts/types/visualizer-types.js'
@@ -68,12 +67,18 @@ const getStoredPreviewConfirmationRunId = async (uniqueRequestIdentifier: typeof
 	return pending?.type === 'TransactionBatch' && pending.transactionOrMessageCreationStatus !== 'Crafting' ? pending.popupVisualisation.data.confirmationRunId : undefined
 }
 
-// Approves like the confirmation window does, naming the preview it shows: the stored one, unless a test passes the confirmationRunId of a preview the window still shows.
-async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueRequestIdentifier = batchRequestIdentifier, displayedConfirmationRunId?: ConfirmationRunId) {
-	const approvedConfirmationRunId = displayedConfirmationRunId ?? await getStoredPreviewConfirmationRunId(uniqueRequestIdentifier)
+// The reviewed-result id the confirmation window would send for the batch as stored now, or a placeholder when no batch is stored, which the background then has nothing to match against.
+const getStoredBatchReviewedResultId = async (uniqueRequestIdentifier: typeof batchRequestIdentifier) => {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => entry.type === 'TransactionBatch' && entry.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId)
+	return pending === undefined ? 'no stored batch' : getPopupReviewedResultId(pending)
+}
+
+// Approves like the confirmation window does, naming the reviewed content it shows: the stored batch, unless a test passes a batch the window still shows. Send-anyway is ticked unless a test says otherwise, since many batches here have a call that trips a protector.
+async function approveBatch(websiteTabConnections: BatchTestConnections, uniqueRequestIdentifier = batchRequestIdentifier, displayedBatch?: PendingTransactionOrSignableMessage, forceSend = true) {
+	const reviewedResultId = displayedBatch === undefined ? await getStoredBatchReviewedResultId(uniqueRequestIdentifier) : getPopupReviewedResultId(displayedBatch)
 	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, ...(approvedConfirmationRunId === undefined ? {} : { approvedConfirmationRunId }) },
+		data: { action: 'accept', uniqueRequestIdentifier, reviewedResultId, forceSend },
 	})
 }
 
@@ -175,6 +180,10 @@ test('simulates a wallet_sendCalls batch and only adds it to the simulation stac
 	const { getTransactionBatchApprovalBlocker } = await import('../../app/ts/components/pages/ConfirmTransactionBatch.js')
 	assert.equal(getTransactionBatchApprovalBlocker(pending), 'requiresForceSend')
 	assert.equal(getTransactionBatchApprovalBlocker({ ...pending, transactionOrMessageCreationStatus: 'FailedToSimulate' }), 'notSimulated')
+	// The background applies the same rule: approving the batch without the send-anyway override is refused and leaves it pending.
+	assert.equal(await approveBatch(websiteTabConnections, batchRequestIdentifier, undefined, false), false)
+	assert.equal((await getPendingBatch()).approvalStatus.status, 'WaitingForUser')
+	assert.deepEqual(await getStackBatchTransactions(), [])
 
 	// Batches are never forwarded to a signer, so a forged signer reply cannot complete one.
 	const forgedSignerReply = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
@@ -1411,9 +1420,12 @@ test('a batch preview from another network cannot be approved', async () => {
 	await storePreview({ popupVisualisation: { ...originalVisualization, data: { ...originalVisualization.data, simulationState: { ...originalVisualization.data.simulationState, rpcNetwork: otherNetwork } } } })
 	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, 5710)
 
-	// A failed batch simulation records no network, so it cannot show that the preview belongs to the requested network.
+	// A failed batch simulation records no network, so it cannot show that the preview belongs to the requested network. It also has no call results to review, so the batch is reject-only and its accept is refused (isAcceptForStoredResult) before the network is checked, leaving the batch pending for the user to reject.
 	await storePreview({ popupVisualisation: { statusCode: 'failed', data: { ...originalVisualization.data, error: { code: -32603, message: 'failed', decodedErrorMessage: 'failed' }, simulationState: { blockNumber: 1n, simulationConductedTimestamp: new Date() } } } })
-	await expectApprovalToBeInvalidated(websiteTabConnections, postedMessages, 5710)
+	assert.equal(await approveBatch(websiteTabConnections), false)
+	assert.deepEqual(await getStackBatchTransactions(), [])
+	assert.equal((await getPendingBatch()).approvalStatus.status, 'WaitingForUser')
+	assert.equal(getWalletSendCallsReply(postedMessages), undefined)
 
 	await storePreview({})
 	assert.equal(await approveBatch(websiteTabConnections), true)
@@ -1578,14 +1590,14 @@ for (const { name, change } of simulationContextChanges) {
 test('two windows approving a preview that was replaced both refuse until the replacement is approved', async () => {
 	const { websiteTabConnections } = await setUpWalletSendCallsTest()
 	await requestBatch(websiteTabConnections)
-	const displayedConfirmationRunId = await getStoredPreviewConfirmationRunId(batchRequestIdentifier)
+	const displayedBatch = await getPendingBatch()
 	await simulationContextChanges[0]?.change()
 
-	const approvals = await Promise.all([approveBatch(websiteTabConnections, batchRequestIdentifier, displayedConfirmationRunId), approveBatch(websiteTabConnections, batchRequestIdentifier, displayedConfirmationRunId)])
+	const approvals = await Promise.all([approveBatch(websiteTabConnections, batchRequestIdentifier, displayedBatch), approveBatch(websiteTabConnections, batchRequestIdentifier, displayedBatch)])
 
 	assert.deepEqual(approvals, [false, false])
 	assert.deepEqual(await getStackBatchTransactions(), [])
-	assert.notEqual(await getStoredPreviewConfirmationRunId(batchRequestIdentifier), displayedConfirmationRunId)
+	assert.notDeepEqual(await getStoredPreviewConfirmationRunId(batchRequestIdentifier), displayedBatch.popupVisualisation.data.confirmationRunId)
 	assert.equal(await approveBatch(websiteTabConnections), true)
 	assert.equal((await getStackBatchTransactions()).length, 2)
 })
@@ -1620,7 +1632,7 @@ test('approving the displayed preview is refused while a refreshed preview is st
 		const storedPreview = await getPendingBatch()
 		assert.notDeepEqual(getPreparedNonces(storedPreview), getPreparedNonces(displayedPreview))
 
-		assert.equal(await approveBatch(websiteTabConnections, batchRequestIdentifier, displayedPreview.popupVisualisation.data.confirmationRunId), false)
+		assert.equal(await approveBatch(websiteTabConnections, batchRequestIdentifier, displayedPreview), false)
 
 		assert.equal((await getStackBatchTransactions()).length, 2)
 	} finally {

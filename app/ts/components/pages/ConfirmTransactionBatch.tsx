@@ -1,39 +1,30 @@
 import { type ReadonlySignal, type Signal, useComputed } from '@preact/signals'
-import { getTransactionBatchWebsite, type PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
+import { getTransactionBatchWebsite, type PendingTransactionBatch, type ShownPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { RpcConnectionStatus, RenameAddressCallBack } from '../../types/user-interface-types.js'
-import type { MaybeSimulatedTransaction } from '../../types/visualizer-types.js'
+import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
+import { getTransactionBatchCallResults } from '../../utils/visualizedTransactionResult.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { Transaction } from '../simulationExplaining/Transactions.js'
 import { getSimulationDisplayBlockNumber, SimulatedInBlockNumber } from '../simulationExplaining/SimulationSummary.js'
 
-type PopupPendingTransactionBatch = Extract<PopupPendingTransactionOrSignableMessage, { readonly type: 'TransactionBatch' }>
-type SimulatedPendingTransactionBatch = Exclude<PopupPendingTransactionBatch, { readonly transactionOrMessageCreationStatus: 'Crafting' }>
+// Every copy of a batch the popup shows, whether read from storage or sent by the background, has the stored batch's fields.
+type SimulatedPendingTransactionBatch = Exclude<PendingTransactionBatch, { readonly transactionOrMessageCreationStatus: 'Crafting' }>
 
-export function getTransactionBatchTitle(batch: PopupPendingTransactionBatch) {
+export function getTransactionBatchTitle(batch: PendingTransactionBatch) {
 	const callCount = batch.originalRequestParameters.params[0].calls.length
 	return `Batch of ${ callCount } call${ callCount === 1 ? '' : 's' }`
 }
 
-export const getSimulatedTransactionBatch = (pending: PopupPendingTransactionOrSignableMessage | undefined) => (
+export const getSimulatedTransactionBatch = (pending: ShownPendingTransactionOrSignableMessage | undefined) => (
 	pending?.type === 'TransactionBatch' && pending.transactionOrMessageCreationStatus !== 'Crafting' ? pending : undefined
 )
 
-// Simulation results for each call in request order. A call without results could not be prepared or simulated.
-function getTransactionBatchCallResults(batch: SimulatedPendingTransactionBatch): readonly (MaybeSimulatedTransaction | undefined)[] {
-	if (batch.popupVisualisation.statusCode !== 'success') return batch.transactionsToSimulate.map(() => undefined)
-	const simulatedTransactions = batch.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.flatMap((block): readonly MaybeSimulatedTransaction[] => block.simulatedAndVisualizedTransactions)
-	return batch.transactionsToSimulate.map((transactionToSimulate) => simulatedTransactions.find((simulatedTransaction) => simulatedTransaction.transactionIdentifier === transactionToSimulate.transactionIdentifier))
-}
-
-// The batch is approved as a whole: every call must be simulated, and calls that fail or trip a protector need the explicit force-send acknowledgement.
+// The batch is approved as a whole: every call must be simulated, and calls that fail or trip a protector need the explicit force-send acknowledgement. The rules are the shared send-anyway rules, which the background applies to the accept too.
 export function getTransactionBatchApprovalBlocker(batch: SimulatedPendingTransactionBatch): 'notSimulated' | 'requiresForceSend' | undefined {
-	if (batch.transactionOrMessageCreationStatus !== 'Simulated') return 'notSimulated'
-	const callResults = getTransactionBatchCallResults(batch)
-	if (callResults.some((callResult) => callResult === undefined)) return 'notSimulated'
-	if (callResults.some((callResult) => callResult?.transactionStatus !== 'Transaction Succeeded' || callResult.quarantine)) return 'requiresForceSend'
-	return undefined
+	if (batch.transactionOrMessageCreationStatus !== 'Simulated' || isRejectOnlyTransaction(batch)) return 'notSimulated'
+	return getSendAnywayOverrideReason(batch) === undefined ? undefined : 'requiresForceSend'
 }
 
 export function getTransactionBatchErrorMessage(batch: SimulatedPendingTransactionBatch) {
@@ -45,7 +36,7 @@ export function getTransactionBatchErrorMessage(batch: SimulatedPendingTransacti
 }
 
 type TransactionBatchCardParams = {
-	currentPendingTransaction: ReadonlySignal<PopupPendingTransactionOrSignableMessage | undefined>
+	currentPendingTransaction: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	currentBlockNumber: Signal<bigint | undefined>

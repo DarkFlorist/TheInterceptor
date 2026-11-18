@@ -21,7 +21,8 @@ import { addPendingTransactionBatch, getTransactionBatchStackState, getWalletSen
 import { getWalletSendCallsApprovalError, getWalletSendCallsBindingError, isEthereumClientOnBatchChain, lookUpWalletSendCallsAccount } from './walletSendCallsBinding.js'
 import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
 import { updateConfirmTransactionView } from './confirmationDialogUpdates.js'
-import { isSameConfirmationRun, refreshSimulatedConfirmationVisualisation, refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
+import { refreshSimulatedConfirmationVisualisation, refreshConfirmationMetadata, shouldReplacePopupVisualisation } from './confirmationPreviews.js'
+import { isAcceptForStoredResult } from './reviewedResult.js'
 import { formRejectMessage } from './confirmationReplies.js'
 import { type AnswerRequestsOfClosedWindow, getPendingTransactionWindow, removePendingRequestAndDeliverTerminalReply } from './confirmationWindow.js'
 import { formEthSendTransactionOnSimulationState } from './transactionPreparation.js'
@@ -269,8 +270,8 @@ async function resolveUnapprovedTransactionBatch(ethereum: EthereumClientService
 		case 'signerIncluded': return false
 		case 'accept': {
 			if (pendingBatch.transactionOrMessageCreationStatus !== 'Simulated') return false
-			// The approval names the preview the user saw. A refresh stores its replacement before the popup shows it, and a duplicate window can still show an older preview, so approving any other preview is refused and the stored one is shown for a fresh approval.
-			if (confirmation.data.approvedConfirmationRunId === undefined || !isSameConfirmationRun(confirmation.data.approvedConfirmationRunId, pendingBatch.popupVisualisation.data.confirmationRunId)) {
+			// The approval names the reviewed content the user saw, which includes the preview and its confirmationRunId. A refresh stores its replacement before the popup shows it, and a duplicate window can still show an older preview, so approving any other content, or a failing batch without the send-anyway override, is refused and the stored batch is shown for a fresh approval.
+			if (!isAcceptForStoredResult(pendingBatch, confirmation.data)) {
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return false
 			}

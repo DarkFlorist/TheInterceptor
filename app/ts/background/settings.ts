@@ -46,7 +46,7 @@ export const setPage = async (page: Page) => await browserStorageLocalSet(pageSt
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
 
-const SIGNING_ADDRESS_PREFERENCES_SETTING: StoredSetting<SigningAddressPreferences> = { storageKey: 'signingAddressPreferences', defaultValue: [], pick: (items) => items.signingAddressPreferences ?? [], toStorageItems: (signingAddressPreferences) => ({ signingAddressPreferences }) }
+const SIGNING_ADDRESS_PREFERENCES_SETTING: StoredSetting<'signingAddressPreferences'> = { storageKey: 'signingAddressPreferences', defaultValue: [] }
 
 
 export async function getSigningAddressPreferences() {
@@ -170,7 +170,7 @@ export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: W
 	})
 }
 
-// Last-write-wins: applies the update to the latest stored value; see withWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
+// Last-write-wins: applies the update to the latest stored value; see tryWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
 }

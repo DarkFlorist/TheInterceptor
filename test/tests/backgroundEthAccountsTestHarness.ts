@@ -25,7 +25,14 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+const requestsStorageKey = (keys: string | string[] | Record<string, unknown> | null | undefined, key: string) => {
+	if (keys === undefined || keys === null) return true
+	if (typeof keys === 'string') return keys === key
+	if (Array.isArray(keys)) return keys.includes(key)
+	return key in keys
+}
+
+export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, firstCurrentTabIdReadError }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly firstCurrentTabIdReadError?: Error } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
@@ -33,6 +40,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	let currentTabIdReadFailed = false
+	const reloadedTabIds: number[] = []
 	const requestBlockingCalls = {
 		declarativeNetRequestUpdates: 0,
 		webRequestListenerAdds: 0,
@@ -53,6 +62,10 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			onChanged: { addListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.add(listener), removeListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.delete(listener) },
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					if (firstCurrentTabIdReadError !== undefined && !currentTabIdReadFailed && requestsStorageKey(keys, 'currentTabId')) {
+						currentTabIdReadFailed = true
+						throw firstCurrentTabIdReadError
+					}
 					if (keys === undefined || keys === null) return { ...storageState }
 					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
 					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
@@ -79,7 +92,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async create() { return { id: 2, active: true } },
 			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
 			async update() { return undefined },
-			async reload() { return undefined },
+			async reload(tabId: number) { reloadedTabIds.push(tabId) },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -136,6 +149,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
 		runtimeMessages,
+		reloadedTabIds,
 		removedWindowIds,
 		readStoredValue: (key: string) => storageState[key],
 	}

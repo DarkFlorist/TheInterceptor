@@ -1,27 +1,15 @@
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
-import type { EthereumAddress } from '../../types/wire-types.js'
-import type { Website } from '../../types/websiteAccessTypes.js'
-import { modifyObject } from '../../utils/typescript.js'
-import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { applyWebsiteAccessUpdate } from '../applyWebsiteAccessUpdate.js'
+import { withInterceptorDisabledForWebsite, withExternalRequestsBlockedOrAllowed, withoutAddressAccess, withAddressAccessForWebsite, withoutWebsiteAccess } from '../websiteAccessMutations.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { updateWebsiteAccess } from '../settings.js'
 import { getSettings } from '../storedSettings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
-import { reloadConnectedTabs } from '../reloadConnectedTabs.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
-
-export { reloadConnectedTabs } from '../reloadConnectedTabs.js'
-
-export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
-	await setInterceptorDisabledForWebsite(websiteTabConnections, website, interceptorDisabled)
-}
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
-	await disableInterceptorForPage(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.interceptorDisabled)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'alsoWhenInjectionUnchanged', withInterceptorDisabledForWebsite(parsedRequest.data.website, parsedRequest.data.interceptorDisabled))
 	await sendPopupMessageToOpenWindows({ method: 'popup_setDisableInterceptorReply' as const, data: parsedRequest.data })
 }
 
@@ -32,52 +20,23 @@ export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 
-const blockOrAllowWebsiteExternalRequests = async (websiteTabConnections: WebsiteTabConnections, website: Website, shouldBlock: boolean) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
-		if (access.website.websiteOrigin !== website.websiteOrigin) return access
-		return modifyObject(access, { declarativeNetRequestBlockMode: shouldBlock ? 'block-all' : 'disabled' })
-	}))
-	await reloadConnectedTabs(websiteTabConnections)
-}
-
 export async function blockOrAllowExternalRequests(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: BlockOrAllowExternalRequests) {
-	await blockOrAllowWebsiteExternalRequests(websiteTabConnections, parsedRequest.data.website, parsedRequest.data.shouldBlock)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'alsoWhenInjectionUnchanged', withExternalRequestsBlockedOrAllowed(parsedRequest.data.website, parsedRequest.data.shouldBlock))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-}
-
-const removeAddressAccessByAddress = async (websiteOrigin: string, address: EthereumAddress) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
-		if (access.website.websiteOrigin !== websiteOrigin || !access.addressAccess) return access
-		return modifyObject(access, { addressAccess: access.addressAccess.filter((addressAccess) => addressAccess.address !== address) })
-	}))
 }
 
 export async function removeWebsiteAddressAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAddressAccess) {
-	await removeAddressAccessByAddress(parsedRequest.data.websiteOrigin, parsedRequest.data.address)
-	await reloadConnectedTabs(websiteTabConnections)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'alsoWhenInjectionUnchanged', withoutAddressAccess(parsedRequest.data.websiteOrigin, parsedRequest.data.address))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-}
-
-const setAddressAccessForWebsite = async (websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) => {
-	await updateWebsiteAccess((previousAccessList) => previousAccessList.map((access) => {
-		if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
-		const addressAccess = access.addressAccess.map((entry) => entry.address === address ? modifyObject(entry, { access: allowAccess }) : entry)
-		return modifyObject(access, { addressAccess })
-	}))
 }
 
 export async function allowOrPreventAddressAccessForWebsite(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
-	await setAddressAccessForWebsite(website.websiteOrigin, address, allowAccess)
-	await reloadConnectedTabs(websiteTabConnections)
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'alsoWhenInjectionUnchanged', withAddressAccessForWebsite(website.websiteOrigin, address, allowAccess))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'whenInjectionChanges', withoutWebsiteAccess(parsedRequest.data.websiteOrigin))
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

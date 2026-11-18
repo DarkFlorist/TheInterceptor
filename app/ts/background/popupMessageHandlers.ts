@@ -1,4 +1,5 @@
 import { runWithPendingConfirmationLock } from './confirmationAdmissionLock.js'
+import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { getInFlightConfirmationRunAbortController, runConfirmationSimulation, type ConfirmationRun } from './confirmationSimulationRun.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -19,6 +20,8 @@ import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAcce
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
+import { withWebsiteAccessChanges } from './websiteAccessMutations.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
@@ -65,9 +68,8 @@ import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getAc
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
-export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
+export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 import { setMetamaskCompatibilityMode } from './metamaskCompatibilityMode.js'
 
@@ -415,16 +417,7 @@ export async function setSafeSimulationSigner(
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => {
-		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
-		return withEntriesRemoved.map((entry) => {
-			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
-			if (changeForEntry === undefined) return entry
-			return changeForEntry.newEntry
-		})
-	})
-
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await applyWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, 'whenInjectionChanges', withWebsiteAccessChanges(accessChange.data))
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -557,10 +550,18 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			const ticket = startConfirmationMetadataRefresh(first.uniqueRequestIdentifier)
 			try {
 				const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())
+				// Persisting the refreshed visualization means the popup only shows content the background will match an accept against. A message still being crafted is left to its creation flow.
+				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+					if (current.type !== 'SignableMessage' || current.transactionOrMessageCreationStatus !== 'Simulated') return undefined
+					if (!ticket.isCurrent() || getReviewedResultId(current) !== getReviewedResultId(first)) return undefined
+					return { ...current, visualizedPersonalSignRequest }
+				})
 				const [visualisation, blockNumber, connectionStatus] = await Promise.all([visualizedSimulatorStatePromise, currentBlockNumberPromise, rpcConnectionStatusPromise])
-				const [currentFirst, ...others] = await getPendingTransactionsAndMessages()
-				if (!ticket.isCurrent() || currentFirst?.type !== 'SignableMessage' || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
-				await sendConfirmTransactionDialogUpdates([{ ...currentFirst, visualizedPersonalSignRequest, transactionOrMessageCreationStatus: 'Simulated' }, ...others], visualisation, blockNumber, connectionStatus)
+				// The request can be resolved during the awaits above; the popup needs a non-empty queue, and it closes by itself once the queue is empty.
+				const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
+				const [currentFirst] = pendingTransactionAndSignableMessages
+				if (!ticket.isCurrent() || currentFirst === undefined || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
+				await sendConfirmTransactionDialogUpdates(pendingTransactionAndSignableMessages, visualisation, blockNumber, connectionStatus)
 			} finally {
 				ticket.finish()
 			}

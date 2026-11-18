@@ -10,16 +10,18 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { assertNever } from '../utils/typescript.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
+import { getReviewedResultId } from './reviewedResult.js'
 import { getSettings } from './storedSettings.js'
 import { getPendingTransactionsAndMessages, getRpcConnectionStatus } from './storageVariables.js'
 
 // What the confirmation window is sent: the confirmation queue in its popup wire format, together with the current simulation stack.
 
+// Stamps every popup copy with the reviewed-result id of the stored request it was made from, which the popup returns unchanged with an accept (isAcceptForStoredResult).
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction':
 		case 'TransactionBatch':
-			return pending
+			return { ...pending, reviewedResultId: getReviewedResultId(pending) }
 		case 'SignableMessage': {
 			const base = {
 				type: pending.type,
@@ -31,6 +33,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 				website: pending.website,
 				activeAddress: pending.activeAddress,
 				approvalStatus: pending.approvalStatus,
+				reviewedResultId: getReviewedResultId(pending),
 			}
 			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
 			switch (transactionOrMessageCreationStatus) {

@@ -320,6 +320,12 @@ export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId
 
 export const getWebsiteSocketConnection = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
 
+// Read the connection's original frame identity, never a later port URL. A mismatched website cannot borrow another connection's origin.
+export const getWebsiteSocketRequestOrigin = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string) => {
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
+	return connection?.websiteOrigin === websiteOrigin ? connection.requestOrigin : undefined
+}
+
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined
 	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }

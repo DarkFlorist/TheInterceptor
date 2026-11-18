@@ -18,7 +18,7 @@ import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcC
 import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
@@ -141,7 +141,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const websiteOrigin = getHostWithPort(port.sender.url)
+	const frameOrigins = getFrameOrigins(port.sender.url)
+	const { websiteOrigin } = frameOrigins
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {
 		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
@@ -150,7 +151,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+	const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false }
 	const isTopFrame = isTopFramePort(port)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
