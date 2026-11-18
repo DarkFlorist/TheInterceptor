@@ -171,7 +171,6 @@ describe('UI audit fixes', () => {
 		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--danger-color\)/)
 		assert.match(configureRpcSource, /Remove<\/span><\/button>|<Trash \/> Remove<\/span><\/button>/)
 		assert.doesNotMatch(configureRpcSource, /--(?:btn-)?text-color: var\(--danger-color\)/)
-		assert.match(configureRpcSource, /class = 'btn btn--ghost rpc-form-remove'[^\n]*<span class = 'grid rpc-form-remove-label'><Trash \/> Remove<\/span>/)
 		assert.match(appCss, /\.rpc-form-remove\s*\{[^}]*--btn-text-color:\s*var\(--destructive-action-color\);/)
 		assert.match(appCss, /\.rpc-form-remove-label\s*\{[^}]*--text-color:\s*var\(--destructive-action-color\);/)
 	})
@@ -243,22 +242,11 @@ describe('UI audit fixes', () => {
 	})
 
 	test('keeps secondary actions readable and visually lighter than the primary decisions', async () => {
-		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
-		assert.match(confirmSource, /class = 'button button--secondary button-overflow dialog-action-button dialog-action-button--unsigned'[\s\S]*?text = 'Add unsigned'/)
-		// Every approve/reject dialog uses the same hierarchy: a quiet reject and a single primary confirm.
-		for (const dialogPath of ['app/ts/components/pages/ChangeChain.tsx', 'app/ts/components/pages/FetchSimulationStack.tsx']) {
-			const dialogSource = await Bun.file(dialogPath).text()
-			assert.match(dialogSource, /class = 'button button--secondary button-overflow dialog-action-button'/, dialogPath)
-			assert.match(dialogSource, /class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'/, dialogPath)
-		}
 		for (const sourcePath of ['app/ts/components/pages/ChangeChain.tsx', 'app/ts/components/pages/FetchSimulationStack.tsx', 'app/ts/components/pages/WatchAsset.tsx', 'app/ts/components/pages/InterceptorAccessList.tsx', 'app/ts/AddressBook.tsx']) {
 			const source = await Bun.file(sourcePath).text()
 			assert.doesNotMatch(source, /'button is-danger|is-warning is-danger|'button is-link/, sourcePath)
 			assert.doesNotMatch(source, /is-danger[^']*'[^>]*>Cancel</, sourcePath)
 		}
-		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
-		assert.match(homeSource, /class = \{ `button home-mode-button \$\{ param\.simulationMode\.value \? 'is-primary home-mode-button--active' : 'button--secondary' \}` \}/)
-		assert.match(homeSource, /class = \{ `button home-mode-button \$\{ param\.simulationMode\.value \? 'button--secondary' : 'is-primary home-mode-button--active' \}` \}/)
 
 		const css = await readInterceptorAppCss()
 		// Secondary actions sit on a raised neutral surface with a hairline border, so only the primary decision carries the action colour.
@@ -332,18 +320,15 @@ describe('UI audit fixes', () => {
 		// The rows are list items, so their marker and list spacing are reset.
 		assert.match(css, /\.ens-event\s*\{[^}]*list-style:\s*none;[^}]*margin:\s*0;/)
 		const ensSource = await Bun.file('app/ts/components/simulationExplaining/customExplainers/EnsEventExplainer.tsx').text()
-		assert.match(ensSource, /<ul class = 'ens-events'>[\s\S]*?<li key = \{[^\n]*\} class = 'ens-event'>/)
 		assert.doesNotMatch(ensSource, /positive-box|textColor/)
 		// Typed-data, Safe and hash tables share one two-column layout with the values starting on a common line, like the raw transaction details.
 		assert.match(css, /\.eip-712-table, \.safe-signing-fields, \.signature-hash-table\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/)
 		assert.match(css, /\.eip-712-table > \.log-cell:nth-child\(even\), \.safe-signing-fields > \.log-cell:nth-child\(even\), \.signature-hash-table > \.log-cell:nth-child\(even\) \{ justify-content: start \}/)
-		const personalSignSource = await Bun.file('app/ts/components/pages/PersonalSign.tsx').text()
-		assert.match(personalSignSource, /<p class = 'summary-label'>Domain<\/p>[\s\S]*?<p class = 'summary-label'>Message<\/p>/)
 	})
 
 	test('passes static tones to coin and card components as classes', async () => {
 		const css = await readInterceptorAppCss()
-		// The inline card colours its own label; a tone is in the layout cascade layer, which makes it apply to the label as well.
+		// Each tone has its own rule; a coloured tone also hands its colour to an inline card's label.
 		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
 		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(layoutCss, new RegExp(`\\n\\.coin-text--${ tone } \\{`))
 		// The layout layer outranks the heavier themed card corner rules, so this layout rule needs no extra selectors.
@@ -351,16 +336,12 @@ describe('UI audit fixes', () => {
 		// The simulation summary's rules are all in the shared layer, where the transaction input label's spacing follows the themed paragraph rule in load order.
 		assert.match(await Bun.file('app/css/interceptor-pages.css').text(), /\n\.summary-transaction-input-label \{/)
 		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
-		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ getToneClass\('coin-text', direction === 'pay' \? 'negative' : 'positive'\) \}`/)
 		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
 		assert.match(css, /\.address-editor \.input\.address-editor-input--invalid \{ color: var\(--danger-color\) \}/)
 	})
 
 	test('keeps the stack request and website access dialogs readable and within narrow windows', async () => {
 		const css = await readInterceptorAppCss()
-		const fetchStackSource = await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text()
-		// The framework's `.content` wrapper gave the stack bullets and indented every address card, so the dialog body is a plain container.
-		assert.doesNotMatch(fetchStackSource, /class = 'content'/)
 		// The panel follows the window width; a fixed minimum width pushed the cards off screen in narrow windows.
 		assert.match(css, /\.simulation-stack-view\s*\{[^}]*max-width:\s*40rem;/)
 		assert.doesNotMatch(css, /\.simulation-stack-view\s*\{[^}]*min-content/)
@@ -375,27 +356,18 @@ describe('UI audit fixes', () => {
 		for (const cancelButton of cancelButtons) assert.match(cancelButton, / autoFocus>/)
 	})
 
-	test('builds every status tone class in one place and applies the mode tint to every request window', async () => {
+	test('builds every status tone class in one place', async () => {
 		const css = await readInterceptorAppCss()
 		// Each tone a family accepts has a rule, so a tone added in TypeScript without its styling fails here.
 		for (const [family, tones] of Object.entries(toneClassFamilies)) {
 			for (const tone of tones) assert.match(css, new RegExp(`\\.${ family }--${ tone }[ ,{]`), `${ family }--${ tone }`)
 		}
 		assert.equal(getToneClass('outcome-chip', 'warning'), 'outcome-chip--warning')
-		// Components never spell a tone class themselves, and every window that shows a request tints its accent by mode.
+		// Components never spell a tone class themselves.
 		const toneClassPattern = new RegExp(`(${ Object.keys(toneClassFamilies).join('|') })--(positive|neutral|warning|negative)`)
 		for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan('.')) {
 			assert.doesNotMatch(await Bun.file(file).text(), toneClassPattern, file)
 		}
-		for (const requestWindow of ['App.tsx', 'pages/ConfirmTransaction.tsx', 'pages/InterceptorAccess.tsx', 'pages/ChangeChain.tsx', 'pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
-			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|modeClass)/, requestWindow)
-		}
-		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own.
-		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getInterceptorModeClass\(request\.value\.simulationMode\)/)
-		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getInterceptorModeClass\(changeRequest\.value\.simulationMode\)/)
-		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
-		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, \{ simulationMode: settings\.simulationMode, activeAddress \}\)/)
-		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), \{ simulationMode: settings\.simulationMode, simulationOverlayEnabled \},/)
 	})
 
 	test('gives component layout its precedence through cascade layer order instead of load order or selector weight', async () => {

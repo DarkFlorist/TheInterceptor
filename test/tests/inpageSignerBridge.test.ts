@@ -6,7 +6,7 @@ import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsReque
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown, stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
 type ListenerRegistration = { readonly listener: Listener, readonly capture: boolean }
-type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
+type InpageRequest = { readonly method: string, readonly requestId: number, readonly usingInterceptorWithoutSigner: boolean, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
@@ -47,6 +47,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	return {
 		method: value.method,
 		requestId: value.requestId,
+		usingInterceptorWithoutSigner: value.usingInterceptorWithoutSigner,
 		...(Array.isArray(value.params) ? { params: value.params } : {}),
 		...(value.internal === true ? { internal: true as const } : {}),
 		...(value.replayOnDisconnect === true ? { replayOnDisconnect: true as const } : {}),
@@ -1411,6 +1412,35 @@ describe('inpage signer bridge', () => {
 		assert.equal(typeof secondGeneration, 'number')
 		if (typeof firstGeneration !== 'number' || typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
 		assert.equal(secondGeneration > firstGeneration, true)
+	})
+
+	// The popup's protection status reads the handshake's signerConnected and the background routes by each request's usingInterceptorWithoutSigner, so a wallet disconnect must not make them disagree.
+	test('keeps reporting the wallet a disconnected signer still forwards to', async () => {
+		const handshakes: unknown[] = []
+		const requestsAfterDisconnect: boolean[] = []
+		let disconnected = false
+		const { fakeWindow, emitSignerEvent } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method === 'connected_to_signer') handshakes.push(request.params?.[0])
+				if (request.method === 'eth_blockNumber') {
+					if (disconnected) requestsAfterDisconnect.push(request.usingInterceptorWithoutSigner)
+					sendBackgroundReply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'eth_blockNumber', result: '0x1' })
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?signer-disconnect-forwarding', async () => {
+			await waitFor(() => handshakes.length === 1)
+			emitSignerEvent('disconnect', { code: 4900, message: 'disconnected' })
+			await waitFor(() => handshakes.length === 2)
+			disconnected = true
+			await fakeWindow.ethereum.request({ method: 'eth_blockNumber' })
+		})
+
+		assert.deepEqual(handshakes, [true, true])
+		assert.deepEqual(requestsAfterDisconnect, [false])
 	})
 
 	test('settles a pending chain switch when the signer provider changes', async () => {
@@ -3967,10 +3997,12 @@ describe('inpage signer bridge', () => {
 			assert.equal(mappedOnKinds.includes('chainChanged'), true)
 			signerEvents.connect!({ chainId: '0x99' })
 			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === true && message.params?.[1] === 'CoinbaseWallet').length >= 1)
+			const handshakesBeforeDisconnect = backgroundMessages.filter((message) => message.method === 'connected_to_signer').length
 			signerEvents.disconnect!({ code: 4900, message: 'error' })
-			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === false && message.params?.[1] === 'CoinbaseWallet').length >= 1)
-			assert.equal(backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === true && message.params?.[1] === 'CoinbaseWallet').length >= 1, true)
-			assert.equal(backgroundMessages.filter((message) => message.method === 'connected_to_signer' && message.params?.[0] === false && message.params?.[1] === 'CoinbaseWallet').length >= 1, true)
+			// A disconnect starts a new provider generation (which clears the signer's accounts and chain) but the page still forwards to this wallet, so it is still reported as connected.
+			await waitFor(() => backgroundMessages.filter((message) => message.method === 'connected_to_signer').length > handshakesBeforeDisconnect)
+			const disconnectHandshake = backgroundMessages.filter((message) => message.method === 'connected_to_signer').at(-1)
+			assert.deepEqual(disconnectHandshake?.params?.slice(0, 2), [true, 'CoinbaseWallet'])
 			signerEvents.accountsChanged!(['0x1111111111111111111111111111111111111111'])
 			assert.equal(typeof signerEvents.accountsChanged, 'function')
 			assert.equal(typeof signerEvents.chainChanged, 'function')

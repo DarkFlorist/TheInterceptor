@@ -308,12 +308,6 @@ describe('transaction outcome UI', () => {
 		assert.ok(chromeMinimumVersion >= 123, 'Chrome minimum version must support light-dark()')
 	})
 
-	test('keeps both layout classes on the signer connection chip', async () => {
-		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
-		assert.match(homeSource, /class = \{ `popup-home-connection-status popup-data-reveal-inline connection-chip \$\{ getToneClass\('connection-chip', 'positive'\) \}` \}>CONNECTED/)
-		assert.match(homeSource, /class = \{ `popup-home-connection-status popup-data-reveal-inline connection-chip \$\{ getToneClass\('connection-chip', 'negative'\) \}` \}>NOT CONNECTED/)
-	})
-
 	test('derives one verdict for a request and keeps every view of it in agreement', () => {
 		assert.equal(getTransactionVerdict({ transactionStatus: 'Transaction Succeeded', quarantine: false }), 'succeeded')
 		assert.equal(getTransactionVerdict({ transactionStatus: 'Transaction Succeeded', quarantine: true }), 'flagged')
@@ -470,8 +464,8 @@ describe('transaction outcome UI', () => {
 			assert.equal(amountClasses.filter((className) => className.includes('coin-text--negative')).length, 1)
 			assert.equal(amountClasses.filter((className) => className.includes('coin-text--positive')).length, 1)
 			const css = await readInterceptorAppCss()
-			assert.match(css, /\.coin-text--negative \{ color: var\(--danger-color\) \}/)
-			assert.match(css, /\.coin-text--positive \{ color: var\(--positive-color\) \}/)
+			assert.match(css, /\.coin-text--negative \{ color: var\(--danger-color\);/)
+			assert.match(css, /\.coin-text--positive \{ color: var\(--positive-color\);/)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

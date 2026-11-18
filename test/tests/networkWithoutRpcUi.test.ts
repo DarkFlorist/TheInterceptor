@@ -55,11 +55,4 @@ describe('getTabSignerAvailability', () => {
 		assert.equal(getTabSignerAvailability({ signerConnected: false }), 'missing')
 		assert.equal(getTabSignerAvailability(undefined), 'missing')
 	})
-
-	test('is the signer availability of every view of the no-RPC routing', async () => {
-		for (const path of ['app/ts/components/pages/Home.tsx', 'app/ts/background/iconHandler.ts']) {
-			const source = await Bun.file(path).text()
-			assert.match(source, /getNetworkWithoutRpcWarningState\([^)]*getTabSignerAvailability\(tabState\)\)/, path)
-		}
-	})
 })

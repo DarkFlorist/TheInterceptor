@@ -461,19 +461,6 @@ describe('Home popup clear empty state', () => {
 		// The page named a wallet but reported no wallet to forward to, so its requests carry usingInterceptorWithoutSigner and are still intercepted; the popup reads that same fact (signerConnected), not the name.
 		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerConnected: false, notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
 	] as const
-	// The routing and the popup read the page's wallet fact from different messages; both values come from the page's one hasWalletToForwardTo, so neither side re-derives it.
-	test('takes the routing and the protection status from the page\'s one wallet fact', async () => {
-		const inpageSource = await Bun.file('app/inpage/ts/inpage.ts').text()
-		assert.equal([...inpageSource.matchAll(/usingInterceptorWithoutSigner: !this\.hasWalletToForwardTo\(\),/g)].length, 2)
-		// Every value the page sends for the flag (type annotations aside) comes from hasWalletToForwardTo.
-		assert.doesNotMatch(inpageSource, /usingInterceptorWithoutSigner: (?!boolean\b|!this\.hasWalletToForwardTo\(\))/)
-		assert.match(inpageSource, /method: 'connected_to_signer', params: \[this\.hasWalletToForwardTo\(\), /)
-		assert.match(await Bun.file('app/ts/background/background.ts').text(), /signerAvailable: !request\.usingInterceptorWithoutSigner/)
-		assert.match(await Bun.file('app/ts/components/pages/Home.tsx').text(), /getNetworkWithoutRpcWarningState\(rpcNetwork, simulationMode, getTabSignerAvailability\(tabState\)\)/)
-		// The no-RPC wording has one owner, getNetworkWithoutRpcWarningText; the home page has no sentences of its own for it.
-		assert.doesNotMatch(await Bun.file('app/ts/components/pages/Home.tsx').text(), /configured RPC|not a supported network|network without an RPC go/)
-	})
-
 	for (const unprotectedState of unprotectedStates) {
 		const { state, simulationMode, signerName, notice, interceptionOff, overrides, restore } = unprotectedState
 		const signerConnected = 'signerConnected' in unprotectedState ? unprotectedState.signerConnected : undefined

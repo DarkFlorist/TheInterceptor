@@ -930,11 +930,11 @@
 
 .token-all-approval { color: var(--text-color) }
 
-/* Tones that callers pass to the coin and inline-card components through their class prop. */
-.coin-text--strong { font-weight: 500 }
-.coin-text--subtitle { color: var(--subtitle-text-color) }
-.coin-text--negative { color: var(--danger-color) }
-.coin-text--positive { color: var(--positive-color) }
+/* Tones that callers pass to the coin and inline-card components through their class prop. A tone also sets the label colour or weight of an inline card it is on (see .inline-card in interceptor-pages.css). */
+.coin-text--strong { font-weight: 500; --inline-card-label-font-weight: 500 }
+.coin-text--subtitle { color: var(--subtitle-text-color); --inline-card-label-color: var(--subtitle-text-color) }
+.coin-text--negative { color: var(--danger-color); --inline-card-label-color: var(--danger-color) }
+.coin-text--positive { color: var(--positive-color); --inline-card-label-color: var(--positive-color) }
 
 /* Backgrounds for the big address card, set by the views that place it on a tinted panel. */
 .multiline-card--importance { --bg-color: var(--importance-box-color) }

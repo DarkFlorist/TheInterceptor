@@ -1003,8 +1003,9 @@ class InterceptorMessageListener {
 			})
 			register('disconnect', (_error: ProviderRpcError) => {
 				if (this.signerWindowEthereumProvider !== provider) return
+				// A disconnected provider loses its chain session, which the new provider generation makes the background clear, but it is still the wallet this page forwards requests to, so the handshake keeps reporting hasWalletToForwardTo like every request does.
 				const signerProviderGeneration = this.advanceSignerProviderGeneration()
-				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName, signerProviderGeneration] })
+				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [this.hasWalletToForwardTo(), signerName, signerProviderGeneration] })
 			})
 			register('chainChanged', (chainId: string) => {
 				if (this.signerWindowEthereumProvider !== provider) return

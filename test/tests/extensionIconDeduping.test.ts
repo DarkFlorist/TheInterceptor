@@ -467,7 +467,7 @@ describe('extension icon deduping', () => {
 		assert.equal(tabState.activeSigningAddress, undefined)
 	})
 
-	async function getSigningTooltipOnNetworkWithoutRpc(signerName: 'MetaMask' | 'NoSigner') {
+	async function getSigningTooltipOnNetworkWithoutRpc(signerName: 'MetaMask' | 'NoSigner', signerConnected = signerName !== 'NoSigner') {
 		const { setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const { changeSimulationMode, updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 		const signerAccount = 0x6363636363636363636363636363636363636363n
@@ -485,7 +485,7 @@ describe('extension icon deduping', () => {
 			...previousState,
 			signerName,
 			// As the signer handshake stores it: a tab without a detected signer is never connected to one.
-			signerConnected: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
+			signerConnected,
 			signerAccounts: [signerAccount],
 			signerChain: 1n,
 			activeSigningAddress: signerAccount,
@@ -503,5 +503,10 @@ describe('extension icon deduping', () => {
 		const title = await getSigningTooltipOnNetworkWithoutRpc('NoSigner')
 		assert.equal(title.includes('The Interceptor is disabled'), false)
 		assert.equal(title, getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcNeedsConfig' }))
+	})
+
+	// The page named a wallet but has none to forward to, so its requests are still intercepted; the icon follows that, not the name.
+	test('signing mode tooltip asks for an RPC on a network without an RPC when the named wallet cannot receive requests', async () => {
+		assert.equal(await getSigningTooltipOnNetworkWithoutRpc('MetaMask', false), getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcNeedsConfig' }))
 	})
 })
