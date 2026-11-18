@@ -15,9 +15,36 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 import { confirmationRuns } from './confirmationRunTracker.js'
+
+// The result stored for a confirmation's first simulation when the run ended without one (refreshConfirmTransactionSimulation returned undefined because it was aborted or its RPC fetch failed). A failed result is what confirmation refreshes simulate again, and the window shows it as "Failed to simulate. Retrying...".
+export function createInterruptedConfirmTransactionSimulation(
+	confirmationRunId: ConfirmationRunId,
+	activeAddress: bigint,
+	simulationMode: boolean,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	signerName: SignerName,
+	simulationStartedTimestamp: Date,
+): ConfirmTransactionTransactionSingleVisualization {
+	const message = 'The simulation was interrupted before it finished.'
+	return { statusCode: 'failed', data: {
+		uniqueRequestIdentifier,
+		transactionToSimulate,
+		simulationMode,
+		activeAddress,
+		signerName,
+		confirmationRunId,
+		simulationStartedTimestamp,
+		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
+		simulationState: {
+			blockNumber: 0n,
+			simulationConductedTimestamp: new Date(),
+		},
+	} }
+}
 
 export async function refreshConfirmTransactionSimulation(
 	confirmationRunId: ConfirmationRunId,
@@ -80,7 +107,7 @@ async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPri
 				: undefined
 			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
 				? simulationInput
-				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
+				: appendTransactionsToInput(simulationInput, [preSimulationTransaction])
 			const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
 			return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
@@ -89,7 +116,7 @@ async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPri
 			.map((entry) => 'abi' in entry && entry.abi !== undefined ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		if (visualizedSimulatorState.visualizedSimulationState.success === false) {
-			return { statusCode: 'failed', data: {
+			return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 				...info,
 				simulationStartedTimestamp,
 				error: { ...visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error, decodedErrorMessage: visualizedSimulatorState.visualizedSimulationState.jsonRpcError.error.message },
@@ -97,11 +124,11 @@ async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPri
 					blockNumber: visualizedSimulatorState.simulationState.blockNumber,
 					simulationConductedTimestamp: new Date(),
 				}
-			} }
+			} })
 		}
 		const blocks = visualizedSimulatorState.visualizedSimulationState.visualizedBlocks
 		const lastTransaction = last(last(blocks)?.simulatedAndVisualizedTransactions ?? [])
-		return {
+		const confirmation: ConfirmTransactionTransactionSingleVisualization = {
 			statusCode: 'success',
 			data: {
 				...info,
@@ -121,6 +148,7 @@ async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPri
 				}
 			}
 		}
+		return transactionToSimulate.success ? confirmation : await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, confirmation)
 	} catch (error) {
 		if (isNewBlockAbort(error)) return undefined
 		if (isFailedToFetchError(error)) return undefined
@@ -137,7 +165,7 @@ async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPri
 			const recipient = params.to
 			return await getSimulationErrorAbis(baseError.data, async () => await identifyAddress(ethereum, thisConfirmTransactionAbortController, recipient))
 		}
-		return { statusCode: 'failed', data: {
+		return await withFailedTransactionPreviewUnlessCancelled(ethereum, thisConfirmTransactionAbortController, transactionToSimulate, { statusCode: 'failed', data: {
 			...info,
 			simulationStartedTimestamp,
 			error: { ...baseError, decodedErrorMessage: isJsonRpcResponseError ? decodeEthereumError(await extractToAbi(), baseError).reason : baseError.message },
@@ -145,6 +173,6 @@ async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPri
 				blockNumber: 0n,
 				simulationConductedTimestamp: new Date()
 			}
-		} }
+		} })
 	}
 }

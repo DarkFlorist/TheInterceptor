@@ -184,6 +184,7 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
+		safeFlow: { kind: 'ordinary' as const },
 		popupVisualisation: {
 			statusCode: 'failed' as const,
 			data: {
@@ -260,21 +261,6 @@ async function makeSimulatedPendingTransaction(approvalStatus: { readonly status
 			},
 		},
 	}
-}
-
-// Records every storage read the window makes, to show that it never reads the confirmation queue itself.
-function recordStorageReads() {
-	const { local } = globalThis.browser.storage
-	const read = local.get.bind(local)
-	const keysRead: unknown[] = []
-	Object.defineProperty(local, 'get', {
-		configurable: true,
-		value: async (keys: Parameters<typeof read>[0]) => {
-			keysRead.push(keys)
-			return await read(keys)
-		},
-	})
-	return keysRead
 }
 
 // A browser whose background answers the window's request for its queue with a push of the given stored transaction, as the background's handler does.
@@ -430,6 +416,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const pendingTransaction = makePendingTransaction()
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { toPopupPendingTransactionOrSignableMessage: toPopupCopyWithRefusals } = await import('../../app/ts/utils/popupPendingRequest.js')
+		const toPopupPendingTransactionOrSignableMessage = (pending: Parameters<typeof toPopupCopyWithRefusals>[0]) => toPopupCopyWithRefusals(pending, () => undefined)
 		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
@@ -447,7 +435,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 					data: {
 						popupOrTabId: { type: 'popup', id: 1 },
 						confirmTransactionBootstrap: {
-							pendingTransactionAndSignableMessages: [pendingTransaction],
+							pendingTransactionAndSignableMessages: [pendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 							currentBlockNumber: 123n,
 							rpcConnectionStatus: undefined,
 							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
@@ -486,6 +474,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const freshPendingTransaction = makePendingTransaction('fresh pushed transaction')
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
+		const { toPopupPendingTransactionOrSignableMessage: toPopupCopyWithRefusals } = await import('../../app/ts/utils/popupPendingRequest.js')
+		const toPopupPendingTransactionOrSignableMessage = (pending: Parameters<typeof toPopupCopyWithRefusals>[0]) => toPopupCopyWithRefusals(pending, () => undefined)
 		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock(async (message) => {
@@ -498,7 +488,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 					data: {
 						popupOrTabId: { type: 'popup', id: 1 },
 						confirmTransactionBootstrap: {
-							pendingTransactionAndSignableMessages: [stalePendingTransaction],
+							pendingTransactionAndSignableMessages: [stalePendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 							currentBlockNumber: 123n,
 							rpcConnectionStatus: undefined,
 							visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
@@ -521,7 +511,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
 					data: {
-						pendingTransactionAndSignableMessages: [freshPendingTransaction],
+						pendingTransactionAndSignableMessages: [freshPendingTransaction].map(toPopupPendingTransactionOrSignableMessage),
 						currentBlockNumber: 124n,
 						rpcConnectionStatus: undefined,
 					},
@@ -536,10 +526,10 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 
-	test('the window asks the background for its queue when it opens and when the network or the client changes, and never reads the queue from storage', async () => {
+	// The window may paint the stored queue first, but only the background's pushes carry the refusals, so it asks for one whenever they can change.
+	test('the window asks the background for its queue when it opens and when the network or the client changes', async () => {
 		const dom = installDomMock()
 		const browser = installBrowserMock()
-		const keysRead = recordStorageReads()
 		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 		const getQueueRequests = () => browser.getSentMessages().filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestConfirmTransactionQueue').length
 
@@ -555,7 +545,6 @@ describe('confirm transaction rpc status bootstrap', () => {
 		await act(() => { browser.dispatch({ role: 'all', method: 'popup_update_rpc_list', data: [] }) })
 		await new Promise((resolve) => setTimeout(resolve, 25))
 		assert.equal(getQueueRequests(), 3)
-		assert.equal(JSON.stringify(keysRead).includes('pendingTransactionsAndMessages'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})
@@ -568,13 +557,14 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 		const refusal = 'The active network changed after this transaction was requested. Reject this transaction and send the request again.'
 		const push = async (networkRefusal: string | undefined) => {
-			const { requestedChainId: _requestedChainId, ...pendingTransaction } = await makeSimulatedPendingTransaction({ status: 'WaitingForUser' })
+			const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/utils/popupPendingRequest.js')
+			const popupCopy = toPopupPendingTransactionOrSignableMessage(await makeSimulatedPendingTransaction({ status: 'WaitingForUser' }), () => networkRefusal)
 			await act(() => {
 				browser.dispatch({
 					role: 'confirmTransaction',
 					...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
 						method: 'popup_update_confirm_transaction_dialog_pending_transactions',
-						data: { pendingTransactionAndSignableMessages: [networkRefusal === undefined ? pendingTransaction : { ...pendingTransaction, networkRefusal }] },
+						data: { pendingTransactionAndSignableMessages: [popupCopy] },
 					}),
 				})
 			})

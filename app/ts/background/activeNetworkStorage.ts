@@ -24,6 +24,13 @@ export async function writeActiveNetwork(items: LocalStorageItems & { readonly a
 	}
 }
 
+// Writes the items of one storage update, through writeActiveNetwork when the update includes the active network, so an update that composes several owners' writes, such as a settings import, counts a network write too.
+export async function writeLocalStorageItems(items: LocalStorageItems) {
+	const { activeRpcNetwork } = items
+	if (activeRpcNetwork === undefined) return await browser.storage.local.set(serializeLocalStorageItems(items))
+	return await writeActiveNetwork({ ...items, activeRpcNetwork })
+}
+
 // Called right before the active network is read. The returned check tells, synchronously, whether the network read is still the stored one: it is not if a write through writeActiveNetwork was running when the read started or has started since, or if storage has reported a change of the key since.
 export function beginActiveNetworkRead() {
 	const writesStartedBeforeRead = activeNetworkWritesStarted

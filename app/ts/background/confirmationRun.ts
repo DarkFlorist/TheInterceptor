@@ -15,7 +15,7 @@ export function isConfirmationVisualisationCurrent(stored: ConfirmationRunVisual
 }
 
 // What a new run prepares the transaction from. A run whose inputs changed while it ran, for example through a gas limit edit or a Gnosis Safe signer change, describes a transaction that is no longer stored, so it is not current whatever its run id.
-export const getConfirmationRunInputs = (pendingTransaction: Pick<PendingTransaction, 'originalRequestParameters' | 'activeAddress' | 'safeTransaction'>) => stringifyJSONWithBigInts(withSortedKeys([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeTransaction]))
+export const getConfirmationRunInputs = (pendingTransaction: Pick<PendingTransaction, 'originalRequestParameters' | 'activeAddress' | 'safeFlow'>) => stringifyJSONWithBigInts(withSortedKeys([pendingTransaction.originalRequestParameters, pendingTransaction.activeAddress, pendingTransaction.safeFlow]))
 
 // A transaction as it was built and as it is read back from storage hold the same values with their keys in a different order, so the inputs are compared with their keys sorted.
 function withSortedKeys(value: unknown): unknown {

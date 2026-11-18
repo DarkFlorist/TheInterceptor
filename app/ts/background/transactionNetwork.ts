@@ -2,6 +2,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { GetInstalledServices } from '../simulation/serviceLifecycle.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
 import { readActiveNetworkSnapshot } from './activeNetworkStorage.js'
+import { getCreatedSafeProposal } from '../safe/safePendingFlow.js'
 import { updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 
 // A transaction is only prepared, simulated and visualized with the client of the network it was requested for. After a network switch its preview is kept unchanged, and approval is refused until the user switches back.
@@ -26,7 +27,8 @@ function getNetworkRefusal(activeChainId: bigint, ethereum: EthereumClientServic
 	if (requestedChainId === 'unknown') return createNetworkRefusal('This transaction was requested with an older version of The Interceptor.')
 	if (activeChainId !== requestedChainId || ethereum.getChainId() !== requestedChainId) return createNetworkRefusal('The active network changed after this transaction was requested.')
 	// A Gnosis Safe proposal is signed as EIP-712 data whose domain names the network of the Safe.
-	if (pendingTransaction.safeTransaction !== undefined && pendingTransaction.safeTransaction.safeTx.domain.chainId !== requestedChainId) return createNetworkRefusal('The Gnosis Safe transaction was prepared for another network than the transaction was requested for.')
+	const safeProposal = getCreatedSafeProposal(pendingTransaction.safeFlow)
+	if (safeProposal !== undefined && safeProposal.safeTx.domain.chainId !== requestedChainId) return createNetworkRefusal('The Gnosis Safe transaction was prepared for another network than the transaction was requested for.')
 	if (pendingTransaction.transactionOrMessageCreationStatus === 'Simulated' && !isTransactionPreviewOnRequestedChain(pendingTransaction, requestedChainId)) return createNetworkRefusal('The transaction preview was not simulated on the network the transaction was requested for.')
 	return undefined
 }

@@ -1,25 +1,14 @@
-import type { ConfirmTransactionTransactionSingleVisualization, PendingTransaction, PendingTransactionOrSignableMessage, PopupConfirmTransactionTransactionSingleVisualization, PopupPendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingTransaction, PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { getReviewedResultId } from '../background/reviewedResult.js'
 import { assertNever } from './typescript.js'
 
-// What a confirmation window is given of a stored visualisation: everything except the run that produced it, which only the background orders runs by.
-function toPopupVisualisation(visualisation: ConfirmTransactionTransactionSingleVisualization): PopupConfirmTransactionTransactionSingleVisualization {
-	if (visualisation.statusCode === 'success') {
-		const { confirmationRunId: _confirmationRunId, ...data } = visualisation.data
-		return { statusCode: 'success', data }
-	}
-	const { confirmationRunId: _confirmationRunId, ...data } = visualisation.data
-	return { statusCode: 'failed', data }
-}
-
-// What a confirmation window is given of a stored request, which only the background sends. Background bookkeeping, the requested network and the simulation run of a transaction and the signing input of a message, is left out, so a change to it is never a change to what the windows parse. A transaction is given what the requested-network rule says about it at the moment the queue is sent, which getNetworkRefusalMessage derives.
+// What a confirmation window is given of a stored request, which only the background sends. Each copy is stamped with the reviewed-result id of the stored request (getReviewedResultId), which the window returns unchanged with an accept. A message's signing input is left out. A transaction is given what the requested-network rule says about it at the moment the queue is sent, which getNetworkRefusalMessage derives and which is never stored.
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage, getNetworkRefusalMessage: (transaction: PendingTransaction) => string | undefined): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction': {
 			const networkRefusal = getNetworkRefusalMessage(pending)
-			const { requestedChainId: _requestedChainId, ...transaction } = pending
-			const shown = networkRefusal === undefined ? transaction : { ...transaction, networkRefusal }
-			if (shown.transactionOrMessageCreationStatus === 'Crafting' || shown.transactionOrMessageCreationStatus === 'Simulating') return shown
-			return { ...shown, popupVisualisation: toPopupVisualisation(shown.popupVisualisation) }
+			const shown = { ...pending, reviewedResultId: getReviewedResultId(pending) }
+			return networkRefusal === undefined ? shown : { ...shown, networkRefusal }
 		}
 		case 'SignableMessage': {
 			const base = {
@@ -32,6 +21,7 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 				website: pending.website,
 				activeAddress: pending.activeAddress,
 				approvalStatus: pending.approvalStatus,
+				reviewedResultId: getReviewedResultId(pending),
 			}
 			const transactionOrMessageCreationStatus = pending.transactionOrMessageCreationStatus
 			switch (transactionOrMessageCreationStatus) {

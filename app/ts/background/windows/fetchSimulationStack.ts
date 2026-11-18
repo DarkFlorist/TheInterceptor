@@ -1,10 +1,9 @@
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { Future } from '../../utils/future.js'
 import type { FetchSimulationStackRequestConfirmation } from '../../types/interceptor-messages.js'
-import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import type { PendingFetchSimulationStackRequestPromise, WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
-import { getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
+import { clearFetchSimulationStackRequestPromiseIfOwnedBy, getFetchSimulationStackRequestPromise, setFetchSimulationStackRequestPromise } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import type { GetSimulationStack, SimulationStackVersion } from '../../types/JsonRpc-types.js'
@@ -13,6 +12,7 @@ import type { ResolvedSimulationInput, ResolvedSimulationState } from '../../typ
 import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/SimulationStackExtraction.js'
 import { getAddressToMakeRich, getSettings } from '../settings.js'
 import { assertNever } from '../../utils/typescript.js'
+import { type PendingDialogReply, createPendingDialogReply } from './pendingDialogReply.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
 export type SimulationStackSnapshot = {
@@ -25,7 +25,10 @@ type FetchSimulationStackReply = {
 	snapshot: SimulationStackSnapshot
 }
 
-let pendForUserReply: Future<FetchSimulationStackReply> | undefined
+// Only this background instance's waiter: the stored request is the copy that survives a restart and feeds the dialog page, and openedDialog is the window, not the request
+let pendForUserReply: PendingDialogReply<FetchSimulationStackReply> | undefined
+
+let fetchSimulationStackResolutionInProgress = false
 
 let openedDialog: PopupOrTab | undefined 
 const MAX_DECISION_CACHE = 100
@@ -51,15 +54,40 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 
 export async function resolveFetchSimulationStackRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
 	if (pendForUserReply !== undefined) {
-		pendForUserReply.resolve({ confirmation, snapshot })
+		// A confirmation waits for its snapshot, so it can arrive after its dialog closed and a newer request started waiting
+		pendForUserReply.tryResolve(confirmation.data.uniqueRequestIdentifier, { confirmation, snapshot })
 		return
 	}
-	const data = await getFetchSimulationStackRequestPromise()
-	if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
-	const resolved = await getSimulationStack(snapshot.simulationState, data.simulationStackVersion)
-	replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'interceptor_getSimulationStack' as const, result: resolved, uniqueRequestIdentifier: data.uniqueRequestIdentifier })
-	if (openedDialog) await closePopupOrTabById(openedDialog)
-	openedDialog = undefined
+	// No in-memory waiter (e.g. the background restarted while the dialog was open): answer the website from the stored request
+	await runExclusiveFetchSimulationStackResolution(async () => {
+		const storedRequest = await getFetchSimulationStackRequestPromise()
+		if (storedRequest === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, storedRequest.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
+		await resolveStoredRequest(snapshot, websiteTabConnections, confirmation, storedRequest)
+	})
+}
+
+// Stops a repeated confirmation from answering the website twice. New requests deliberately ignore this guard, unlike openChangeChainDialog: a request may take the slot once resolveStoredRequest has cleared it, and refusing it would cache a rejection the user never made
+async function runExclusiveFetchSimulationStackResolution(resolution: () => Promise<void>) {
+	if (fetchSimulationStackResolutionInProgress) return
+	fetchSimulationStackResolutionInProgress = true
+	try {
+		await resolution()
+	} finally {
+		fetchSimulationStackResolutionInProgress = false
+	}
+}
+
+// The reply is prepared first so a failed extraction leaves the request stored and retryable. The clear precedes the close so a request arriving while the dialog closes finds the slot free instead of being refused
+async function resolveStoredRequest(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation, storedRequest: PendingFetchSimulationStackRequestPromise) {
+	const { uniqueRequestIdentifier, simulationStackVersion, popupOrTabId } = storedRequest
+	const reply: FetchSimulationStackRequestResult = confirmation.data.accept
+		? { type: 'result', method: 'interceptor_getSimulationStack', result: await getSimulationStack(snapshot.simulationState, simulationStackVersion) }
+		: { type: 'result', method: 'interceptor_getSimulationStack', error: userDeniedChange.error }
+	// Preparing the reply can wait on storage, so a newer request may hold the slot by now. It only got there because openFetchSimulationStackDialog found this request's dialog gone, which makes the close below a no-op in that case
+	await clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier)
+	replyToInterceptedRequest(websiteTabConnections, { ...reply, uniqueRequestIdentifier })
+	// Do not reset openedDialog here: it never refers to this restarted request's dialog, and a new request may have opened its own dialog while this one closes
+	await closePopupOrTabById(popupOrTabId)
 }
 
 function getRejectMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, simulationStackVersion: SimulationStackVersion) {
@@ -116,8 +144,8 @@ export const openFetchSimulationStackDialog = async (
 ): Promise<FetchSimulationStackDialogResult> => {
 	if (openedDialog !== undefined || pendForUserReply) return getRejectedDialogResult(initialSnapshot)
 
-	const replyFuture = new Future<FetchSimulationStackReply>()
-	pendForUserReply = replyFuture
+	const pendingReply = createPendingDialogReply<FetchSimulationStackReply>(uniqueRequestIdentifier)
+	pendForUserReply = pendingReply
 	const rejectMessage = getRejectMessage(uniqueRequestIdentifier, params.params[0])
 	const onCloseWindowOrTab = async (popupOrTab: PopupOrTabId) => { // check if user has closed the window on their own, if so, reject signature
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
@@ -153,7 +181,7 @@ export const openFetchSimulationStackDialog = async (
 		} else {
 			await resolveFetchSimulationStackRequest(initialSnapshot, websiteTabConnections, rejectMessage)
 		}
-		const reply = await replyFuture
+		const reply = await pendingReply.reply
 		await setFetchSimulationStackRequestPromise(undefined)
 		if (reply.confirmation.data.accept) {
 			return {

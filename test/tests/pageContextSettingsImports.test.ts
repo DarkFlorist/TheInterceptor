@@ -45,7 +45,9 @@ function findDisallowedImports(entrypoints: readonly string[], rules: ImportRule
 function getPageContextEntrypoints(bundlerSource: string, applicationRoot: string) {
 	const runtimeEntrypoints = /const runtimeEntrypointPaths = \[([\s\S]*?)\]/u.exec(bundlerSource)?.[1]
 	if (runtimeEntrypoints === undefined) throw new Error('The bundler runtime entrypoint list was not found')
-	return [...runtimeEntrypoints.matchAll(/path\.join\(appDirectory, ([^)]*)\)/gu)]
+	// The inpage entrypoints are listed separately and spread into the runtime list. Those named by a helper call, the MV2 document_start and page-world scripts, are generated wrappers rather than source modules, so only the literal paths are followed.
+	const inpageRuntimeEntrypoints = /const inpageRuntimeEntrypointPaths = \[([\s\S]*?)\]/u.exec(bundlerSource)?.[1] ?? ''
+	return [...`${ runtimeEntrypoints }\n${ inpageRuntimeEntrypoints }`.matchAll(/path\.join\(appDirectory, ((?:'[^']*'(?:, )?)+)\)/gu)]
 		.map((match) => (match[1] ?? '').split(',').map((part) => part.trim().replace(/^'|'$/gu, '')))
 		.map((parts) => parts[0] === 'inpage' && parts[1] === 'js'
 			? path.join(applicationRoot, 'inpage', 'ts', ...parts.slice(2))
