@@ -1042,7 +1042,7 @@ export async function openConfirmTransactionDialogForTransaction(
 					// A result another run stored meanwhile is kept over this run's interruption.
 					if (simulationResult === undefined && (transaction.transactionOrMessageCreationStatus === 'Simulated' || transaction.transactionOrMessageCreationStatus === 'FailedToSimulate')) return transaction
 					// A run that is not stored leaves the transaction to the next refresh, which simulates it from its stored inputs.
-					if (!mayStoreNewRun(transaction, runInputs, popupVisualisation)) return transaction
+					if (!mayStoreNewRun(transaction, runInputs, ethereumClientService.getChainId(), popupVisualisation)) return transaction
 					if (transactionToSimulate.success) return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' }
 					return { ...transaction, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' }
 				})

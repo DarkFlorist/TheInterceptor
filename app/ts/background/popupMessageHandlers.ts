@@ -46,7 +46,7 @@ import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationSta
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
 import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
-import type { GetInstalledServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { GetInstalledServices, SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -618,8 +618,9 @@ export async function refreshPopupConfirmTransactionSimulation(getInstalledServi
 }
 
 async function refreshReservedConfirmationRun(getInstalledServices: GetInstalledServices, uniqueRequestIdentifier: UniqueRequestIdentifier, confirmationRun: ConfirmationRunId) {
-	// The refresh simulates with the services installed when it starts.
-	const { ethereum } = getInstalledServices()
+	// The refresh forms and simulates with the services installed when it starts, which the network check below binds to the requested network; reading them again after an await could pair a transaction formed on that network with a simulation on another.
+	const services = getInstalledServices()
+	const { ethereum } = services
 	const [firstTxn] = await getPendingTransactionsAndMessages()
 	// A transaction still being crafted or simulated is refreshed too, so a first run that was not stored because its inputs changed while it ran is redone from the stored inputs.
 	if (firstTxn === undefined || firstTxn.type !== 'Transaction' || !doesUniqueRequestIdentifiersMatch(firstTxn.uniqueRequestIdentifier, uniqueRequestIdentifier)) return
@@ -633,22 +634,23 @@ async function refreshReservedConfirmationRun(getInstalledServices: GetInstalled
 		case 'prepareSafeProposal': return await runWithPendingConfirmationLock(async () => {
 			const prepared = await prepareUnformedSafeProposalAgain(ethereum, firstTxn, refresh.safeRequestContext)
 			if (prepared === undefined) return
-			await simulateAndStoreRefreshedTransaction(getInstalledServices, confirmationRun, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal)
+			await simulateAndStoreRefreshedTransaction(services, getInstalledServices, confirmationRun, firstTxn, prepared.transactionToSimulate, prepared.preparedSafeProposal)
 		})
-		case 'formTransaction': return await simulateAndStoreRefreshedTransaction(getInstalledServices, confirmationRun, firstTxn, await formPendingTransactionAgain(ethereum, firstTxn), undefined)
+		case 'formTransaction': return await simulateAndStoreRefreshedTransaction(services, getInstalledServices, confirmationRun, firstTxn, await formPendingTransactionAgain(ethereum, firstTxn), undefined)
 		default: return assertNever(refresh)
 	}
 }
 
-// Simulates the transaction a refresh formed and stores it in the pending transaction it was formed from, with the flow and approval status of a Gnosis Safe proposal the refresh prepared again.
+// Simulates the transaction a refresh formed, with the services it was formed with, and stores it in the pending transaction it was formed from, with the flow and approval status of a Gnosis Safe proposal the refresh prepared again. The window is then shown what the services installed at that moment give.
 async function simulateAndStoreRefreshedTransaction(
+	services: SimulationServices,
 	getInstalledServices: GetInstalledServices,
 	confirmationRun: ConfirmationRunId,
 	pending: PendingTransaction,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	preparedSafeProposal: { readonly safeFlow: PendingTransactionSafeFlow, readonly approvalStatus: PendingTransaction['approvalStatus'] } | undefined,
 ) {
-	const { ethereum, tokenPriceService } = getInstalledServices()
+	const { ethereum, tokenPriceService } = services
 	// The inputs this run prepares the transaction from, so the run is not stored onto a transaction whose gas limit or Gnosis Safe signer changed while it ran.
 	const runInputs = getConfirmationRunInputs(pending)
 	const refreshMessage = await refreshConfirmTransactionSimulation(
@@ -666,7 +668,7 @@ async function simulateAndStoreRefreshedTransaction(
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
 			case 'Transaction': {
-				if (!mayStoreNewRun(transactionOrMessage, runInputs, refreshMessage)) return transactionOrMessage
+				if (!mayStoreNewRun(transactionOrMessage, runInputs, ethereum.getChainId(), refreshMessage)) return transactionOrMessage
 				// The proposal prepared again replaces only the unformed proposal it was prepared from.
 				if (preparedSafeProposal !== undefined && getPendingTransactionRefresh(transactionOrMessage).kind !== 'prepareSafeProposal') return transactionOrMessage
 				if (transactionToSimulate.success) {

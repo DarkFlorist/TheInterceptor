@@ -744,6 +744,29 @@ test('a network round trip keeps the transaction preview of the network the tran
 	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
 })
 
+// A refresh forms and simulates the transaction with the client installed when it starts, so a network switch while the transaction is formed stores no preview of the new network.
+test('a network switch while a refresh forms the transaction stores no preview of the new network', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	await requestTransaction(websiteTabConnections, false)
+	const suspended = createSuspendedServices()
+	const otherNetworkServices = createOtherNetworkServices()
+	let installed: Pick<typeof simulator, 'ethereum' | 'tokenPriceService'> = suspended
+	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+
+	const refresh = refreshPopupConfirmTransactionSimulation(() => installed, uniqueRequestIdentifier)
+	await suspended.reached
+	await modules.browserStorageLocalSet({ activeRpcNetwork: otherNetwork })
+	installed = otherNetworkServices
+	suspended.release()
+	await refresh
+
+	assert.deepEqual(otherNetworkServices.requestedRpcMethods.filter((method) => method !== 'eth_blockNumber'), [])
+	assert.deepEqual(getPreviewChainIds(await getPendingTransaction()), { transaction: fakeRpcNetwork.chainId, visualization: fakeRpcNetwork.chainId })
+	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
+	assert.equal(await approveRequest(websiteTabConnections), true)
+	assert.equal(getForwardedSignerRequests(postedMessages).length, 1)
+})
+
 test('a transaction preview from another network cannot be approved', async () => {
 	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)
@@ -849,6 +872,15 @@ test('a confirmation visualisation is stored over one of an earlier run of its l
 	assert.equal(isConfirmationVisualisationCurrent(run('previous', 5), run('current', 5), 're-visualised run'), false)
 	assert.equal(isConfirmationVisualisationCurrent(run('current', 6), run('current', 5), 're-visualised run'), false)
 	assert.equal(isConfirmationVisualisationCurrent(undefined, run('current', 5), 're-visualised run'), false)
+})
+
+// The store rule itself refuses a run whose client is on another network than the request's, whatever order its caller checks things in.
+test('a new run is stored only when its client is on the requested network', async () => {
+	const { getConfirmationRunInputs, mayStoreNewRun } = await import('../../app/ts/background/confirmationRun.js')
+	const laterRun = { data: { confirmationRunId: { lifetime: 'current', sequence: 2 } } }
+	assert.equal(mayStoreNewRun(pendingTransaction, getConfirmationRunInputs(pendingTransaction), fakeRpcNetwork.chainId, laterRun), true)
+	assert.equal(mayStoreNewRun(pendingTransaction, getConfirmationRunInputs(pendingTransaction), otherNetwork.chainId, laterRun), false)
+	assert.equal(mayStoreNewRun({ ...pendingTransaction, requestedChainId: 'unknown' }, getConfirmationRunInputs(pendingTransaction), fakeRpcNetwork.chainId, laterRun), false)
 })
 
 // Stores the preview as one of a run of a previous background lifetime, which a fresh copy of the run id module stands in for, late in that lifetime.
