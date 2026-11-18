@@ -15,7 +15,7 @@ import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnect
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { isConfirmationVisualisationCurrent } from './confirmationRun.js'
+import { isConfirmationVisualisationCurrent, isRunOnRequestedNetwork } from './confirmationRun.js'
 import { createCreatedSafeProposalSafeFlow, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
@@ -477,6 +477,8 @@ export async function refreshAndPersistSafeSignerSelection(
 		const currentFlow = getSafePendingFlow(current)
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
+		// A rebuilt transaction was formed and simulated with this client, so it is stored only on a transaction requested on the client's network.
+		if (refreshResult.status === 'refreshed' && current.type === 'Transaction' && !isRunOnRequestedNetwork(current, ethereum.getChainId())) return current
 		// A rebuilt Gnosis Safe execution brings its own preview, which replaces the stored one only under the shared rule, so it never replaces the preview of a run that started after the rebuild.
 		const rebuiltFlow = refreshResult.status === 'refreshed' ? getSafePendingFlow(refreshResult.pending) : undefined
 		if (rebuiltFlow?.kind === 'directExecution' && 'popupVisualisation' in rebuiltFlow.pending && !isConfirmationVisualisationCurrent('popupVisualisation' in current ? current.popupVisualisation : undefined, rebuiltFlow.pending.popupVisualisation, 'new run')) return current

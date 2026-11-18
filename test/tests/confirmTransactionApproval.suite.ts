@@ -1136,6 +1136,32 @@ test('a Gnosis Safe rebuild is not persisted over the preview of a popup refresh
 	assert.equal(afterRebuild.safeExecutionSignerAddress, beforeRebuild.safeExecutionSignerAddress)
 })
 
+// The store step of a Gnosis Safe rebuild refuses a rebuild made with a client on another network than the request's, whatever its callers checked before.
+test('a Gnosis Safe rebuild made with a client on another network is not persisted', async () => {
+	const safeExecutionNonce = fakeSafeContract.nonce
+	const { safeSignerAddress } = await openDirectSafeExecutionAwaitingSignerRefresh()
+	const { refreshAndPersistSafeSignerSelection } = await import('../../app/ts/background/safeSignerSelectionRefresh.js')
+	const { recoverSafeSignatureOwner } = await import('../../app/ts/safe/safeCore.js')
+	const otherNetworkServices = createOtherNetworkServices()
+	// The same Safe is configured on the other network, where the execution's existing signature recovers to another address, which is made an owner there too, so the Gnosis Safe layer rebuilds the execution on that network instead of refusing it.
+	await modules.updateUserAddressBookEntries((entries) => [...entries, createSafeAddressBookEntry({ chainId: otherNetwork.chainId, safeSignerAddresses: [safeSignerAddress] })])
+	const executedCall = { to: recipientAddress, value: 0n, input: new Uint8Array() }
+	const existingSignature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(createSafeTx(fakeRpcNetwork.chainId, activeAddress, executedCall, safeExecutionNonce))))
+	const owners = [...fakeSafeContract.owners, await recoverSafeSignatureOwner(BigInt(getSafeTxHash(createSafeTx(otherNetwork.chainId, activeAddress, executedCall, safeExecutionNonce))), existingSignature)]
+	fakeSafeContract.owners = owners
+	await storePendingTransaction((pending) => pending.type === 'Transaction' && pending.safeFlow.kind === 'directExecution' && pending.safeFlow.safeExecutionReviewedSafeState !== undefined
+		? { ...pending, safeFlow: { ...pending.safeFlow, safeExecutionReviewedSafeState: { ...pending.safeFlow.safeExecutionReviewedSafeState, owners } } }
+		: pending)
+	const [beforeRebuild] = await modules.getPendingTransactionsAndMessages()
+	if (beforeRebuild?.type !== 'Transaction' || !('popupVisualisation' in beforeRebuild)) throw new Error('Missing simulated direct Safe execution')
+
+	const persistence = await withSilencedConsole(async () => await refreshAndPersistSafeSignerSelection(otherNetworkServices.ethereum, beforeRebuild, safeSignerAddress, async (rebuilt) => rebuilt))
+
+	assert.equal(persistence.refreshResult.status, 'refreshed')
+	assert.equal(persistence.persisted, false)
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0], beforeRebuild)
+})
+
 test('a confirmation whose first simulation started before a refresh of another confirmation still completes it, and neither cancels the other', async () => {
 	const { websiteTabConnections } = await setUpTransactionApprovalTest(false)
 	await requestTransaction(websiteTabConnections, false)

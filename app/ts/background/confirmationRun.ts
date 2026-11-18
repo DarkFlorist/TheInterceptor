@@ -24,9 +24,12 @@ function withSortedKeys(value: unknown): unknown {
 	return Object.fromEntries(Object.entries(value).sort(([first], [second]) => first < second ? -1 : first > second ? 1 : 0).map(([key, entry]) => [key, withSortedKeys(entry)]))
 }
 
+// The one rule for whether a run made with a client on runChainId may store its results on a transaction: only on the network the transaction was requested on, which a transaction stored without one ('unknown') has none of. Every path that stores a preview, a new run or a Gnosis Safe rebuild, checks it in its store step.
+export const isRunOnRequestedNetwork = (stored: Pick<PendingTransaction, 'requestedChainId'>, runChainId: bigint) => stored.requestedChainId === runChainId
+
 // The one rule for whether a new run, prepared from runInputs with the client of runChainId, may store its results onto the transaction as it is stored now. The first run and every later refresh store through it. A run is not stored if its client is not on the network the transaction was requested on, once the transaction was forwarded to the signer, whose approved preview it keeps, once the inputs it was prepared from changed, or over the results of a later run.
 export function mayStoreNewRun(stored: PendingTransaction, runInputs: string, runChainId: bigint, candidate: ConfirmationRunVisualisation) {
-	if (stored.requestedChainId !== runChainId) return false
+	if (!isRunOnRequestedNetwork(stored, runChainId)) return false
 	if (stored.approvalStatus.status === 'WaitingForSigner') return false
 	if (getConfirmationRunInputs(stored) !== runInputs) return false
 	if (stored.transactionOrMessageCreationStatus !== 'Simulated' && stored.transactionOrMessageCreationStatus !== 'FailedToSimulate') return true
