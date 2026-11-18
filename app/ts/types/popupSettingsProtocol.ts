@@ -1,17 +1,19 @@
 import * as funtypes from 'funtypes'
+import type { ImportSettings } from './interceptor-messages.js'
 import type { PopupSettingsRequest } from './popupSettingsRequests.js'
 
-// Exhaustive over settings requests: admission and shared status use this definition.
+// Exhaustive over admitted settings commands and imports: admission and shared status use this definition.
 export const popupSettingsOperations = {
 	popup_changeActiveAddress: { operation: 'wallet', replyType: 'ChangeActiveAddressReply' },
 	popup_enableSimulationMode: { operation: 'mode', replyType: 'PopupSettingsChangeReply' },
 	popup_changeActiveRpc: { operation: 'rpc', replyType: 'PopupSettingsChangeReply' },
 	popup_modifyMakeMeRich: { operation: 'rich', replyType: 'PopupSettingsChangeReply' },
-} as const satisfies Record<PopupSettingsRequest['method'], { operation: string, replyType: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' }>
+	popup_import_settings: { operation: 'import', replyType: 'popup_initiate_export_settings_reply' },
+} as const satisfies Record<PopupSettingsRequest['method'] | ImportSettings['method'], { operation: string, replyType: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' | 'popup_initiate_export_settings_reply' }>
 
 const operations = Object.values(popupSettingsOperations)
-export type PopupSettingsOperation = typeof operations[number]['operation'] | 'import'
-export const PopupSettingsOperation = funtypes.String.withGuard((value): value is PopupSettingsOperation => value === 'import' || operations.some(entry => entry.operation === value))
+export type PopupSettingsOperation = typeof operations[number]['operation']
+export const PopupSettingsOperation = funtypes.String.withGuard((value): value is PopupSettingsOperation => operations.some(entry => entry.operation === value))
 
 export type PopupSettingsChangeStatus = funtypes.Static<typeof PopupSettingsChangeStatus>
 export const PopupSettingsChangeStatus = funtypes.ReadonlyObject({

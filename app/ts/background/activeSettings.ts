@@ -2,7 +2,7 @@ import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import { isSignerOnlyNetwork, getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -84,13 +84,14 @@ export async function runActiveSettingsTransition(
 			if (!await commit()) return
 
 			const updatedSettings = await getSettings()
-			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+			const { chainChanged: rpcChainChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+			let servicesReplaced = false
 			try {
 				try {
 					// The preference belongs to the committed selection, even if later provider preparation fails.
 					if (options.signingPreference !== undefined) await rememberSigningAddressSelection(options.signingPreference)
 					try {
-						simulationServicesOwner.ensureNetwork(updatedSettings.activeRpcNetwork)
+						servicesReplaced = simulationServicesOwner.ensureNetwork(updatedSettings.activeRpcNetwork)
 					} catch (error) {
 						// Only failed provider installation invalidates simulation output here.
 						await publishFailedPopupVisualisation()
@@ -112,7 +113,7 @@ export async function runActiveSettingsTransition(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || servicesReplaced || isSignerOnlyNetwork(previousSettings.activeRpcNetwork) !== isSignerOnlyNetwork(updatedSettings.activeRpcNetwork) || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())

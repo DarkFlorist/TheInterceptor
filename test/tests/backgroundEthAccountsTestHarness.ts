@@ -1,10 +1,9 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwnerForServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
-import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
-import type { RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
+import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
 import { createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -221,14 +220,16 @@ export function createEthereumWithGetBlockCounter(
 		getCodeResult,
 		getStorageAtResult,
 		getBlockNumberResult,
+		rpcNetwork,
 	}: {
+		readonly rpcNetwork?: RpcEntry
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
 		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
+	const rpcEntry: RpcEntry = rpcNetwork ?? {
 		name: 'Test RPC',
 		chainId: 1n,
 		httpsRpc: 'http://127.0.0.1:8545',
@@ -280,16 +281,16 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, installedNetwork?: RpcNetwork): SimulationServicesOwner {
-	let current = initial
-	const replace = (network: RpcEntry) => {
-		current = reset === undefined ? current : reset(network)
-		installedNetwork = network
-		return current
-	}
-	return {
-		getCurrent: () => current,
-		// Callers can seed the installed endpoint when their fake services already represent a selected network.
-		ensureNetwork: network => { if (network.httpsRpc !== undefined && getRpcNetworkChange(installedNetwork, network).endpointChanged) replace(network) },
-	}
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }): SimulationServicesOwner {
+	return createSimulationServicesOwnerForServices(initial, (_current, network) => {
+		const next = reset === undefined ? initial : reset(network)
+		// Preserve fake method behavior while making the installed client's endpoint match the requested replacement.
+		const ethereum = new Proxy(next.ethereum, {
+			get(target, property, receiver) {
+				if (property === 'getRpcEntry') return () => network
+				return Reflect.get(target, property, receiver)
+			},
+		})
+		return { ...next, ethereum }
+	})
 }

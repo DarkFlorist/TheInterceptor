@@ -195,8 +195,8 @@ describe('popup settings changes', () => {
 		const currentRpc = (await getSettings()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const editedRpc = { ...currentRpc, name: 'Renamed network', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' }, primary: !currentRpc.primary, minimized: !currentRpc.minimized }
-		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
-		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') }, currentRpc)
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: currentRpc })
+		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') })
 		assert.deepEqual(await changeActiveRpc(reset, connections, editedRpc, { source: 'dapp', simulationMode: simulationMode, signerTabId: 1 }), { result: null })
 		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
 		const popupEdit = { ...editedRpc, name: 'Renamed through popup' }
@@ -297,6 +297,23 @@ describe('popup settings changes', () => {
 			return services
 		}), new Map(), { simulationMode: true, rpcNetwork: rpc })
 		assert.equal(announced, true)
+	})
+
+	test('refreshes when persisted network selection is unchanged but installed services must be replaced', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings, activateAddressSelection } = await loadModules()
+		const network = (await getSettings()).activeRpcNetwork
+		if (network.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const stale = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...network, httpsRpc: 'https://stale.example' } })
+		const selected = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: network })
+		const owner = createTestSimulationServicesOwner(stale, () => selected)
+		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
+		const before = refreshCount()
+		await activateAddressSelection(owner, new Map(), undefined, { simulationMode: true, signerAddress: undefined, rpcNetwork: network })
+		assert.ok(refreshCount() > before)
+		const afterReplacement = refreshCount()
+		await activateAddressSelection(owner, new Map(), undefined, { simulationMode: true, signerAddress: undefined, rpcNetwork: network })
+		assert.equal(refreshCount(), afterReplacement)
 	})
 
 	test('rich changes request a visualization refresh immediately and unchanged values skip it', async () => {

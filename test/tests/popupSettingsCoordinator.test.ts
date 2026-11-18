@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { createPopupSettingsCoordinator } from '../../app/ts/background/popupSettingsCoordinator.js'
-import { acceptPopupSettingsChangeStatus, type PopupSettingsChangeStatus } from '../../app/ts/types/popupSettingsProtocol.js'
+import { acceptPopupSettingsChangeStatus, popupSettingsOperations, PopupSettingsOperation, type PopupSettingsChangeStatus } from '../../app/ts/types/popupSettingsProtocol.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
 
 test('coordinator admits once, orders status despite clock rollback, and recovers after failure', async () => {
@@ -25,4 +25,10 @@ test('coordinator admits once, orders status despite clock rollback, and recover
 	await assert.rejects(coordinator.run('rich', async () => { throw new Error('Storage failed') }), /Storage failed/)
 	assert.equal(statuses.at(-1)?.operation, undefined)
 	assert.deepEqual(await coordinator.run('mode', async () => 'saved'), { accepted: true, result: 'saved' })
+})
+
+test('admitted operation validation is derived from every protocol descriptor, including imports', () => {
+	assert.equal(popupSettingsOperations.popup_import_settings.operation, 'import')
+	for (const descriptor of Object.values(popupSettingsOperations)) assert.equal(PopupSettingsOperation.parse(descriptor.operation), descriptor.operation)
+	assert.equal(PopupSettingsOperation.safeParse('unknown').success, false)
 })

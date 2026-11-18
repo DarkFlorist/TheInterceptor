@@ -10,6 +10,7 @@ import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeApps
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { runActiveSettingsTransition } from '../activeSettings.js'
+import { popupSettingsOperations } from '../../types/popupSettingsProtocol.js'
 import { popupSettingsCoordinator } from '../popupSettingsAdmission.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
@@ -50,7 +51,7 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 
 // Imports use the same admission, commit lock and post-commit effects as ordinary active-settings changes.
 export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
-	const admission = await popupSettingsCoordinator.run('import', async () => await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+	const admission = await popupSettingsCoordinator.run(popupSettingsOperations.popup_import_settings.operation, async () => await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
 		const reply = await importSettings(request, websiteTabConnections)
 		await sendPopupMessageToOpenWindows(reply)
 		return reply.data.success

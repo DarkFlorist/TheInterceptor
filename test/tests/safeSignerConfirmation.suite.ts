@@ -661,14 +661,15 @@ test('refreshes the selected signer and uses services installed during the walle
 	const accountRequestEntered = createDeferredValue<void>()
 	const releaseAccountReply = createDeferredValue<void>()
 	let retiredClientRequests = 0
+	const retiredNetwork = { ...fakeRpcNetwork, httpsRpc: 'https://retired.example' }
 	const retiredEthereum = new modules.EthereumClientService({
-		rpcUrl: fakeRpcNetwork.httpsRpc,
+		rpcUrl: retiredNetwork.httpsRpc,
 		clearCache() { return undefined },
 		async jsonRpcRequest() {
 			retiredClientRequests++
 			throw new Error('Confirmation used services captured before the wallet refresh')
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, retiredNetwork)
 	const owner = createTestSimulationServicesOwner({
 		ethereum: retiredEthereum,
 		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),

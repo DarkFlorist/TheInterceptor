@@ -37,7 +37,7 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...original.ethereum.getRpcEntry(), httpsRpc: 'https://installed.example' } })
 		let oldReads = 0
 		let newReads = 0
 		original.ethereum.getChainId = () => { oldReads++; return 1n }
@@ -73,7 +73,7 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...original.ethereum.getRpcEntry(), httpsRpc: 'https://installed.example' } })
 		let originalReads = 0
 		let installedReads = 0
 		original.ethereum.getChainId = () => { originalReads++; return 1n }

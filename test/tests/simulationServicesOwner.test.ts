@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
+import { createEthereumWithGetBlockCounter, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { test } from 'bun:test'
 import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 
@@ -53,15 +54,15 @@ test('reconciles selected networks against the installed client', () => {
 	const owner = createSimulationServicesOwner(initialNetwork, async () => undefined, async (_ethereum, error) => { throw error })
 	try {
 		const initialServices = owner.getCurrent()
-		owner.ensureNetwork({ ...initialNetwork, name: 'Renamed endpoint' })
+		assert.equal(owner.ensureNetwork({ ...initialNetwork, name: 'Renamed endpoint' }), false)
 		assert.equal(owner.getCurrent(), initialServices)
 		const nextNetwork = { ...initialNetwork, httpsRpc: 'https://replacement.example' }
-		owner.ensureNetwork(nextNetwork)
+		assert.equal(owner.ensureNetwork(nextNetwork), true)
 		const replacementServices = owner.getCurrent()
 		assert.notEqual(replacementServices, initialServices)
 		assert.equal(replacementServices.ethereum.getRpcEntry().httpsRpc, nextNetwork.httpsRpc)
-		owner.ensureNetwork({ ...nextNetwork, httpsRpc: undefined })
-		owner.ensureNetwork(nextNetwork)
+		assert.equal(owner.ensureNetwork({ ...nextNetwork, httpsRpc: undefined }), false)
+		assert.equal(owner.ensureNetwork(nextNetwork), false)
 		assert.equal(owner.getCurrent(), replacementServices, 'Signer-only selections retain the installed fallback endpoint')
 		owner.ensureNetwork(initialNetwork)
 		const resetServices = owner.getCurrent()
@@ -72,4 +73,19 @@ test('reconciles selected networks against the installed client', () => {
 	} finally {
 		owner.getCurrent().ethereum.cleanup()
 	}
+})
+
+test('the test owner starts from its actual client and uses the production replacement policy', () => {
+	const services = createEthereumWithGetBlockCounter({ count: 0 })
+	const initialNetwork = services.ethereum.getRpcEntry()
+	let replacements = 0
+	const owner = createTestSimulationServicesOwner(services, () => { replacements++; return services })
+	assert.equal(owner.ensureNetwork(initialNetwork), false)
+	assert.equal(owner.ensureNetwork({ ...initialNetwork, name: 'Renamed' }), false)
+	assert.equal(replacements, 0)
+	const next = { ...initialNetwork, httpsRpc: 'https://replacement.example' }
+	assert.equal(owner.ensureNetwork(next), true)
+	assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, next.httpsRpc)
+	assert.equal(owner.ensureNetwork(next), false)
+	assert.equal(replacements, 1)
 })

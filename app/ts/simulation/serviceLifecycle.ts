@@ -66,8 +66,8 @@ export function resetSimulationServices(
 
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
-	// Reconcile a selected network with the installed endpoint, retaining fallback services for signer-only selections.
-	readonly ensureNetwork: (rpcNetwork: RpcNetwork) => void
+	// Reconcile against the installed endpoint; return true only when services were replaced. Signer-only selections retain the fallback.
+	readonly ensureNetwork: (rpcNetwork: RpcNetwork) => boolean
 }
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
@@ -77,15 +77,21 @@ export function createSimulationServicesOwner(
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
-	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
-	const reset = (nextRpc: RpcEntry): SimulationServices => {
-		current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-		return current
-	}
+	return createSimulationServicesOwnerForServices(
+		createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks),
+		(current, nextRpc) => resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks),
+	)
+}
+
+// The same owner can manage real clients or injected services, with one reconciliation policy and no separate endpoint bookkeeping.
+export function createSimulationServicesOwnerForServices(initial: SimulationServices, replace: (current: SimulationServices, network: RpcEntry) => SimulationServices): SimulationServicesOwner {
+	let current = initial
 	return {
 		getCurrent: () => current,
-		ensureNetwork: (nextNetwork: RpcNetwork): void => {
-			if (nextNetwork.httpsRpc !== undefined && getRpcNetworkChange(current.ethereum.getRpcEntry(), nextNetwork).endpointChanged) reset(nextNetwork)
+		ensureNetwork: (nextNetwork) => {
+			if (nextNetwork.httpsRpc === undefined || !getRpcNetworkChange(current.ethereum.getRpcEntry(), nextNetwork).endpointChanged) return false
+			current = replace(current, nextNetwork)
+			return true
 		},
 	}
 }

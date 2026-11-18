@@ -3,8 +3,6 @@ import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
-import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 import { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
@@ -116,7 +114,6 @@ Reflect.set(globalThis, 'browser', {
 const [
 	{ dispatchPopupMessage },
 	{ getLatestUnexpectedError, updateInterceptorTransactionStack, getInterceptorTransactionStack },
-	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
 	{ createSimulationServicesOwner },
@@ -124,7 +121,6 @@ const [
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
 	import('../../app/ts/background/storageVariables.js'),
-	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
 	import('../../app/ts/simulation/serviceLifecycle.js'),
@@ -167,8 +163,8 @@ const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
 }
 
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
-	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
-	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
+	const ethereum = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async () => undefined).getCurrent().ethereum
+	const tokenPriceService = new TokenPriceServiceConstructor(ethereum, 60000)
 	return {
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
@@ -280,7 +276,11 @@ describe('popup message dispatcher seams', () => {
 		await pending
 		await handler(context, { method: 'popup_requestSimulationMetadata' })
 		assert.equal(observed.length, 4)
-		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
+		assert.strictEqual(observed[0], observed[1])
+		assert.strictEqual(observed[2], observed[3])
+		assert.notStrictEqual(observed[0], observed[2])
+		assert.strictEqual(observed[0]?.tokenPriceService, replacement.tokenPriceService)
+		assert.strictEqual(observed[2]?.tokenPriceService, last.tokenPriceService)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {
