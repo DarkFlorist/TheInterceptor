@@ -244,12 +244,9 @@ const WatchAssetForwardingStatus = funtypes.Union(
 	funtypes.ReadonlyObject({ status: funtypes.Literal('completed'), accepted: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ status: funtypes.Literal('error'), code: funtypes.Number, message: funtypes.String }),
 )
-// Requests stored before the mode travelled with the request have no simulationMode. They decode with it undefined, which keeps the pending request resolvable; its page then shows the neutral appearance without a mode tint.
-const StoredSimulationMode = funtypes.Union(funtypes.Boolean, funtypes.Undefined)
-
 type WatchAssetRequestDetails = {
 	readonly website: Website
-	readonly simulationMode: boolean | undefined
+	readonly simulationMode: boolean
 	readonly request: InterceptedRequest
 	readonly requestedAsset: WalletWatchAssetParameters
 	readonly currentToken: WatchAssetToken
@@ -267,7 +264,7 @@ type WatchAssetRequestDetails = {
 }
 const WatchAssetRequestDetails: funtypes.Codec<WatchAssetRequestDetails> = funtypes.ReadonlyObject({
 	website: Website,
-	simulationMode: StoredSimulationMode,
+	simulationMode: funtypes.Boolean,
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
 	currentToken: WatchAssetToken,
@@ -296,7 +293,7 @@ export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof P
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
-	simulationMode: StoredSimulationMode,
+	simulationMode: funtypes.Boolean,
 	simulationOverlayEnabled: funtypes.Boolean,
 	simulationStackVersion: SimulationStackVersion,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,

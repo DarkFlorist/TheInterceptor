@@ -98,7 +98,7 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-// A request that no longer decodes is reported and treated as absent, so it cannot block every later request; the next write replaces it. Requests stored before the mode travelled with the request still decode (see PendingFetchSimulationStackRequestPromise).
+// A request that no longer decodes is reported and treated as absent, so it cannot block every later request; the next write replaces it. That includes one stored by a version before the request carried its mode: an extension update closes its dialog and disconnects the page that made it, so it could not be answered anyway.
 const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
 	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise')).fetchSimulationStackRequestPromise,
 	write: async (fetchSimulationStackRequestPromise) => {
@@ -115,7 +115,7 @@ const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly
 	read: async () => (await browserStorageLocalGet('pendingWatchAssetRequests')).pendingWatchAssetRequests,
 	write: async (pendingWatchAssetRequests) => { await browserStorageLocalSet({ pendingWatchAssetRequests }) },
 	getDefault: () => [],
-	// Requests that no longer decode are reported and dropped so later requests still queue. Requests queued before the mode travelled with the request still decode (see StoredWatchAssetRequest).
+	// Requests that no longer decode are reported and dropped so later requests still queue, including ones queued by a version before the request carried its mode (see the simulation stack request above).
 	recover: reportCorruptStoredValue('Pending watch asset requests'),
 })
 export const getPendingWatchAssetRequests = pendingWatchAssetRequestsRepository.get

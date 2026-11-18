@@ -105,35 +105,10 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 }
 
 describe('fetch simulation stack freshness', () => {
-	test('keeps a simulation stack request stored before the mode travelled with the request resolvable', async () => {
+	// A request stored by a version before the request carried its mode has no mode to show. An extension update closes its dialog and disconnects the page that made it, so it could not be answered anyway; it is dropped like any record that no longer decodes, and the live request model keeps its mode required.
+	test('drops simulation stack and watch asset requests stored before the request carried its mode', async () => {
 		for (const key of Object.keys(storageState)) delete storageState[key]
 		const storage = await import('../../app/ts/background/storageVariables.js')
-		const modules = await modulesPromise
-		// A complete request written by the previous version, which only lacks `simulationMode`, as if the background restarted after the upgrade.
-		const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 3, connectionName: 5n } }
-		storageState.fetchSimulationStackRequestPromise = { website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }, popupOrTabId: { type: 'popup', id: 1 }, simulationOverlayEnabled: true, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 3, connectionName: '0x5' } } }
-		const storedRequest = await storage.getFetchSimulationStackRequestPromise()
-		assert.ok(storedRequest !== undefined)
-		// The mode cannot be recovered, so the page shows the neutral appearance; the request itself and its id are kept.
-		assert.equal(storedRequest.simulationMode, undefined)
-		assert.deepEqual(storedRequest.uniqueRequestIdentifier, uniqueRequestIdentifier)
-		const repliesToWebsite: unknown[] = []
-		const port = { postMessage: (message: unknown) => { repliesToWebsite.push(message) } }
-		const websiteTabConnections = new Map([[3, { connections: { '3-0x5': { port, socket: uniqueRequestIdentifier.requestSocket, websiteOrigin: 'https://requester.example', approved: true, wantsToConnect: false } } }]])
-		await modules.resolveFetchSimulationStackRequest(createSnapshot(1n), websiteTabConnections, {
-			method: 'popup_fetchSimulationStackRequestConfirmation',
-			data: { uniqueRequestIdentifier, accept: true, simulationStackVersion: '2.0.0' },
-		})
-		assert.equal(repliesToWebsite.length, 1)
-		assert.equal(typeof repliesToWebsite[0] === 'object' && repliesToWebsite[0] !== null && 'requestId' in repliesToWebsite[0] && repliesToWebsite[0].requestId, 1)
-		assert.equal(typeof repliesToWebsite[0] === 'object' && repliesToWebsite[0] !== null && 'type' in repliesToWebsite[0] && repliesToWebsite[0].type, 'result')
-		await storage.setFetchSimulationStackRequestPromise(undefined)
-	})
-
-	test('keeps a watch asset request queued before the mode travelled with the request resolvable', async () => {
-		for (const key of Object.keys(storageState)) delete storageState[key]
-		const storage = await import('../../app/ts/background/storageVariables.js')
-		const { resolveWatchAsset } = await import('../../app/ts/background/windows/watchAsset.js')
 		const { StoredWatchAssetRequest } = await import('../../app/ts/types/user-interface-types.js')
 		const token = { type: 'ERC20', name: 'Token', symbol: 'TKN', decimals: 6n, address: 0x1111111111111111111111111111111111111111n, chainId: 1n, entrySource: 'User' } as const
 		const uniqueRequestIdentifier = { requestId: 8, requestSocket: { tabId: 2, connectionName: 3n } }
@@ -151,28 +126,18 @@ describe('fetch simulation stack freshness', () => {
 			forwardToSigner: undefined,
 			forwardingStatus: undefined,
 		})
-		// The same complete record as the previous version wrote it, which only lacks `simulationMode`, as if the background restarted after the upgrade.
+		// The same complete records as the previous version wrote them, which only lack `simulationMode`.
 		const { simulationMode: _droppedSimulationMode, ...previousVersionRecord } = currentVersionRecord
 		storageState.pendingWatchAssetRequests = [previousVersionRecord]
-		const [storedRequest] = await storage.getPendingWatchAssetRequests()
-		assert.ok(storedRequest !== undefined)
-		assert.equal(storedRequest.simulationMode, undefined)
-		assert.deepEqual(storedRequest.request.uniqueRequestIdentifier, uniqueRequestIdentifier)
-		let addedToAddressBook: unknown
-		let closedPopupId: number | undefined
-		await resolveWatchAsset(new Map(), { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier } }, {
-			getRequests: storage.getPendingWatchAssetRequests,
-			updateRequests: storage.updatePendingWatchAssetRequests,
-			updateAddressBook: async (update) => { addedToAddressBook = update([]) },
-			publishAddressBookChanged: async () => undefined,
-			publish: async () => undefined,
-			closeDialog: async (popupOrTabId) => { closedPopupId = popupOrTabId.id },
-			processQueue: async () => undefined,
-			sendToSigner: () => false,
-		})
-		assert.deepEqual(addedToAddressBook, [token])
-		assert.equal(closedPopupId, 91)
-		assert.deepEqual(storageState.pendingWatchAssetRequests, [])
+		storageState.fetchSimulationStackRequestPromise = { website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }, popupOrTabId: { type: 'popup', id: 1 }, simulationOverlayEnabled: true, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 3, connectionName: '0x5' } } }
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			assert.deepEqual(await storage.getPendingWatchAssetRequests(), [])
+			assert.equal(await storage.getFetchSimulationStackRequestPromise(), undefined)
+		} finally {
+			console.warn = originalWarn
+		}
 	})
 
 	test('treats requests that no longer decode as absent instead of failing every later request', async () => {

@@ -39,13 +39,26 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 		if (tokenResult === undefined) throw new Error('token result were undefined')
 		const symbol = tokenResult.token.symbol
 		switch (tokenResult.type) {
-			case 'ERC20': return {
-				type: 'SimpleTokenApproval' as const,
-				title: `${ symbol } Approval`,
-				signingAction: `Approve ${ symbol }`,
-				simulationAction: `Simulate ${ symbol } Approval`,
-				rejectAction: `Reject ${ symbol } Approval`,
-				identifiedTransaction: simTx,
+			case 'ERC20': {
+				// approve(spender, 0) removes the allowance, as the approval visualisation and checks state; it is titled as a removal like the NFT approvals.
+				if (!tokenEventGrantsSpendingRights(tokenResult)) {
+					return {
+						type: 'SimpleTokenApproval' as const,
+						title: `Remove ${ symbol } Approval`,
+						signingAction: `Remove ${ symbol } Approval`,
+						simulationAction: `Simulate Removal of ${ symbol } Approval`,
+						rejectAction: `Reject ${ symbol } Approval Removal`,
+						identifiedTransaction: simTx,
+					}
+				}
+				return {
+					type: 'SimpleTokenApproval' as const,
+					title: `${ symbol } Approval`,
+					signingAction: `Approve ${ symbol }`,
+					simulationAction: `Simulate ${ symbol } Approval`,
+					rejectAction: `Reject ${ symbol } Approval`,
+					identifiedTransaction: simTx,
+				}
 			}
 			case 'NFT All approval': {
 				if (tokenEventGrantsSpendingRights(tokenResult)) {

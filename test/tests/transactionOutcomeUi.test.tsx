@@ -383,6 +383,10 @@ describe('transaction outcome UI', () => {
 			if (outcome === undefined) throw new Error('the sender has no summarized outcome')
 			assert.deepEqual(getAddressOutcomeChips(outcome, []).map((chip) => chip.tone), [expectedTone])
 		}
+		const erc20GrantTransaction = identifyTransaction(createSimulatedTransaction({ to: usdc, events: [erc20Grant] }))
+		assert.deepEqual([erc20GrantTransaction.title, erc20GrantTransaction.signingAction], ['USDC Approval', 'Approve USDC'])
+		const erc20RevocationTransaction = identifyTransaction(createSimulatedTransaction({ to: usdc, events: [erc20Revocation] }))
+		assert.deepEqual([erc20RevocationTransaction.title, erc20RevocationTransaction.signingAction], ['Remove USDC Approval', 'Remove USDC Approval'])
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorGrant] })).title, 'NFT ALL Approval')
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorRevocation] })).title, 'Remove NFT All Approval')
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [tokenIdGrant] })).title, '#7 NFT Approval')

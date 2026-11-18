@@ -6,7 +6,7 @@ import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
 import { installDomMock } from './domMock.js'
 import { interceptorAppStylesheetPaths, readInterceptorAppCss } from './cssTestUtils.js'
-import { getInterceptorModeClass, getStoredRequestModeClass, getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
+import { getInterceptorModeClass, getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
 import { pageDefinitions, stylesheetFilenames } from '../../scripts/generate-extension-pages.mts'
 
 type TestNode = {
@@ -387,14 +387,11 @@ describe('UI audit fixes', () => {
 			assert.doesNotMatch(await Bun.file(file).text(), toneClassPattern, file)
 		}
 		for (const requestWindow of ['App.tsx', 'pages/ConfirmTransaction.tsx', 'pages/InterceptorAccess.tsx', 'pages/ChangeChain.tsx', 'pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
-			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|getStoredRequestModeClass\(|modeClass)/, requestWindow)
+			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|modeClass)/, requestWindow)
 		}
-		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own. A stored request from before the mode was recorded has no mode and keeps the neutral appearance.
-		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getStoredRequestModeClass\(request\.value\.simulationMode\)/)
-		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getStoredRequestModeClass\(changeRequest\.value\.simulationMode\)/)
-		assert.equal(getStoredRequestModeClass(undefined), undefined)
-		assert.equal(getStoredRequestModeClass(true), getInterceptorModeClass(true))
-		assert.equal(getStoredRequestModeClass(false), getInterceptorModeClass(false))
+		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own.
+		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getInterceptorModeClass\(request\.value\.simulationMode\)/)
+		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getInterceptorModeClass\(changeRequest\.value\.simulationMode\)/)
 		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
 		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, settings\.simulationMode,/)
 		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), \{ simulationMode: settings\.simulationMode, simulationOverlayEnabled \},/)
@@ -423,23 +420,49 @@ describe('UI audit fixes', () => {
 		}
 	})
 
-	// Every class a stylesheet's selectors name, wherever it sits in the selector.
-	const getClassesStyled = (css: string) => new Set((stripCssComments(css).match(/[^;{}]+(?=\{)/g) ?? []).flatMap((selector) => [...selector.matchAll(/\.([A-Za-z][\w-]*)/g)].flatMap((match) => match[1] ?? [])))
-	// The component classes styled in both the layout and the theme stylesheet, leaving that component's rules in two cascade layers with different precedence.
-	const getComponentsInBothLayers = (layoutCss: string, themeCss: string, sharedBuildingBlocks: ReadonlySet<string>) => {
-		const themeClasses = getClassesStyled(themeCss)
-		return [...getClassesStyled(layoutCss)].filter((className) => themeClasses.has(className) && !sharedBuildingBlocks.has(className))
+	// Framework primitives that a component may extend with its own class in the same compound (`.buttons.popup-home-mode-selector`, `.tag.send-route-tag`); such a rule styles only that component.
+	const FRAMEWORK_PRIMITIVES: ReadonlySet<string> = new Set(['buttons', 'image', 'table', 'tag', 'navbar-item'])
+	// The compounds that scope a rule's target: its rightmost compound and the ancestors it is nested in through descendant or child combinators. A sibling combinator ends the chain, as the target is not inside a sibling.
+	const getScopingCompounds = (selector: string) => {
+		const parts = selector.trim().replace(/:(?:not|is|where|has)\([^)]*\)/g, '').split(/(\s*[>+~]\s*|\s+)/)
+		const scopingCompounds: string[][] = []
+		for (let index = parts.length - 1; index >= 0; index -= 2) {
+			scopingCompounds.unshift([...(parts[index] ?? '').matchAll(/\.([A-Za-z][\w-]*)/g)].flatMap((match) => match[1] ?? []))
+			if (/[+~]/.test(parts[index - 1] ?? '')) break
+		}
+		return scopingCompounds
 	}
-	// The only classes both files may name: generic building blocks that a component restyles inside its own selector (the home mode selector's buttons in layout, the Safe signer's inline cards in the theme). Every other class, including ones the framework also styles such as dropdown-menu, belongs to one file.
-	const SHARED_BUILDING_BLOCKS: ReadonlySet<string> = new Set(['button', 'inline-card'])
+	// The classes a rule belongs to: the component classes of the outermost scoping compound that names one, so `.buttons.popup-home-mode-selector > .button` and `.table .watch-asset-row-label` belong to their components and `.ens-table .textbox` only adjusts the shared textbox inside the ENS table. A rule whose scope names only framework primitives (`.tag`, `body .tag`, `.component + .tag`) styles those primitives.
+	const getClassesStyled = (css: string) => new Set((stripCssComments(css).match(/[^;{}]+(?=\{)/g) ?? [])
+		.filter((selectorList) => !selectorList.trim().startsWith('@'))
+		.flatMap((selectorList) => selectorList.split(','))
+		.flatMap((selector) => {
+			const scopingCompounds = getScopingCompounds(selector)
+			const componentClasses = scopingCompounds.map((compoundClasses) => compoundClasses.filter((className) => !FRAMEWORK_PRIMITIVES.has(className))).find((compoundClasses) => compoundClasses.length > 0)
+			return componentClasses ?? scopingCompounds.flat()
+		}))
+	// The classes styled both by the layout stylesheet and by a shared one, whose rules would then sit in two cascade layers with different precedence, so the layout rule silently wins over the shared one.
+	const getClassesStyledInBothLayers = (layoutCss: string, sharedCss: string) => {
+		const sharedClasses = getClassesStyled(sharedCss)
+		return [...getClassesStyled(layoutCss)].filter((className) => sharedClasses.has(className))
+	}
 
-	test('styles each component in only one of the layout and theme stylesheets', async () => {
-		// A component class is found wherever it appears in a selector, and a class the framework also styles is still checked.
-		assert.deepEqual(getComponentsInBothLayers('.buttons.popup-home-mode-selector > .button { gap: 0 }', '.popup-home-mode-selector { gap: 1px }', SHARED_BUILDING_BLOCKS), ['popup-home-mode-selector'])
-		assert.deepEqual(getComponentsInBothLayers('.dropdown-menu { right: 0 }', '.address-editor-field .dropdown-menu { left: auto }', SHARED_BUILDING_BLOCKS), ['dropdown-menu'])
+	test('styles each class in only one cascade layer', async () => {
+		// A component class is found anywhere in the leftmost compound, and a class the framework also styles is still checked.
+		assert.deepEqual(getClassesStyledInBothLayers('.buttons.popup-home-mode-selector > .button { gap: 0 }', '.popup-home-mode-selector { gap: 1px }'), ['popup-home-mode-selector'])
+		assert.deepEqual(getClassesStyledInBothLayers('.dropdown-menu { right: 0 }', '.dropdown-menu { left: 0 }'), ['dropdown-menu'])
+		// A primitive is exempt only when a component class scopes it in the same compound.
+		assert.deepEqual(getClassesStyledInBothLayers('.tag { color: red }', '.tag { color: blue }'), ['tag'])
+		assert.deepEqual(getClassesStyledInBothLayers('.tag.send-route-tag { color: red }', '.tag { color: blue }'), [])
+		// An element ancestor or a sibling component does not scope the primitive.
+		assert.deepEqual(getClassesStyledInBothLayers('body .tag { color: red }', '.tag { color: blue }'), ['tag'])
+		assert.deepEqual(getClassesStyledInBothLayers('.send-route + .tag { color: red }', '.tag { color: blue }'), ['tag'])
+		assert.deepEqual(getClassesStyledInBothLayers('.ens-table .textbox { width: 100% }', '.textbox { width: 50% }'), [])
+		assert.deepEqual(getClassesStyledInBothLayers('.table .watch-asset-row-label { color: red }', '.table td { color: blue }'), [])
 		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
-		const themeCss = await Bun.file('app/css/interceptor-theme.css').text()
-		assert.deepEqual(getComponentsInBothLayers(layoutCss, themeCss, SHARED_BUILDING_BLOCKS), [])
+		for (const sharedStylesheetPath of interceptorAppStylesheetPaths.filter((path) => !path.endsWith('interceptor-layout.css'))) {
+			assert.deepEqual(getClassesStyledInBothLayers(layoutCss, await Bun.file(sharedStylesheetPath).text()), [], sharedStylesheetPath)
+		}
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {

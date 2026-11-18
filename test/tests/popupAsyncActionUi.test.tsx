@@ -677,6 +677,7 @@ describe('popup async action UI', () => {
 			data: {
 				website: { websiteOrigin: 'https://stack.example', icon: undefined, title: undefined },
 				popupOrTabId: { type: 'popup', id: 41 },
+				simulationMode: true,
 				simulationOverlayEnabled: true,
 				simulationStackVersion: '2.0.0',
 				uniqueRequestIdentifier: { requestId, requestSocket: { tabId: 1, connectionName: 1n } },
