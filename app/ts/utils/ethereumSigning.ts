@@ -1,6 +1,9 @@
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
-import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
+import { sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
+import { secp256k1 } from '@noble/curves/secp256k1'
+import { invert, mod } from '@noble/curves/abstract/modular'
+import { bytesToNumberBE } from '@noble/curves/abstract/utils'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
 import { bytesFromHex, bytesFromHexOrBytes, ensureHex, isHexString, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
 import { encodeAbiParameters } from './ethereumPrimitiveCore.js'
@@ -188,7 +191,7 @@ type RecoverAddressParameters = {
 	}
 }
 
-type AddressRecoveryResult = { readonly success: true, readonly address: Hex } | { readonly success: false, readonly error: Error }
+type AddressRecoveryResult = { readonly success: true, readonly address: Hex } | { readonly success: false, readonly reason: 'point-not-on-curve' | 'point-at-infinity' }
 
 const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): AddressRecoveryResult => {
 	const digest = bytesFromHexOrBytes(hash)
@@ -199,16 +202,23 @@ const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): Ad
 			s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
 			yParity: normalizeSignatureYParity(signature),
 		}
-	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
-	let publicKey
-	try {
-		// micro-eth-signer 0.19.0 / its @noble/curves 2.2.0 dependency report these two invalid-key outcomes. Match complete messages so new dependency failures propagate instead of silently changing authorization accounting; recovery contract tests cover both outcomes.
-		publicKey = recoveredSignature.recoverPublicKey(digest)
-	} catch (error: unknown) {
-		if (!(error instanceof Error) || error.name !== 'Error' || (error.message !== 'bad point: is not on curve, sqrt error: Cannot find square root' && error.message !== 'invalid recovery: point at infinify')) throw error
-		return { success: false, error }
-	}
-	return { success: true, address: ensureHex(addr.fromPublicKey(publicKey.toBytes(false)), 'recovered address') }
+	const { r, s, yParity } = normalizedSignature
+	// Validate scalar ranges through the curve library before interpreting invalid-key outcomes.
+	new secp256k1.Signature(r, s)
+	if (digest.length > 8192) throw new Error('Signature recovery hash exceeds 8192 bytes')
+	const { Fp, n } = secp256k1.CURVE
+	// secp256k1 has y² = x³ + 7 and p ≡ 3 (mod 4). Check the square-root candidate explicitly instead of interpreting a library exception.
+	const ySquared = Fp.add(Fp.mul(Fp.sqr(r), r), secp256k1.CURVE.b)
+	let y = Fp.pow(ySquared, (Fp.ORDER + 1n) / 4n)
+	if (!Fp.eql(Fp.sqr(y), ySquared)) return { success: false, reason: 'point-not-on-curve' }
+	if (Number(y & 1n) !== yParity) y = Fp.neg(y)
+	const signaturePoint = secp256k1.ProjectivePoint.fromAffine({ x: r, y })
+	const hashScalar = bytesToNumberBE(digest.subarray(0, 32)) % n
+	const inverseR = invert(r, n)
+	// ECDSA recovery Q = r⁻¹(sR - hG); Noble owns all field/group operations and explicitly returns undefined for infinity.
+	const publicKey = secp256k1.ProjectivePoint.BASE.multiplyAndAddUnsafe(signaturePoint, mod(-hashScalar * inverseR, n), mod(s * inverseR, n))
+	if (publicKey === undefined) return { success: false, reason: 'point-at-infinity' }
+	return { success: true, address: ensureHex(addr.fromPublicKey(publicKey.toRawBytes(false)), 'recovered address') }
 }
 
 // Expected curve-recovery failure is data for callers modeling node-skipped signatures; malformed parameters and unexpected failures still throw.
@@ -219,7 +229,7 @@ export const tryRecoverAddress = (parameters: RecoverAddressParameters): Hex | u
 
 export const recoverAddress = async (parameters: RecoverAddressParameters): Promise<Hex> => {
 	const result = recoverAddressResult(parameters)
-	if (!result.success) throw result.error
+	if (!result.success) throw new Error(`Signature recovery failed: ${ result.reason }`)
 	return result.address
 }
 

@@ -1,5 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { initSig, sign } from 'micro-eth-signer/utils.js'
+import { addr } from 'micro-eth-signer'
+import { hexToBytes } from '@noble/hashes/utils'
 import type { Abi, Hex } from '../../app/ts/utils/ethereumPrimitives.js'
 import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, tryRecoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -231,11 +234,24 @@ describe('signature recovery failure contract', () => {
 		}
 	})
 
-	test('propagates a plain Error from the recovery library that is not an invalid-key outcome', async () => {
-		// This triggers noble's input-size guard inside recovery, after constructing a valid signature point.
+	test('matches library recovery across hash widths, both parities and high-s signatures', () => {
+		const order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
+		// Recover the same signature against short and long digests to check Noble's leftmost-256-bit truncation, both parities and both s forms.
+		const signed = sign(new Uint8Array(32).fill(7), hexToBytes(privateKey.slice(2)), false)
+		for (const width of [0, 1, 31, 32, 33, 65, 8192]) {
+			const digest = Uint8Array.from({ length: width }, (_, index) => (index * 19 + 3) % 256)
+			for (const s of [signed.s, order - signed.s]) for (const yParity of [0, 1]) {
+				const signature = { r: signed.r, s, yParity }
+				const expected = addr.fromPublicKey(initSig(signature, yParity).recoverPublicKey(digest).toBytes(false))
+				assert.equal(tryRecoverAddress({ hash: digest, signature }), expected)
+			}
+		}
+	})
+
+	test('rejects oversized recovery input instead of classifying it as an invalid key', async () => {
 		const parameters = { hash: new Uint8Array(8193), signature: { r: generatorX, s: 1n, yParity: 0 } }
-		assert.throws(() => tryRecoverAddress(parameters), { name: 'Error', message: 'input is too large' })
-		await assert.rejects(recoverAddress(parameters), { name: 'Error', message: 'input is too large' })
+		assert.throws(() => tryRecoverAddress(parameters), { name: 'Error', message: 'Signature recovery hash exceeds 8192 bytes' })
+		await assert.rejects(recoverAddress(parameters), { name: 'Error', message: 'Signature recovery hash exceeds 8192 bytes' })
 	})
 })
 
