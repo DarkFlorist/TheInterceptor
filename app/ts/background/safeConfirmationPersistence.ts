@@ -6,7 +6,7 @@ import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
@@ -30,7 +30,7 @@ export async function resolveSafeSignerReply(
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind === 'proposal' && flow.pending.transactionOrMessageCreationStatus === 'Simulated') {
-		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeTransaction, signerReply)
+		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, signerReply)
 	}
 
 	if (
@@ -55,6 +55,8 @@ async function prepareSafeProposalPersistence(
 	ethereum: EthereumClientService,
 	safeSigningRequest: SafeTransactionSigningRequest,
 ) {
+	// The proposal is stored in the stack of the connected chain, so its domain chain must be that chain.
+	assertSafeProposalChainMatchesConnectedNetwork(ethereum, safeSigningRequest.safeTx)
 	if (safeSigningRequest.reviewedSafeState === undefined) {
 		throw createSafeContractValidationFailure('Review this Gnosis Safe proposal again so its current owners, threshold, and nonce can be verified.')
 	}
@@ -191,8 +193,8 @@ export async function persistUnsignedSafeTransaction(
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind !== 'proposal' || flow.pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'not-safe' }
 	try {
-		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, flow.pending.safeTransaction)
-		return await persistSafeTransaction(ethereum, flow.pending, flow.pending.safeTransaction, safeSnapshot.state.nonce, [])
+		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, flow.pending.safeFlow.safeTransaction)
+		return await persistSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, safeSnapshot.state.nonce, [])
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be added to the stack: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
