@@ -286,21 +286,29 @@ const isInactivePrecompileRelocationError = (error: unknown) => error instanceof
 const getNonceRaisingCall = (transaction: RpcTransaction) => transaction.executedTransaction === undefined && transaction.executedCallAuthorized ? undefined : getExecutedTransaction(transaction)
 
 // Project actual calls while retaining their input prefix, so authorization code reads see overrides and earlier execution effects rather than the final or base-chain state.
-const getTransactionCountAfterTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, blocks: SimulationStateInputMinimalData, address: bigint, blockTag: EthereumBlockTag) => {
+const getTransactionCountAfterTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, blocks: SimulationStateInputMinimalData, address: bigint, blockTag: EthereumBlockTag, preparedContext?: Pick<PreparedSimulationExecutionContext, 'parentBlock' | 'prepared'>) => {
 	const initialNonce = await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
-	const steps = blocks.flatMap((block, blockIndex) => block.transactions.map((transaction, indexInBlock) => ({ block, blockIndex, transaction, indexInBlock })))
+	const transactions = blocks.flatMap(block => block.transactions)
+	let codeView = preparedContext
+	let positions: readonly { rpcIndex: number, indexInBlock: number }[] | undefined
 	return await getAccountNonceAfterTransactions({
 		address, chainId: ethereumClientService.getChainId(), initialNonce,
-		transactions: steps.map(({ transaction }) => {
+		transactions: transactions.map(transaction => {
 			const call = getNonceRaisingCall(transaction)
 			return { sender: call?.from, authorizationList: call?.type === '7702' ? call.authorizationList : [] }
 		}),
 		getCode: async (accountAddress, index) => {
-			const step = steps[index]
-			if (step === undefined) throw new Error('Missing nonce-accounting transaction prefix')
-			const prefix = [...blocks.slice(0, step.blockIndex), { ...step.block, transactions: step.block.transactions.slice(0, step.indexInBlock) }]
-			const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, prefix, blockTag === 'pending' ? 'latest' : blockTag)
-			const result = await getSimulatedCodeFromPreparedContext(ethereumClientService, requestAbortController, context, accountAddress)
+			if (codeView === undefined) {
+				const parentBlock = await ethereumClientService.getBlock(requestAbortController, blockTag === 'pending' ? 'latest' : blockTag)
+				if (parentBlock === null) throw new Error('Missing nonce-accounting parent block')
+				codeView = { parentBlock, prepared: await ethereumClientService.prepareEthSimulateV1Input(blocks, parentBlock.number, requestAbortController) }
+			}
+			// Prepare once per nonce read, reusing the input API's context. Distinct prefixes need distinct code observations; the RPC handler caches identical probes until the chain advances.
+			positions ??= codeView.prepared.rpcBlocks.flatMap((block, rpcIndex) => block.transactions.map((_transaction, indexInBlock) => ({ rpcIndex, indexInBlock })))
+			const position = positions[index]
+			if (position === undefined) throw new Error('Missing nonce-accounting transaction prefix')
+			const prefix = codeView.prepared.request.params[0].blockStateCalls.slice(0, position.rpcIndex + 1).map((block, index) => index === position.rpcIndex ? { ...block, calls: block.calls.slice(0, position.indexInBlock) } : block)
+			const result = await probeSimulatedCode(ethereumClientService, requestAbortController, prefix, codeView.parentBlock, codeView.prepared.blockOverrides[position.rpcIndex], accountAddress)
 			if (result.statusCode === 'failure') throw new Error('Unable to resolve authority code before the transaction')
 			return result.getCodeReturn
 		},
@@ -937,8 +945,7 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<SimulatedCodeResult> => {
 	if (simulationState.kind === 'passthrough' || await canQueryNodeDirectly(simulationState.value, blockTag)) return await getSimulatedCodeFromPreparedContext(ethereumClientService, requestAbortController, undefined, address, blockTag)
 	if (!simulationState.value.success) return { statusCode: 'failure' }
-	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, toSimulationStateInputMinimalData(simulationState.value.simulationStateInput))
-	return await getSimulatedCodeFromPreparedContext(ethereumClientService, requestAbortController, context, address, blockTag)
+	return await getSimulatedCodeWithInput(ethereumClientService, requestAbortController, toSimulationStateInputMinimalData(simulationState.value.simulationStateInput), address, blockTag)
 }
 
 const getSimulatedMockBlockFromPreparedContext = async (
@@ -999,7 +1006,7 @@ const getSimulatedTransactionCountFromPreparedInputContext = async (
 	const resolvedBlockTag = resolveSimulationBlockTag(baseBlockNumber, context.executionBlocks.length, blockTag)
 	const blockNumToUseForChain = typeof resolvedBlockTag === 'bigint' ? min(resolvedBlockTag, await ethereumClientService.getBlockNumber(requestAbortController)) : resolvedBlockTag
 	const includedInputBlocks = getExecutionBlocksUpToTag(context, blockTag).map(block => block.inputBlock)
-	return await getTransactionCountAfterTransactions(ethereumClientService, requestAbortController, includedInputBlocks, address, blockNumToUseForChain)
+	return await getTransactionCountAfterTransactions(ethereumClientService, requestAbortController, includedInputBlocks, address, blockNumToUseForChain, context)
 }
 
 export const getSimulatedTransactionCountFromInput = async (
@@ -1276,6 +1283,18 @@ const getSimulatedCodeFromPreparedContext = async (
 	return await probeSimulatedCode(ethereumClientService, requestAbortController, context.prepared.request.params[0].blockStateCalls.slice(0, prefixCount), context.parentBlock, prefixCount === 0 ? undefined : context.prepared.blockOverrides[prefixCount - 1], address)
 }
 
+// Context construction belongs to the code-view failure boundary too; malformed ABI data and unexpected preparation failures still propagate.
+const getSimulatedCodeWithInput = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, input: ResolvedSimulationInput | SimulationStateInputMinimalData, address: bigint, blockTag: EthereumBlockTag): Promise<SimulatedCodeResult> => {
+	let context
+	try {
+		context = isNodeOnlyBlockTag(blockTag) ? undefined : await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, input)
+	} catch (error: unknown) {
+		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' }
+		throw error
+	}
+	return await getSimulatedCodeFromPreparedContext(ethereumClientService, requestAbortController, context, address, blockTag)
+}
+
 export const getSimulatedCodeFromInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -1283,8 +1302,7 @@ export const getSimulatedCodeFromInput = async (
 	address: bigint,
 	blockTag: EthereumBlockTag = 'latest',
 ): Promise<SimulatedCodeResult> => {
-	const context = isNodeOnlyBlockTag(blockTag) ? undefined : await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
-	return await getSimulatedCodeFromPreparedContext(ethereumClientService, requestAbortController, context, address, blockTag)
+	return await getSimulatedCodeWithInput(ethereumClientService, requestAbortController, simulationStateInput, address, blockTag)
 }
 
 export const getSimulatedStorageAtFromInput = async (

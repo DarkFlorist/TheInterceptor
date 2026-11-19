@@ -10,7 +10,7 @@ const isInvalidRecoveryPoint = (error: unknown) => {
 	return isRecord(tagged) && getRecordProperty(tagged, 'code') === 'ERR_SECP256K1_INVALID_POINT'
 }
 
-export const recoverEthereumPublicKey = (digest: Uint8Array, signature: { readonly r: bigint, readonly s: bigint, readonly yParity: number }): PublicKeyRecoveryResult => {
+const recoverPublicKeyUnchecked = (digest: Uint8Array, signature: { readonly r: bigint, readonly s: bigint, readonly yParity: number }): PublicKeyRecoveryResult => {
 	const recoveredSignature = initSig(signature, signature.yParity)
 	let publicKey
 	try {
@@ -22,9 +22,19 @@ export const recoverEthereumPublicKey = (digest: Uint8Array, signature: { readon
 	return { success: true, publicKey: publicKey.toBytes(false) }
 }
 
-// Fail at module initialization even when a custom bundling entry point bypasses the build guard. Dependency upgrades must preserve both expected failure outcomes before any application recovery runs.
-const recoveryProbeDigest = new Uint8Array(32)
-recoveryProbeDigest[31] = 1
-for (const r of [5n, 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n]) {
-	if (recoverEthereumPublicKey(recoveryProbeDigest, { r, s: 1n, yParity: 0 }).success) throw new Error('Recovery dependency contract failed: invalid point recovered a key')
+// Keep unrelated primitive imports usable. Verify the replaceable dependency contract once on first recovery, or explicitly during build preflight; failures never become successful initialization.
+let dependencyVerified = false
+export const assertRecoveryDependencyContract = () => {
+	if (dependencyVerified) return
+	const digest = new Uint8Array(32)
+	digest[31] = 1
+	for (const r of [5n, 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n]) {
+		if (recoverPublicKeyUnchecked(digest, { r, s: 1n, yParity: 0 }).success) throw new Error('Recovery dependency contract failed: invalid point recovered a key')
+	}
+	dependencyVerified = true
+}
+
+export const recoverEthereumPublicKey = (digest: Uint8Array, signature: { readonly r: bigint, readonly s: bigint, readonly yParity: number }): PublicKeyRecoveryResult => {
+	assertRecoveryDependencyContract()
+	return recoverPublicKeyUnchecked(digest, signature)
 }

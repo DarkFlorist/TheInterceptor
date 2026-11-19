@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { describe, test, spyOn } from 'bun:test'
 import * as assert from 'assert'
 import { addr, authorization as eip7702Authorization } from 'micro-eth-signer'
 import { isAbiDataDecodeError, keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -109,6 +109,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public readonly codeByAddress = new Map<bigint, string>([[0x1234n, '0x1234']])
 	public readonly codeChangesByInput = new Map<string, { address: bigint, code: string }>()
 	public transactionCountReads = 0
+	public blockReadError: Error | undefined
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
 	public syncingResponse: unknown = false
@@ -153,6 +154,7 @@ class MockEthereumJSONRpcRequestHandler {
 				}
 			}
 			case 'eth_getBlockByNumber': {
+				if (this.blockReadError !== undefined) throw this.blockReadError
 				if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
 				return parseRequest(eth_getBlockByNumber_goerli_8443561_false)
@@ -645,6 +647,18 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(fromInput, fromState)
 				return fromState
 			}
+
+			test('nonce queries prepare once across multiple authorizing transactions and reuse an input context', async () => {
+				const input = stackOf(await Promise.all([0n, 1n, 2n].map(nonce => authorizationTransaction(sponsor, nonce, [signAuthorization(rpcNetwork.chainId, nonce)], 320n + nonce))))
+				const state = await createSimulationState(ethereum, undefined, input)
+				const prepare = spyOn(ethereum, 'prepareEthSimulateV1Input')
+				try {
+					assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(state), authority), 3n)
+					assert.equal(prepare.mock.calls.length, 1)
+					assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(input), authority), 3n)
+					assert.equal(prepare.mock.calls.length, 2)
+				} finally { prepare.mockRestore() }
+			})
 
 			test('oversized authorization quantities in stored simulation state do not break nonce accounting', async () => {
 				const signed = signAuthorization(rpcNetwork.chainId, 0n)
@@ -1754,6 +1768,19 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(dataStringWith0xStart(simulatedCode.getCodeReturn), '0x1234')
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.hasGetCodeOverride, true)
+		})
+
+		test('both code views return failure for context RPC errors and propagate unexpected preparation errors', async () => {
+			const input = createSimulationStateInput()
+			const state = await createSimulationState(ethereum, undefined, input)
+			try {
+				for (const read of [async () => await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(state), 0x1234n), async () => await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(input), 0x1234n)]) {
+					requestHandler.blockReadError = new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Block fetch failed' } })
+					assert.deepEqual(await read(), { statusCode: 'failure' })
+					requestHandler.blockReadError = new Error('Unexpected preparation failure')
+					await assert.rejects(read, requestHandler.blockReadError)
+				}
+			} finally { requestHandler.blockReadError = undefined }
 		})
 
 		test('code views do not query sender nonces recursively', async () => {
