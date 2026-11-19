@@ -202,16 +202,9 @@ describe('active settings concurrency', () => {
 				await assert.rejects(transition, error => error === failure)
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 			}
-			if (failurePoint === 'stack storage') {
-				// The installed replacement retired old refreshes, so failed cleanup must invalidate their stored result too.
-				const visualisation = await getPopupVisualisationState()
-				assert.equal(visualisation.simulationUpdatingState, 'failed')
-				assert.equal(visualisation.simulationResultState, 'invalid')
-				assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), true)
-			} else {
-				assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
-				assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
-			}
+			// No simulation consumer is open. Normal refresh work keeps the cached view; unrelated transition errors must not force a failed/invalid publication.
+			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
+			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })

@@ -205,7 +205,7 @@ function createNetworkSwitchFixture({ refreshReplacements = true } = {}) {
 		return currentServices
 	}, async (services, outcome) => {
 		if (refreshReplacements) await (await import('../../app/ts/background/simulationServiceRefresh.js')).refreshAfterSimulationServicesUpdate(services, outcome)
-	})
+	}, async (error) => { await (await import('../../app/ts/utils/errors.js')).reportUnexpectedError(error, { code: 'simulation_services_refresh_failed' }) })
 
 	return {
 		firstEndpointServices,
@@ -716,7 +716,7 @@ test('a failed observer queued behind execution cannot publish after its service
 	try {
 		await blocked
 		const { refreshAfterSimulationServicesUpdate } = await import('../../app/ts/background/simulationServiceRefresh.js')
-		failure = refreshAfterSimulationServicesUpdate(fixture.firstEndpointServices, { status: 'failed', error: new Error('Old update failed'), invalidateOldState: true })
+		failure = refreshAfterSimulationServicesUpdate(fixture.firstEndpointServices, { status: 'failed', error: new Error('Old update failed'), replacement: 'failed' })
 		await fixture.simulationServicesOwner.update(async ({ reset }) => {
 			await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined, activeRpcNetwork: otherEndpointNetwork })
 			reset(otherEndpointNetwork)
@@ -735,7 +735,7 @@ test('a failed observer queued behind execution cannot publish after its service
 })
 
 
-test('a refresh-only transition still refreshes committed selection when a later notification fails', async () => {
+for (const replaceServices of [false, true]) test(`a committed transition still refreshes after a later notification fails (services replaced: ${ replaceServices })`, async () => {
 	const fixture = createNetworkSwitchFixture()
 	await acceptTransactionOnFirstEndpoint(fixture)
 	const restoreConsumer = openVisualisationConsumer()
@@ -743,16 +743,19 @@ test('a refresh-only transition still refreshes committed selection when a later
 	try {
 		await updatePopupVisualisationIfNeeded(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { invalidateOldState: true })
 		const simulationsBefore = fixture.getFirstEndpointSimulations()
-		await assert.rejects(fixture.simulationServicesOwner.update(async ({ requestRefresh }) => {
+		await assert.rejects(fixture.simulationServicesOwner.update(async ({ reset, requestRefresh }) => {
 			await modules.updateInterceptorTransactionStack((stack) => ({ operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }, ...stack.operations] }))
-			requestRefresh()
+			if (replaceServices) reset(otherEndpointNetwork)
+			else requestRefresh()
 			throw notificationError
 		}), (error) => error === notificationError)
 		const stored = await getPopupVisualisationState()
 		assert.equal(stored.simulationUpdatingState, 'done')
 		assert.equal(stored.simulationResultState, 'done')
-		assert.ok(fixture.getFirstEndpointSimulations() > simulationsBefore, 'The requested refresh was lost after the notification failure')
-		assert.equal(fixture.simulationServicesOwner.getCurrent(), fixture.firstEndpointServices)
+		if (!replaceServices) assert.ok(fixture.getFirstEndpointSimulations() > simulationsBefore, 'The requested refresh was lost after the notification failure')
+		if (stored.simulationState.kind !== 'simulated') throw new Error('Expected the committed input to be simulated')
+		assert.deepEqual(stored.simulationState.value.simulationStateInput.map((block) => block.transactions.length), [0, 1])
+		assert.equal(fixture.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, replaceServices ? otherEndpointNetwork.httpsRpc : fakeRpcNetwork.httpsRpc)
 	} finally {
 		restoreConsumer()
 		fixture.releaseAll()

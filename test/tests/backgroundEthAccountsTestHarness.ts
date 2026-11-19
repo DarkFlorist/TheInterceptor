@@ -306,5 +306,5 @@ export function createTestSimulationServicesOwner(initial: { ethereum: EthereumC
 	return createSimulationServicesOwnerFromOperations(() => current, (network) => {
 		current = reset === undefined ? current : reset(network)
 		return current
-	}, observe)
+	}, observe, async (error) => { await (await import('../../app/ts/utils/errors.js')).reportUnexpectedError(error, { code: 'simulation_services_refresh_failed' }) })
 }

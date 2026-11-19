@@ -75,7 +75,9 @@ export type SimulationServicesUpdate = {
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 	readonly requestRefresh: () => void
 }
-export type SimulationServicesUpdateOutcome = { readonly status: 'completed', readonly invalidateOldState: boolean } | { readonly status: 'failed', readonly error: unknown, readonly invalidateOldState: boolean }
+type ServiceReplacementOutcome = 'unchanged' | 'replaced' | 'failed'
+export type SimulationServicesUpdateOutcome = { readonly replacement: ServiceReplacementOutcome } & ({ readonly status: 'completed' } | { readonly status: 'failed', readonly error: unknown })
+type ObserverErrorReporter = (error: unknown) => Promise<void>
 export type SimulationServicesUpdateObserver = (services: SimulationServices, outcome: SimulationServicesUpdateOutcome) => Promise<void>
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
@@ -84,32 +86,54 @@ export type SimulationServicesOwner = {
 }
 
 // Replacement is synchronous. Each update tracks its own installed pair and refresh intent; application workflows own their ordering, and an unfinished callback cannot lock out another replacement.
-export function createSimulationServicesOwnerFromOperations(getCurrent: () => SimulationServices, replace: SimulationServicesUpdate['reset'], observe: SimulationServicesUpdateObserver): SimulationServicesOwner {
+export function createSimulationServicesOwnerFromOperations(getCurrent: () => SimulationServices, replace: SimulationServicesUpdate['reset'], observe: SimulationServicesUpdateObserver, reportObserverError: ObserverErrorReporter): SimulationServicesOwner {
 	return {
 		getCurrent,
 		update: async <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>): Promise<Result> => {
 			const completed = await (async () => {
 				let services = getCurrent()
 				let refreshRequested = false
-				let invalidateOldState = false
+				let replacement: ServiceReplacementOutcome = 'unchanged'
 				let updateOpen = true
 				const requireOpenUpdate = () => { if (!updateOpen) throw new Error('This simulation services update is no longer active') }
 				try {
 					const result = await apply({
-						reset: (network) => { requireOpenUpdate(); refreshRequested = true; invalidateOldState = true; services = getCurrent(); services = replace(network); return services },
-						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true; if (!invalidateOldState) services = getCurrent() },
+						reset: (network) => {
+							requireOpenUpdate()
+							refreshRequested = true
+							services = getCurrent()
+							try {
+								services = replace(network)
+								replacement = 'replaced'
+								return services
+							} catch (error) {
+								replacement = 'failed'
+								throw error
+							}
+						},
+						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true; if (replacement !== 'replaced') services = getCurrent() },
 					})
-					return { status: 'completed' as const, invalidateOldState, result, services, refreshRequested }
+					return { status: 'completed' as const, replacement, result, services, refreshRequested }
 				} catch (error: unknown) {
-					return { status: 'failed' as const, error, services, refreshRequested, invalidateOldState }
+					return { status: 'failed' as const, error, services, refreshRequested, replacement }
 				} finally {
 					updateOpen = false
 				}
 			})()
 			// The workflow has settled and released its own ordering lock before observing its captured pair.
 			if (completed.refreshRequested) {
-				const outcome: SimulationServicesUpdateOutcome = completed.status === 'failed' ? { status: 'failed', error: completed.error, invalidateOldState: completed.invalidateOldState } : { status: 'completed', invalidateOldState: completed.invalidateOldState }
-				await observe(completed.services, outcome)
+				const outcome: SimulationServicesUpdateOutcome = completed.status === 'failed' ? { status: 'failed', error: completed.error, replacement: completed.replacement } : { status: 'completed', replacement: completed.replacement }
+				try {
+					await observe(completed.services, outcome)
+				} catch (observerError) {
+					// Refresh publication is a post-commit side effect. Report it separately without replacing the mutation's result or primary error.
+					try {
+						await reportObserverError(observerError)
+					} catch (reportingError) {
+						const errors = completed.status === 'failed' ? [completed.error, observerError, reportingError] : [observerError, reportingError]
+						throw new AggregateError(errors, 'Simulation refresh and its error reporting failed')
+					}
+				}
 			}
 			if (completed.status === 'failed') throw completed.error
 			return completed.result
@@ -123,6 +147,7 @@ export function createSimulationServicesOwner(
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
 	observeUpdate: SimulationServicesUpdateObserver,
+	reportObserverError: ObserverErrorReporter,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
 	// Advanced by every install. Each client compares the generation it was installed at, so installing a replacement makes every earlier client report itself replaced.
@@ -136,5 +161,5 @@ export function createSimulationServicesOwner(
 		installedGeneration = nextGeneration
 		current = next
 		return current
-	}, observeUpdate)
+	}, observeUpdate, reportObserverError)
 }
