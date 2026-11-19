@@ -3,16 +3,16 @@ import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
+import { addressString, bytes32String } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
+import { getNextBlockTimeStampOverride, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import type { SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
@@ -115,12 +115,7 @@ const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	}
 }
 
-export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
-	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
-	// Nodes reject an eth_simulateV1 block that is not strictly later than its parent, so a zero delay (a block split inserted by getCurrentSimulationInput, or a user's 0) still advances the simulated time by one second.
-	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + max(1n, getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit)))
-	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
-}
+export { getNextBlockTimeStampOverride } from './simulationBlockParameters.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export type PreparedEthSimulateV1InputBlock = {

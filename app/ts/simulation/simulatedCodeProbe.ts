@@ -7,9 +7,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import { getCodeByteCode } from '../utils/ethereumByteCodes.js'
 import { MOCK_ADDRESS } from '../utils/constants.js'
 import { JsonRpcResponseError } from '../utils/errors.js'
-import { getNextBlockTimeStampOverride } from './services/EthereumClientService.js'
-import { getSimulatedBlockBaseFeePerGas } from './services/simulationBlockParameters.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
+import { getAppendedSimulationBlockOverrides } from './services/simulationBlockParameters.js'
 
 export type SimulatedCodeResult = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure', readonly getCodeReturn?: undefined }
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
@@ -19,7 +17,7 @@ const getCodeAbi = [{ type: 'function', name: 'at', stateMutability: 'view', inp
 export const probeSimulatedCode = async (client: Pick<EthereumClientService, 'ethSimulateV1' | 'getChainId'>, requestAbortController: AbortController | undefined, prefix: readonly BlockCalls[], parentBlock: NonNullable<EthereumBlockHeader>, previousBlockOverride: BlockOverrides | undefined, address: bigint): Promise<SimulatedCodeResult> => {
 	const probeBlock: BlockCalls = {
 		calls: [{ type: '1559', from: MOCK_ADDRESS, nonce: 0n, chainId: client.getChainId(), maxPriorityFeePerGas: 0n, to: GET_CODE_CONTRACT, value: 0n, input: stringToUint8Array(encodeFunctionCall(getCodeAbi, 'at', [addressString(address)])), accessList: [] }],
-		blockOverrides: { ...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }), baseFeePerGas: getSimulatedBlockBaseFeePerGas(parentBlock), time: getNextBlockTimeStampOverride(previousBlockOverride?.time ?? parentBlock.timestamp, DEFAULT_BLOCK_MANIPULATION) },
+		blockOverrides: getAppendedSimulationBlockOverrides(parentBlock, previousBlockOverride),
 		stateOverrides: { [addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() }, [addressString(MOCK_ADDRESS)]: { nonce: 0n } },
 	}
 	try {

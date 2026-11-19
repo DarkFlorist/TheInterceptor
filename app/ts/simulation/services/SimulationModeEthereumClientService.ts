@@ -27,7 +27,7 @@ import { probeSimulatedCode, type SimulatedCodeResult } from '../simulatedCodePr
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
-import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
+import { getAppendedSimulationBlockOverrides, calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas } from './simulationBlockParameters.js'
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
@@ -350,17 +350,11 @@ const simulateBlockCallWithPreparedInputContext = async (
 	if (simulationPrefixBlockCount < 0 || simulationPrefixBlockCount > (context?.executionBlocks.length ?? 0)) throw new Error('Simulation prefix block count is out of bounds')
 	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
 	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
-	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
-	const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{
 			calls: [createSimulatedBlockCall(transaction)],
-			blockOverrides: {
-				...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
-				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
-				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
-			},
+			blockOverrides: getAppendedSimulationBlockOverrides(parentBlock, previousBlockOverride, simulateWithZeroBaseFee),
 			stateOverrides: extraOverrides,
 		},
 	]
