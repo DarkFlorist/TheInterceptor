@@ -38,6 +38,15 @@ export const ImportSettings = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ fileContents: funtypes.String })
 })
 
+export type ImportSettingsReply = funtypes.Static<typeof ImportSettingsReply>
+export const ImportSettingsReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_initiate_export_settings_reply'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
+		funtypes.ReadonlyObject({ success: funtypes.Literal(false), errorMessage: funtypes.String })
+	)
+})
+
 export type SetRpcList = funtypes.Static<typeof SetRpcList>
 export const SetRpcList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),
