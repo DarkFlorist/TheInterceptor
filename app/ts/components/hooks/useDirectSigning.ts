@@ -2,6 +2,7 @@ import { getHostWithPort, getTabIfExists } from '../../utils/requests.js'
 import { openSigningWalletSetup } from '../../components/subcomponents/SigningWalletSummary.js'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { DirectSigningRecord, DirectSigningRequest } from '../../types/directSigning.js'
+import type { PendingRequestReview } from '../../types/signingPageReply.js'
 import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
 import { prepareDirectPayload } from '../../signing/backend.js'
 import { selectLedgerDevice, withLedgerDevice } from '../../signing/ledgerHid.js'
@@ -17,6 +18,8 @@ export function useDirectSigning() {
 	const id = new URLSearchParams(location.search).get('id') ?? ''
 	const [record, setRecord] = useState<DirectSigningRecord>()
 	const [signatureRefusalReason, setSignatureRefusalReason] = useState<string>()
+	const [review, setReview] = useState<PendingRequestReview>()
+	const [forceSend, setForceSend] = useState(false)
 	const [error, setError] = useState<string>()
 	const [status, setStatus] = useState('Loading request…')
 	const [busy, setBusy] = useState(false)
@@ -28,6 +31,8 @@ export function useDirectSigning() {
 	const [priority, setPriority] = useState('0')
 	const errorPanel = useRef<HTMLParagraphElement>(null)
 	useEffect(() => { if (error !== undefined) errorPanel.current?.focus() }, [error])
+	// A send-anyway tick covers only the result it was given for, so a refreshed result needs a new tick.
+	useEffect(() => { setForceSend(false) }, [review?.reviewedResultId])
 	const controller = useRef(new AbortController())
 	const decoder = useRef(createAirGapUrDecoder('eth-signature'))
 	const command = async (request: DirectSigningRequest) => {
@@ -35,6 +40,7 @@ export function useDirectSigning() {
 			const reply = await sendSigningPageRequest(request)
 			setRecord(reply.record)
 			setSignatureRefusalReason(reply.signatureRefusalReason)
+			setReview(reply.review)
 			return reply
 		} catch (failure) {
 			// A command can persist a new phase before its RPC or application reply fails.
@@ -43,6 +49,7 @@ export function useDirectSigning() {
 				const recovered = recoveredReply.record
 				setRecord(recovered)
 				setSignatureRefusalReason(recoveredReply.signatureRefusalReason)
+				setReview(recoveredReply.review)
 				setStatus(recovered.phase === 'submitting' ? 'Submission outcome is uncertain. Reconcile by hash before taking further action.' : `Current request status: ${ recovered.phase }.`)
 			}
 			throw failure
@@ -80,7 +87,8 @@ export function useDirectSigning() {
 		if (record === undefined) return
 		// Device selection requires the click's user activation, before asynchronous extension messages.
 		const device = record.binding.wallet.type === 'ledger' ? await selectLedgerDevice() : undefined
-		const approved = record.phase === 'review' ? (await command({ method: 'signing_approve', id, revision: record.revision })).record : record
+		if (record.phase === 'review' && review === undefined) throw new Error('The transaction explanation is not ready')
+		const approved = record.phase === 'review' && review !== undefined ? (await command({ method: 'signing_approve', id, revision: record.revision, reviewedResultId: review.reviewedResultId, forceSend })).record : record
 		if (approved.phase !== 'approved') throw new Error('This request is no longer waiting for a signature')
 		const wallet = approved.binding.wallet
 		const payload = prepareDirectPayload(approved.input)
@@ -165,5 +173,5 @@ export function useDirectSigning() {
 		return true
 	}
 	const resetResponseScan = () => { decoder.current = createAirGapUrDecoder('eth-signature'); setStatus('Waiting for the response QR from Vault.') }
-	return { record, signatureRefusalReason, error, status, busy, qr, scanning, nonce, setNonce, gas, setGas, maxFee, setMaxFee, priority, setPriority, errorPanel, sign, changeSigningWallet, applyFeeChanges, startResponseScan, broadcastTransaction, returnToApplication, cancelRequest, receiveSignedResponse, setStatus, resetResponseScan }
+	return { record, signatureRefusalReason, review, forceSend, setForceSend, error, status, busy, qr, scanning, nonce, setNonce, gas, setGas, maxFee, setMaxFee, priority, setPriority, errorPanel, sign, changeSigningWallet, applyFeeChanges, startResponseScan, broadcastTransaction, returnToApplication, cancelRequest, receiveSignedResponse, setStatus, resetResponseScan }
 }

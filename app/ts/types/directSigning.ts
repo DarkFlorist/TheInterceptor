@@ -30,7 +30,8 @@ export const SigningPageRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_setSafeAccounts'), chainId: EthereumQuantity, address: EthereumAddress, owner: EthereumAddress, executor: funtypes.Union(EthereumAddress, funtypes.Undefined) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_saveWallet'), address: EthereumAddress, wallet: funtypes.Union(SigningWallet, funtypes.Undefined), revision: funtypes.Union(funtypes.String, funtypes.Undefined), name: funtypes.Union(funtypes.String, funtypes.Undefined) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_get'), id: funtypes.String }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_approve'), id: funtypes.String, revision: funtypes.String }),
+	// The approval names the reviewed result the page showed and whether the user ticked send-anyway for it, the same as a confirmation accept.
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_approve'), id: funtypes.String, revision: funtypes.String, reviewedResultId: funtypes.String, forceSend: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_result'), id: funtypes.String, revision: funtypes.String, result: funtypes.String.withConstraint((value) => value.length <= 131074) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_broadcast'), id: funtypes.String, revision: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_cancel'), id: funtypes.String }),

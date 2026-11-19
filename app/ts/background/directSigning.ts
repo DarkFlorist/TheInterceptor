@@ -21,6 +21,7 @@ import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { withDirectSigningRecords, type DirectSigningRecordsTransaction } from '../signing/directSigningStore.js'
 import { getHtmlFile } from './backgroundUtils.js'
+import { getAcceptRefusal } from './reviewedResult.js'
 
 /** Read afresh at each lifecycle boundary; a request can disappear while a device is signing. */
 async function findPendingSigningRequest(record: DirectSigningRecord) {
@@ -141,7 +142,7 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 				await refreshReview(edited)
 				return await records.store({ ...edited, reviewReady: true })
 			}
-			case 'signing_approve': return await approveSigningRequest(record, records)
+			case 'signing_approve': return await approveSigningRequest(record, records, request)
 			case 'signing_result': return await acceptSigningResult(record, request.result, records)
 			case 'signing_broadcast': return await broadcast(record, records)
 			default: throw signingOperationError('Unsupported signing operation')
@@ -157,9 +158,24 @@ function editTransactionFees(record: DirectSigningRecord, request: Extract<Direc
 	return { ...record, input: { ...record.input, data }, phase: 'review', reviewReady: false, revision: crypto.randomUUID(), result: undefined, transactionHash: undefined }
 }
 
-async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction) {
+const approvalRefusalMessages = {
+	staleReview: 'The transaction explanation changed. Review the current result before approving.',
+	rejectOnly: 'Interceptor could not determine this transaction’s result, so it can only be cancelled.',
+	sendAnywayRequired: 'This result fails or is flagged. Tick send anyway to approve it.',
+} as const
+
+// The explanation is refreshed after the confirmation accept, for example after a fee change, so the approval must name the refreshed result and meet its reject-only and send-anyway rules like a confirmation accept.
+async function assertApprovalForReviewedResult(record: DirectSigningRecord, approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {
+	const pending = await findPendingSigningRequest(record)
+	if (pending === undefined || pending.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The original signing request is no longer active')
+	const refusal = getAcceptRefusal(pending, approval)
+	if (refusal !== undefined) throw signingOperationError(approvalRefusalMessages[refusal])
+}
+
+async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction, approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {
 	if (record.phase !== 'review') throw signingOperationError('Request has already been approved; resume or cancel its current signing operation')
 	if (record.input.method === 'eth_sendTransaction' && record.reviewReady !== true) throw signingOperationError('Wait for the refreshed transaction explanation before approving')
+	await assertApprovalForReviewedResult(record, approval)
 	const pending = await getPendingTransactionsAndMessages()
 	const conflictingTransaction = (await records.read()).find((candidate) => {
 		if (candidate.id === record.id || candidate.input.method !== 'eth_sendTransaction') return false

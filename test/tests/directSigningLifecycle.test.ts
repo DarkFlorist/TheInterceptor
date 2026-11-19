@@ -1,6 +1,8 @@
 import { beforeEach, afterEach, expect, spyOn, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1'
-import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState, ethereum, simulator } from './confirmTransactionTestHarness.js'
+import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState, ethereum, simulator, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
+import { doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import { DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
 import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages } from '../../app/ts/background/storageVariables.js'
 import { saveAddressSigningWallet } from '../../app/ts/background/signingAddressBookCoordinator.js'
@@ -51,13 +53,22 @@ beforeEach(async () => {
 	if (binding === undefined) throw new Error('Missing binding')
 	const input = { method: 'eth_sendTransaction' as const, address: account.address, chainId: 1n, data: serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n, to: account.address, value: 0n }) }
 	record = { id: crypto.randomUUID(), request: pendingTransaction.uniqueRequestIdentifier, binding, websiteOrigin: pendingTransaction.website.websiteOrigin, rpcUrl: 'https://rpc.example.test', input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
-	await appendPendingTransactionOrMessage({ ...pendingTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: binding, signingChainId: 1n })
+	await appendPendingTransactionOrMessage({ ...reviewedTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: binding, signingChainId: 1n })
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
 })
 afterEach(() => { globalThis.fetch = originalFetch })
 
+// A website request whose simulation succeeded, so approving it needs no send-anyway override.
+const reviewedTransaction = withSimulatedTransactionResult(pendingTransaction)
+
+// Approves with the reviewed-result id of the website request as it is stored now, as the signing page does with the review it last received.
+async function approve(item: DirectSigningRecord, forceSend = false) {
+	const pending = (await getPendingTransactionsAndMessages()).find((candidate) => doesUniqueRequestIdentifiersMatch(candidate.uniqueRequestIdentifier, item.request))
+	return await updateDirectSigning({ method: 'signing_approve', id: item.id, revision: item.revision, reviewedResultId: pending === undefined ? 'missing request' : getReviewedResultId(pending), forceSend })
+}
+
 async function sign() {
-	record = await updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })
+	record = await approve(record)
 	const payload = prepareTransactionSigningPayload(record.input.data, account.address, 1n)
 	const signature = secp256k1.sign(bytesFromHex(payload.digest), bytesFromHex(privateKey))
 	const bytes = new Uint8Array(65)
@@ -90,10 +101,10 @@ test('editing fees invalidates the signed response and requires fresh review', a
 
 test('rejects changed wallets, cancellation, and a disappeared originating request', async () => {
 	await saveAddressSigningWallet(address, { ...record.binding.wallet, label: 'Changed' }, record.binding.revision)
-	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })).rejects.toThrow('wallet changed')
+	await expect(approve(record)).rejects.toThrow('wallet changed')
 	expect((await updateDirectSigning({ method: 'signing_cancel', id: record.id })).phase).toBe('cancelled')
 	await clearPendingTransactions()
-	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })).rejects.toThrow()
+	await expect(approve(record)).rejects.toThrow()
 	expect(broadcasts).toBe(0)
 })
 
@@ -117,9 +128,9 @@ test('ambiguous submission survives a reload and reconciles its exact hash witho
 
 test('concurrent approvals for the same account reserve one transaction at a time', async () => {
 	const second = { ...record, id: crypto.randomUUID(), request: { ...record.request, requestId: 99 }, revision: crypto.randomUUID() }
-	await appendPendingTransactionOrMessage({ ...pendingTransaction, uniqueRequestIdentifier: second.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: 1n })
+	await appendPendingTransactionOrMessage({ ...reviewedTransaction, uniqueRequestIdentifier: second.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: 1n })
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record, second]) })
-	const results = await Promise.allSettled([record, second].map((item) => updateDirectSigning({ method: 'signing_approve', id: item.id, revision: item.revision })))
+	const results = await Promise.allSettled([record, second].map(async (item) => await approve(item)))
 	expect(results.map((item) => item.status)).toEqual(['fulfilled', 'rejected'])
 	expect(broadcasts).toBe(0)
 })
@@ -134,9 +145,9 @@ for (const unrelatedChain of [false, true]) test(`nonce reservation ignores ${ u
 		input: { ...record.input, chainId, data: serializeTransaction({ ...parseTransaction(ensureHex(record.input.data)), chainId }) },
 		phase: unrelatedChain ? 'approved' : 'cancelled',
 	}
-	await appendPendingTransactionOrMessage({ ...pendingTransaction, uniqueRequestIdentifier: other.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: other.input.chainId })
+	await appendPendingTransactionOrMessage({ ...reviewedTransaction, uniqueRequestIdentifier: other.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: other.input.chainId })
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record, other]) })
-	const approved = await updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })
+	const approved = await approve(record)
 	expect(approved.phase).toBe('approved')
 	expect(broadcasts).toBe(0)
 })
@@ -242,10 +253,35 @@ test('concurrent storage writes enforce the aggregate limit and preserve ambiguo
 
 test('missing authoritative review readiness blocks approval even for legacy pending explanations', async () => {
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([{ ...record, reviewReady: undefined }]) })
-	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })).rejects.toThrow('refreshed transaction explanation')
+	await expect(approve(record)).rejects.toThrow('refreshed transaction explanation')
 })
 
 test('a failed review refresh invalidates approval without changing the payload revision', async () => {
 	await expect(updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, async () => { throw new Error('Refresh interrupted') })).rejects.toThrow('Refresh interrupted')
-	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })).rejects.toThrow('refreshed transaction explanation')
+	await expect(approve(record)).rejects.toThrow('refreshed transaction explanation')
+})
+
+const reverted = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
+
+// Stands in for refreshDirectSigningReview: the fee change stores a refreshed simulation result on the website request.
+const storeRefreshedResult = (refreshed: (pending: typeof reviewedTransaction) => typeof reviewedTransaction) => async () => {
+	const { updatePendingTransactionOrMessage } = await import('../../app/ts/background/storageVariables.js')
+	await updatePendingTransactionOrMessage(record.request, async (pending) => pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' ? { ...pending, popupVisualisation: refreshed(reviewedTransaction).popupVisualisation } : pending)
+}
+
+test('a refresh that makes the transaction revert blocks approval until the refreshed result is approved with send anyway', async () => {
+	const [pendingBeforeRefresh] = await getPendingTransactionsAndMessages()
+	if (pendingBeforeRefresh === undefined) throw new Error('Expected the website request')
+	const reviewedBeforeRefresh = getReviewedResultId(pendingBeforeRefresh)
+	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, storeRefreshedResult((pending) => withSimulatedTransactionResult(pending, reverted)))
+	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision, reviewedResultId: reviewedBeforeRefresh, forceSend: true })).rejects.toThrow('explanation changed')
+	await expect(approve(record)).rejects.toThrow('send anyway')
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
+	expect((await approve(record, true)).phase).toBe('approved')
+})
+
+test('a refresh that leaves the transaction without a reviewable result blocks approval even with send anyway', async () => {
+	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, storeRefreshedResult((pending) => ({ ...pending, popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } })))
+	await expect(approve(record, true)).rejects.toThrow('only be cancelled')
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
 })

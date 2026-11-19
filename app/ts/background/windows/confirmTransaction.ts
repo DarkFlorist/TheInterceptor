@@ -52,8 +52,7 @@ import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPa
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
-import { getReviewedResultId } from '../reviewedResult.js'
+import { getReviewedResultId, isAcceptForStoredResult } from '../reviewedResult.js'
 import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
@@ -339,13 +338,6 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 		}
 		return transaction
 	})
-}
-
-// An accept authorizes only the stored request whose reviewed content the user saw. A transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
-function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { reviewedResultId: string, forceSend: boolean }) {
-	if (getReviewedResultId(pending) !== accept.reviewedResultId) return false
-	if (isRejectOnlyTransaction(pending)) return false
-	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }
 
 // Checks the accept against the stored request and claims it in the same locked storage update, so a refresh committed in between cannot become the accepted request. Signing-mode requests move to WaitingForSigner; simulation-mode ones are removed once added to the simulation. Returns the accepted snapshot, or undefined when the accept no longer matches.

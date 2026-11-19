@@ -15,7 +15,7 @@ import { parseTransaction } from './utils/ethereumTransactions.js'
 import { useDirectSigning } from './components/hooks/useDirectSigning.js'
 
 function DirectSigningPage() {
-	const { record, signatureRefusalReason, error, status, busy, qr, scanning, nonce, setNonce, gas, setGas, maxFee, setMaxFee, priority, setPriority, errorPanel, sign, changeSigningWallet, applyFeeChanges, startResponseScan, broadcastTransaction, returnToApplication, cancelRequest, receiveSignedResponse, setStatus, resetResponseScan } = useDirectSigning()
+	const { record, signatureRefusalReason, review, forceSend, setForceSend, error, status, busy, qr, scanning, nonce, setNonce, gas, setGas, maxFee, setMaxFee, priority, setPriority, errorPanel, sign, changeSigningWallet, applyFeeChanges, startResponseScan, broadcastTransaction, returnToApplication, cancelRequest, receiveSignedResponse, setStatus, resetResponseScan } = useDirectSigning()
 	if (record === undefined) return <main style = 'padding: 24px; color: var(--text-color);'><p>{ status }</p><p ref = { errorPanel } tabIndex = { -1 } role = 'alert'>{ error }</p></main>
 	const transaction = record.input.method === 'eth_sendTransaction' ? parseTransaction(ensureHex(record.input.data)) : undefined
 	const walletName = record.binding.wallet.type === 'ledger' ? 'Ledger' : 'AirGap Vault'
@@ -24,6 +24,8 @@ function DirectSigningPage() {
 	const messageText = messageBytes === undefined ? undefined : new TextDecoder().decode(messageBytes)
 	const typedData = record.input.method === 'eth_signTypedData_v4' ? parseDirectSigningTypedData(record.input.data) : undefined
 	const { complete, title: completedTitle, refusal } = getDirectSigningCompletion(record, signatureRefusalReason)
+	// Approval follows the confirmation's rules for the current result: none without a reviewable result, and a failing or flagged result needs send anyway.
+	const approvalBlocked = record.phase === 'review' && (review === undefined || review.rejectOnly || review.sendAnywayReason !== undefined && !forceSend)
 	return <main class = 'signing-page'>
 		<header><p class = 'signing-muted'>Signing mode · real signature</p><h1>{ completedTitle ?? (scanning ? 'Scan the signed response' : qr !== undefined ? 'Sign offline with AirGap Vault' : 'Review and sign') }</h1></header>
 		<SigningSteps steps = { transaction === undefined ? ['Review', 'Sign', 'Return signature'] : ['Review', 'Sign', 'Broadcast'] } { ...directSigningProgress(record.phase, transaction !== undefined, refusal !== undefined) }/>
@@ -67,9 +69,12 @@ function DirectSigningPage() {
 			{ scanning ? <><h2>Return the signature to Interceptor</h2><p>In Vault, finish signing and display the response QR. Enable this computer’s camera to scan it.</p><details><summary>Show outgoing request again</summary><AnimatedSigningQr payload = { qr }/></details></> : <><h2>Scan this request with Vault</h2><p>Review the request on your offline device and sign. Then bring its response back here.</p><AnimatedSigningQr payload = { qr }/><div class = 'signing-actions'><button class = 'button is-primary' onClick = { startResponseScan }>Scan signed response</button></div></> }
 			{ scanning ? <><SigningQrScanner onFrame = { receiveSignedResponse } onError = { () => setStatus('Scan stopped.') } onStart = { resetResponseScan }/><p class = 'signing-muted'>{ status }</p></> : undefined }
 		</section> }
+		{ record.phase !== 'review' || review === undefined || !review.rejectOnly && review.sendAnywayReason === undefined ? undefined : <section class = 'signing-panel' role = 'alert'>
+			{ review.rejectOnly ? <p>Interceptor could not determine this transaction’s result. It can only be cancelled.</p> : <label class = 'checkbox'><input type = 'checkbox' checked = { forceSend } disabled = { busy } onInput = { (event) => setForceSend(event.currentTarget.checked) }/> { review.sendAnywayReason === 'failingTransaction' ? 'The refreshed simulation shows this transaction failing. Send anyway' : 'Interceptor flagged this request. Send anyway' }</label> }
+		</section> }
 		<div class = 'signing-actions'>
 			{ complete ? <button class = 'button is-primary' disabled = { busy } onClick = { returnToApplication }>Return to application</button> : undefined }
-			{ record.phase === 'review' || record.phase === 'approved' && qr === undefined ? <button class = 'button is-primary' disabled = { busy } onClick = { sign }>{ record.phase === 'approved' ? 'Resume with ' : 'Approve and continue with ' }{ walletName }</button> : undefined }
+			{ record.phase === 'review' || record.phase === 'approved' && qr === undefined ? <button class = 'button is-primary' disabled = { busy || approvalBlocked } onClick = { sign }>{ record.phase === 'approved' ? 'Resume with ' : 'Approve and continue with ' }{ walletName }</button> : undefined }
 			{ transaction !== undefined && ['signed', 'submitting', 'submitted'].includes(record.phase) ? <button class = 'button is-primary' disabled = { busy } onClick = { broadcastTransaction }>{ signed ? 'Broadcast transaction' : 'Reconcile transaction by hash' }</button> : undefined }
 			{ (record.phase === 'review' || record.phase === 'approved' || signed && (transaction !== undefined || refusal?.canCancel === true)) ? <button class = 'button signing-secondary' onClick = { cancelRequest }>Cancel request</button> : undefined }
 		</div>

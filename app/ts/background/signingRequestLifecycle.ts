@@ -19,6 +19,7 @@ import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.j
 import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
 import { readDirectSigningRecords } from '../signing/directSigningStore.js'
+import { getPendingRequestReview } from './reviewedResult.js'
 
 type SigningAdmission =
 	| { readonly status: 'continue', readonly forwarding: { readonly expectedProviderId?: string, readonly expectedChainId?: bigint } }
@@ -101,4 +102,11 @@ export async function getSignatureRefusalReason(record: DirectSigningRecord) {
 	if (!isSignatureReadyForApplication(record)) return undefined
 	const pending = (await getPendingTransactionsAndMessages()).find((item) => doesUniqueRequestIdentifiersMatch(item.uniqueRequestIdentifier, record.request))
 	return pending?.approvalStatus.status === 'SignerError' ? pending.approvalStatus.message : undefined
+}
+
+/** The website request's current reviewed result while the record awaits approval, which the signing page shows the policy of and names in its approval. Undefined once approval is no longer possible or the request is not simulated. */
+export async function getDirectSigningReview(record: DirectSigningRecord) {
+	if (record.phase !== 'review') return undefined
+	const pending = (await getPendingTransactionsAndMessages()).find((item) => doesUniqueRequestIdentifiersMatch(item.uniqueRequestIdentifier, record.request))
+	return pending === undefined || pending.transactionOrMessageCreationStatus !== 'Simulated' ? undefined : getPendingRequestReview(pending)
 }

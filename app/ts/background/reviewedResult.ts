@@ -2,6 +2,7 @@ import type { PendingTransactionOrSignableMessage } from '../types/accessRequest
 import { encodeBigIntOrBytesForJson } from '../utils/bigint.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isRecord } from '../utils/runtimeTypeGuards.js'
+import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../utils/sendAnywayConsent.js'
 
 type FieldOf<T> = T extends unknown ? keyof T : never
 type PendingRequestField = FieldOf<PendingTransactionOrSignableMessage>
@@ -45,4 +46,22 @@ export const stringifyCanonically = (value: unknown) => JSON.stringify(value, (_
 export const getReviewedResultId = (pending: PendingTransactionOrSignableMessage) => {
 	const reviewedContent = Object.fromEntries(Object.entries(pending).filter(([field]) => isReviewedField(field)))
 	return keccak256(stringToBytes(stringifyCanonically(reviewedContent)))
+}
+
+export type ReviewedAccept = { readonly reviewedResultId: string, readonly forceSend: boolean }
+
+// Why an accept does not authorize the stored request, or undefined when it does. An accept authorizes only the stored request whose reviewed content the user saw; a transaction without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override. A confirmation accept and a direct signing approval both apply this rule.
+export function getAcceptRefusal(pending: PendingTransactionOrSignableMessage, accept: ReviewedAccept) {
+	if (getReviewedResultId(pending) !== accept.reviewedResultId) return 'staleReview' as const
+	if (isRejectOnlyTransaction(pending)) return 'rejectOnly' as const
+	if (!accept.forceSend && getSendAnywayOverrideReason(pending) !== undefined) return 'sendAnywayRequired' as const
+	return undefined
+}
+
+export const isAcceptForStoredResult = (pending: PendingTransactionOrSignableMessage, accept: ReviewedAccept) => getAcceptRefusal(pending, accept) === undefined
+
+// What a page approving the stored request must show and echo back: the reviewed-result id, whether only rejection is possible, and why a send-anyway override is needed.
+export const getPendingRequestReview = (pending: PendingTransactionOrSignableMessage) => {
+	const sendAnywayReason = getSendAnywayOverrideReason(pending)
+	return { reviewedResultId: getReviewedResultId(pending), rejectOnly: isRejectOnlyTransaction(pending), ...sendAnywayReason === undefined ? {} : { sendAnywayReason } }
 }
