@@ -21,6 +21,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@noble/curves@2.2.0": "patches/@noble%2Fcurves@2.2.0.patch",
+  },
   "packages": {
     "@darkflorist/address-metadata": ["@darkflorist/address-metadata@0.10.0", "", {}, "sha512-IVFWsi3rvAFRLmbM+lNsv5FtVWdR7jVBIIASW6yERUjviTTTgeIwNKay8o2D1/WWczYmR6cuxDWAN2givkoaBw=="],
 

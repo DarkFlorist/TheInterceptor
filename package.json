@@ -70,5 +70,8 @@
 		"@types/firefox-webext-browser": "120.0.3",
 		"solc": "0.8.18",
 		"typescript": "5.9.3"
+	},
+	"patchedDependencies": {
+		"@noble/curves@2.2.0": "patches/@noble%2Fcurves@2.2.0.patch"
 	}
 }

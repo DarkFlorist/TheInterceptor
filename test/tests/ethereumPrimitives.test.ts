@@ -248,10 +248,11 @@ describe('signature recovery failure contract', () => {
 		}
 	})
 
-	test('rejects oversized recovery input instead of classifying it as an invalid key', async () => {
+	test('propagates an untagged plain Error raised inside library recovery', async () => {
+		// The library input-size guard fails after constructing a valid signature point, outside the two tagged invalid-point conditions.
 		const parameters = { hash: new Uint8Array(8193), signature: { r: generatorX, s: 1n, yParity: 0 } }
-		assert.throws(() => tryRecoverAddress(parameters), { name: 'Error', message: 'Signature recovery hash exceeds 8192 bytes' })
-		await assert.rejects(recoverAddress(parameters), { name: 'Error', message: 'Signature recovery hash exceeds 8192 bytes' })
+		assert.throws(() => tryRecoverAddress(parameters), { name: 'Error', message: 'input is too large' })
+		await assert.rejects(recoverAddress(parameters), { name: 'Error', message: 'input is too large' })
 	})
 })
 
