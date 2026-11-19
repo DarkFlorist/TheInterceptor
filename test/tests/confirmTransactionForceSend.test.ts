@@ -115,3 +115,17 @@ test('force-send cannot approve initial simulation or revive a rejected request'
 	assert.equal(postedMessages.length, replyCountAfterRejection)
 	assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 0)
 })
+
+test('two concurrent accepts forward the request to the wallet only once', async () => {
+	const signingPending = { ...editedPending, simulationMode: false }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [signingPending] })
+	const reviewed = await getStoredRequest()
+	const postedMessages: unknown[] = []
+	const connections = recordingConnections(postedMessages)
+	const results = await Promise.all([
+		modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, approval(reviewed, true)),
+		modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections, approval(reviewed, true)),
+	])
+	assert.deepEqual([...results].sort(), [false, true])
+	assert.equal(postedMessages.filter(message => isRecord(message) && message.type === 'forwardToSigner').length, 1)
+})

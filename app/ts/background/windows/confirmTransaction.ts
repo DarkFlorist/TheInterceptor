@@ -350,6 +350,8 @@ async function claimAcceptedRequest(accept: Extract<TransactionConfirmation['dat
 	let acceptedPending: PendingTransactionOrSignableMessage | undefined
 	await updatePendingTransactionOrMessage(accept.uniqueRequestIdentifier, async (current) => {
 		if (current.transactionOrMessageCreationStatus !== 'Simulated' || !isAcceptForStoredResult(current, accept)) return undefined
+		// The reviewed-result id leaves out the approval status, so a concurrent accept that already moved the request to the wallet is refused here, inside the lock.
+		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
 		acceptedPending = current.simulationMode ? current : modifyObject(current, { approvalStatus: { status: 'WaitingForSigner' as const } })
 		return acceptedPending
 	})
