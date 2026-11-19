@@ -349,11 +349,15 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) {
-			const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
-			scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
+		// The entry is persisted, so open address-book views are notified even when the access refresh below fails and the save reports that failure.
+		try {
+			if (entryToStore.useAsActiveAddress) {
+				const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
+				scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
+			}
+		} finally {
+			void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		}
-		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {

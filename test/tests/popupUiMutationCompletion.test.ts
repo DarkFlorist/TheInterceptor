@@ -386,7 +386,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('address-book save reports permission reconciliation failures before acknowledgement', async () => {
-		installBrowserMock()
+		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: 42n })
@@ -402,7 +402,9 @@ describe('UI mutation completion', () => {
 		assert.equal(reply.ok, false)
 		assert.match('message' in reply ? reply.message : '', /Cannot reconcile request blocking rules/)
 		assert.equal(connection.approved, false)
+		assert.equal((await modules.getUserAddressBookEntries()).some(entry => entry.address === 42n && entry.name === 'Saved account'), true)
 		await waitForBackgroundTasks()
+		assert.equal(runtimeMessages.some(message => message.method === 'popup_addressBookEntriesChanged'), true)
 		assert.match((await modules.getTabState(1)).tabIconDetails.iconReason, /has PENDING access request for Saved account/u)
 	})
 
