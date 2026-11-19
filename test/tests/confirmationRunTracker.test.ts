@@ -75,3 +75,73 @@ describe('confirmation run tracker', () => {
 		assert.equal(trackers.getInFlightAbortController(request(1)), current)
 	})
 })
+
+describe('confirmation run lifecycle', () => {
+	// A queue that holds the given requests, whose disposal check records each request it was asked about.
+	async function createLifecycle(storedRequests: readonly ReturnType<typeof request>[]) {
+		const { createConfirmationRunLifecycle } = await import('../../app/ts/background/confirmationRunLifecycle.js')
+		const trackers = createNumberedTrackers()
+		const checked: number[] = []
+		const lifecycle = createConfirmationRunLifecycle(trackers, async (uniqueRequestIdentifier, dispose) => {
+			checked.push(uniqueRequestIdentifier.requestId)
+			if (!storedRequests.some((stored) => stored.requestId === uniqueRequestIdentifier.requestId)) dispose()
+		})
+		return { trackers, checked, lifecycle }
+	}
+
+	test('reserves the run before the work starts, and disposes of the tracker of a request that was never stored', async () => {
+		const { trackers, checked, lifecycle } = await createLifecycle([])
+		const result = lifecycle.withConfirmationRun(request(1), async (run) => {
+			assert.deepEqual(run, { lifetime: 'tracker 1', sequence: 1 })
+			assert.equal(trackers.has(request(1)), true)
+			return 'done'
+		})
+		// The run is reserved synchronously, when the entry calls the lifecycle.
+		assert.equal(trackers.has(request(1)), true)
+		assert.equal(await result, 'done')
+		assert.deepEqual(checked, [1])
+		assert.equal(trackers.has(request(1)), false)
+	})
+
+	test('keeps the tracker of a request that is still stored', async () => {
+		const { trackers, lifecycle } = await createLifecycle([request(1)])
+		await lifecycle.withConfirmationRun(request(1), async () => undefined)
+		assert.equal(trackers.has(request(1)), true)
+		assert.deepEqual(await lifecycle.withConfirmationRun(request(1), async (run) => run), { lifetime: 'tracker 1', sequence: 2 })
+	})
+
+	test('disposes of the tracker of a request that is gone even when the work throws, and passes the error on', async () => {
+		const { trackers, checked, lifecycle } = await createLifecycle([])
+		await assert.rejects(lifecycle.withConfirmationRun(request(1), async () => { throw new Error('work failed') }), /work failed/u)
+		assert.deepEqual(checked, [1])
+		assert.equal(trackers.has(request(1)), false)
+	})
+
+	test('reserves one run for each of several requests and releases each of them', async () => {
+		const { trackers, checked, lifecycle } = await createLifecycle([request(2)])
+		const runs = await lifecycle.withConfirmationRuns([request(1), request(2)], async (reserved) => reserved)
+		assert.deepEqual(runs, [{ lifetime: 'tracker 1', sequence: 1 }, { lifetime: 'tracker 2', sequence: 1 }])
+		assert.deepEqual(checked, [1, 2])
+		assert.equal(trackers.has(request(1)), false)
+		assert.equal(trackers.has(request(2)), true)
+	})
+
+	// Every entry point takes its runs through the lifecycle, so none can forget to release them, and only a request leaving the queue disposes of a stored request's tracker.
+	test('only the lifecycle reserves runs and disposes of trackers, apart from the removal of a request from the queue', async () => {
+		const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
+		const reservers: string[] = []
+		const disposers: string[] = []
+		for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
+			if (file === 'background/confirmationRunTracker.ts') continue
+			const source = await Bun.file(`${ appDirectory }${ file }`).text()
+			// The run trackers are confirmationRuns, the background's instance, or a lifecycle's trackers.
+			if (/\b(?:confirmationRuns|trackers)\.reserve\(/u.test(source)) reservers.push(file)
+			for (const _match of source.matchAll(/\b(?:confirmationRuns|trackers)\.dispose\(/gu)) disposers.push(file)
+		}
+		assert.deepEqual(reservers, ['background/confirmationRunLifecycle.ts'])
+		assert.deepEqual(disposers.toSorted(), ['background/confirmationRunLifecycle.ts', 'background/storageVariables.ts'])
+		const storageVariablesSource = await Bun.file(`${ appDirectory }background/storageVariables.ts`).text()
+		const removal = storageVariablesSource.slice(storageVariablesSource.indexOf('export async function removePendingTransactionOrMessage('), storageVariablesSource.indexOf('\n}\n', storageVariablesSource.indexOf('export async function removePendingTransactionOrMessage(')))
+		assert.match(removal, /confirmationRuns\.dispose\(uniqueRequestIdentifier\)/u)
+	})
+})

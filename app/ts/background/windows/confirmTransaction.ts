@@ -12,12 +12,12 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { confirmationRuns } from '../confirmationRunTracker.js'
+import { withConfirmationRun, withConfirmationRuns } from '../confirmationRunLifecycle.js'
 import { getConfirmationRunInputs, mayStoreNewRun } from '../confirmationRun.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketRequestOrigin } from '../backgroundUtils.js'
 import { publishConfirmationQueue, reportFailedWindowUpdate, updateConfirmationSimulationView, updateConfirmTransactionView } from '../confirmationWindowPublication.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, releaseConfirmationRunsIfRequestGone, getPendingTransactionsAndMessages, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { forwardToSignerOnRequestedNetwork } from '../requestedNetworkForwarding.js'
@@ -135,10 +135,12 @@ export async function refreshPendingSafeSignerSelectionErrors(getInstalledServic
 	// The rebuilds use the services installed when the refresh starts.
 	const { ethereum, tokenPriceService } = getInstalledServices()
 	// Each request's rebuild run is reserved as soon as the queue is read, before anything else is awaited, so the Gnosis Safe rebuilds below are ordered from when this refresh read the queue.
-	const pendingOfTab = (await getPendingTransactionsAndMessages())
-		.filter((pending) => pending.uniqueRequestIdentifier.requestSocket.tabId === tabId)
-		.map((pending) => ({ pending, confirmationRun: confirmationRuns.reserve(pending.uniqueRequestIdentifier) }))
-	try {
+	const pendingRequestsOfTab = (await getPendingTransactionsAndMessages()).filter((pending) => pending.uniqueRequestIdentifier.requestSocket.tabId === tabId)
+	await withConfirmationRuns(pendingRequestsOfTab.map((pending) => pending.uniqueRequestIdentifier), async (confirmationRunsOfTab) => {
+		const pendingOfTab = pendingRequestsOfTab.flatMap((pending, index) => {
+			const confirmationRun = confirmationRunsOfTab[index]
+			return confirmationRun === undefined ? [] : [{ pending, confirmationRun }]
+		})
 		const tabState = await getTabState(tabId)
 		const refreshedSelection = {
 			selectedSigner: getWalletSelectedAccount(tabState),
@@ -177,10 +179,7 @@ export async function refreshPendingSafeSignerSelectionErrors(getInstalledServic
 			})
 		}
 		if (pendingStateChanged) await updateConfirmTransactionView(getInstalledServices)
-	} finally {
-		// The runs reserved for requests that left the queue meanwhile are released.
-		for (const { pending } of pendingOfTab) await releaseConfirmationRunsIfRequestGone(pending.uniqueRequestIdentifier)
-	}
+	})
 }
 
 
@@ -299,8 +298,13 @@ export type ResolutionOptions = {
 
 // Forwarding to the signer only posts the request, so neither lock is held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited. The resolution prepares and checks with the services installed when it starts, as an approval acts on the network the user approved on, and shows the window what the services installed at each later moment give, which getInstalledServices reads.
 export async function resolvePendingTransactionOrMessage(getInstalledServices: GetInstalledServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, { refreshedSafeSignerSelection, safeRebuildRun }: ResolutionOptions = {}) {
+	if (refreshedSafeSignerSelection === undefined) return await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, undefined)
+	if (safeRebuildRun !== undefined) return await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun })
+	return await withConfirmationRun(confirmation.data.uniqueRequestIdentifier, async (confirmationRun) => await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, { selection: refreshedSafeSignerSelection, confirmationRun }))
+}
+
+async function resolveWithServices(getInstalledServices: GetInstalledServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, safeSignerRefresh: SafeSignerRefreshAtApproval | undefined) {
 	const preparationServices = getInstalledServices()
-	const safeSignerRefresh = refreshedSafeSignerSelection === undefined ? undefined : { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun ?? confirmationRuns.reserve(confirmation.data.uniqueRequestIdentifier) }
 	// The window work after a request leaves the queue needs an RPC, so it runs once the resolution lock is released.
 	const stepsAfterResolution: (() => Promise<void>)[] = []
 	try {
@@ -308,7 +312,6 @@ export async function resolvePendingTransactionOrMessage(getInstalledServices: G
 		return await resolveSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage, commit) => await resolveStoredPendingTransactionOrMessage(getInstalledServices, preparationServices, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, commit, stepsAfterResolution, safeSignerRefresh))
 	} finally {
 		for (const step of stepsAfterResolution) await step()
-		if (safeSignerRefresh !== undefined) await releaseConfirmationRunsIfRequestGone(confirmation.data.uniqueRequestIdentifier)
 	}
 }
 
@@ -899,9 +902,8 @@ export async function openConfirmTransactionDialogForTransaction(
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
-	// Reserved before anything is awaited, so the first simulation of this request is ordered before any refresh requested after it.
-	const confirmationRun = confirmationRuns.reserve(request.uniqueRequestIdentifier)
-	try {
+	// Reserved before anything is awaited, so the first simulation of this request is ordered before any refresh requested after it, and released afterwards if the request was never stored or left the queue meanwhile.
+	return await withConfirmationRun(request.uniqueRequestIdentifier, async (confirmationRun) => {
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 		const safePreparation = await prepareSafeTransactionConfirmation(
@@ -997,8 +999,5 @@ export async function openConfirmTransactionDialogForTransaction(
 
 		if (pendingTransactionData === undefined) return formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction')
 		return { type: 'doNotReply' as const }
-	} finally {
-		// A request that was never stored, or left the queue meanwhile, releases the run reserved for it.
-		await releaseConfirmationRunsIfRequestGone(request.uniqueRequestIdentifier)
-	}
+	})
 }
