@@ -55,8 +55,7 @@ export function useExecutionSimulation(identifier: bigint, request: () => Promis
 			broadcastReply.value = result
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(listener)
-		return () => browser.runtime.onMessage.removeListener(listener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(listener)
 	}, [])
 
 	useEffect(() => {

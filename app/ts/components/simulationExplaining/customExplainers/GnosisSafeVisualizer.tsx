@@ -2,6 +2,7 @@ import { type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGnosisSafeTransaction } from '../../../background/backgroundUtils.js'
 import type { SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
+import type { SafeSignatureRequirement } from '../../../types/safeTypes.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
@@ -11,6 +12,18 @@ import { Transaction } from '../Transactions.js'
 import { useEffect } from 'preact/hooks'
 import type { AsyncStates } from '../../../utils/preact-utilities.js'
 import { useExecutionSimulation } from '../../hooks/useExecutionSimulation.js'
+
+// The signer provides at most one signature, and none when it is not an owner.
+export const signaturesTheSignerProvides = (requirement: SafeSignatureRequirement) => requirement.signerIsOwner ? 1n : 0n
+
+// The outcome only happens once the Safe has enough owner signatures, so say how many it needs, and when the signer's own signature is not enough, that others must sign too. Without a requirement (the Safe did not answer its owner reads) nothing is shown.
+export function SafeSignatureRequirementLabel({ requirement }: { requirement: SafeSignatureRequirement | undefined }) {
+	if (requirement === undefined) return <></>
+	return <div class = 'safe-outcome-panel__signatures'>
+		<p class = 'paragraph'>Needs { requirement.threshold.toString() } of { requirement.ownerCount.toString() } owner signatures</p>
+		{ requirement.threshold > signaturesTheSignerProvides(requirement) ? <ErrorComponent warning = { true } text = 'Other owners must also sign before this can execute' containerStyle = { { margin: '0px' } }/> : <></> }
+	</div>
+}
 
 type ShowSuccessOrFailureParams = {
 	activeAddress: ReadonlySignal<bigint | undefined>
@@ -88,6 +101,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 
 	return <div class = 'safe-outcome-panel__result'>
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
+		<SafeSignatureRequirementLabel requirement = { simulateExecutionReply.value.data.result.safeSignatureRequirement }/>
 		<Transaction
 			simTx = { simTx.value }
 			simulationAndVisualisationResults = { results.value }

@@ -1,6 +1,6 @@
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { type ComponentChildren, createContext, toChildArray } from 'preact'
-import { useContext, useEffect, useRef } from 'preact/hooks'
+import { useContext, useEffect, useId, useRef } from 'preact/hooks'
 
 export type ViewConfig = {
 	title: string
@@ -28,7 +28,7 @@ export function synchronizeViewConfig(views: readonly ViewConfig[], nextView: Vi
 }
 
 type ViewSelectorContext = {
-	id: string
+	radioGroupName: string
 	views: Signal<ViewConfig[]>
 	setActiveView: (value: string) => void
 }
@@ -36,12 +36,14 @@ type ViewSelectorContext = {
 const ViewSelectorContext = createContext<ViewSelectorContext | undefined>(undefined)
 
 export const ViewSelector = ({ children, id }: { children: ComponentChildren, id: string }) => {
+	// Browsers keep one checked radio per name across the document, so stacked cards rendering the same selector need a name unique to each instance.
+	const radioGroupName = `${ id }-${ useId() }`
 	const views = useSignal<ViewConfig[]>([])
 	const setActiveView = (value: string) => {
 		views.value = views.peek().map(view => ({ ...view, isActive: view.value === value }))
 	}
 	return (
-		<ViewSelectorContext.Provider value = { { id, views, setActiveView } }>
+		<ViewSelectorContext.Provider value = { { radioGroupName, views, setActiveView } }>
 			<div class = 'grid view-selector'>{ children }</div>
 		</ViewSelectorContext.Provider>
 	)
@@ -92,7 +94,7 @@ const View = ({ children, title, value, isActive }: ViewConfig & { children: Com
 }
 
 const Triggers = () => {
-	const { id, views, setActiveView } = useViewSwitcher()
+	const { radioGroupName, views, setActiveView } = useViewSwitcher()
 
 	const handleChange = (event: Event) => {
 		if (!(event.target instanceof HTMLInputElement)) return
@@ -103,7 +105,7 @@ const Triggers = () => {
 		<fieldset onChange = { handleChange }>
 			{ views.value.map((view) => (
 				<label key = { view.value }>
-					<input type = 'radio' name = { id } value = { view.value } checked = { view.isActive === true } />
+					<input type = 'radio' name = { radioGroupName } value = { view.value } checked = { view.isActive === true } />
 					<span>{ view.title }</span>
 				</label>
 			)) }

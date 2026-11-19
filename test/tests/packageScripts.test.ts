@@ -118,6 +118,12 @@ describe('package scripts', () => {
 		assert.equal(getScript(scripts, 'test:chrome-safe-cosigning-communication'), 'bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts')
 	})
 
+	test('provides the browser-level Firefox provider injection check', () => {
+		const scripts = getPackageScripts()
+
+		assert.equal(getScript(scripts, 'test:firefox-provider-injection'), 'bun ./test/benchmarks/firefoxProviderInjection.ts')
+	})
+
 	test('typescript is new enough for micro-eth-signer declarations', () => {
 		const packageJson = getPackageJson()
 		assert.equal(getDependencyVersion(packageJson, 'micro-eth-signer'), '0.19.0')
