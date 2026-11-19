@@ -14,7 +14,7 @@ import { EthereumClientService as RealEthereumClientService } from '../../app/ts
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumBlockHeaderWithTransactionHashes } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
-import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
+import { toSimulationStateInputMinimalData, type SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../../app/ts/utils/constants.js'
 import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, type GovernanceFixture, isExampleStackName, pinToLatestBlock, prepareExampleStack } from '../governanceFixtures.js'
 
@@ -43,7 +43,7 @@ const assertOverrideRule = async (ethereum: EthereumClientService, requests: rea
 		if (stack.length === 0) return []
 		const latestBlock = await ethereum.getBlock(undefined)
 		if (latestBlock === null) throw new Error('Expected the latest block')
-		return (await ethereum.pinnedToBlock(latestBlock).ethSimulateV1Input(stack, latestBlock.number, undefined)).params[0].blockStateCalls.map((block) => block.stateOverrides ?? {})
+		return (await ethereum.pinnedToBlock(latestBlock).ethSimulateV1Input(toSimulationStateInputMinimalData(stack), latestBlock.number, undefined)).params[0].blockStateCalls.map((block) => block.stateOverrides ?? {})
 	}
 	const stackOverrides = await getStackOverrides()
 	const governorCodeRequest = requests.find((request) => request.method === 'eth_getCode' && request.params[0] === governor)

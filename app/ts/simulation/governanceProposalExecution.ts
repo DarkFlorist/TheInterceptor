@@ -1,5 +1,5 @@
 import type { EthereumBlockHeader as MaybeEthereumBlockHeader } from '../types/wire-types.js'
-import type { SimulationState, SimulationStateInput, SimulationStateInputBlock } from '../types/visualizer-types.js'
+import { toSimulationStateInputMinimalData, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock } from '../types/visualizer-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { EthSimulateV1CallResult } from '../types/ethSimulate-types.js'
 import { CompoundTimelockAbi, GovernorAbi, GovernorProposalForwarderAbi, TimelockControllerAbi } from '../utils/abi.js'
@@ -136,7 +136,7 @@ const estimateTimeOfBlock = (parentBlock: EthereumBlockHeader, blockNumber: bigi
 
 // The time of the last block the node runs the prepared stack as, or the parent block's time for an empty stack.
 export const getStackEndTime = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, stackSimulationInput: SimulationStateInput) => {
-	const preparedStack = await ethereum.prepareEthSimulateV1Input(stackSimulationInput, parentBlock.number, undefined)
+	const preparedStack = await ethereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(stackSimulationInput), parentBlock.number, undefined)
 	const lastStackBlockTime = preparedStack.blockOverrides[preparedStack.blockOverrides.length - 1]?.time ?? parentBlock.timestamp
 	return dateToBigintSeconds(lastStackBlockTime)
 }
@@ -145,7 +145,7 @@ export const getStackEndTime = async (ethereum: EthereumClientService, parentBlo
 const readContracts = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, stackSimulationInput: SimulationStateInput, reads: readonly { readonly to: bigint, readonly input: Hex }[]) => {
 	const gas = parentBlock.gasLimit / BigInt(reads.length)
 	const calls = reads.map((read) => ({ type: '1559' as const, from: MOCK_ADDRESS, to: read.to, input: stringToUint8Array(read.input), gas, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }))
-	const preparedStack = await ethereum.prepareEthSimulateV1Input(stackSimulationInput, parentBlock.number, undefined)
+	const preparedStack = await ethereum.prepareEthSimulateV1Input(toSimulationStateInputMinimalData(stackSimulationInput), parentBlock.number, undefined)
 	const [stackQuery, blockTag] = preparedStack.request.params
 	const resultBlocks = await ethereum.ethSimulateV1Request({ method: 'eth_simulateV1', params: [{ ...stackQuery, blockStateCalls: [...stackQuery.blockStateCalls, { calls }] }, blockTag ?? parentBlock.number] }, undefined)
 	const results = resultBlocks[resultBlocks.length - 1]?.calls
