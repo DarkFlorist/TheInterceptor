@@ -1,7 +1,11 @@
 # Dependency patches
 
-`@noble/curves@2.2.0.patch` adds `ERR_SECP256K1_INVALID_POINT` to the two mathematical invalid-key outcomes used by Ethereum recovery: a non-residue in the secp256k1 square-root check and a recovered point at infinity. Point decoding preserves the original square-root error as `cause`. Both TypeScript source and distributed JavaScript carry the same change; curve arithmetic is unchanged.
+`micro-eth-signer@0.19.0` resolves its own transitive `@noble/curves@2.2.0`. That is the copy patched here; the separate root dependency `@noble/curves@1.9.1` is not used by application recovery.
 
-`ethereumSigning.ts` delegates signing and recovery to `micro-eth-signer` and skips only these tagged recovery failures. Other exceptions propagate. The application does not import Noble internals or inspect dependency error messages.
+`@noble/curves@2.2.0.patch` adds the locally defined `ERR_SECP256K1_INVALID_POINT` code at the existing secp256k1 non-residue and recovered-infinity errors. Point decoding preserves the square-root error as `cause`. TypeScript and distributed JavaScript agree; arithmetic is unchanged. This code is our patch contract, not an upstream Noble API.
 
-Bun applies this patch through `patchedDependencies` in `package.json` and `bun.lock`. Docker copies the patch before its frozen install. When upgrading the dependency, explicitly rebase or remove the patch and run the recovery/nonce tests; do not replace the code check with error-message matching. The existing invalid-point and infinity tests fail if the installed library no longer supplies this contract, while the oversized-input case checks that untagged library failures propagate.
+`ethereumSigning.ts` delegates recovery to `micro-eth-signer` and inspects that code directly or on the preserved cause. Untagged errors propagate. It does not inspect human-readable diagnostics or import curve internals.
+
+`check:recovery-dependency` resolves micro from the application's signing directory, then resolves Noble relative to that micro copy. It checks the installed micro pin, requires a patch for the actual transitive Noble version, and probes both invalid-point outcomes through the application API. Tests, typecheck and extension compilation run this guard before proceeding. Hoisting is accepted when the resolved versions and contract still match; a mismatched version or missing tag fails before a bundle is produced.
+
+Bun applies the patch through `patchedDependencies` in `package.json` and `bun.lock`; Docker copies it before the frozen install. When upgrading micro or Noble, explicitly rebase/remove the patch and run the guard and recovery/nonce tests. The invalid-point tests enforce the tags; an oversized-input test enforces propagation of untagged library failures.

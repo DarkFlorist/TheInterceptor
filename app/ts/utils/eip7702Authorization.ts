@@ -95,24 +95,32 @@ export const getDelegateFromCode = (code: Uint8Array) => {
 	return BigInt(`0x${ dataString(code.slice(3)) }`)
 }
 
-// Raw state at the authority's current position in the transaction sequence; undefined fields are unknown.
-export type Eip7702AuthorityState = {
-	readonly nonce: bigint | undefined
-	readonly code: Uint8Array | undefined
+export type TransactionNonceInput = {
+	readonly sender: bigint | undefined
+	readonly authorizationList: readonly Eip7702Authorization[]
 }
 
-// Owns all per-authorization validity rules and returns the applied authority, or undefined when the node skips it. Recover once, then request raw state only for a valid signature on this chain; unknown state fails closed.
-export const getApplicableEip7702Authority = async (
-	authorization: Eip7702Authorization,
-	chainId: bigint,
-	getAuthorityState: (authority: bigint) => Promise<Eip7702AuthorityState>,
-): Promise<bigint | undefined> => {
-	if (authorization.chainId !== 0n && authorization.chainId !== chainId) return undefined
-	const authority = getNodeRecoveredEip7702Authority(authorization)
-	if (authority === undefined) return undefined
-	const state = await getAuthorityState(authority)
-	if (state.nonce !== authorization.nonce || state.code === undefined) return undefined
-	return state.code.length === 0 || getDelegateFromCode(state.code) !== undefined ? authority : undefined
+// Own the ordered nonce fold and its lazy code snapshot: each sender advances first, then matching authorizations advance the same evolving nonce. Applied delegations keep code eligible, so one initial read suffices for the whole sequence.
+export const getAccountNonceAfterTransactions = async ({ address, chainId, initialNonce, transactions, getCode }: {
+	readonly address: bigint
+	readonly chainId: bigint
+	readonly initialNonce: bigint
+	readonly transactions: Iterable<TransactionNonceInput>
+	readonly getCode: () => Promise<Uint8Array | undefined>
+}): Promise<bigint> => {
+	let nonce = initialNonce
+	let code: Uint8Array | undefined
+	let codeLoaded = false
+	for (const transaction of transactions) {
+		if (transaction.sender === address) nonce += 1n
+		for (const authorization of transaction.authorizationList) {
+			if (authorization.chainId !== 0n && authorization.chainId !== chainId) continue
+			if (getNodeRecoveredEip7702Authority(authorization) !== address || authorization.nonce !== nonce) continue
+			if (!codeLoaded) { code = await getCode(); codeLoaded = true }
+			if (code !== undefined && (code.length === 0 || getDelegateFromCode(code) !== undefined)) nonce += 1n
+		}
+	}
+	return nonce
 }
 
 const normalizeEip7702Authorization = async (authorization: Eip7702Authorization): Promise<NormalizedEip7702Authorization> => {
