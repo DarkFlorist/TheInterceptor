@@ -1,8 +1,7 @@
 import { addressString } from '../utils/bigint.js'
 import type { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal, ContactEntry, ContractEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
-import { tokenMetadata, contractMetadata, type ContractDefinition, type TokenDefinition, type Erc721Definition, erc721Metadata, erc1155Metadata, type Erc1155Definition } from '@darkflorist/address-metadata'
 import type { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
-import { getFullLogoUri } from './metadataUtils.js'
+import { listBundledAddressBookEntriesForChain, listBundledAddressBookEntriesForNameCollisionCheck } from './bundledMetadata.js'
 import { assertNever } from '../utils/typescript.js'
 import { getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { createFuzzySearchPattern } from '../utils/fuzzySearch.js'
@@ -35,51 +34,6 @@ function search<ElementType>(searchArray: readonly ElementType[], searchFunction
 	return undefinedRemoved.sort((a, b) => (a.comparison.bestMatchLength - b.comparison.bestMatchLength) || (a.comparison.locationOfBestMatch - b.comparison.locationOfBestMatch)).map((x) => x.entry)
 }
 
-const convertTokenDefinitionToAddressBookEntry = ([address, def]: [string, TokenDefinition]) => {
-	const { logoUri, ...rest } = def
-	return {
-		...rest,
-		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-		address: BigInt(address),
-		type: 'ERC20' as const,
-		entrySource: 'DarkFloristMetadata' as const,
-	}
-}
-
-const convertErc721DefinitionToAddressBookEntry = ([address, def]: [string, Erc721Definition]) => {
-	const { logoUri, ...rest } = def
-	return {
-		...rest,
-		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-		address: BigInt(address),
-		type: 'ERC721' as const,
-		entrySource: 'DarkFloristMetadata' as const,
-	}
-}
-
-const convertErc1155DefinitionToAddressBookEntry = ([address, def]: [string, Erc1155Definition]) => {
-	const { logoUri, ...rest } = def
-	return {
-		...rest,
-		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-		address: BigInt(address),
-		type: 'ERC1155' as const,
-		entrySource: 'DarkFloristMetadata' as const,
-		decimals: undefined,
-	}
-}
-
-const convertContractDefinitionToAddressBookEntry = ([address, def]: [string, ContractDefinition]) => {
-	const { logoUri, ...rest } = def
-	return {
-		...rest,
-		...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-		address: BigInt(address),
-		type: 'contract' as const,
-		entrySource: 'DarkFloristMetadata' as const,
-	}
-}
-
 function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint })[], addFrom: readonly (T & { address: bigint })[]) {
 	const existingValues = new Set(addTo.map(item => addressString(item.address)))
 	const uniqueItems = addFrom.filter(item => !existingValues.has(addressString(item.address)))
@@ -91,6 +45,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 	const searchPattern = trimmedSearch === undefined ? undefined : createFuzzySearchPattern(trimmedSearch)
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
 	const userEntries = (await getUserAddressBookEntriesForChainId(chainId)).filter((entry) => entry.entrySource !== 'OnChain')
+	const bundledEntries = listBundledAddressBookEntriesForChain(chainId)
 	switch(addressBookCategory) {
 		case 'My Contacts': {
 			const entries = userEntries.filter((entry): entry is ContactEntry => entry.type === 'contact')
@@ -121,7 +76,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'ERC1155 Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(erc1155Metadata).map(convertErc1155DefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = concatArraysUniqueByAddress(filteredUserEntries, bundledEntries.erc1155Tokens)
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc1155Entry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name, addressString(entry.address)),
@@ -131,7 +86,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'ERC20 Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(tokenMetadata).map(convertTokenDefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = concatArraysUniqueByAddress(filteredUserEntries, bundledEntries.erc20Tokens)
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc20TokenEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol} ${ entry.name}`, addressString(entry.address)),
@@ -141,7 +96,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'Non Fungible Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc721Entry => entry.type === 'ERC721')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(erc721Metadata).map(convertErc721DefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = concatArraysUniqueByAddress(filteredUserEntries, bundledEntries.erc721Tokens)
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: Erc721Entry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ entry.symbol} ${ entry.name}`, addressString(entry.address)),
@@ -151,7 +106,7 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 		}
 		case 'Other Contracts': {
 			const filteredUserEntries = userEntries.filter((entry): entry is ContractEntry => entry.type === 'contract')
-			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(contractMetadata).map(convertContractDefinitionToAddressBookEntry)) : filteredUserEntries
+			const entries = concatArraysUniqueByAddress(filteredUserEntries, bundledEntries.contracts)
 			if (searchingDisabled) return entries
 			const searchFunction = (entry: ContractEntry) => ({
 				comparison: fuzzyCompare(searchPattern, trimmedSearch, `${ 'protocol' in entry && entry.protocol !== undefined ? entry.protocol : ''} ${ entry.name }`, addressString(entry.address)),
@@ -176,19 +131,12 @@ export async function findEntryWithSymbolOrName(symbol: string | undefined, name
 	const lowerCasedSymbol = symbol?.toLowerCase()
 
 	const lowerCasedEqual = (nonLowerCased: string, lowerCased: string | undefined) => nonLowerCased.toLowerCase() === lowerCased
-	if (chainId === 'AllChains' || chainId === 1n) {
-		const tokenMetadataEntry = Array.from(tokenMetadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name, lowerCasedName))
-		if (tokenMetadataEntry !== undefined) return convertTokenDefinitionToAddressBookEntry(tokenMetadataEntry)
-
-		const erc721MetadataEntry = Array.from(erc721Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
-		if (erc721MetadataEntry !== undefined) return convertErc721DefinitionToAddressBookEntry(erc721MetadataEntry)
-
-		const erc1155MetadataEntry = Array.from(erc1155Metadata).find((entry) => lowerCasedEqual(entry[1].symbol, lowerCasedSymbol) || lowerCasedEqual(entry[1].name.toLowerCase(), lowerCasedName))
-		if (erc1155MetadataEntry !== undefined) return convertErc1155DefinitionToAddressBookEntry(erc1155MetadataEntry)
-
-		const contractMetadataEntry = Array.from(contractMetadata).find((entry) => lowerCasedEqual(entry[1].name, lowerCasedName))
-		if (contractMetadataEntry !== undefined) return convertContractDefinitionToAddressBookEntry(contractMetadataEntry)
-	}
+	const bundledEntries = listBundledAddressBookEntriesForNameCollisionCheck(chainId)
+	const bundledEntry = bundledEntries.erc20Tokens.find((entry) => lowerCasedEqual(entry.symbol, lowerCasedSymbol) || lowerCasedEqual(entry.name, lowerCasedName))
+		?? bundledEntries.erc721Tokens.find((entry) => lowerCasedEqual(entry.symbol, lowerCasedSymbol) || lowerCasedEqual(entry.name, lowerCasedName))
+		?? bundledEntries.erc1155Tokens.find((entry) => lowerCasedEqual(entry.symbol, lowerCasedSymbol) || lowerCasedEqual(entry.name, lowerCasedName))
+		?? bundledEntries.contracts.find((entry) => lowerCasedEqual(entry.name, lowerCasedName))
+	if (bundledEntry !== undefined) return bundledEntry
 
 	const userEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
 	const userEntry = userEntries.find((entry) => ('symbol' in entry && lowerCasedEqual(entry.symbol, lowerCasedSymbol)) || lowerCasedEqual(entry.name, lowerCasedName))

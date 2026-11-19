@@ -13,7 +13,6 @@ import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
-const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
 import type { PureGroupedSolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
@@ -22,11 +21,7 @@ import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/er
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
-import { type BundledMetadata, findBundledMetadataForChain } from './bundledMetadata.js'
-
-const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
-
-export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
+import { bundledMetadataToAddressBookEntry, findBundledMetadataForChain } from './bundledMetadata.js'
 
 /**
  * Resolves metadata for an address being surfaced as an active account. This
@@ -72,31 +67,6 @@ export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20Toke
 	}
 }
 
-function getBundledMetadataEntry(bundledMetadata: BundledMetadata, rpcEntry: RpcNetwork | undefined): AddressBookEntry {
-	const getLogoUri = (logoUri: string | undefined) => logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}
-	const chainId = rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}
-	const { address } = bundledMetadata
-	switch (bundledMetadata.type) {
-		case 'contract': {
-			const { logoUri, ...rest } = bundledMetadata.definition
-			return { ...rest, ...getLogoUri(logoUri), address, type: 'contract', entrySource: 'DarkFloristMetadata', ...chainId }
-		}
-		case 'ERC20': {
-			const { logoUri, ...rest } = bundledMetadata.definition
-			return { ...rest, ...getLogoUri(logoUri), address, type: 'ERC20', entrySource: 'DarkFloristMetadata', ...chainId }
-		}
-		case 'ERC721': {
-			const { logoUri, ...rest } = bundledMetadata.definition
-			return { ...rest, ...getLogoUri(logoUri), address, type: 'ERC721', entrySource: 'DarkFloristMetadata', ...chainId }
-		}
-		case 'ERC1155': {
-			const { logoUri, ...rest } = bundledMetadata.definition
-			return { ...rest, ...getLogoUri(logoUri), address, type: 'ERC1155', entrySource: 'DarkFloristMetadata', decimals: undefined, ...chainId }
-		}
-		default: assertNever(bundledMetadata)
-	}
-}
-
 async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
@@ -106,7 +76,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		if (userEntry !== undefined) return userEntry
 	}
 	const bundledMetadata = findBundledMetadataForChain(address, chainId)
-	if (bundledMetadata !== undefined) return getBundledMetadataEntry(bundledMetadata, rpcEntry)
+	if (bundledMetadata !== undefined) return { ...bundledMetadataToAddressBookEntry(bundledMetadata), ...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}) }
 
 	if (address === MOCK_ADDRESS) return {
 		address: address,

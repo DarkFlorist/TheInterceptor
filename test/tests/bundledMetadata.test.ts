@@ -43,8 +43,8 @@ describe('bundled metadata', () => {
 		}
 	})
 
-	test('exports only chain aware accessors', () => {
-		assert.deepEqual(Object.keys(bundledMetadataModule).sort(), ['findBundledMetadataForChain', 'listBundledMetadataForChain'])
+	test('exports only the chain aware accessors, the entry conversion and the explicitly chain independent token check', () => {
+		assert.deepEqual(Object.keys(bundledMetadataModule).sort(), ['bundledMetadataToAddressBookEntry', 'findBundledMetadataForChain', 'isBundledTokenAddressOnAnyChain', 'listBundledAddressBookEntriesForChain', 'listBundledAddressBookEntriesForNameCollisionCheck', 'listBundledMetadataForChain'])
 	})
 
 	test('identifyAddress describes every listed address with its bundled type and name', async () => {
@@ -80,8 +80,9 @@ describe('bundled metadata', () => {
 	})
 })
 
-// Which chains the bundled metadata applies to is decided only in bundledMetadata.ts, so the modules that read it must use the chain aware accessors and never compare a chain id themselves.
+// Which chains the bundled metadata applies to, and how its definitions become address book entries, is decided only in bundledMetadata.ts: no other module reads the package, and modules that use the accessors pass them the chain they work on instead of choosing a chain themselves.
 describe('bundled metadata chain boundary', () => {
+	const BUNDLED_METADATA_PACKAGE_REFERENCE = /['"]@darkflorist\/address-metadata['"]/
 	const appSourceRoot = path.join(process.cwd(), 'app', 'ts')
 	const bundledMetadataPath = path.join(appSourceRoot, 'background', 'bundledMetadata.ts')
 	const listSourceFiles = (directory: string): readonly string[] => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -89,34 +90,61 @@ describe('bundled metadata chain boundary', () => {
 		if (entry.isDirectory()) return listSourceFiles(entryPath)
 		return /\.tsx?$/.test(entry.name) ? [entryPath] : []
 	})
-	const getBundledMetadataValueImports = (filePath: string): readonly string[] => {
-		const sourceFile = ts.createSourceFile(filePath, fs.readFileSync(filePath, 'utf8'), ts.ScriptTarget.Latest, true)
-		return sourceFile.statements.flatMap((statement) => {
-			if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return []
-			if (path.resolve(path.dirname(filePath), statement.moduleSpecifier.text.replace(/\.js$/, '.ts')) !== bundledMetadataPath) return []
-			const importClause = statement.importClause
-			if (importClause === undefined || importClause.isTypeOnly) return []
-			const namedBindings = importClause.namedBindings
-			if (namedBindings === undefined) return importClause.name === undefined ? [] : [importClause.name.text]
-			if (ts.isNamespaceImport(namedBindings)) return [`* as ${ namedBindings.name.text }`]
-			return namedBindings.elements.filter((element) => !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text)
-		})
+	const sourceFiles = listSourceFiles(appSourceRoot).map((filePath) => ({ filePath, file: path.relative(appSourceRoot, filePath), source: fs.readFileSync(filePath, 'utf8') }))
+	type ValueImport = { readonly imported: string, readonly local: string }
+	const getBundledMetadataValueImports = (sourceFile: ts.SourceFile, filePath: string): readonly ValueImport[] => sourceFile.statements.flatMap((statement) => {
+		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return []
+		if (path.resolve(path.dirname(filePath), statement.moduleSpecifier.text.replace(/\.js$/, '.ts')) !== bundledMetadataPath) return []
+		const importClause = statement.importClause
+		if (importClause === undefined || importClause.isTypeOnly) return []
+		const namedBindings = importClause.namedBindings
+		if (namedBindings === undefined) return importClause.name === undefined ? [] : [{ imported: 'default', local: importClause.name.text }]
+		if (ts.isNamespaceImport(namedBindings)) return [{ imported: '*', local: namedBindings.name.text }]
+		return namedBindings.elements.filter((element) => !element.isTypeOnly).map((element) => ({ imported: (element.propertyName ?? element.name).text, local: element.name.text }))
+	})
+	const importers = sourceFiles.flatMap(({ filePath, file, source }) => {
+		const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
+		const valueImports = getBundledMetadataValueImports(sourceFile, filePath)
+		return valueImports.length === 0 ? [] : [{ file, sourceFile, valueImports }]
+	})
+	const listNodes = (node: ts.Node): readonly ts.Node[] => [node, ...node.getChildren().flatMap(listNodes)]
+	const listAccessorCalls = (sourceFile: ts.SourceFile, valueImports: readonly ValueImport[]) => {
+		const localNames = new Set(valueImports.map(({ local }) => local))
+		return listNodes(sourceFile).filter((node): node is ts.CallExpression => ts.isCallExpression(node) && ts.isIdentifier(node.expression) && localNames.has(node.expression.text))
 	}
-	const importers = listSourceFiles(appSourceRoot).flatMap((filePath) => {
-		const valueImports = getBundledMetadataValueImports(filePath)
-		return valueImports.length === 0 ? [] : [{ file: path.relative(appSourceRoot, filePath), valueImports, source: fs.readFileSync(filePath, 'utf8') }]
+	const isChainIdComparisonWithLiteral = (node: ts.Node) => {
+		if (!ts.isBinaryExpression(node)) return false
+		const operator = node.operatorToken.kind
+		if (operator !== ts.SyntaxKind.EqualsEqualsEqualsToken && operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return false
+		const literalSide = ts.isBigIntLiteral(node.left) ? node.right : ts.isBigIntLiteral(node.right) ? node.left : undefined
+		return literalSide !== undefined && /chainid/i.test(literalSide.getText())
+	}
+
+	test('only bundledMetadata.ts reads the bundled metadata package', () => {
+		const packageReaders = sourceFiles.filter(({ source }) => BUNDLED_METADATA_PACKAGE_REFERENCE.test(source)).map(({ file }) => file)
+		assert.deepEqual(packageReaders, [path.relative(appSourceRoot, bundledMetadataPath)])
 	})
 
-	test('identification and lookalike indexing read bundled metadata through the chain aware accessors', () => {
-		const valueImportsOf = (file: string) => importers.find((importer) => importer.file === file)?.valueImports
-		assert.deepEqual(valueImportsOf(path.join('background', 'metadataUtils.ts')), ['findBundledMetadataForChain'])
-		assert.deepEqual(valueImportsOf(path.join('background', 'lookalikeKnownAddresses.ts')), ['listBundledMetadataForChain'])
+	test('address identification, search, lookalike indexing and the common token protector read bundled metadata through bundledMetadata.ts', () => {
+		const importedNamesOf = (file: string) => importers.find((importer) => importer.file === file)?.valueImports.map(({ imported }) => imported)
+		assert.deepEqual(importedNamesOf(path.join('background', 'metadataUtils.ts')), ['bundledMetadataToAddressBookEntry', 'findBundledMetadataForChain'])
+		assert.deepEqual(importedNamesOf(path.join('background', 'metadataSearch.ts')), ['listBundledAddressBookEntriesForChain', 'listBundledAddressBookEntriesForNameCollisionCheck'])
+		assert.deepEqual(importedNamesOf(path.join('background', 'lookalikeKnownAddresses.ts')), ['listBundledMetadataForChain'])
+		assert.deepEqual(importedNamesOf(path.join('simulation', 'protectors', 'commonTokenOops.ts')), ['isBundledTokenAddressOnAnyChain'])
 	})
 
-	test('no module that reads bundled metadata compares a chain id with mainnet itself', () => {
-		for (const { file, source } of importers) {
-			const bundledMetadataChainChecks = source.split('\n').filter((line) => /BundledMetadata/.test(line) && /===\s*1n|1n\s*===/.test(line))
-			assert.deepEqual({ file, bundledMetadataChainChecks }, { file, bundledMetadataChainChecks: [] })
+	test('no module passes a literal chain to the accessors', () => {
+		for (const { file, sourceFile, valueImports } of importers) {
+			const literalArguments = listAccessorCalls(sourceFile, valueImports).flatMap((call) => call.arguments.filter((argument) => ts.isBigIntLiteral(argument) || ts.isNumericLiteral(argument) || ts.isStringLiteral(argument)).map((argument) => argument.getText()))
+			assert.deepEqual({ file, literalArguments }, { file, literalArguments: [] })
+		}
+	})
+
+	test('no function that calls an accessor compares a chain id with a literal itself', () => {
+		for (const { file, sourceFile, valueImports } of importers) {
+			const enclosingScopes = new Set(listAccessorCalls(sourceFile, valueImports).map((call) => ts.findAncestor(call.parent, ts.isFunctionLike) ?? sourceFile))
+			const chainIdComparisons = Array.from(enclosingScopes).flatMap((scope) => listNodes(scope).filter(isChainIdComparisonWithLiteral).map((node) => node.getText()))
+			assert.deepEqual({ file, chainIdComparisons }, { file, chainIdComparisons: [] })
 		}
 	})
 })
