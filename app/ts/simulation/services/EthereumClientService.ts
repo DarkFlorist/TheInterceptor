@@ -88,8 +88,8 @@ const touchesEcRecoverOverrideAddresses = (stateOverrides: StateOverrides) => Ob
 	return (parsedAddress.success && isEcRecoverOverrideAddress(parsedAddress.value)) || (movePrecompileToAddress !== undefined && isEcRecoverOverrideAddress(movePrecompileToAddress))
 })
 
-// Overrides that touch address 1 or 0x123456 keep main's behaviour of no signed-message override, because eth_simulateV1 rejects relocating ecrecover onto an overridden address and EcRecoverOverride hardcodes 0x123456 as its relocation target.
-export const addEcRecoverOverride = (ecRecoverOverride: StateOverrides, stateOverrides: StateOverrides): StateOverrides => touchesEcRecoverOverrideAddresses(stateOverrides) ? stateOverrides : { ...ecRecoverOverride, ...stateOverrides }
+// Explicit overrides of address 1, 0x123456, or relocations involving either address take precedence over simulated signatures. Applying both would change the caller's requested precompile behavior or make eth_simulateV1 reject the relocation; this is the single collision policy for stack blocks and appended calls.
+export const mergeEcRecoverOverridePreservingExplicitPrecompiles = (ecRecoverOverride: StateOverrides, stateOverrides: StateOverrides): StateOverrides => touchesEcRecoverOverrideAddresses(stateOverrides) ? stateOverrides : { ...ecRecoverOverride, ...stateOverrides }
 
 const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	const commonFields = {
@@ -459,7 +459,7 @@ export class EthereumClientService {
 			return {
 				calls: rpcCalls,
 				blockOverrides,
-				stateOverrides: addEcRecoverOverride(await getSignedMessagesEcRecoverOverride(signedMessagesUpToBlock), block.stateOverrides),
+				stateOverrides: mergeEcRecoverOverridePreservingExplicitPrecompiles(await getSignedMessagesEcRecoverOverride(signedMessagesUpToBlock), block.stateOverrides),
 			}
 		}
 

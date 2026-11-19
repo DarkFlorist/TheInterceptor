@@ -1,5 +1,5 @@
 import type { Settings } from '../../types/interceptor-messages.js'
-import { addEcRecoverOverride, type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getSignedMessagesEcRecoverOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
+import { mergeEcRecoverOverridePreservingExplicitPrecompiles, type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getSignedMessagesEcRecoverOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
@@ -302,8 +302,8 @@ export const createSimulationCallParams = (callParams: PartialEthereumTransactio
 
 type SimulateBlockCallOptions = {
 	extraOverrides?: StateOverrides
-	// Required so every caller chooses: calls that may verify a signature made on the simulation stack (eth_call and gas estimates) need the stack's ecrecover override, while internal lookups leave it out so it cannot collide with their own overrides.
-	includeSimulatedSignatures: boolean
+	// Only internal state readers bypass signature emulation so code/storage reads observe the node's precompiles. Public calls and estimates always verify stack signatures.
+	purpose?: 'state-read'
 	simulateWithZeroBaseFee?: boolean
 	simulationPrefixBlockCount?: number
 }
@@ -375,7 +375,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: options.includeSimulatedSignatures ? addEcRecoverOverride(await getEcRecoverOverrideAfterPrefix(context, simulationPrefixBlockCount), extraOverrides) : extraOverrides,
+			stateOverrides: options.purpose !== 'state-read' ? mergeEcRecoverOverridePreservingExplicitPrecompiles(await getEcRecoverOverrideAfterPrefix(context, simulationPrefixBlockCount), extraOverrides) : extraOverrides,
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -431,9 +431,9 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			requestAbortController,
 			context,
 			{ ...estimateGasTransaction, gasLimit },
-			{ simulateWithZeroBaseFee: true, includeSimulatedSignatures: true },
+			{ simulateWithZeroBaseFee: true },
 		)
-		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { simulateWithZeroBaseFee: true, includeSimulatedSignatures: true })
+		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { simulateWithZeroBaseFee: true })
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
 	} catch (error: unknown) {
@@ -977,7 +977,7 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		accessList: []
 	} as const
 	try {
-		const result = await simulatedCall(ethereumClientService, undefined, simulationState, getCodeTransaction, blockTag, { extraOverrides: getCodeStateOverrides(), includeSimulatedSignatures: false })
+		const result = await simulatedCallWithOptions(ethereumClientService, undefined, simulationState, getCodeTransaction, blockTag, { extraOverrides: getCodeStateOverrides(), purpose: 'state-read' })
 		if ('error' in result) return { statusCode: 'failure' } as const
 		const parsed = decodeFunctionOutput(getCodeAbi, 'at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed) } as const
@@ -1185,7 +1185,7 @@ export const ethSimulateV1FromInput = async (
 
 	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
 	const ecRecoverOverride = await getEcRecoverOverrideAfterPrefix(context, simulationPrefixBlockCount)
-	const requestedBlockStateCalls = request.params[0].blockStateCalls.map((blockStateCall) => ({ ...blockStateCall, stateOverrides: addEcRecoverOverride(ecRecoverOverride, blockStateCall.stateOverrides ?? {}) }))
+	const requestedBlockStateCalls = request.params[0].blockStateCalls.map((blockStateCall) => ({ ...blockStateCall, stateOverrides: mergeEcRecoverOverridePreservingExplicitPrecompiles(ecRecoverOverride, blockStateCall.stateOverrides ?? {}) }))
 	const payload: EthSimulateV1Params['params'][0] = {
 		...request.params[0],
 		blockStateCalls: [...simulationPrefixBlockStateCalls, ...requestedBlockStateCalls],
@@ -1262,7 +1262,7 @@ const simulatedCallWithPreparedInputContext = async (
 	context: PreparedSimulationExecutionContext | undefined,
 	params: SimulatedCallParams,
 	blockTag: EthereumBlockTag,
-	callOverrides: Pick<SimulateBlockCallOptions, 'extraOverrides' | 'includeSimulatedSignatures'>,
+	callOverrides: SimulateBlockCallOptions,
 ) => {
 	if (isNodeOnlyBlockTag(blockTag)) {
 		try {
@@ -1313,7 +1313,7 @@ export const simulatedCallFromInput = async (
 		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput, baseBlockTag),
 		params,
 		blockTag,
-		{ includeSimulatedSignatures: true },
+		{},
 	)
 }
 
@@ -1344,7 +1344,7 @@ export const getSimulatedCodeFromInput = async (
 		accessList: []
 	} as const
 	try {
-		const result = await simulatedCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, getCodeTransaction, blockTag, { extraOverrides: getCodeStateOverrides(), includeSimulatedSignatures: false })
+		const result = await simulatedCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, getCodeTransaction, blockTag, { extraOverrides: getCodeStateOverrides(), purpose: 'state-read' })
 		if ('error' in result) return { statusCode: 'failure' } as const
 		const parsed = decodeFunctionOutput(getCodeAbi, 'at', result.result)
 		return { statusCode: 'success', getCodeReturn: EthereumData.parse(parsed) } as const
@@ -1389,7 +1389,7 @@ export const getSimulatedStorageAtFromInput = async (
 		{
 			extraOverrides: { [addressString(address)]: createStorageReaderAccountOverride(relocatePrecompile) },
 			simulationPrefixBlockCount,
-			includeSimulatedSignatures: false,
+			purpose: 'state-read',
 		},
 	)
 
@@ -1479,9 +1479,9 @@ export const simulateEstimateGasFromInput = async (
 			requestAbortController,
 			context,
 			{ ...estimateGasTransaction, gasLimit },
-			{ extraOverrides, simulateWithZeroBaseFee: true, includeSimulatedSignatures: true },
+			{ extraOverrides, simulateWithZeroBaseFee: true },
 		)
-		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { extraOverrides, simulateWithZeroBaseFee: true, includeSimulatedSignatures: true })
+		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { extraOverrides, simulateWithZeroBaseFee: true })
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
 	} catch (error: unknown) {
@@ -1692,7 +1692,18 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 }
 
-export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag, callOverrides: Pick<SimulateBlockCallOptions, 'extraOverrides' | 'includeSimulatedSignatures'>) => {
+type SimulatedCallArguments = [
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationState: ResolvedSimulationState,
+	params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>,
+	blockTag: EthereumBlockTag,
+]
+
+// Public calls always include simulated signatures; internal state readers use the private implementation.
+export const simulatedCall = (...args: SimulatedCallArguments) => simulatedCallWithOptions(...args, {})
+
+const simulatedCallWithOptions = async (...[ethereumClientService, requestAbortController, simulationState, params, blockTag, callOverrides]: [...SimulatedCallArguments, SimulateBlockCallOptions]) => {
 	if (isNodeOnlyBlockTag(blockTag)) {
 		try {
 			return { result: await ethereumClientService.call(params, blockTag, requestAbortController) }
@@ -1736,14 +1747,14 @@ export const getSimulatedErc20Balance = async (
 	token: EthereumAddress,
 	owner: EthereumAddress,
 ): Promise<bigint | undefined> => {
-	const response = await simulatedCall(ethereumClientService, requestAbortController, simulationState, {
+	const response = await simulatedCallWithOptions(ethereumClientService, requestAbortController, simulationState, {
 		to: token,
 		from: owner,
 		value: 0n,
 		input: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'balanceOf', [addressString(owner)])),
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n,
-	}, 'latest', { includeSimulatedSignatures: false })
+	}, 'latest', { purpose: 'state-read' })
 	if ('error' in response) return undefined
 	return decodeFunctionOutputSafely(Erc20ABI, 'balanceOf', response.result, (value): value is bigint => typeof value === 'bigint')
 }
@@ -1791,7 +1802,7 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 		nonce: 0n,
 		chainId: ethereumClientService.getChainId(),
 	} as const
-	const aggregate3CallResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationStateInput, callTransaction, { includeSimulatedSignatures: false })
+	const aggregate3CallResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationStateInput, callTransaction, { purpose: 'state-read' })
 	if (aggregate3CallResult === undefined || aggregate3CallResult.status === 'failure') throw Error('Failed aggregate3')
 	const multicallReturnData = decodeFunctionOutput(Multicall3ABI, 'aggregate3', dataStringWith0xStart(aggregate3CallResult.returnData))
 	if (multicallReturnData.length !== deduplicatedBalanceQueries.length) throw Error('Got wrong number of balances back')

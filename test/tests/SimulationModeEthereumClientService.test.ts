@@ -443,7 +443,7 @@ describe('SimulationModeEthereumClientService', () => {
 			maxPriorityFeePerGas: exampleTransaction.maxPriorityFeePerGas,
 		}
 		await simulatedCallFromInput(forwardingEthereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), callParams, 'safe')
-		await simulatedCall(forwardingEthereum, undefined, resolvedState, callParams, 'earliest', { includeSimulatedSignatures: true })
+		await simulatedCall(forwardingEthereum, undefined, resolvedState, callParams, 'earliest')
 
 		assert.deepEqual(forwardedTags, [
 			{ method: 'getTransactionCount', blockTag: 'safe' },
@@ -2593,6 +2593,14 @@ describe('SimulationModeEthereumClientService', () => {
 			assertAppendedBlockKeepsStackEcRecoverOverride()
 		})
 
+		test('public simulatedCall includes stack signatures without caller options', async () => {
+			const state = await createSimulationState(ethereum, undefined, createSignedMessageSimulationStateInput())
+			if (state.success === false) throw new Error('simulation unexpectedly failed')
+			const result = await simulatedCall(ethereum, undefined, toResolvedSimulationState(state), callParams, 'latest')
+			if ('error' in result) throw new Error('simulated call unexpectedly failed')
+			assertAppendedBlockKeepsStackEcRecoverOverride()
+		})
+
 		test('eth_estimateGas', async () => {
 			const estimateGas = await simulateEstimateGasFromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), callParams)
 			if ('error' in estimateGas) throw new Error(`gas estimation unexpectedly failed: ${ estimateGas.error.message }`)
@@ -2615,6 +2623,15 @@ describe('SimulationModeEthereumClientService', () => {
 
 			assert.equal(result.length, 1)
 			assert.deepEqual(requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides, websiteStateOverrides)
+		})
+
+		test('website eth_simulateV1 overriding ecrecover keeps the explicit code', async () => {
+			const stateOverrides = { [ecRecoverAddress]: { code: new Uint8Array([0x00]) } }
+			const request = createDappEthSimulateV1Request()
+			const [block] = request.params[0].blockStateCalls
+			if (block === undefined) throw new Error('missing website block')
+			await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSignedMessageSimulationStateInput()), { ...request, params: [{ ...request.params[0], blockStateCalls: [{ ...block, stateOverrides }] }, 'latest'] })
+			assert.deepEqual(requestHandler.ethSimulateV1Requests.at(-1)?.params[0].blockStateCalls.at(-1)?.stateOverrides, stateOverrides)
 		})
 
 		test('getSimulatedCode adds only its code-reader override on top of a signed message', async () => {
