@@ -202,10 +202,10 @@ const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): Ad
 	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
 	let publicKey
 	try {
-		// Only public-key recovery is fallible here: for validated signature parts the library throws a plain Error when no curve key recovers. Encoding, signature construction and address conversion stay outside this boundary; other exception types propagate.
+		// micro-eth-signer 0.19.0 / its @noble/curves 2.2.0 dependency report these two invalid-key outcomes. Match complete messages so new dependency failures propagate instead of silently changing authorization accounting; recovery contract tests cover both outcomes.
 		publicKey = recoveredSignature.recoverPublicKey(digest)
 	} catch (error: unknown) {
-		if (!(error instanceof Error) || error.name !== 'Error') throw error
+		if (!(error instanceof Error) || error.name !== 'Error' || (error.message !== 'bad point: is not on curve, sqrt error: Cannot find square root' && error.message !== 'invalid recovery: point at infinify')) throw error
 		return { success: false, error }
 	}
 	return { success: true, address: ensureHex(addr.fromPublicKey(publicKey.toBytes(false)), 'recovered address') }

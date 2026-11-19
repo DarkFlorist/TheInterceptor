@@ -218,6 +218,27 @@ const typedDataArrayVectors = [
 	},
 ] as const
 
+describe('signature recovery failure contract', () => {
+	const generatorX = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n
+	const digestOne = new Uint8Array(32)
+	digestOne[31] = 1
+
+	test('models non-curve signature points and a recovered point at infinity as no key', async () => {
+		for (const r of [5n, generatorX]) {
+			const parameters = { hash: digestOne, signature: { r, s: 1n, yParity: 0 } }
+			assert.equal(tryRecoverAddress(parameters), undefined)
+			await assert.rejects(recoverAddress(parameters), Error)
+		}
+	})
+
+	test('propagates a plain Error from the recovery library that is not an invalid-key outcome', async () => {
+		// This triggers noble's input-size guard inside recovery, after constructing a valid signature point.
+		const parameters = { hash: new Uint8Array(8193), signature: { r: generatorX, s: 1n, yParity: 0 } }
+		assert.throws(() => tryRecoverAddress(parameters), { name: 'Error', message: 'input is too large' })
+		await assert.rejects(recoverAddress(parameters), { name: 'Error', message: 'input is too large' })
+	})
+})
+
 describe('local Ethereum primitive helpers', () => {
 	test('matches reference address, bytes, RLP, selector, and unit formatting vectors', () => {
 		assert.equal(getAddress(lowercaseDeadAddress), checksumDeadAddress)
