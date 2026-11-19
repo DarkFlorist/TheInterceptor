@@ -774,7 +774,39 @@ const getPendingTransactionWindow = async (ethereum: EthereumClientService, toke
 	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 }
 
-export async function openConfirmTransactionDialogForMessage(
+// An internal operation identity belongs to this request instance, even when the page reuses its RPC id.
+const createRequestIdentity = (uniqueRequestIdentifier: UniqueRequestIdentifier) => EthereumQuantity.parse(keccak256(stringToBytes(`${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) }-${ crypto.randomUUID() }`)))
+
+type ConfirmationOpeningResult = { readonly type: 'doNotReply' } | { readonly type: 'result', readonly error: { readonly code: number, readonly message: string } }
+const confirmationOpenings = new Map<string, Promise<ConfirmationOpeningResult>>()
+
+// Bridge deduplication tracks deliveries; this admission owns one confirmation per logical request, including direct callers and a pending request restored after restart. Coalesce concurrent opens before any preparation, and leave an existing pending request to answer its own page promise.
+function openPendingConfirmationOnce(identifier: UniqueRequestIdentifier, open: () => Promise<ConfirmationOpeningResult>): Promise<ConfirmationOpeningResult> {
+	const key = getUniqueRequestIdentifierString(identifier)
+	const existing = confirmationOpenings.get(key)
+	if (existing !== undefined) return existing
+	const opening = Promise.resolve().then(async (): Promise<ConfirmationOpeningResult> => {
+		if (await getPendingTransactionOrMessageByidentifier(identifier) !== undefined) return { type: 'doNotReply' }
+		return await open()
+	})
+	const completed = opening.finally(() => {
+		if (confirmationOpenings.get(key) === completed) confirmationOpenings.delete(key)
+	})
+	confirmationOpenings.set(key, completed)
+	return completed
+}
+
+export async function openConfirmTransactionDialogForMessage(...args: Parameters<typeof createConfirmationForMessage>) {
+	const [, , request] = args
+	return await openPendingConfirmationOnce(request.uniqueRequestIdentifier, async () => await createConfirmationForMessage(...args))
+}
+
+export async function openConfirmTransactionDialogForTransaction(...args: Parameters<typeof createConfirmationForTransaction>) {
+	const [, , request] = args
+	return await openPendingConfirmationOnce(request.uniqueRequestIdentifier, async () => await createConfirmationForTransaction(...args))
+}
+
+async function createConfirmationForMessage(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	request: InterceptedRequest,
@@ -797,8 +829,7 @@ export async function openConfirmTransactionDialogForMessage(
 			? 'Select a Gnosis Safe signer for simulation before signing a message.'
 			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
 	}
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const messageIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
 		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
@@ -936,7 +967,7 @@ export async function prepareUnformedSafeProposalAgain(
 	return { transactionToSimulate, preparedSafeProposal: { safeFlow, approvalStatus: approvalStatus ?? { status: 'WaitingForUser' as const } } }
 }
 
-export async function openConfirmTransactionDialogForTransaction(
+async function createConfirmationForTransaction(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	request: InterceptedRequest,
@@ -946,8 +977,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const transactionIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)

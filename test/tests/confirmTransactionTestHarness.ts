@@ -793,3 +793,9 @@ export async function waitForPendingTransactionsToClear() {
 }
 
 export { addressString, bytes32String, createSafeTx, EIP712Message, getSafeTxHash, privateKeyToAccount, SAFE_ABI, SAFE_EXECUTION_ABI, safeTxToTypedDataJson, withSilencedConsole }
+
+// Replayed accepts may arrive after cleanup; the resolver must finish or ignore them before inspecting consent.
+export async function createReplayableAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, requestIdentifier))
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: pending === undefined ? '' : getPopupReviewedResultId(pending), forceSend: true } }
+}
