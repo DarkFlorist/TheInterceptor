@@ -196,7 +196,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR,
 	)
 
-	// Use the schema's complete wire representation so new vote fields participate in both synchronization and cancellation.
+	// The schema serializes both boolean and uint8 (bigint) support values to JSON-safe wire data; its complete representation keeps every vote field in synchronization and cancellation.
 	const voteIdentity = JSON.stringify(serialize(GovernanceVoteInputParameters, param.governanceVoteInputParameters))
 	useEffect(() => {
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters

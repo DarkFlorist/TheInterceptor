@@ -1607,51 +1607,54 @@ describe('popup async action UI', () => {
 
 	}
 
-	for (const rerenderTiming of ['during request', 'after direct reply']) {
-		test(`preserves governance outcome across equivalent input rerenders ${ rerenderTiming }`, async () => {
-			const modules = await modulesPromise
-			const dom = installDomMock()
-			const direct = createDeferred<unknown>()
-			let simulationRequestCount = 0
-			runtimeSendMessage = async () => {
-				simulationRequestCount += 1
-				return simulationRequestCount === 1 ? createGnosisSimulationSuccessReply(7n, 'Original recipient') : direct.promise
-			}
-			const renderGovernance = (reason?: string) => render(h(modules.GovernanceVoteVisualizer, {
-				simTx: createGovernanceTransactionFixture(7n),
-				activeAddress: signal(gnosisSignerAddress.address),
-				renameAddressCallBack: () => undefined,
-				editEnsNamedHashCallBack: () => undefined,
-				governanceVoteInputParameters: { ...createGovernanceVoteInputParameters(42n), reason, params: new Uint8Array([1, 2]), signature: new Uint8Array([3, 4]) },
-			}), dom.document.body)
-			try {
-				await act(() => { renderGovernance() })
-				const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
-				if (button === undefined) throw new Error('Expected governance simulation button')
-				await act(async () => {
-					await clickElement(button)
-					await settleAsyncUpdates()
-				})
-				await act(async () => {
-					await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
-					await settleAsyncUpdates()
-				})
-				if (rerenderTiming === 'during request') await act(() => { renderGovernance() })
-				await act(async () => {
-					direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current recipient'))
-					await settleAsyncUpdates()
-				})
-				if (rerenderTiming === 'after direct reply') await act(() => { renderGovernance() })
-				assert.equal(dom.document.body.textContent?.includes('Current recipient'), true)
-				assert.equal(simulationRequestCount, 2)
-				await act(() => { renderGovernance('Changed vote reason') })
-				assert.equal(dom.document.body.textContent?.includes('Current recipient'), false)
-				assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
-			} finally {
-				await act(() => { render(null, dom.document.body) })
-				dom.restore()
-			}
-		})
+	for (const support of [true, 0n, 1n, 2n]) {
+		for (const rerenderTiming of ['during request', 'after direct reply']) {
+			test(`preserves governance outcome across equivalent input rerenders ${ rerenderTiming } with support ${ support }`, async () => {
+				const modules = await modulesPromise
+				const dom = installDomMock()
+				const direct = createDeferred<unknown>()
+				let simulationRequestCount = 0
+				runtimeSendMessage = async () => {
+					simulationRequestCount += 1
+					return simulationRequestCount === 1 ? createGnosisSimulationSuccessReply(7n, 'Original recipient') : direct.promise
+				}
+				const renderGovernance = (reason?: string) => render(h(modules.GovernanceVoteVisualizer, {
+					simTx: createGovernanceTransactionFixture(7n),
+					activeAddress: signal(gnosisSignerAddress.address),
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+					governanceVoteInputParameters: { ...createGovernanceVoteInputParameters(42n), support, reason, params: new Uint8Array([1, 2]), signature: new Uint8Array([3, 4]) },
+				}), dom.document.body)
+				try {
+					await act(() => { renderGovernance() })
+					const button = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate execution on a passing vote'))
+					if (button === undefined) throw new Error('Expected governance simulation button')
+					await act(async () => {
+						await clickElement(button)
+						await settleAsyncUpdates()
+					})
+					await act(async () => {
+						await emitRuntimeMessage({ role: 'all', method: 'popup_addressBookEntriesChanged' })
+						await settleAsyncUpdates()
+					})
+					if (rerenderTiming === 'during request') await act(() => { renderGovernance() })
+					await act(async () => {
+						direct.resolve(createGnosisSimulationSuccessReply(7n, 'Current recipient'))
+						await settleAsyncUpdates()
+					})
+					if (rerenderTiming === 'after direct reply') await act(() => { renderGovernance() })
+					assert.equal(dom.document.body.textContent?.includes('Current recipient'), true)
+					assert.equal(simulationRequestCount, 2)
+					await act(() => { renderGovernance('Changed vote reason') })
+					assert.equal(dom.document.body.textContent?.includes('Current recipient'), false)
+					assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
+				} finally {
+					await act(() => { render(null, dom.document.body) })
+					dom.restore()
+				}
+			})
+		}
+
 	}
 
 	for (const visualizer of ['Safe', 'governance']) {
