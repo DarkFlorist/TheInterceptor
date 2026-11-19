@@ -41,7 +41,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
-import { observeActiveNetworkChanges, repairCorruptActiveNetwork } from './activeNetworkStorage.js'
+import { repairCorruptActiveNetwork, startObservingActiveNetworkChanges } from './activeNetworkStorage.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -355,7 +355,7 @@ if (initializeWatchAssetWindowListeners()) {
 }
 
 browser.tabs.onUpdated.addListener(onTabUpdated)
-browser.storage.onChanged.addListener(observeActiveNetworkChanges)
+startObservingActiveNetworkChanges()
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))

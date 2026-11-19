@@ -2265,8 +2265,8 @@ test('a repair of a corrupt active network read before a network switch committe
 
 test('a write of the active network outside its writer that lands while the guard\'s read returns the old network, and is reported before the commit, makes the guard read again and refuse', async () => {
 	const { updateInterceptorTransactionStackOnRequestedNetwork } = await import('../../app/ts/background/transactionNetwork.js')
-	const { observeActiveNetworkChanges } = await import('../../app/ts/background/activeNetworkStorage.js')
-	browser.storage.onChanged.addListener(observeActiveNetworkChanges)
+	const { startObservingActiveNetworkChanges } = await import('../../app/ts/background/activeNetworkStorage.js')
+	const stopObservingActiveNetworkChanges = startObservingActiveNetworkChanges()
 	await setUpTransactionApprovalTest(false)
 	const stackOperation = { type: 'Transaction' as const, preSimulationTransaction: { ...pendingTransaction.transactionToSimulate, signedTransaction } }
 	const guardReadNetwork = createDeferredValue<undefined>()
@@ -2291,10 +2291,47 @@ test('a write of the active network outside its writer that lands while the guar
 	releaseGuardRead.resolve(undefined)
 	const update = await stackUpdate
 	browserMock.setStorageGetHandler(undefined)
-	browser.storage.onChanged.removeListener(observeActiveNetworkChanges)
+	stopObservingActiveNetworkChanges()
 
 	assert.equal(update.committed ? undefined : update.refusal.message, NETWORK_CHANGED_REFUSAL)
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
+})
+
+// The freshness protocol of the active network is one primitive: a bounded read that runs its act only on a read no counted write overlapped.
+test('acting on the stored active network runs the act once on a read no write overlapped', async () => {
+	const { actOnStoredActiveNetwork } = await import('../../app/ts/background/activeNetworkStorage.js')
+	await setUpTransactionApprovalTest(false)
+	const actedOn: bigint[] = []
+	const act = await actOnStoredActiveNetwork((activeRpcNetwork) => {
+		actedOn.push(activeRpcNetwork.chainId)
+		return 'acted'
+	})
+	assert.deepEqual(act, { current: true, result: 'acted' })
+	assert.deepEqual(actedOn, [fakeRpcNetwork.chainId])
+	await assert.rejects(actOnStoredActiveNetwork(() => 'never', 0), /read at least once/u)
+})
+
+test('acting on the stored active network reads again after a counted write overlapped the read, and gives up after its bound without acting', async () => {
+	const { actOnStoredActiveNetwork, writeActiveNetwork } = await import('../../app/ts/background/activeNetworkStorage.js')
+	await setUpTransactionApprovalTest(false)
+	const networksWrittenDuringReads = [otherNetwork]
+	// Each read of the active network starts a write of the next network, which the read does not see.
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		const items = readStoredItems()
+		const next = networksWrittenDuringReads.shift()
+		if (next !== undefined && Array.isArray(keys) && keys.length === 1 && keys[0] === 'activeRpcNetwork') void writeActiveNetwork({ activeRpcNetwork: next })
+		return items
+	})
+	const actedOn: bigint[] = []
+	const afterOneOverlap = await actOnStoredActiveNetwork((activeRpcNetwork) => actedOn.push(activeRpcNetwork.chainId))
+	assert.equal(afterOneOverlap.current, true)
+	assert.deepEqual(actedOn, [otherNetwork.chainId])
+
+	networksWrittenDuringReads.push(fakeRpcNetwork, otherNetwork)
+	const everyReadOverlapped = await actOnStoredActiveNetwork((activeRpcNetwork) => actedOn.push(activeRpcNetwork.chainId), 2)
+	browserMock.setStorageGetHandler(undefined)
+	assert.deepEqual(actedOn, [otherNetwork.chainId])
+	assert.deepEqual(everyReadOverlapped.current ? undefined : everyReadOverlapped.lastReadActiveRpcNetwork.chainId, fakeRpcNetwork.chainId)
 })
 
 test('a page context reads a corrupt active network without writing it, so a guarded write commits only on the network that stays stored', async () => {

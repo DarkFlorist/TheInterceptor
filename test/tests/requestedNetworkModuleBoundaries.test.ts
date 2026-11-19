@@ -68,3 +68,20 @@ test('the confirmation window publication depends on neither the confirmation re
 		assert.deepEqual(publicationNamesFromOtherModules, [], path.basename(consumer))
 	}
 })
+
+// The freshness protocol of the active network has one owner: the counters and their compare are private to activeNetworkStorage.ts, and every reader that acts on the stored network does so through its bounded actOnStoredActiveNetwork.
+test('only activeNetworkStorage.ts reads and compares the active network write counters', async () => {
+	const activeNetworkStorage = await import('../../app/ts/background/activeNetworkStorage.js')
+	for (const privateName of ['beginActiveNetworkRead', 'observeActiveNetworkChanges']) assert.equal(privateName in activeNetworkStorage, false, privateName)
+	const activeNetworkStorageModule = backgroundModule('activeNetworkStorage.ts')
+	const appDirectory = path.join(import.meta.dir, '..', '..', 'app', 'ts')
+	const snapshotReaders: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory, absolute: true })) {
+		if (file === activeNetworkStorageModule) continue
+		const names = getRuntimeDependencies(file).filter((dependency) => dependency.module === activeNetworkStorageModule).flatMap((dependency) => dependency.names === 'whole module' ? ['whole module'] : dependency.names)
+		if (names.includes('readActiveNetworkSnapshot') || names.includes('whole module')) snapshotReaders.push(path.relative(appDirectory, file))
+	}
+	assert.deepEqual(snapshotReaders, [])
+	assert.deepEqual(getRuntimeDependencies(networkRuleModule).filter((dependency) => dependency.module === activeNetworkStorageModule).map((dependency) => dependency.names), [['actOnStoredActiveNetwork']])
+	assert.doesNotMatch(await Bun.file(networkRuleModule).text(), /while \(true\)/u)
+})

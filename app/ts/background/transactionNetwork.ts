@@ -1,7 +1,8 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { GetInstalledServices } from '../simulation/serviceLifecycle.js'
 import type { PendingTransaction, PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../types/accessRequest.js'
-import { readActiveNetworkSnapshot } from './activeNetworkStorage.js'
+import { actOnStoredActiveNetwork } from './activeNetworkStorage.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import { getCreatedSafeProposal } from '../safe/safePendingFlow.js'
 import { updateInterceptorTransactionStack, updateTransactionState } from './storageVariables.js'
 
@@ -35,25 +36,18 @@ function getNetworkRefusal(activeChainId: bigint, ethereum: EthereumClientServic
 
 export type RequestedNetworkCommit<T> = { readonly committed: true, readonly result: T } | { readonly committed: false, readonly refusal: NetworkRefusal }
 
-type RequestedNetworkVerdict = { readonly verdict: 'proceed' } | { readonly verdict: 'refuse', readonly refusal: NetworkRefusal } | { readonly verdict: 'readAgain' }
-
-async function readRequestedNetworkCheck(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage): Promise<() => RequestedNetworkVerdict> {
-	const activeNetwork = await readActiveNetworkSnapshot()
-	return () => {
-		if (!activeNetwork.isStillCurrent()) return { verdict: 'readAgain' }
-		const refusal = pending.type === 'Transaction' ? getNetworkRefusal(activeNetwork.activeRpcNetwork.chainId, ethereum, pending) : undefined
-		return refusal === undefined ? { verdict: 'proceed' } : { verdict: 'refuse', refusal }
-	}
-}
-
-// Reads the active network until it is still the stored active network when checked, then either refuses or calls proceed in the same synchronous step as the passing check. A passing check means the stored active network, the client and the stored preview match the requested network at that step; it cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are never refused. The guarded writes below and the guarded delivery in requestedNetworkForwarding.ts pass their own write or post as proceed, so their callers pass data only.
+// Runs the requested-network rule on the stored active network and, if it passes, calls proceed in the same synchronous step as the passing check, through actOnStoredActiveNetwork, the one owner of that check. A passing check means the stored active network, the client and the stored preview match the requested network at that step; it cannot tell which network an external wallet signs on, because the forwarded request carries no chain id and a wallet can switch networks before the Interceptor learns of it. Signable messages carry no requested network, so they are never refused. A transaction whose every read was overlapped by a network write is refused, as its network was changing while it was checked. The guarded writes below and the guarded delivery in requestedNetworkForwarding.ts pass their own write or post as proceed, so their callers pass data only.
 export async function proceedOnRequestedNetwork<T>(ethereum: EthereumClientService, pending: PendingTransactionOrSignableMessage, proceed: () => T | Promise<T>): Promise<RequestedNetworkCommit<T>> {
-	while (true) {
-		const check = await readRequestedNetworkCheck(ethereum, pending)
-		const verdict = check()
-		if (verdict.verdict === 'refuse') return { committed: false, refusal: verdict.refusal }
-		if (verdict.verdict === 'proceed') return { committed: true, result: await proceed() }
+	const act = await actOnStoredActiveNetwork((activeRpcNetwork) => {
+		const refusal = pending.type === 'Transaction' ? getNetworkRefusal(activeRpcNetwork.chainId, ethereum, pending) : undefined
+		return refusal === undefined ? { committed: true as const, started: proceed() } : { committed: false as const, refusal }
+	})
+	if (!act.current) {
+		if (pending.type === 'Transaction') return { committed: false, refusal: createNetworkRefusal('The active network kept changing while this transaction was checked.') }
+		return { committed: true, result: await proceed() }
 	}
+	if (!act.result.committed) return { committed: false, refusal: act.result.refusal }
+	return { committed: true, result: await act.result.started }
 }
 
 // The early check of an approval, which refuses it before any Gnosis Safe refresh or signer status change; the guarded write or delivery checks again when it starts.
@@ -67,12 +61,12 @@ const SHOWN_REFUSAL_NETWORK_READS = 3
 
 // What the confirmation window is shown of the requested-network rule, derived each time the queue is shown and never stored. show receives the refusal of each transaction under the stored active network and the client getInstalledServices returns at that moment, both taken in the same synchronous step as show runs: the network is read again while a write overlapped its read, so a switch between the read and show never pairs the network from before it with the client installed after it. Showing it is advisory: every approval runs the rule itself.
 export async function showWithCurrentNetworkRefusals<T>(getInstalledServices: GetInstalledServices, show: (getNetworkRefusalMessage: (pending: PendingTransaction) => string | undefined) => T): Promise<T> {
-	for (let read = 1; ; read++) {
-		const activeNetwork = await readActiveNetworkSnapshot()
-		if (!activeNetwork.isStillCurrent() && read < SHOWN_REFUSAL_NETWORK_READS) continue
+	const showOn = (activeRpcNetwork: RpcNetwork) => {
 		const installedEthereum = getInstalledServices().ethereum
-		return show((pending) => getNetworkRefusal(activeNetwork.activeRpcNetwork.chainId, installedEthereum, pending)?.message)
+		return show((pending) => getNetworkRefusal(activeRpcNetwork.chainId, installedEthereum, pending)?.message)
 	}
+	const act = await actOnStoredActiveNetwork(showOn, SHOWN_REFUSAL_NETWORK_READS)
+	return act.current ? act.result : showOn(act.lastReadActiveRpcNetwork)
 }
 
 // Queues the update on the transaction state lock in the same synchronous step as the passed check, so the stack reset of a later network switch, which takes the same lock, is applied after it. The update itself runs later, under the lock, and is synchronous.

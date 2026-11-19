@@ -4,14 +4,23 @@ import { type LocalStorageItems, serializeLocalStorageItems } from '../utils/sto
 import { getActiveRpcNetwork, parseStoredActiveRpcNetwork } from '../utils/pageSafeSettings.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
-// The background's writer of the stored active network, and the reads that must know whether a network they read is still the stored one. A transaction approval commits only against a network that is still stored, which readActiveNetworkSnapshot's isStillCurrent tells in the same synchronous step as the commit. The boundary that makes this hold is that every write of the active network goes through writeActiveNetwork in the background: its counters are synchronous, so a read is not current if such a write was running when the read started or has started since, and proceedOnRequestedNetwork reads again. The generic storage setters and remover in storageUtils.ts exclude the key at the type level, and the raw-storage scan in pageContextSettingsImports.test.ts keeps every other path from writing it; no page context writes it, as the popup and the settings page switch networks and import settings through background messages and read the network through pageSafeSettings.ts, which never reaches this module. Why counters rather than a version stored with the network: storage offers no compare-and-set and the check has to be synchronous with the commit, so a stored version could not be checked at the commit either, while it would change the stored settings format, its import and export, and every stored value. The counters live as long as the background does, and every check starts and ends within one proceedOnRequestedNetwork call, so none compares counts across a restart.
+// The one owner of the stored active network's freshness protocol: its writer, the counters that writer keeps, the storage.onChanged observer, and actOnStoredActiveNetwork, the bounded read through which every reader that must act on the network that is stored when it acts does so. Nothing outside this module reads the counters or compares them.
+
+// Guarantee: when actOnStoredActiveNetwork runs act, no write of the active network through writeActiveNetwork was running when its read started or has started since, so the value act receives is the value stored at that step. This holds because every write of the key in app code goes through writeActiveNetwork, which counts it synchronously before its storage set starts, and the background runs in one JavaScript realm, so no counted write can start between the check and act. That every write goes through writeActiveNetwork is enforced structurally: the generic setter and remover in storageUtils.ts exclude the key at the type level, and the raw-storage scan in pageContextSettingsImports.test.ts rejects every other direct storage write, clear() included, in every app module, background, page and inpage alike, so no app code can write the key out of band. Why counters rather than a version stored with the network: storage offers no compare-and-set, and the check has to be synchronous with the act, so a stored version could not be checked at the act either. The counters live as long as the background does and every check starts and ends within one call, so none compares counts across a restart.
+
+// What the guarantee does not cover: a write made outside the extension's code, such as a stored value edited by hand in the browser's developer tools. The onChanged observer below makes such a write whose notification arrives before the act refuse the read too, but storage reports changes asynchronously, so one whose notification arrives after the act is not seen; no app path can produce such a write.
 let activeNetworkWritesStarted = 0
 let activeNetworkWritesFinished = 0
 let activeNetworkChangesObserved = 0
 
-// Defence in depth for a write outside that boundary: counts every change of the stored active network that storage reports, whichever path wrote it, so such a write whose notification arrives before the commit also makes the read not current. The background registers it as a storage.onChanged listener at startup. Storage reports a change asynchronously, so an out-of-band write whose notification arrives only after the commit is not seen.
-export function observeActiveNetworkChanges(changes: Readonly<Record<string, unknown>>, areaName: string) {
+function observeActiveNetworkChanges(changes: Readonly<Record<string, unknown>>, areaName: string) {
 	if (areaName === 'local' && hasOwnKey(changes, 'activeRpcNetwork')) activeNetworkChangesObserved += 1
+}
+
+// Starts counting every change of the stored active network that storage reports, whichever path wrote it, as defence in depth for a write outside the counted writer. The background calls it at startup; it returns the stop.
+export function startObservingActiveNetworkChanges() {
+	browser.storage.onChanged.addListener(observeActiveNetworkChanges)
+	return () => browser.storage.onChanged.removeListener(observeActiveNetworkChanges)
 }
 
 // Writes the active network, together with any other items of the same update, and counts the write.
@@ -32,7 +41,7 @@ export async function writeLocalStorageItems(items: LocalStorageItems) {
 }
 
 // Called right before the active network is read. The returned check tells, synchronously, whether the network read is still the stored one: it is not if a write through writeActiveNetwork was running when the read started or has started since, or if storage has reported a change of the key since.
-export function beginActiveNetworkRead() {
+function beginActiveNetworkRead() {
 	const writesStartedBeforeRead = activeNetworkWritesStarted
 	const changesObservedBeforeRead = activeNetworkChangesObserved
 	const writeRunningWhenReadStarted = activeNetworkWritesStarted !== activeNetworkWritesFinished
@@ -59,9 +68,24 @@ export type ActiveNetworkSnapshot = {
 	readonly isStillCurrent: () => boolean
 }
 
-// Reads only the active network, as getSettings does, together with a synchronous check of whether it is still current, for a reader that must act on the network that is stored when it acts.
+// Reads only the active network, as getSettings does, together with a synchronous check of whether it is still current.
 export async function readActiveNetworkSnapshot(): Promise<ActiveNetworkSnapshot> {
 	const isStillCurrent = beginActiveNetworkRead()
 	const activeRpcNetwork = await getActiveRpcNetwork()
 	return { activeRpcNetwork, isStillCurrent }
+}
+
+// How many times actOnStoredActiveNetwork reads the network by default before it gives up. A network switch writes the network once, so a second read is current unless writes keep arriving.
+export const ACTIVE_NETWORK_READ_LIMIT = 10
+
+export type ActiveNetworkAct<T> = { readonly current: true, readonly result: T } | { readonly current: false, readonly lastReadActiveRpcNetwork: RpcNetwork }
+
+// Reads the stored active network until a read is still the stored network, at most maxReads times, and runs act on that network in the same synchronous step as the passing check, so act acts on the network stored at that step; act may start asynchronous work, which then starts in that step too. If every read was overlapped by a write, act is not run and the last network read is returned for a caller that can use a possibly stale network, such as an advisory display.
+export async function actOnStoredActiveNetwork<T>(act: (activeRpcNetwork: RpcNetwork) => T, maxReads = ACTIVE_NETWORK_READ_LIMIT): Promise<ActiveNetworkAct<T>> {
+	if (!Number.isInteger(maxReads) || maxReads < 1) throw new Error('The active network is read at least once')
+	for (let read = 1; ; read++) {
+		const snapshot = await readActiveNetworkSnapshot()
+		if (snapshot.isStillCurrent()) return { current: true, result: act(snapshot.activeRpcNetwork) }
+		if (read >= maxReads) return { current: false, lastReadActiveRpcNetwork: snapshot.activeRpcNetwork }
+	}
 }
