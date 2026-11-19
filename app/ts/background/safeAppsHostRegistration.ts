@@ -2,8 +2,8 @@ import { ContentScriptHostingSettings } from '../types/contentScriptSettings.js'
 import { recoverStoredSafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
-import { sameContentScript, type FixedContentScript } from './contentScriptDefinition.js'
+import { INPAGE_SCRIPTS } from '../config/injectedScripts.js'
+import { haveSameScriptFiles, sameContentScript, type FixedContentScript } from './contentScriptDefinition.js'
 
 type HostingConfiguration = { readonly matches: string[], readonly origins: readonly string[] } | { readonly error: Error }
 type HostingPlan = { readonly hosting: HostingConfiguration | undefined, readonly hostScript: FixedContentScript | undefined }
@@ -32,9 +32,13 @@ async function reconcileSafeAppsHost(plan: HostingPlan, baseInpageScript: FixedC
 		if (!baseWasReconciled) await browser.scripting.updateContentScripts([baseInpageScript])
 		return
 	}
-	const scripts = await browser.scripting.getRegisteredContentScripts()
-	if (scripts.some(({ id }) => id === hostScript.id)) await browser.scripting.updateContentScripts([hostScript])
-	else await browser.scripting.registerContentScripts([hostScript])
+	const registeredHostScript = (await browser.scripting.getRegisteredContentScripts()).find(({ id }) => id === hostScript.id)
+	// Like the base provider, a host whose files change with MetaMask compatibility mode is registered anew instead of updated.
+	if (registeredHostScript !== undefined && haveSameScriptFiles(registeredHostScript, hostScript)) await browser.scripting.updateContentScripts([hostScript])
+	else {
+		if (registeredHostScript !== undefined) await browser.scripting.unregisterContentScripts({ ids: [hostScript.id] })
+		await browser.scripting.registerContentScripts([hostScript])
+	}
 	const hostedInpageScript = { ...baseInpageScript, excludeMatches: [...(baseInpageScript.excludeMatches ?? []), ...hosting.matches] }
 	await browser.scripting.updateContentScripts([hostedInpageScript])
 }
@@ -67,15 +71,15 @@ export type HostRegistrationRequest = {
 	readonly failedAttemptToRetry: number | undefined
 }
 
-function planHosting(storedItems: unknown, excludeMatches: string[] | undefined): HostingPlan {
+function planHosting(storedItems: unknown, baseInpageScript: FixedContentScript): HostingPlan {
 	const hosting = getHostingConfiguration(storedItems)
 	const hostScript = hosting === undefined || 'error' in hosting || hosting.matches.length === 0 ? undefined : {
 		id: 'safe-apps-host',
 		allFrames: true,
 		matches: hosting.matches,
-		excludeMatches,
-		// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
-		js: [...SAFE_APPS_HOST_SCRIPTS],
+		excludeMatches: baseInpageScript.excludeMatches,
+		// Keep provider injection in embedded app frames, but the host itself only changes top-level pages. Chrome runs the host before the provider of the active compatibility mode.
+		js: [INPAGE_SCRIPTS.safeAppsHost, ...(baseInpageScript.js ?? [])],
 		runAt: 'document_start',
 		world: 'MAIN',
 		matchOriginAsFallback: true,
@@ -123,7 +127,7 @@ export function createSafeAppsHostRegistration() {
 			const retryObservedFailure = appliedOutcome === 'hosting-failed' && failedAttemptToRetry === appliedAttempt
 			if (configurationUnchanged && reconcileBase === undefined && !retryObservedFailure) return appliedOutcome
 			try {
-				const plan = planHosting(storedItems, baseScripts[1].excludeMatches)
+				const plan = planHosting(storedItems, baseScripts[1])
 				if (reconcileBase !== undefined) await reconcileBase(plan.hostScript)
 				const needsUpdate = plan.hosting !== undefined || hadHostingPlan || appliedOutcome === 'hosting-failed'
 				return needsUpdate ? await applyHosting(plan, baseScripts, reconcileBase !== undefined) : appliedOutcome

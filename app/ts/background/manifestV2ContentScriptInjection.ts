@@ -1,8 +1,8 @@
-import { getSettings } from './settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
 import { reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { INJECTABLE_SITES_WILDCARD, INPAGE_SCRIPTS } from '../config/injectedScripts.js'
-import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
+import { INJECTABLE_SITES_WILDCARD } from '../config/injectedScripts.js'
+import { getManifestV2IsolatedWorldInjections } from '../utils/contentScriptInjectionArtifacts.js'
+import type { ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
 
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
 const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
@@ -11,20 +11,22 @@ const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cann
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedInjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
+type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptRegistrationConfiguration>
+
+const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
+	const { injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } } = await getContentScriptInjectionConfiguration()
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
 	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const noMatches = interceptorDisabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
 	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: INPAGE_SCRIPTS.contentListener, allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: INPAGE_SCRIPTS.documentStart, allFrames: false, runAt: 'document_start' })
+		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
+			await browser.tabs.executeScript(content.tabId, { file: `/${ injection.file }`, allFrames: false, runAt: 'document_start' })
+		}
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (isMissingBrowserTargetError(error) || isExpectedInjectionTargetError(error)) return false
@@ -33,7 +35,10 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	return false
 }
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: INJECTABLE_SITES_WILDCARD.map((urlMatches) => ({ urlMatches })) })
+let registeredManifestV2InjectLogic: ReturnType<typeof createInjectLogic> | undefined
+
+export const updateContentScriptInjectionStrategyManifestV2 = async (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => {
+	if (registeredManifestV2InjectLogic !== undefined) browser.webNavigation.onCommitted.removeListener(registeredManifestV2InjectLogic)
+	registeredManifestV2InjectLogic = createInjectLogic(getContentScriptInjectionConfiguration)
+	browser.webNavigation.onCommitted.addListener(registeredManifestV2InjectLogic, { url: INJECTABLE_SITES_WILDCARD.map((urlMatches) => ({ urlMatches })) })
 }

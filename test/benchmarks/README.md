@@ -1,5 +1,27 @@
 # Popup Benchmark Setup
 
+## Firefox denied-request CPU reproduction
+
+```bash
+bun run install-firefox
+bun run setup-firefox
+bun run benchmark:rpc-rejection:firefox
+```
+
+This uses a fresh Firefox profile and a local page whose wallet access is explicitly denied. It sends three rounds of 500 balance requests through the real injected provider without restarting the extension. Every request must settle with authorization error 4100 within 60 seconds per round. The output reports end-to-end duration; it does not enforce machine-dependent performance thresholds. The package command enables Firefox automation access to extension pages using `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`, as required by current Firefox versions.
+
+Set `RPC_REJECTION_REQUEST_COUNT` to change the workload, or `RPC_REJECTION_EXTENSION_DIR=/absolute/path/to/app` to compare a separately built baseline extension with the same harness. Build that extension with `setup-firefox` first. To capture the real Firefox profiler stacks, add `MOZ_PROFILER_STARTUP=1 MOZ_PROFILER_SHUTDOWN=/absolute/path/profile.json` before the benchmark command and open the resulting profile in Firefox Profiler.
+
+On Firefox 153.4.0, the original extension took 4.51 / 3.83 / 3.96 seconds for the three rounds; the fixed extension took 2.37 / 1.90 / 2.42 seconds. Startup profiler captures showed the same `handleInterceptedRequest -> refuseAccess -> replyToInterceptedRequest` stack as the client screenshot. Samples containing `refuseAccess` fell from 5,398 to 117. These captures include startup and use separate fresh browser sessions; they demonstrate the expensive rejection path, rather than establishing the client's unknown site or restart-specific trigger.
+
+Deterministic unit regressions avoid timing assertions: error serialization must never inspect success results, and settings must validate each website once. Both fail against the original source. Additional settings tests cover explicit address clears and isolated corruption repair.
+
+For a longer mixed workload, run `bun run benchmark:rpc-soak:firefox` after building Firefox. It performs 30 rounds of 500 denied balance requests plus 1,000 successful public requests per round, checks empty accounts and chain ID `0x1`, and reloads the page after every five rounds to replace the content port. The extension stays running throughout. Ten-second idle periods before and after the workload include `interceptor:rpc-load:idle-before-start/end` and `interceptor:rpc-load:idle-after-start/end` performance marks for comparison in Firefox Profiler. These marks do not assert that CPU is idle; inspect the extension process's profile in those intervals.
+
+The same harness accepts `RPC_REJECTION_ROUNDS`, `RPC_REJECTION_MIXED=true`, `RPC_REJECTION_RELOAD_EVERY`, and `RPC_REJECTION_IDLE_MS` for customized runs. The short reproduction keeps its original default workload. To profile the soak, use `MOZ_PROFILER_STARTUP=1 MOZ_PROFILER_SHUTDOWN=/absolute/path/soak.json bun run benchmark:rpc-soak:firefox`.
+
+Persistent recovery retries cap at five seconds. This shortens the previous 30-second maximum interval while retaining 50–100 times fewer scheduled attempts than the original 50–100 ms loops once backoff reaches the cap. An attempt's execution time and browser timer throttling can add further delay; this is an interval cap, not a completion deadline.
+
 The real-Chrome popup benchmark needs a browser binary. On Debian 12 in this workspace, the repo ships a command for that:
 
 ```bash
@@ -114,3 +136,7 @@ Run `bun run test:chrome-safe-apps-host` after `bun run setup-chrome`. The exist
 In Settings, enable Safe Apps compatibility and add the website URL. Hosting applies to its exact HTTP(S) origin, including scheme and port; refresh an already open page to install or remove it. No websites are hosted by default; add Request Finance explicitly if needed. Select a Safe in signing mode, open the app, and authorize and reload its tab before connecting. Preparation has a 30-second deadline and a Cancel connection action; cancellation releases the pending page probe without reloading. Website access still requires the ordinary Interceptor approval.
 
 The shared host supports parent-based SDK discovery and leaves every website timer and discovery deadline unchanged. Authorize the Safe and reload before connecting. Short probes such as Request Finance's 200 ms race can still time out after approval; preparation removes the interactive approval delay but does not guarantee a response within the site's deadline. Wagmi's default 10 ms deadline can be too short for extension communication, so the browser fixture uses its documented `unstable_getInfoTimeout` option with 5 seconds. Apps with such deadlines need connector configuration or a discovery change in the app. Web3-Onboard's stricter `self !== top` iframe check and trusted parent-origin requirements are intentionally preserved; a real iframe launcher is a separate extension of this design.
+
+## Firefox provider injection check
+
+`bun run test:firefox-provider-injection` loads the Firefox build (`bun run setup-firefox` first) through geckodriver and opens local pages with and without a CSP that blocks inline scripts. On a page without such a CSP, the provider must already be defined when the page observes its inline script element being added. On a page with that CSP, the inline provider must be blocked and the extension-URL fallback must still install the provider. The MV2 injection starts after a `webNavigation` round trip to the background, so on a page that loads this fast it can land after the page's first script; the check accepts either order. Set `FIREFOX_BIN` or `GECKODRIVER_BIN` to use other binaries.

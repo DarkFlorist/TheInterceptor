@@ -1,8 +1,10 @@
-import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
+// Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
+import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
@@ -15,7 +17,7 @@ import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcC
 import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { startContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
@@ -136,7 +138,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const websiteOrigin = getHostWithPort(port.sender.url)
+	const frameOrigins = getFrameOrigins(port.sender.url)
+	const { websiteOrigin } = frameOrigins
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {
 		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
@@ -145,7 +148,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+	const newConnection = { port, socket, ...frameOrigins, approved: false, wantsToConnect: false }
 	const isTopFrame = isTopFramePort(port)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
@@ -344,6 +347,12 @@ const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () =>
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.
+if (initializeWatchAssetWindowListeners()) {
+	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
+		await reportUnexpectedError(error, { code: 'watch_asset_startup_recovery_failed' })
+	})
+}
+
 browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)

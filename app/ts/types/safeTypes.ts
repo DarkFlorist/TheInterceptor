@@ -12,6 +12,14 @@ export const SafeContractStateSnapshot = funtypes.ReadonlyObject({
 	threshold: EthereumQuantity,
 })
 
+// How many owner signatures a Safe needs to execute, and whether the account asked to sign is one of its owners.
+export type SafeSignatureRequirement = funtypes.Static<typeof SafeSignatureRequirement>
+export const SafeSignatureRequirement = funtypes.ReadonlyObject({
+	threshold: EthereumQuantity,
+	ownerCount: EthereumQuantity,
+	signerIsOwner: funtypes.Boolean,
+})
+
 export type SafeMessageCoSignSnapshot = funtypes.Static<typeof SafeMessageCoSignSnapshot>
 export const SafeMessageCoSignSnapshot = funtypes.ReadonlyObject({
 	safeAddress: EthereumAddress,
@@ -55,6 +63,14 @@ export const SafeTransactionSigningRequest = funtypes.ReadonlyObject({
 	executionGasLimit: EthereumQuantity,
 	messageReview: SafeMessageReview,
 	reviewedSafeState: SafeContractStateSnapshot,
+}))
+
+// How a page asked for a Gnosis Safe transaction beyond its call: the SafeTx operation (0 call, 1 delegate call), and the message an on-chain Safe message approval signs.
+export type SafeTransactionRequestContext = funtypes.Static<typeof SafeTransactionRequestContext>
+export const SafeTransactionRequestContext = funtypes.ReadonlyObject({
+	operation: funtypes.Union(funtypes.Literal(0), funtypes.Literal(1)),
+}).And(funtypes.ReadonlyPartial({
+	messageReview: SafeMessageReview,
 }))
 
 export type SafeOwnerSignature = funtypes.Static<typeof SafeOwnerSignature>
