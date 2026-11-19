@@ -1,0 +1,87 @@
+import type { SimulationSelection } from '../utils/simulationSelection.js'
+import type { BlockTimeManipulation, InterceptorTransactionStack, PreSimulationTransaction, SignedMessageTransaction, SimulationStateInput, SimulationStateInputBlock } from '../types/visualizer-types.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
+import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
+import { addressString } from '../utils/bigint.js'
+import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
+import { assertNever } from '../utils/typescript.js'
+
+const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
+	if (addressesToMakeRich.length === 0) return {}
+	return Object.fromEntries(
+		addressesToMakeRich.map(currentAddress => {
+			const addressKey = addressString(currentAddress)
+			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
+		})
+	)
+}
+
+// Storage state besides the settings and the stack that simulation input is built from.
+type SimulationInputSources = {
+	readonly richAddresses: readonly bigint[]
+	readonly preSimulationBlockTimeManipulation: BlockTimeManipulation
+}
+
+// Builds the input without reading storage, so callers decide when every source was read.
+export function buildSimulationStateInput(selection: SimulationSelection, sources: SimulationInputSources, stack: InterceptorTransactionStack): SimulationStateInput {
+	const inputBlocks: SimulationStateInputBlock[] = []
+	let currentBlockTransactions: PreSimulationTransaction[] = []
+	let currentBlockSignedMessages: SignedMessageTransaction[] = []
+	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(sources.richAddresses)
+	let previousBlockTimeManipulation = selection.simulationMode ? sources.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
+
+	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
+		inputBlocks.push({
+			stateOverrides: currentBlockStateOverrides,
+			transactions: currentBlockTransactions,
+			signedMessages: currentBlockSignedMessages,
+			blockTimeManipulation: previousBlockTimeManipulation,
+			simulateWithZeroBaseFee: false,
+		})
+		previousBlockTimeManipulation = blockTimeManipulation
+		currentBlockSignedMessages = []
+		currentBlockStateOverrides = {}
+		currentBlockTransactions = []
+	}
+
+	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(selection))
+	for (const operation of operations) {
+		switch(operation.type) {
+			case 'Transaction': {
+				const simulationOptions = operation.preSimulationTransaction.simulationOptions
+				if (
+					simulationOptions?.requiredChainId !== undefined
+					&& simulationOptions.requiredChainId !== selection.activeRpcNetwork.chainId
+				) break
+				currentBlockTransactions.push(operation.preSimulationTransaction)
+				break
+			}
+			case 'Message': {
+				if (currentBlockTransactions.length > 0) {
+					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
+				}
+				currentBlockSignedMessages.push(operation.signedMessageTransaction)
+				break
+			}
+			case 'TimeManipulation': {
+				pushBlock(operation.blockTimeManipulation)
+				break
+			}
+			default: assertNever(operation)
+		}
+	}
+	if (
+		currentBlockTransactions.length > 0
+		|| currentBlockSignedMessages.length > 0
+		|| Object.keys(currentBlockStateOverrides).length > 0
+	) {
+		inputBlocks.push({
+			stateOverrides: currentBlockStateOverrides,
+			transactions: currentBlockTransactions,
+			signedMessages: currentBlockSignedMessages,
+			blockTimeManipulation: previousBlockTimeManipulation,
+			simulateWithZeroBaseFee: false,
+		})
+	}
+	return inputBlocks
+}
