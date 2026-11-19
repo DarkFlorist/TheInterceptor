@@ -21,7 +21,6 @@ import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.j
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
 import { getAccountNonceAfterTransactions, type Eip7702Authorization, getDelegateFromCode, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
-import { secp256k1 } from '@noble/curves/secp256k1.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -769,20 +768,13 @@ describe('SimulationModeEthereumClientService', () => {
 				// r = 5 is no curve point's x coordinate.
 				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: 5n, s: 7n, yParity: 0 }))
 				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(5n, 7n, 0)), undefined)
-				// With R = kG and s = e / k, recovery gives r^-1 (sR - eG), the point at infinity; the low-s form recovers the same.
+				// With R = G and s = e, recovery gives r^-1(eG - eG), the point at infinity. Flip parity for its low-s equivalent.
 				const messageHash = BigInt(dataStringWith0xStart(eip7702Authorization._getHash(request))) % SECP256K1_ORDER
-				const k = 123456789n
-				const point = secp256k1.ProjectivePoint.BASE.multiply(k).toAffine()
-				const inverse = (value: bigint) => {
-					let result = 1n
-					for (let base = value, exponent = SECP256K1_ORDER - 2n; exponent > 0n; base = base * base % SECP256K1_ORDER, exponent >>= 1n) if ((exponent & 1n) === 1n) result = result * base % SECP256K1_ORDER
-					return result
-				}
-				const highOrLowS = messageHash * inverse(k) % SECP256K1_ORDER
-				const yParity = point.y % 2n === 0n ? 0 : 1
-				const [s, lowSParity] = highOrLowS <= SECP256K1_HALF_ORDER ? [highOrLowS, yParity] as const : [SECP256K1_ORDER - highOrLowS, 1 - yParity === 0 ? 0 : 1] as const
-				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: point.x, s, yParity: lowSParity }))
-				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(point.x, s, lowSParity)), undefined)
+				const generatorX = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n
+				const s = messageHash <= SECP256K1_HALF_ORDER ? messageHash : SECP256K1_ORDER - messageHash
+				const lowSParity: 0 | 1 = messageHash <= SECP256K1_HALF_ORDER ? 0 : 1
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: generatorX, s, yParity: lowSParity }))
+				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(generatorX, s, lowSParity)), undefined)
 			})
 
 			test('only empty code or an exact delegation designator permits an authorization', async () => {

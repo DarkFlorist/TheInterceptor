@@ -1,11 +1,12 @@
 import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { addr, eip191Signer } from 'micro-eth-signer'
-import { initSig, sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
+import { sign as signDigestWithMicro } from 'micro-eth-signer/utils.js'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
 import { bytesFromHex, bytesFromHexOrBytes, ensureHex, isHexString, keccak256, stringToBytes, type Hex } from './ethereumBytes.js'
 import { encodeAbiParameters } from './ethereumPrimitiveCore.js'
 import { normalizeSignatureYParity } from './ethereumSignature.js'
-import { getRecordProperty, isRecord } from './runtimeTypeGuards.js'
+import { isRecord } from './runtimeTypeGuards.js'
+import { recoverEthereumPublicKey } from './ethereumRecoveryBackend.js'
 
 type TypedDataField = {
 	readonly name: string
@@ -190,13 +191,6 @@ type RecoverAddressParameters = {
 
 type AddressRecoveryResult = { readonly success: true, readonly address: Hex } | { readonly success: false, readonly error: Error }
 
-// The version-pinned Noble patch tags only non-curve square roots and recovery to infinity; preserve the nested square-root cause through point decoding.
-const isInvalidRecoveryPoint = (error: unknown) => {
-	if (!isRecord(error)) return false
-	const tagged = getRecordProperty(error, 'cause') ?? error
-	return isRecord(tagged) && getRecordProperty(tagged, 'code') === 'ERR_SECP256K1_INVALID_POINT'
-}
-
 const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): AddressRecoveryResult => {
 	const digest = bytesFromHexOrBytes(hash)
 	const normalizedSignature = typeof signature === 'string'
@@ -206,15 +200,9 @@ const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): Ad
 			s: typeof signature.s === 'bigint' ? signature.s : BigInt(signature.s),
 			yParity: normalizeSignatureYParity(signature),
 		}
-	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
-	let publicKey
-	try {
-		publicKey = recoveredSignature.recoverPublicKey(digest)
-	} catch (error: unknown) {
-		if (!(error instanceof Error) || !isInvalidRecoveryPoint(error)) throw error
-		return { success: false, error }
-	}
-	return { success: true, address: ensureHex(addr.fromPublicKey(publicKey.toBytes(false)), 'recovered address') }
+	const result = recoverEthereumPublicKey(digest, normalizedSignature)
+	if (!result.success) return result
+	return { success: true, address: ensureHex(addr.fromPublicKey(result.publicKey), 'recovered address') }
 }
 
 // Expected curve-recovery failure is data for callers modeling node-skipped signatures; malformed parameters and unexpected failures still throw.
