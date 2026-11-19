@@ -186,3 +186,66 @@ test('a settings transition releases its application lock before its refresh obs
 		owner.getCurrent().ethereum.cleanup()
 	}
 })
+
+
+test('settings transitions run one at a time under the transition lock', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async () => undefined)
+	const firstBroadcasting = new Future<void>()
+	const releaseFirstBroadcast = new Future<void>()
+	const order: string[] = []
+	const first = runSimulationSettingsTransition(owner, async ({ reset }) => {
+		order.push('first starts')
+		reset({ ...rpc, httpsRpc: 'https://first.invalid' })
+		firstBroadcasting.resolve(undefined)
+		await releaseFirstBroadcast
+		order.push('first ends')
+	})
+	try {
+		await firstBroadcasting
+		const second = runSimulationSettingsTransition(owner, async ({ reset }) => {
+			order.push('second starts')
+			reset({ ...rpc, httpsRpc: 'https://second.invalid' })
+		})
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		assert.deepEqual(order, ['first starts'])
+		releaseFirstBroadcast.resolve(undefined)
+		await Promise.all([first, second])
+		assert.deepEqual(order, ['first starts', 'first ends', 'second starts'])
+		assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, 'https://second.invalid')
+	} finally {
+		releaseFirstBroadcast.resolve(undefined)
+		await first
+		owner.getCurrent().ethereum.cleanup()
+	}
+})
+
+
+test('a service replacement does not wait behind a settings transition stalled in message broadcast', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const observed: string[] = []
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async (services) => { observed.push(services.ethereum.getRpcEntry().httpsRpc) })
+	const broadcasting = new Future<void>()
+	const releaseBroadcast = new Future<void>()
+	const transition = runSimulationSettingsTransition(owner, async ({ reset }) => {
+		reset({ ...rpc, httpsRpc: 'https://transition.invalid' })
+		broadcasting.resolve(undefined)
+		await releaseBroadcast
+	})
+	let timer: ReturnType<typeof setTimeout> | undefined
+	try {
+		await broadcasting
+		const replacement = await Promise.race([
+			owner.update(async ({ reset }) => reset({ ...rpc, httpsRpc: 'https://replacement.invalid' })),
+			new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Replacement waited for the settings transition lock')), 1000) }),
+		])
+		assert.equal(owner.getCurrent(), replacement)
+	} finally {
+		clearTimeout(timer)
+		releaseBroadcast.resolve(undefined)
+		await transition
+		owner.getCurrent().ethereum.cleanup()
+	}
+	// The stalled transition still observes its own pair, which the newer replacement has retired.
+	assert.deepEqual(observed, ['https://replacement.invalid', 'https://transition.invalid'])
+})

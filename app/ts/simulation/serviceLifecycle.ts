@@ -79,6 +79,7 @@ export type SimulationServicesUpdateOutcome = { readonly status: 'completed', re
 export type SimulationServicesUpdateObserver = (services: SimulationServices, outcome: SimulationServicesUpdateOutcome) => Promise<void>
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
+	// Scopes one caller's replacements and refresh request, then observes them after the callback settles. It takes no lock and does not serialize callers; `runSimulationSettingsTransition` owns the ordering of application transitions.
 	readonly update: <Result>(apply: (update: SimulationServicesUpdate) => Promise<Result>) => Promise<Result>
 }
 
