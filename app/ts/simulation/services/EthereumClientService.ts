@@ -125,6 +125,7 @@ export type PreparedEthSimulateV1InputBlock = {
 export type PreparedEthSimulateV1Input = {
 	readonly request: EthSimulateV1Params
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
+	// Gas splitting preserves transaction identity and flat inputBlocks order; each RPC-block transaction has one corresponding request call.
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }

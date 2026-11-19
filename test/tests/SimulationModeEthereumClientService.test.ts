@@ -1,3 +1,4 @@
+import { getPreparedSimulationPrefix } from '../../app/ts/simulation/services/preparedSimulationPrefix.js'
 import { describe, test, spyOn } from 'bun:test'
 import * as assert from 'assert'
 import { addr, authorization as eip7702Authorization } from 'micro-eth-signer'
@@ -1783,6 +1784,23 @@ describe('SimulationModeEthereumClientService', () => {
 			} finally { requestHandler.blockReadError = undefined }
 		})
 
+		test('prepared prefix selection preserves state overrides and rejects invalid or changed layouts', async () => {
+			const input = createSimulationStateInput()
+			const first = input[0]
+			if (first === undefined) throw new Error('Missing prefix fixture block')
+			const prepared = await ethereum.prepareEthSimulateV1Input([{ ...first, transactions: [] }, ...input], blockNumber, undefined)
+			const before = getPreparedSimulationPrefix(prepared, { transactionIndex: 0 })
+			assert.equal(before.prefix.length, 2)
+			assert.equal(before.prefix[1]?.calls.length, 0)
+			assert.deepEqual(before.prefix[1]?.stateOverrides, prepared.request.params[0].blockStateCalls[1]?.stateOverrides)
+			assert.deepEqual(getPreparedSimulationPrefix(undefined, { blockCount: 0 }).prefix, [])
+			assert.throws(() => getPreparedSimulationPrefix(prepared, { blockCount: -1 }), /out of bounds/u)
+			assert.throws(() => getPreparedSimulationPrefix(prepared, { transactionIndex: -1 }), /Invalid prepared transaction position/u)
+			assert.throws(() => getPreparedSimulationPrefix({ ...prepared, rpcBlocks: [] }, { transactionIndex: 0 }), /Inconsistent prepared simulation block layout/u)
+			const replaced = prepared.rpcBlocks.map(block => ({ ...block, transactions: block.transactions.map(transaction => ({ ...transaction })) }))
+			assert.throws(() => getPreparedSimulationPrefix({ ...prepared, rpcBlocks: replaced }, { transactionIndex: 0 }), /changed flat transaction order or identity/u)
+		})
+
 		test('code views do not query sender nonces recursively', async () => {
 			const input = createSimulationStateInput()
 			const state = await createSimulationState(ethereum, undefined, input)
@@ -2492,6 +2510,13 @@ describe('SimulationModeEthereumClientService', () => {
 					blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 					simulateWithZeroBaseFee: false,
 				}] as const
+
+				const prepared = await ethereum.prepareEthSimulateV1Input(splitSimulationStateInput, blockNumber, undefined)
+				const beforeSecond = getPreparedSimulationPrefix(prepared, { transactionIndex: 1 })
+				assert.equal(beforeSecond.prefix.length, 2)
+				assert.equal(beforeSecond.prefix[0]?.calls.length, 1)
+				assert.equal(beforeSecond.prefix[1]?.calls.length, 0)
+				assert.deepEqual(beforeSecond.previousBlockOverride, prepared.blockOverrides[1])
 
 				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
 				const secondBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 2n, true)

@@ -1,5 +1,6 @@
-import type { EthereumClientService } from './services/EthereumClientService.js'
-import type { BlockCalls, BlockOverrides } from '../types/ethSimulate-types.js'
+import { getPreparedSimulationPrefix, type SimulationPrefixPosition } from './services/preparedSimulationPrefix.js'
+import type { EthereumClientService, PreparedEthSimulateV1Input } from './services/EthereumClientService.js'
+import type { BlockCalls } from '../types/ethSimulate-types.js'
 import { EthereumData, type EthereumBlockHeader } from '../types/wire-types.js'
 import { addressString, stringToUint8Array } from '../utils/bigint.js'
 import { decodeFunctionOutput, encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -14,7 +15,8 @@ const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
 const getCodeAbi = [{ type: 'function', name: 'at', stateMutability: 'view', inputs: [{ name: 'target', type: 'address' }], outputs: [{ name: 'code', type: 'bytes' }] }] as const satisfies Abi
 
 // This module can submit already-prepared RPC blocks, but has no nonce-calculation or simulated-call capability. Its synthetic sender nonce is seeded only in the appended probe block.
-export const probeSimulatedCode = async (client: Pick<EthereumClientService, 'ethSimulateV1' | 'getChainId'>, requestAbortController: AbortController | undefined, prefix: readonly BlockCalls[], parentBlock: NonNullable<EthereumBlockHeader>, previousBlockOverride: BlockOverrides | undefined, address: bigint): Promise<SimulatedCodeResult> => {
+export const probeSimulatedCode = async (client: Pick<EthereumClientService, 'ethSimulateV1' | 'getChainId'>, requestAbortController: AbortController | undefined, prepared: PreparedEthSimulateV1Input, parentBlock: NonNullable<EthereumBlockHeader>, position: SimulationPrefixPosition, address: bigint): Promise<SimulatedCodeResult> => {
+	const { prefix, previousBlockOverride } = getPreparedSimulationPrefix(prepared, position)
 	const probeBlock: BlockCalls = {
 		calls: [{ type: '1559', from: MOCK_ADDRESS, nonce: 0n, chainId: client.getChainId(), maxPriorityFeePerGas: 0n, to: GET_CODE_CONTRACT, value: 0n, input: stringToUint8Array(encodeFunctionCall(getCodeAbi, 'at', [addressString(address)])), accessList: [] }],
 		blockOverrides: getAppendedSimulationBlockOverrides(parentBlock, previousBlockOverride),

@@ -1,3 +1,4 @@
+import { getPreparedSimulationPrefix } from './preparedSimulationPrefix.js'
 import type { Settings } from '../../types/interceptor-messages.js'
 import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
@@ -290,7 +291,6 @@ const getTransactionCountAfterTransactions = async (ethereumClientService: Ether
 	const initialNonce = await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
 	const transactions = blocks.flatMap(block => block.transactions)
 	let codeView = preparedContext
-	let positions: readonly { rpcIndex: number, indexInBlock: number }[] | undefined
 	return await getAccountNonceAfterTransactions({
 		address, chainId: ethereumClientService.getChainId(), initialNonce,
 		transactions: transactions.map(transaction => {
@@ -303,12 +303,7 @@ const getTransactionCountAfterTransactions = async (ethereumClientService: Ether
 				if (parentBlock === null) throw new Error('Missing nonce-accounting parent block')
 				codeView = { parentBlock, prepared: await ethereumClientService.prepareEthSimulateV1Input(blocks, parentBlock.number, requestAbortController) }
 			}
-			// Prepare once per nonce read, reusing the input API's context. Distinct prefixes need distinct code observations; the RPC handler caches identical probes until the chain advances.
-			positions ??= codeView.prepared.rpcBlocks.flatMap((block, rpcIndex) => block.transactions.map((_transaction, indexInBlock) => ({ rpcIndex, indexInBlock })))
-			const position = positions[index]
-			if (position === undefined) throw new Error('Missing nonce-accounting transaction prefix')
-			const prefix = codeView.prepared.request.params[0].blockStateCalls.slice(0, position.rpcIndex + 1).map((block, index) => index === position.rpcIndex ? { ...block, calls: block.calls.slice(0, position.indexInBlock) } : block)
-			const result = await probeSimulatedCode(ethereumClientService, requestAbortController, prefix, codeView.parentBlock, codeView.prepared.blockOverrides[position.rpcIndex], accountAddress)
+			const result = await probeSimulatedCode(ethereumClientService, requestAbortController, codeView.prepared, codeView.parentBlock, { transactionIndex: index }, accountAddress)
 			if (result.statusCode === 'failure') throw new Error('Unable to resolve authority code before the transaction')
 			return result.getCodeReturn
 		},
@@ -347,9 +342,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const simulationPrefixBlockCount = options.simulationPrefixBlockCount ?? context?.executionBlocks.length ?? 0
 	const parentBlock = context?.parentBlock ?? await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	if (simulationPrefixBlockCount < 0 || simulationPrefixBlockCount > (context?.executionBlocks.length ?? 0)) throw new Error('Simulation prefix block count is out of bounds')
-	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
-	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
+	const { prefix: simulationPrefix, previousBlockOverride } = getPreparedSimulationPrefix(context?.prepared, { blockCount: simulationPrefixBlockCount })
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{
@@ -1274,7 +1267,7 @@ const getSimulatedCodeFromPreparedContext = async (
 ): Promise<SimulatedCodeResult> => {
 	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) return { statusCode: 'success', getCodeReturn: await ethereumClientService.getCode(address, blockTag, requestAbortController) }
 	const prefixCount = getExecutionBlocksUpToTag(context, blockTag).length
-	return await probeSimulatedCode(ethereumClientService, requestAbortController, context.prepared.request.params[0].blockStateCalls.slice(0, prefixCount), context.parentBlock, prefixCount === 0 ? undefined : context.prepared.blockOverrides[prefixCount - 1], address)
+	return await probeSimulatedCode(ethereumClientService, requestAbortController, context.prepared, context.parentBlock, { blockCount: prefixCount }, address)
 }
 
 // Context construction belongs to the code-view failure boundary too; malformed ABI data and unexpected preparation failures still propagate.
