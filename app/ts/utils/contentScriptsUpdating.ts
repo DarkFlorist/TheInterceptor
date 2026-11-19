@@ -140,50 +140,57 @@ async function updateRegisteredContentScripts(contentScriptDefinitions: readonly
 	}
 }
 
-// Firefox's own contentScripts API takes code and keeps a registration only while the background page that made it is loaded, which for the persistent MV2 background is the whole session. It is used only for disabled hosts, keyed by each host's patterns, disabled origins and script files, so an unchanged host keeps its registration and a compatibility mode change registers the host again with the other provider.
+// Firefox's own contentScripts API takes code and keeps a registration only while the background page that made it is loaded, which for the persistent MV2 background is the whole session. It is used only for disabled hosts, keyed by each host's patterns, disabled origins and script files, so an unchanged host keeps its registration and a compatibility mode change registers the host again with the other provider. A key is tracked only while all of its host's scripts are registered.
 type DisabledHost = ReturnType<typeof getFirefoxContentScriptExclusions>['disabledHosts'][number]
-const firefoxDisabledHostContentScripts = new Map<string, browser.contentScripts.RegisteredContentScript[]>()
+type FirefoxContentScriptRegistration = browser.contentScripts.RegisteredContentScript
+const firefoxDisabledHostContentScripts = new Map<string, readonly FirefoxContentScriptRegistration[]>()
 const getDisabledHostRegistrationKey = (disabledHost: DisabledHost, contentScriptDefinitions: readonly ContentScriptDefinition[]) => JSON.stringify({ ...disabledHost, scriptFiles: contentScriptDefinitions.map(({ js }) => js) })
+
+// Registrations that belong to no tracked host any more but could not be unregistered yet. Every handle that leaves a tracked host or a half-made host passes through removeFirefoxContentScripts, which keeps it here until its removal succeeds, so no live registration is ever forgotten. Removing one never leaves a page without the provider, because the registrations that should match a page are all tracked hosts or the scripting registrations.
+const firefoxContentScriptsPendingRemoval: FirefoxContentScriptRegistration[] = []
+
+// Unregisters each registration, keeps the ones that fail pending removal for the next update, and reports each failure with the given code, because the error the caller rethrows does not carry it.
+async function removeFirefoxContentScripts(registrations: readonly FirefoxContentScriptRegistration[], failureCode: string) {
+	for (const registration of registrations) {
+		try {
+			await registration.unregister()
+		} catch (unregisterError: unknown) {
+			firefoxContentScriptsPendingRemoval.push(registration)
+			await reportUnexpectedError(unregisterError, { code: failureCode })
+		}
+	}
+}
+
+async function retryFirefoxContentScriptsPendingRemoval() {
+	await removeFirefoxContentScripts(firefoxContentScriptsPendingRemoval.splice(0), 'content_script_registration_cleanup_failed')
+}
 
 async function registerFirefoxDisabledHostContentScripts(disabledHost: DisabledHost, contentScriptDefinitions: readonly ContentScriptDefinition[]) {
 	type FixedContentScriptOptions = browser.contentScripts.RegisteredContentScriptOptions & { world: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
-	const registeredContentScripts: browser.contentScripts.RegisteredContentScript[] = []
+	const registeredContentScripts: FirefoxContentScriptRegistration[] = []
 	try {
 		for (const { js, world, documentMarker } of contentScriptDefinitions) {
 			const contentScript: FixedContentScriptOptions = { js: [{ code: getDisabledOriginCheckCode(disabledHost.disabledOrigins, documentMarker) }, ...js.map((file) => ({ file }))], world, matches: disabledHost.matches, ...sharedContentScriptOptions }
 			registeredContentScripts.push(await browser.contentScripts.register(contentScript))
 		}
-	} catch (error: unknown) {
-		// A host is tracked only with both of its scripts, so a host that failed half way is registered again by the next update.
-		for (const contentScript of registeredContentScripts) await contentScript.unregister()
-		throw error
+	} catch (registrationError: unknown) {
+		// A host is tracked only with all of its scripts, so the scripts of a host that failed half way are removed, and the next update registers the host again. The registration error is rethrown unchanged; a failed removal is reported on its own.
+		await removeFirefoxContentScripts(registeredContentScripts, 'content_script_registration_cleanup_failed')
+		throw registrationError
 	}
 	firefoxDisabledHostContentScripts.set(getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions), registeredContentScripts)
 }
 
-async function unregisterFirefoxDisabledHostContentScripts(key: string) {
+// The key stops being tracked before its scripts are removed, so a host whose removal fails half way is never taken for a complete registration; the scripts that are left wait for the next update in firefoxContentScriptsPendingRemoval.
+async function unregisterFirefoxDisabledHostContentScripts(key: string, failureCode: string) {
 	const registeredContentScripts = firefoxDisabledHostContentScripts.get(key) ?? []
-	while (registeredContentScripts.length > 0) {
-		await registeredContentScripts[0]?.unregister()
-		registeredContentScripts.shift()
-	}
 	firefoxDisabledHostContentScripts.delete(key)
-}
-
-// Removes the disabled-host registrations an update added before its scripting update failed and rolled back, so only the host registrations that matched the restored registrations remain.
-async function unregisterFirefoxDisabledHostContentScriptsAddedDuringFailedUpdate(addedKeys: readonly string[]) {
-	for (const key of addedKeys) {
-		try {
-			await unregisterFirefoxDisabledHostContentScripts(key)
-		} catch (unregisterError: unknown) {
-			// A failed removal is a second failure that the rethrown scripting error does not carry, so only it is reported here; the next update retries the removal, because the key stays tracked until it is unregistered.
-			await reportUnexpectedError(unregisterError, { code: 'content_script_registration_rollback_failed' })
-		}
-	}
+	await removeFirefoxContentScripts(registeredContentScripts, failureCode)
 }
 
 // Two registrations that match a page at once are harmless, because each script runs once per document, while a moment with none leaves a page without the provider. So a disabled host's own registration is added before the registered scripts stop matching that host, and removed only after they match it again. If the scripting update fails and rolls back, the host registrations added in this update are removed again and the earlier ones are kept, which restores the previous configuration.
 async function updateFirefoxContentScripts(contentScriptDefinitions: readonly ContentScriptDefinition[], exactOriginExcludeMatches: readonly string[]) {
+	await retryFirefoxContentScriptsPendingRemoval()
 	const { excludeMatches, disabledHosts } = getFirefoxContentScriptExclusions(exactOriginExcludeMatches)
 	const desiredDisabledHostKeys = new Set(disabledHosts.map((disabledHost) => getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions)))
 	const addedDisabledHostKeys: string[] = []
@@ -202,12 +209,12 @@ async function updateFirefoxContentScripts(contentScriptDefinitions: readonly Co
 	try {
 		await updateRegisteredContentScripts(contentScriptDefinitions, excludeMatches)
 	} catch (error: unknown) {
-		await unregisterFirefoxDisabledHostContentScriptsAddedDuringFailedUpdate(addedDisabledHostKeys)
+		for (const key of addedDisabledHostKeys) await unregisterFirefoxDisabledHostContentScripts(key, 'content_script_registration_rollback_failed')
 		// The caller reports the scripting failure with the code of its own context, so it is only rethrown here.
 		throw error
 	}
 	for (const key of [...firefoxDisabledHostContentScripts.keys()]) {
-		if (!desiredDisabledHostKeys.has(key)) await unregisterFirefoxDisabledHostContentScripts(key)
+		if (!desiredDisabledHostKeys.has(key)) await unregisterFirefoxDisabledHostContentScripts(key, 'content_script_registration_cleanup_failed')
 	}
 	if (registrationErrors.length > 0) throw registrationErrors[0]
 }

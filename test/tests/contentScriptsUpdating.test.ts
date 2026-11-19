@@ -27,6 +27,8 @@ type BrowserMockOptions = {
 	readonly onStorageGet?: () => void
 	readonly tabsQueryError?: Error
 	readonly failingFirefoxRegistration?: number
+	// Registrations whose first unregister call fails, as Firefox can when the extension context is shutting down.
+	readonly failingFirefoxUnregistrations?: readonly number[]
 }
 
 type RegisteredContentScript = {
@@ -54,7 +56,7 @@ type FirefoxContentScriptOptions = {
 	readonly matchOriginAsFallback?: boolean
 }
 
-function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, registerWait, onRegister, updateError, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts, websiteAccess, storageGetErrorAfterSet, settingsReadError, storageGetWaits, onStorageGet, tabsQueryError, failingFirefoxRegistration }: BrowserMockOptions = {}) {
+function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, registerWait, onRegister, updateError, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts, websiteAccess, storageGetErrorAfterSet, settingsReadError, storageGetWaits, onStorageGet, tabsQueryError, failingFirefoxRegistration, failingFirefoxUnregistrations = [] }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {
 		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
 		...(websiteAccess === undefined ? {} : { websiteAccess }),
@@ -84,6 +86,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 		})
 	}
 	let firefoxContentScriptRegistrations = 0
+	const pendingFirefoxUnregistrationFailures = new Set(failingFirefoxUnregistrations)
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
@@ -167,6 +170,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 					return {
 						async unregister() {
 							firefoxContentScriptOperations.push(`unregister ${ registration }`)
+							if (pendingFirefoxUnregistrationFailures.delete(registration)) throw new Error(`contentScripts unregister ${ registration } failed`)
 							activeFirefoxContentScripts.delete(options)
 							recordRegistrationSnapshot()
 						},
@@ -288,8 +292,10 @@ async function loadFreshFirefoxRegistrationModules() {
 	firefoxModuleLoadId += 1
 	const contentScriptsUpdating = await import(`../../app/ts/utils/contentScriptsUpdating.js?firefox-${ firefoxModuleLoadId }`)
 	const { getContentScriptInjectionConfiguration } = await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js')
+	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
 	return {
 		...contentScriptsUpdating,
+		getLatestUnexpectedError,
 		updateContentScriptInjectionStrategy: async () => await contentScriptsUpdating.updateContentScriptInjectionStrategy(await getContentScriptInjectionConfiguration()),
 	}
 }
@@ -1140,6 +1146,56 @@ describe('content script injection strategy', () => {
 		const disabledHostProviders = getActiveFirefoxContentScripts().filter(({ world }) => world === 'MAIN')
 		assert.deepEqual(disabledHostProviders.map(({ js }) => js?.flatMap(({ file }) => file === undefined ? [] : [file])), [['/inpage/js/inpage.js']])
 		assert.equal(getActiveFirefoxContentScripts().length, 2)
+	})
+
+	test('keeps a half-registered Firefox host pending removal when its cleanup fails, and removes it on the next update', async () => {
+		const { getActiveFirefoxContentScripts, getFirefoxContentScriptOperations } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxRegistration: 2, failingFirefoxUnregistrations: [1] })
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadFreshFirefoxRegistrationModules()
+
+		// The registration error is the one the caller sees; the failed cleanup is reported on its own.
+		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategy(), /contentScripts\.register failed/))
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_cleanup_failed')
+		assert.equal(getActiveFirefoxContentScripts().length, 1)
+
+		await updateContentScriptInjectionStrategy()
+
+		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'unregister 1', 'unregister 1', 'register 3', 'register 4'])
+		assert.deepEqual(getActiveFirefoxContentScripts().map(({ world }) => world), ['ISOLATED', 'MAIN'])
+	})
+
+	test('keeps a Firefox host registration pending removal when a rollback cannot remove it, and removes it on the next update', async () => {
+		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setStoredMetamaskCompatibilityMode } = installBrowserMock({ manifestVersion: 2, metamaskCompatibilityMode: false, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], registerErrors: [undefined, new Error('registration failed')], failingFirefoxUnregistrations: [3] })
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadFreshFirefoxRegistrationModules()
+
+		await updateContentScriptInjectionStrategy()
+		setStoredMetamaskCompatibilityMode(true)
+		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategy(), /registration failed/))
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_rollback_failed')
+		assert.equal(getActiveFirefoxContentScripts().length, 3)
+
+		await updateContentScriptInjectionStrategy()
+
+		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'register 3', 'register 4', 'unregister 3', 'unregister 4', 'unregister 3', 'register 5', 'register 6', 'unregister 1', 'unregister 2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
+		const disabledHostProviders = getActiveFirefoxContentScripts().filter(({ world }) => world === 'MAIN')
+		assert.deepEqual(disabledHostProviders.map(({ js }) => js?.flatMap(({ file }) => file === undefined ? [] : [file])), [['/inpage/js/inpage-metamask-compatibility.js']])
+		assert.equal(getActiveFirefoxContentScripts().length, 2)
+	})
+
+	test('registers a disabled Firefox host completely again after an earlier removal of it failed half way', async () => {
+		const { getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxUnregistrations: [2] })
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadFreshFirefoxRegistrationModules()
+
+		await updateContentScriptInjectionStrategy()
+		setWebsiteAccess([])
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategy())
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_cleanup_failed')
+		setWebsiteAccess([disabledWebsiteAccessEntry('localhost:3000')])
+		await updateContentScriptInjectionStrategy()
+
+		// The half-removed host is not taken for a complete registration: its leftover script is removed and both of its scripts are registered again.
+		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'unregister 1', 'unregister 2', 'unregister 2', 'register 3', 'register 4'])
+		assert.deepEqual(getActiveFirefoxContentScripts().map(({ world }) => world), ['ISOLATED', 'MAIN'])
 	})
 
 	test('declares the Firefox permission and minimum version that MAIN-world registration needs', () => {
