@@ -13,6 +13,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
+import { isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 
 function getWalletForwardingRoute(request: InterceptedRequest, parsedRequest: EthereumJsonRpcRequest | undefined, hasRpc: boolean, activeAddress: bigint | undefined, activeSafeSigner: bigint | undefined, safeSigningMode: boolean, simulationOverlayEnabled: boolean) {
 	const rawForwardingReply = { ...request, type: 'forwardToSigner' as const, replyWithSignersReply: true as const }
@@ -49,7 +50,8 @@ export async function resolveSigningRequest(
 	if (binding !== undefined) assertSigningWalletIdentity(binding.wallet)
 	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
 	if (directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
-	const forwardToSigner = !settings.simulationMode && !directWallet && !request.usingInterceptorWithoutSigner
+	// A direct wallet signs inside Interceptor, so nothing is forwarded to a browser wallet for it; otherwise the shared routing rule decides, which also bypasses Interceptor on a network without an RPC (see getWalletForwardingRoute).
+	const forwardToSigner = !directWallet && isForwardingRequestsToSigner({ simulationMode: settings.simulationMode, signerAvailable: !request.usingInterceptorWithoutSigner })
 	// Signing admission must not depend on Interceptor having a schema for the method: an unparsed signing request is checked against the account it names, and refused when that account cannot be read.
 	const unparsedSigningAccount = parsedRequest === undefined && isSigningOperation(request.method) ? unparsedSigningRequestAccount(request) : undefined
 	const requestedAddress = parsedRequest !== undefined ? browserSigningRequestAccount(parsedRequest) : unparsedSigningAccount?.readable === true ? unparsedSigningAccount.address : undefined

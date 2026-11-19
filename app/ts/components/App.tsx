@@ -2,7 +2,7 @@ import { usePopupSettingsChanges } from './hooks/usePopupSettingsChanges.js'
 import { useEffect } from 'preact/hooks'
 import { Home } from './pages/Home.js'
 import Hint from './subcomponents/Hint.js'
-import { getAddress, isAddress } from '../utils/ethereumPrimitives.js'
+import { parseUserEnteredAddress } from '../utils/addressValidation.js'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
 import type { Settings } from '../types/interceptor-messages.js'
@@ -97,17 +97,18 @@ export function App() {
 		if (!isSettingsLoaded.value) return
 		if (appPage.value !== undefined && appPage.value.page === 'AddNewAddress') return
 
-		const trimmed = address.trim()
-		if (!isAddress(trimmed)) return
+		// A new entry for the pasted address gets the connected chain, so an EIP-3770 prefix naming another chain is ignored like any other text that is not an address.
+		const entryChainId = rpcConnectionStatus.peek()?.rpcNetwork.chainId ?? 1n
+		const bigIntReprentation = parseUserEnteredAddress(address, entryChainId)
+		if (bigIntReprentation === undefined) return
 
-		const bigIntReprentation = BigInt(trimmed)
 		// see if we have that address, if so, let's switch to it
 		for (const activeAddress of activeAddresses.value) {
 			if (activeAddress.address === bigIntReprentation) return await setActiveAddressAndInformAboutIt(activeAddress.address)
 		}
 
 		// address not found, let's promt user to create it
-		const addressString = getAddress(trimmed)
+		const addressString = checksummedAddress(bigIntReprentation)
 		const newPage = { page: 'AddNewAddress', state: {
 			windowStateId: 'appAddressPaste',
 			errorState: undefined,
@@ -124,7 +125,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
-				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId ?? 1n,
+				chainId: entryChainId,
 			}
 		} } as const
 		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }

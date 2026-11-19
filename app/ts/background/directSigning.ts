@@ -1,3 +1,4 @@
+import { getCreatedSafeProposal } from '../safe/safePendingFlow.js'
 import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'
 import { signingOperationError } from '../signing/signingOperationError.js'
 import { addressString, bytes32String } from '../utils/bigint.js'
@@ -212,7 +213,7 @@ export async function refreshDirectSigningReview(record: DirectSigningRecord, et
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction explanation is not ready')
 	const final = parseTransaction(ensureHex(record.input.data))
 	const transactionToSimulate = { ...pending.transactionToSimulate, transaction: { ...pending.transactionToSimulate.transaction, nonce: BigInt(final.nonce ?? 0), gas: BigInt(final.gas ?? 0), maxFeePerGas: final.maxFeePerGas ?? 0n, maxPriorityFeePerGas: final.maxPriorityFeePerGas ?? 0n } }
-	const popupVisualisation = await refreshConfirmTransactionSimulation(ethereum, prices, pending.activeAddress, false, pending.uniqueRequestIdentifier, transactionToSimulate, pending.safeTransaction)
+	const popupVisualisation = await refreshConfirmTransactionSimulation(ethereum, prices, pending.activeAddress, false, pending.uniqueRequestIdentifier, transactionToSimulate, getCreatedSafeProposal(pending.safeFlow))
 	if (popupVisualisation === undefined) throw signingOperationError('The refreshed explanation was interrupted; review again')
 	if (popupVisualisation.statusCode === 'failed') throw signingOperationError('Unable to refresh the transaction explanation. Retry the fee change when the RPC connection is available.')
 	await assertCurrentBinding(record)

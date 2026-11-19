@@ -1,10 +1,9 @@
-import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet } from '../utils/storageUtils.js'
 import type { SigningWalletBindings, SigningWalletBinding } from '../types/signingWallet.js'
+import type { StorageWrite } from '../background/settingsStorageTransaction.js'
 
-const signingWalletSemaphore = new Semaphore(1)
-/** Cross-repository operations acquire address-book ownership first, then binding ownership. */
-export const withSigningWalletStore = <T>(operation: () => Promise<T>) => signingWalletSemaphore.execute(operation)
+// Bindings change only together with the address book that decides their eligibility, so signingAddressBookCoordinator composes this write into a settings storage transaction.
+export const signingWalletBindingsStorageWrite = (signingWalletBindings: SigningWalletBindings): StorageWrite => ({ signingWalletBindings })
 
 // Bindings are public identity only. A missing or corrupt binding never grants website access or establishes signing authority.
 export async function readSigningWalletBindings(): Promise<SigningWalletBindings> {

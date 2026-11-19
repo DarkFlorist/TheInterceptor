@@ -1,9 +1,9 @@
 import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
-import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
@@ -39,19 +39,16 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
-export const withAddressBookStore = <T>(operation: () => Promise<T>) => userAddressBookEntriesSemaphore.execute(operation)
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
 
 /** Address-book-only writes. Callers removing addresses or introducing Safe classifications must use signingAddressBookCoordinator. */
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
-		await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(await getUserAddressBookEntries()) })
-	})
+	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
+		return { writes: [{ userAddressBookEntriesV2: updateFunc(entries) }], result: undefined }
 	})
 }

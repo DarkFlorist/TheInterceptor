@@ -120,7 +120,8 @@ test('lookups never return orphaned or Safe-address bindings even from stale per
 })
 
 test('settings backups round-trip every wallet backend and refresh revisions on restore', async () => {
-	const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { exportSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { importSettingsAndAddressBook } = await import('../../app/ts/background/settingsImport.js')
 	const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
 	const browserWallet: SigningWallet = { type: 'browser', address, label: 'Browser account', signerName: 'MetaMask', providerId: 'io.metamask' }
 	for (const wallet of [ledger, airgap, browserWallet]) {
@@ -137,7 +138,8 @@ test('settings backups round-trip every wallet backend and refresh revisions on 
 })
 
 test('legacy settings imports explicitly clear local bindings and invalid new backups leave storage unchanged', async () => {
-	const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { exportSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+	const { importSettingsAndAddressBook } = await import('../../app/ts/background/settingsImport.js')
 	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
 	const exported = await exportSettingsAndAddressBook()
 	if (exported.version !== '1.7') throw new Error('Expected current settings backup version')
@@ -151,7 +153,8 @@ test('legacy settings imports explicitly clear local bindings and invalid new ba
 })
 
 test('version 1.6 backups retain Safe Apps compatibility without requiring signing wallet fields', async () => {
-	const { exportSettingsAndAddressBook, importSettingsAndAddressBook, getSafeAppsCompatibilityMode } = await import('../../app/ts/background/settings.js')
+	const { exportSettingsAndAddressBook, getSafeAppsCompatibilityMode } = await import('../../app/ts/background/settings.js')
+	const { importSettingsAndAddressBook } = await import('../../app/ts/background/settingsImport.js')
 	const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
 	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
 	const exported = await exportSettingsAndAddressBook()
@@ -180,13 +183,13 @@ test('metadata-only address book edits do not read or rewrite signing bindings',
 })
 
 test('codecs parse public identity structurally while import and admission verify it explicitly', async () => {
-	const { replaceAddressBookAndSigningWalletBindings } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { addressBookAndSigningWalletBindingsImportWrites } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
 	const { assertSigningWalletIdentity } = await import('../../app/ts/signing/publicAccountIdentity.js')
 	const wallet = { ...ledger, address: 4n }
 	expect(SigningWallet.safeSerialize(wallet).success).toBe(true)
 	const entry = { type: 'contact', address: 4n, name: 'Invalid identity', entrySource: 'User' } satisfies ContactEntry
 	const bindings = [{ wallet, revision: crypto.randomUUID() }]
-	await expect(replaceAddressBookAndSigningWalletBindings([entry], bindings)).rejects.toThrow('public key')
+	expect(() => addressBookAndSigningWalletBindingsImportWrites([entry], bindings)).toThrow('public key')
 	expect(writes).toHaveLength(0)
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [entry], signingWalletBindings: bindings })
 	expect(await getSigningWalletBindings()).toEqual(bindings)
