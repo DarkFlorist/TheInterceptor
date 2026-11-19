@@ -187,10 +187,6 @@ class TestElement extends TestNode {
 		collect(this)
 		return matches
 	}
-	closest(selector: string): TestElement | null {
-		if (selector === '[inert], [aria-hidden="true"]' && (this.getAttribute('inert') !== null || this.getAttribute('aria-hidden') === 'true')) return this
-		return this.parentNode instanceof TestElement ? this.parentNode.closest(selector) : null
-	}
 	// focus stands for keyboard focus, which :focus-visible reports.
 	focus() {
 		this.ownerDocument.activeElement = this
@@ -224,12 +220,19 @@ class TestElement extends TestNode {
 		return this.attributes[name] !== undefined
 	}
 
+	// Supports a comma-separated list of attribute selectors, each `[name]` or `[name="value"]`, which is all the components use.
 	closest(selector: string): TestElement | null {
-		const attributeMatch = selector.match(/^\[([^\]]+)\]$/u)
-		if (attributeMatch?.[1] === undefined) return null
+		const attributeSelectors = selector.split(',').map((part) => part.trim().match(/^\[([^\]=]+)(?:="([^"]*)")?\]$/u))
+		if (attributeSelectors.some((match) => match?.[1] === undefined)) return null
+		const matchesSelector = (element: TestElement) => attributeSelectors.some((match) => {
+			const name = match?.[1]
+			if (name === undefined) return false
+			const expectedValue = match?.[2]
+			return expectedValue === undefined ? element.hasAttribute(name) : element.getAttribute(name) === expectedValue
+		})
 		let element: TestElement | null = this
 		while (element !== null) {
-			if (element.hasAttribute(attributeMatch[1])) return element
+			if (matchesSelector(element)) return element
 			element = element.parentNode instanceof TestElement ? element.parentNode : null
 		}
 		return null
