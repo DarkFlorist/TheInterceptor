@@ -57,7 +57,7 @@ const isConfirmationStored = () => {
 }
 
 test('a confirmation whose simulation throws before it starts is removed and its window closed when the website gets the rejection', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	// Once the confirmation is stored, the simulation's own tab state read is the first to fail, before the simulation's try.
 	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
 		if (keys === `tabState_${ uniqueRequestIdentifier.requestSocket.tabId }` && isConfirmationStored()) throw new Error('storage temporarily unavailable')
@@ -81,7 +81,7 @@ for (const { cause, error } of [
 	{ cause: 'it is aborted by a newer simulation', error: new Error(NEW_BLOCK_ABORT) },
 ]) {
 	test(`a confirmation whose first simulation ends without a result because ${ cause } is left as a failed simulation that the next refresh simulates again`, async () => {
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 		const answerRpcRequest = fakeRequestHandler.jsonRpcRequest
 		let failSimulation = true
 		fakeRequestHandler.jsonRpcRequest = async (rpcRequest) => {

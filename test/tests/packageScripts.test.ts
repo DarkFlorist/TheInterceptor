@@ -71,6 +71,12 @@ describe('package scripts', () => {
 		assert.ok(getScript(scripts, 'lint').split(' && ').includes('bun run lint:imports'))
 	})
 
+	test('lint keeps the direct @noble/curves pinned to micro-eth-signer\'s copy', () => {
+		const scripts = getPackageScripts()
+		assert.equal(getScript(scripts, 'lint:curves-version'), 'bun ./scripts/check-curves-version.mts')
+		assert.ok(getScript(scripts, 'lint').split(' && ').includes('bun run lint:curves-version'))
+	})
+
 	test('lint enforces single-line prose comments and provides a fixer', () => {
 		const scripts = getPackageScripts()
 		assert.equal(getScript(scripts, 'lint:comments'), 'bun ./scripts/check-single-line-comments.mts')

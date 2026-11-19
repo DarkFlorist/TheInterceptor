@@ -33,7 +33,6 @@
 			"ignoreDependencies": [
 				// browser globals and transformed vendor imports are not regular source imports
 				"@types/firefox-webext-browser",
-				"@noble/curves",
 
 				// compileSolidityContracts.mts belongs to the isolated build workspace but resolves this root dependency
 				"solc"

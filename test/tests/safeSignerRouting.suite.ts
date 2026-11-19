@@ -36,7 +36,7 @@ test('accepts a signer reply from the current approved child-frame port', async 
 			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
 		},
 	}]])
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			uniqueRequestIdentifier: childRequestIdentifier,
@@ -94,7 +94,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		},
 	}]])
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
 			simulationMode: false,
@@ -177,7 +177,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		value: 0n,
 		input: new Uint8Array(),
 	}, 0n)
-	await modules.browserStorageLocalSet2({
+	await modules.seedPendingRequestStorage({
 		pendingTransactionsAndMessages: [{
 			...withSimulatedTransactionResult(pendingTransaction),
 			simulationMode: false,
@@ -208,7 +208,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	assert.match(changedOwnersProposal.approvalStatus.message, /owner set changed/u)
 
 	fakeSafeContract.owners = []
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -237,7 +237,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	}, 0n)
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
 	fakeSafeContract.owners = [safeSignerAddress, alternateOwnerAddress]
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
@@ -485,7 +485,7 @@ test('treats a missing Safe version as an expected co-signing validation failure
 
 test('rejects non-v4 Safe co-signing as a handled signer-selection failure', async () => {
 	fakeSafeContract.owners = [recipientAddress]
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
@@ -530,7 +530,7 @@ test('rejects non-v4 Safe co-signing as a handled signer-selection failure', asy
 
 test('shows Safe transaction context failures in the co-signing dialog without reporting them as unexpected', async () => {
 	fakeSafeContract.owners = [recipientAddress]
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
@@ -582,7 +582,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	}, 0n)
 	fakeSafeContract.owners = [walletOwner]
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const walletOwnerEntry = {
 		type: 'contact' as const,
 		name: 'Known Safe owner',
@@ -654,7 +654,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	assert.equal(pendingMessage.type === 'SignableMessage' ? pendingMessage.safeMessageCoSignSnapshot : undefined, undefined)
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	fakeSafeContract.safeOwnerLookupFailure = 'expected'
 	try {
 		assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
@@ -683,7 +683,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	})
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
 	try {
 		const { createSafeMessageCoSignSnapshot } = await import('../../app/ts/background/safeConfirmationResolver.js')
@@ -707,7 +707,7 @@ test('signs Safe transaction typed data normally when the active signing address
 	}, 0n)
 	fakeSafeContract.owners = [eoaAddress]
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [
 		createSafeAddressBookEntry({ safeSignerAddresses: [eoaAddress], safeVersion: '1.4.1' }),
 		{ type: 'contact', name: 'Sealwort signer', address: eoaAddress, chainId: fakeRpcNetwork.chainId, entrySource: 'User' },
@@ -826,7 +826,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 
 test('requires an explicit Safe simulation signer instead of using the first cached owner', async () => {
 	const cachedOwner = 0x4444444444444444444444444444444444444444n
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: undefined,
 		safeSignerAddresses: [cachedOwner],
@@ -1056,7 +1056,7 @@ test('routes a completed active Safe execution through its configured signer and
 	}, fakeSafeContract.nonce)
 	const existingSignature = await existingOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	fakeSafeContract.owners = [existingOwnerAddress, safeSignerAddress, alternateSignerAddress]
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [safeSignerAddress],
@@ -1243,7 +1243,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.match(staleExecution.approvalStatus.message, /Gnosis Safe execution could not be prepared/u)
 
 	fakeSafeContract.nonce -= 1n
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -1262,7 +1262,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.match(changedOwnersExecution.approvalStatus.message, /owner set changed/u)
 
 	fakeSafeContract.owners = [existingOwnerAddress, safeSignerAddress, alternateSignerAddress]
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -1328,7 +1328,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 	const existingSignature = await existingOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	fakeSafeContract.threshold = 3n
 	fakeSafeContract.owners = [existingOwnerAddress, configuredSigner, 0x1111111111111111111111111111111111111111n]
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: configuredSigner,

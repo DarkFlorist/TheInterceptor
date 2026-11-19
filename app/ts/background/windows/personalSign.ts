@@ -10,11 +10,11 @@ import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/parsing.js'
-import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
+import type { Hex } from '../../utils/ethereumBytes.js'
+import { decodePersonalSignMessage, getPersonalSignMessageHash } from '../../utils/personalSignMessage.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import type { EIP712Message } from '../../types/eip721.js'
-import { decodePersonalSignMessage } from '../../utils/personalSignMessage.js'
 import { getSiweLookalikeQuarantineReasons, getSiweQuarantineReasons, parseSiweMessage } from '../../utils/siwe.js'
 
 async function addMetadataToOpenSeaOrder(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, openSeaOrder: OpenSeaOrderMessage) {
@@ -56,6 +56,14 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
 }
 
+const WALLET_DEPENDENT_PERSONAL_SIGN_REASON = 'Wallets may read this message differently, as hex-encoded bytes or text. The message is shown exactly as written, but your wallet may sign different bytes.'
+
+// Adds a reason when the bytes a personal_sign signature covers, and so its message hash, depend on which wallet signs the message.
+function getPersonalSignQuarantineCodes(signingQuarantineCodes: { quarantine: boolean, quarantineReasons: readonly string[] }, messageHash: Hex | undefined) {
+	if (messageHash !== undefined) return signingQuarantineCodes
+	return { quarantine: true, quarantineReasons: [...signingQuarantineCodes.quarantineReasons, WALLET_DEPENDENT_PERSONAL_SIGN_REASON] }
+}
+
 export const getSignedMessageActiveAddress = (signedMessageTransaction: SignedMessageTransaction) =>
 	signedMessageTransaction.activeAddress ?? signedMessageTransaction.fakeSignedFor
 
@@ -91,33 +99,38 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	if (originalParams.originalRequestParameters.method === 'personal_sign') {
 		const account = await identifyAddress(ethereumClientService, requestAbortController, originalParams.originalRequestParameters.params[1])
-		const decodedMessage = decodePersonalSignMessage(originalParams.originalRequestParameters.params[0])
+		const message = originalParams.originalRequestParameters.params[0]
+		// The hash of the bytes the popup decodes for display, which simulated signing signs too; it is undefined when those bytes depend on which wallet signs.
+		const messageHash = getPersonalSignMessageHash(message, signedMessageTransaction.simulationMode)
+		const decodedMessage = decodePersonalSignMessage(message, signedMessageTransaction.simulationMode)
 		const siweMessage = parseSiweMessage(decodedMessage)
 		const personalSignParams = {
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
 			rpcNetwork,
 			account,
-			rawMessage: originalParams.originalRequestParameters.params[0],
+			rawMessage: message,
 			isValidMessage: isValid.valid,
-			messageHash: getMessageHashForPersonalSign(originalParams.originalRequestParameters),
+			messageHash,
 		}
-		if (siweMessage !== undefined) {
+		// A message whose signed bytes depend on the wallet has no hash and is shown exactly as written, so it is never presented as a sign-in request even when its text reads as one.
+		if (siweMessage !== undefined && messageHash !== undefined) {
 			return {
 				...personalSignParams,
+				messageHash,
 				type: 'SignInWithEthereum' as const,
 				message: siweMessage,
 				signInAccount: await identifyAddress(ethereumClientService, requestAbortController, siweMessage.address),
-				...getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address, getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin)),
+				...getPersonalSignQuarantineCodes(getSigningQuarantineCodes(siweMessage.chainId, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, siweMessage.address, getSiweQuarantineReasons(siweMessage, signedMessageTransaction.requestOrigin)), messageHash),
 				stringifiedMessage: decodedMessage,
 			}
 		}
 		return {
 			...personalSignParams,
 			type: 'NotParsed' as const,
-			message: originalParams.originalRequestParameters.params[0],
-			...getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined, getSiweLookalikeQuarantineReasons(decodedMessage)),
-			stringifiedMessage: stringifyJSONWithBigInts(originalParams.originalRequestParameters.params[0], 4),
+			message,
+			...getPersonalSignQuarantineCodes(getSigningQuarantineCodes(undefined, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined, getSiweLookalikeQuarantineReasons(decodedMessage)), messageHash),
+			stringifiedMessage: stringifyJSONWithBigInts(message, 4),
 		}
 	}
 	const namedParams = { param: originalParams.originalRequestParameters.params[1], account: originalParams.originalRequestParameters.params[0] }

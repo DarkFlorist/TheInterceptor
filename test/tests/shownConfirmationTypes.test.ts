@@ -5,7 +5,7 @@ import * as ts from 'typescript'
 const repositoryRoot = new URL('../../', import.meta.url).pathname
 const fixturePath = `${ repositoryRoot }test/fixtures/shownConfirmation/provenance.ts`
 
-// Storage first paint cannot become confirmable by structural compatibility with a background response.
+// The queue first paint cannot become confirmable by structural compatibility with a background response.
 test('shown confirmations require background provenance before accessing a reviewed id or accepting', async () => {
 	const configFile = ts.readConfigFile(`${ repositoryRoot }tsconfig.json`, ts.sys.readFile)
 	const { options } = ts.parseJsonConfigFileContent(configFile.config, ts.sys, repositoryRoot)

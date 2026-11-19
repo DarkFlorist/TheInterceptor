@@ -24,6 +24,7 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	// Identity and signer round-trip bookkeeping, which change without changing what the user reviewed.
 	type: false,
 	uniqueRequestIdentifier: false,
+	instanceId: false,
 	popupOrTabId: false,
 	approvalStatus: false,
 	// Bind the visualization and its signing inputs together, including the simulated signer and Safe message review.

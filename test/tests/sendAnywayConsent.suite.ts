@@ -80,14 +80,14 @@ async function assertMetadataRefreshSendsNothingOnceRequestIsResolved() {
 }
 
 test('a metadata refresh sends nothing when the transaction is resolved during its awaits', async () => {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	await assertMetadataRefreshSendsNothingOnceRequestIsResolved()
 })
 
 test('a metadata refresh sends nothing when the signature request is resolved during its awaits', async () => {
 	const { websiteTabConnections } = createSignerConnection()
 	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	browserMock.sentMessages.length = 0
 	await assertMetadataRefreshSendsNothingOnceRequestIsResolved()
@@ -109,7 +109,7 @@ test('the reviewed-result id binds signing inputs even while the displayed visua
 	const { websiteTabConnections } = createSignerConnection()
 	const signRequest = { method: 'personal_sign' as const, params: ['0x6869', activeAddress] as const }
 	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const pending = await getStoredRequest()
 	if (pending.type !== 'SignableMessage') throw new Error('Expected a signature request')
@@ -140,12 +140,12 @@ test('the background stamps the reviewed-result id of the stored request on the 
 		assert.equal(popupCopy.reviewedResultId, getReviewedResultId(stored), `${ kind }: the popup copy carries the stored request's id`)
 		assert.equal(getPopupReviewedResultId(stored), getReviewedResultId(stored), `${ kind }: the id survives the message round trip unchanged`)
 	}
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	assertPopupCopyCarriesStoredId(await getStoredRequest(), 'transaction')
 
 	const { websiteTabConnections } = createSignerConnection()
 	const personalSign = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...personalSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: personalSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const signatureRequest = await getStoredRequest()
 	assert.equal(signatureRequest.type, 'SignableMessage')
@@ -155,7 +155,7 @@ test('the background stamps the reviewed-result id of the stored request on the 
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
 	const coSign = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...coSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: coSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const coSignRequest = await getStoredRequest()
 	assert.notEqual(coSignRequest.type === 'SignableMessage' ? coSignRequest.safeMessageCoSignSnapshot : undefined, undefined, 'the stored request is a Safe co-signing request')
@@ -167,18 +167,18 @@ test('the background stamps the reviewed-result id of the stored request on the 
 
 test('honours an accept across approval-status changes and refuses it after the reviewed result changes', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	const acceptBeforeSignerRoundTrip = await createAcceptConfirmation()
 	// A failed signer round trip changes only the approval status, so the result the user reviewed is unchanged.
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: 4001, message: 'User rejected' } }))
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForUser' as const } }))
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => ({ ...pending, approvalStatus: { status: 'SignerError' as const, code: 4001, message: 'User rejected' } }))
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForUser' as const } }))
 	assert.equal(await resolveAccept(websiteTabConnections, acceptBeforeSignerRoundTrip), true)
 	assert.equal(wasForwardedToSigner(), true)
 
 	const second = createSignerConnection()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	const acceptBeforeResultChange = await createAcceptConfirmation()
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async () => makeReviewedTransaction(succeeded, true))
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, () => makeReviewedTransaction(succeeded, true))
 	assert.equal(await resolveAccept(second.websiteTabConnections, acceptBeforeResultChange), false)
 	assert.equal(second.wasForwardedToSigner(), false)
 	assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForUser')
@@ -186,10 +186,10 @@ test('honours an accept across approval-status changes and refuses it after the 
 
 test('refuses an accept that names stale reviewed content and keeps the request pending', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	const acceptForReviewedResult = await createAcceptConfirmation()
 	// A new block re-simulates the request after the user clicked but before the background handled the accept.
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async () => makeReviewedTransaction(succeeded, false, new Date('2024-01-01T00:00:12.000Z')))
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, () => makeReviewedTransaction(succeeded, false, new Date('2024-01-01T00:00:12.000Z')))
 
 	assert.equal(await resolveAccept(websiteTabConnections, acceptForReviewedResult), false)
 	assert.equal(wasForwardedToSigner(), false)
@@ -201,7 +201,7 @@ test('refuses an accept that names stale reviewed content and keeps the request 
 
 test('refuses an accept when a refresh holding the pending-request lock commits a quarantined result before the accept claims the request', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 	let storageReads = 0
 	browserMock.setStorageGetHandler(async (_keys, readStoredItems) => {
 		storageReads += 1
@@ -218,11 +218,16 @@ test('refuses an accept when a refresh holding the pending-request lock commits 
 	const acceptForReviewedResult = await createAcceptConfirmation()
 	const refreshEntered = Promise.withResolvers<void>()
 	const refreshReleased = Promise.withResolvers<void>()
-	const refresh = modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async () => {
-		refreshEntered.resolve()
-		await refreshReleased.promise
-		return makeReviewedTransaction(succeeded, true, new Date('2024-01-01T00:00:12.000Z'))
+	// The refresh's storage write is held back, so the refresh keeps the pending-request lock until it is released.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items) {
+			browserMock.setStorageSetHandler(undefined)
+			refreshEntered.resolve()
+			await refreshReleased.promise
+		}
+		writeStoredItems()
 	})
+	const refresh = modules.updateStoredPendingRequest(uniqueRequestIdentifier, () => makeReviewedTransaction(succeeded, true, new Date('2024-01-01T00:00:12.000Z')))
 	await refreshEntered.promise
 
 	const acceptance = resolveAccept(websiteTabConnections, acceptForReviewedResult)
@@ -244,7 +249,7 @@ test('refuses an accept when a refresh holding the pending-request lock commits 
 test('requires the send-anyway override for failing and quarantined transactions', async () => {
 	for (const reviewed of [makeReviewedTransaction(reverted, false), makeReviewedTransaction(succeeded, true)]) {
 		const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [reviewed] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [reviewed] })
 
 		assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), false)
 		assert.equal(wasForwardedToSigner(), false)
@@ -264,7 +269,7 @@ test('refuses an accept for a transaction whose simulation failed or has no resu
 	for (const rejectOnly of [failedSimulation, failedSimulationState, missingResult]) {
 		for (const forceSend of [false, true]) {
 			const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [rejectOnly] })
+			await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [rejectOnly] })
 			browserMock.sentMessages.length = 0
 			const unexpectedErrorBeforeAccept = await getLatestUnexpectedError()
 
@@ -279,7 +284,7 @@ test('refuses an accept for a transaction whose simulation failed or has no resu
 
 test('forwards a successful, non-quarantined transaction without the send-anyway override', async () => {
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeReviewedTransaction(succeeded, false)] })
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), true)
 	assert.equal(wasForwardedToSigner(), true)
@@ -289,9 +294,9 @@ test('requires the send-anyway override for a quarantined signature request', as
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
 	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
 	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => {
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => {
 		if (pending.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated signature request')
 		return { ...pending, visualizedPersonalSignRequest: { ...pending.visualizedPersonalSignRequest, quarantine: true, quarantineReasons: ['The message targets a known scam contract.'] } }
 	})
@@ -310,7 +315,7 @@ test('refuses a Safe proposal accept when the signer refresh during resolution c
 	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...makeReviewedTransaction(succeeded, false),
 		safeFlow: { kind: 'proposal' as const, state: 'created' as const, safeTransaction: {
 			safeAddress: activeAddress,
@@ -342,7 +347,7 @@ test('refuses a Safe co-signing accept when the signer refresh during resolution
 	const safeTx = prepareSafeWithTwoOwners(reviewedOwner, selectedOwner)
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
 	await modules.updateSafeTransactionStacks(() => [])
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [reviewedOwner], activeSigningAddress: reviewedOwner, signerChain: fakeRpcNetwork.chainId }))
 	const { websiteTabConnections, wasForwardedToSigner, getForwardedSigner } = createSignerConnection()
 	const signRequest = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }

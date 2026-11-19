@@ -12,6 +12,7 @@ import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { seedPendingRequestStorage } from './seedPendingRequestStorage.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type CurrentWindowProvider = () => Promise<{ id: number }>
@@ -42,6 +43,15 @@ function createBrowserMock() {
 					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: true } }
 				}
 				if (message?.method === 'popup_readyAndListening') return readyAndListeningReply()
+				// Answers the queue first paint the way the background does, from the stored pending requests.
+				if (message?.method === 'popup_requestConfirmTransactionQueue') {
+					const [{ requestConfirmTransactionQueue }, { serialize }, { PopupRequestsReplies }] = await Promise.all([
+						import('../../app/ts/background/popupMessageHandlers.js'),
+						import('../../app/ts/types/wire-types.js'),
+						import('../../app/ts/types/interceptor-reply-messages.js'),
+					])
+					return serialize(PopupRequestsReplies.popup_requestConfirmTransactionQueue, await requestConfirmTransactionQueue())
+				}
 				if (message?.method === 'popup_confirmDialog') await confirmDialogHandler?.(message)
 				return undefined
 			},
@@ -969,11 +979,10 @@ describe('ConfirmTransaction', () => {
 		const olderPendingTransaction = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
 		const { updateInterceptorTransactionStack, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
 		const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 
 		const simulator = await createFakeSimulator()
 
-		await browserStorageLocalSet2({
+		await seedPendingRequestStorage({
 			pendingTransactionsAndMessages: [olderPendingTransaction],
 		})
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
@@ -1241,8 +1250,8 @@ describe('ConfirmTransaction', () => {
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
 		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [makeSimulatedPendingTransaction(0n)] })
+		const { seedPendingRequestStorage } = await import('./seedPendingRequestStorage.js')
+		await seedPendingRequestStorage({ pendingTransactionsAndMessages: [makeSimulatedPendingTransaction(0n)] })
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 		const resolved = Promise.withResolvers<void>()
 		browser.setConfirmDialogHandler(async (message) => {
@@ -1275,11 +1284,12 @@ describe('ConfirmTransaction', () => {
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
-		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } = await import('../../app/ts/background/storageVariables.js')
-		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
+		const { getInterceptorTransactionStack, getPendingTransactionsAndMessages, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
+		const { updatePendingTransactionOrMessageInstance } = await import('../../app/ts/background/pendingRequestDecisions.js')
+		const { seedPendingRequestStorage } = await import('./seedPendingRequestStorage.js')
 		const reviewed = makeSimulatedPendingTransaction(0n, revertedOutcome)
 		const refreshed = makeSimulatedPendingTransaction(0n, { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'insufficient funds', decodedErrorMessage: 'insufficient funds' } })
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [reviewed] })
+		await seedPendingRequestStorage({ pendingTransactionsAndMessages: [reviewed] })
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		const windowRequested = Promise.withResolvers<void>()
@@ -1308,7 +1318,7 @@ describe('ConfirmTransaction', () => {
 		await windowRequested.promise
 
 		// A new block re-simulates the request while the approval still waits for its window.
-		await updatePendingTransactionOrMessage(reviewed.uniqueRequestIdentifier, async (pending) => ({ ...pending, popupVisualisation: refreshed.popupVisualisation }))
+		await updatePendingTransactionOrMessageInstance(reviewedAsStored, (pending) => ({ ...pending, popupVisualisation: refreshed.popupVisualisation }))
 		await dispatchPendingTransactions(browser, await getPendingTransactionsAndMessages())
 		windowReleased.resolve()
 		const { accept, resolution } = await acceptReachedBackground.promise
@@ -1319,7 +1329,7 @@ describe('ConfirmTransaction', () => {
 		assert.notEqual(pendingAfterApproval[0] === undefined ? undefined : getReviewedResultId(pendingAfterApproval[0]), getReviewedResultId(reviewedAsStored), 'the stored result changed after the click')
 		assert.equal(pendingAfterApproval[0]?.approvalStatus.status, 'WaitingForUser')
 		assert.deepEqual((await getInterceptorTransactionStack()).operations, [], 'nothing was added to the simulation')
-		assert.deepEqual(accept, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: reviewed.uniqueRequestIdentifier, action: 'accept', reviewedResultId: getReviewedResultId(reviewedAsStored), forceSend: true } }, 'the accept names the clicked result')
+		assert.deepEqual(accept, { method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: reviewed.uniqueRequestIdentifier, instanceId: reviewedAsStored.instanceId, action: 'accept', reviewedResultId: getReviewedResultId(reviewedAsStored), forceSend: true } }, 'the accept names the clicked result')
 		assert.equal(isSendAnywayTicked(dom), false, 'the refreshed result needs a new acknowledgement')
 
 		await unmountConfirmTransaction(dom)

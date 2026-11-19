@@ -260,6 +260,15 @@ const RequestIsSimulationVisualizerOpen = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
+// The confirmation queue alone, which needs no RPC, so the window shows it even while the RPC behind the bootstrap reply is slow or unreachable.
+type RequestConfirmTransactionQueueReply = funtypes.Static<typeof RequestConfirmTransactionQueueReply>
+const RequestConfirmTransactionQueueReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestConfirmTransactionQueue'),
+	data: funtypes.ReadonlyObject({
+		pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
+	}),
+}).asReadonly()
+
 type ConfirmTransactionBootstrapReply = funtypes.Static<typeof ConfirmTransactionBootstrapReply>
 const ConfirmTransactionBootstrapReply = funtypes.ReadonlyObject({
 	pendingTransactionAndSignableMessages: funtypes.ReadonlyArray(PopupPendingTransactionOrSignableMessage),
@@ -308,6 +317,7 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
 	popup_isSimulationVisualizerOpen: typeof RequestIsSimulationVisualizerOpen
 	popup_readyAndListening: typeof PopupReadyAndListeningReply
+	popup_requestConfirmTransactionQueue: typeof RequestConfirmTransactionQueueReply
 }
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
@@ -335,6 +345,7 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
 	popup_isSimulationVisualizerOpen: RequestIsSimulationVisualizerOpen,
 	popup_readyAndListening: PopupReadyAndListeningReply,
+	popup_requestConfirmTransactionQueue: RequestConfirmTransactionQueueReply,
 }
 
 type PopupRequestsReplies = {
@@ -371,6 +382,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isSimulationVisualizerOpen') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestConfirmTransactionQueue') }),
 	funtypes.ReadonlyObject({
 		method: funtypes.Literal('popup_readyAndListening'),
 		data: funtypes.ReadonlyObject({
@@ -410,6 +422,7 @@ export type PopupReplyOption =
 	| RequestIsMainWindowOpen
 	| RequestIsSimulationVisualizerOpen
 	| PopupReadyAndListeningReply
+	| RequestConfirmTransactionQueueReply
 	| undefined
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
@@ -434,5 +447,6 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestIsMainWindowOpen,
 	RequestIsSimulationVisualizerOpen,
 	PopupReadyAndListeningReply,
+	RequestConfirmTransactionQueueReply,
 	funtypes.Undefined,
 )

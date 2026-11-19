@@ -159,6 +159,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendTransaction'), result: EthereumBytes32 }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_call'), result: EthereumData }),
 	funtypes.ReadonlyObject({ method: funtypes.Union(funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData_v1'), funtypes.Literal('eth_signTypedData_v2'), funtypes.Literal('eth_signTypedData_v3'), funtypes.Literal('eth_signTypedData_v4'), funtypes.Literal('eth_signTypedData')), result: funtypes.String }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('personal_ecRecover'), result: EthereumAddress }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('web3_clientVersion'), result: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_feeHistory'), result: EthGetFeeHistoryResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
@@ -294,15 +295,19 @@ export type TransactionConfirmation = funtypes.Static<typeof TransactionConfirma
 export const TransactionConfirmation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_confirmDialog'),
 	data: funtypes.Union(
+		// The wallet's reply to a forwarded request. It is not bound to a pending instance; see resolvePendingTransactionOrMessage.
+		funtypes.ReadonlyObject({
+			uniqueRequestIdentifier: UniqueRequestIdentifier,
+			action: funtypes.Literal('signerIncluded'),
+			signerReply: funtypes.Unknown,
+		}),
+		// A decision on the pending request instance the user saw, which must name it because the page-chosen request id can be reused by a replacement request.
 		funtypes.Intersect(
 			funtypes.ReadonlyObject({
 				uniqueRequestIdentifier: UniqueRequestIdentifier,
+				instanceId: funtypes.String,
 			}),
 			funtypes.Union(
-				funtypes.ReadonlyObject({
-					action: funtypes.Literal('signerIncluded'),
-					signerReply: funtypes.Unknown,
-				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('accept'),
 					// Names the reviewed content the user saw (getReviewedResultId) and whether they ticked send-anyway for it, so the background can refuse stale or unacknowledged accepts.
@@ -317,7 +322,7 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					errorString: funtypes.Union(funtypes.String, funtypes.Undefined),
 				}),
 			)
-		)
+		),
 	)
 })
 

@@ -162,7 +162,8 @@ function Permit2WitnessDetails({ witness, renameAddressCallBack }: { witness: Pe
 function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, editEnsNamedHashCallBack }: SignRequestParams) {
 	switch (visualizedPersonalSignRequest.type) {
 		case 'NotParsed': {
-			const decoded = decodePersonalSignMessage(visualizedPersonalSignRequest.message)
+			// Unparsed typed data is already readable JSON; only personal_sign messages carry bytes to decode, read the same way as the message hash.
+			const decoded = visualizedPersonalSignRequest.method === 'personal_sign' ? decodePersonalSignMessage(visualizedPersonalSignRequest.message, visualizedPersonalSignRequest.simulationMode) : visualizedPersonalSignRequest.message
 			const isDecodedAsciiOrNumbers = isNinetyFivePercentNumbersOrASCII(decoded)
 			return <Viewer id = 'personal_sign'>
 				<Viewer.List>
@@ -453,7 +454,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 		<ViewSelector id = 'raw_message'>
 			<ViewSelector.List>
 				<ViewSelector.View title = 'View Parsed' value = 'parsed'>
-					<pre> { decodePersonalSignMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
+					<pre> { visualizedPersonalSignRequest.stringifiedMessage }</pre>
 				</ViewSelector.View>
 				<ViewSelector.View title = 'View Raw' value = 'raw'>
 					<pre>{ visualizedPersonalSignRequest.rawMessage }</pre>

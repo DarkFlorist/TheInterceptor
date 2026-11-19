@@ -15,7 +15,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { BackgroundPendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage, ShownPendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import { isPastUserDecision, type BackgroundPendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage, type ShownPendingTransactionOrSignableMessage, type SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -41,7 +41,6 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '.
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
-import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
@@ -60,13 +59,13 @@ export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS = 3000
 export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 20
 export const CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS = 1000
 
-// Retries quickly at first, then doubles the delay up to a cap, so a popup still showing only the storage first paint keeps asking for the background copy an accept needs.
+// Retries quickly at first, then doubles the delay up to a cap, so a popup still showing only the queue first paint keeps asking for the background copy an accept needs.
 export const getConfirmTransactionBootstrapRetryDelay = (attempt: number) => {
 	if (attempt < CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS) return CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS
 	return Math.min(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS * 2 ** (attempt - CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS + 1), CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
 }
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
-	storage: 1,
+	queue: 1,
 	bootstrap: 2,
 	push: 3,
 } as const
@@ -100,14 +99,16 @@ async function bootstrapConfirmTransactionDialog(
 	if (!isBootstrapDone()) giveUp()
 }
 
-// Only the background's copies carry the reviewed-result id an accept needs; requests read directly from storage for the first paint do not.
+// Only the bootstrap and push copies are confirmable; the confirmation queue the window asks for to paint first is not.
 const isBackgroundCopy = (pending: ShownPendingTransactionOrSignableMessage | undefined): pending is BackgroundPendingTransactionOrSignableMessage => pending?.source === 'background'
 
 const backgroundCopy = (pending: PopupPendingTransactionOrSignableMessage): BackgroundPendingTransactionOrSignableMessage => ({ ...pending, source: 'background' })
 
-async function hydratePendingTransactionsFromStorage() {
-	const pendingRequests = (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
-	return pendingRequests.map((pending): ShownPendingTransactionOrSignableMessage => ({ ...pending, source: 'storage' }))
+// The background owns the confirmation queue, so the window asks it for the queue instead of reading storage. The queue alone needs no RPC, so it is shown without waiting for the bootstrap reply, whose block number may wait on the RPC. It is only a first paint: confirming waits for the bootstrap or a push, as the source tag records.
+async function requestConfirmTransactionQueueFirstPaint() {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestConfirmTransactionQueue' })
+	if (reply?.method !== 'popup_requestConfirmTransactionQueue') return []
+	return reply.data.pendingTransactionAndSignableMessages.map((pending): ShownPendingTransactionOrSignableMessage => ({ ...pending, source: 'queue' }))
 }
 
 export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addressBookEntries: readonly AddressBookEntry[]) {
@@ -770,7 +771,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 	</div>
 }
 
-export const shouldDisableConfirmForApprovalStatus = (approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
+export const shouldDisableConfirmForApprovalStatus = (approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) => isPastUserDecision(approvalStatus)
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
@@ -834,8 +835,8 @@ export function ConfirmTransaction() {
 		const firstMessage = pendingTransactions[0]
 		if (firstMessage === undefined) return
 		const previousMessage = currentPendingTransactionOrSignableMessage.value
-		// Re-simulations that only change fees, timestamps or balances keep the override; a new request, failure or quarantine reason needs a new acknowledgement.
-		if (previousMessage === undefined || !isSameSendAnywayConsent(previousMessage, firstMessage)) forceSend.value = false
+		// Re-simulations that only change fees, timestamps or balances keep the override; a new request, failure or quarantine reason needs a new acknowledgement. The instance id tells a replacement the page sent under the same request id apart from the request the user ticked the override for.
+		if (previousMessage === undefined || previousMessage.instanceId !== firstMessage.instanceId || !isSameSendAnywayConsent(previousMessage, firstMessage)) forceSend.value = false
 		currentPendingTransactionOrSignableMessage.value = firstMessage
 		if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
 			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
@@ -929,11 +930,11 @@ export function ConfirmTransaction() {
 			}
 			applyNetworkData(bootstrapData.currentBlockNumber, bootstrapData.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 		}
-		void hydratePendingTransactionsFromStorage().then((pendingTransactions) => {
+		void requestConfirmTransactionQueueFirstPaint().then((pendingTransactions) => {
 			if (cancelled || pendingTransactions.length === 0) return
-			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
+			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.queue)
 		})
-		// Keeps retrying while only the storage first paint is shown, since confirming needs the background's copy.
+		// Keeps retrying while only the queue first paint is shown, since confirming needs the background's copy.
 		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData, () => { bootstrapGaveUp.value = true })
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		return () => {
@@ -949,17 +950,18 @@ export function ConfirmTransaction() {
 		const deliveryError = await sendConfirmDialogMessage(accept)
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
+	// Rejects only the request shown when the user clicked, and nothing if that request is no longer shown once the awaits finish.
 	async function rejectTransaction() {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
+		const rejected = currentPendingTransactionOrSignableMessage.value
+		if (rejected === undefined) throw new Error('dialogState is not set')
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		if (pendingTransactionsAndSignableMessages.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier.requestSocket.tabId })
+		if (pendingTransactionsAndSignableMessages.value.length === 1) await tryFocusingTabOrWindow({ type: 'tab', id: rejected.uniqueRequestIdentifier.requestSocket.tabId })
 
 		const getPossibleErrorString = () => {
-			const pending = currentPendingTransactionOrSignableMessage.value
-			if (pending === undefined) return undefined
+			const pending = rejected
 			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
@@ -968,8 +970,10 @@ export function ConfirmTransaction() {
 			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
 		}
 
+		if (currentPendingTransactionOrSignableMessage.value?.instanceId !== rejected.instanceId) return
 		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
-			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
+			uniqueRequestIdentifier: rejected.uniqueRequestIdentifier,
+			instanceId: rejected.instanceId,
 			action: 'reject',
 			errorString: getPossibleErrorString(),
 		} })
@@ -988,6 +992,7 @@ export function ConfirmTransaction() {
 		// Captured at click time, so results that arrive while the approval is in flight cannot change what is accepted.
 		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+			instanceId: pending.instanceId,
 			action: 'accept',
 			reviewedResultId: pending.reviewedResultId,
 			forceSend: forceSend.value,
@@ -1000,7 +1005,7 @@ export function ConfirmTransaction() {
 		if (pending === undefined) return
 		resetAddToSafeStackButton()
 		void waitForAddToSafeStack(async () => {
-			const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, action: 'addToSafeStack' } })
+			const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, instanceId: pending.instanceId, action: 'addToSafeStack' } })
 			if (deliveryError !== undefined) unexpectedError.value = deliveryError
 		})
 	}
@@ -1038,7 +1043,7 @@ export function ConfirmTransaction() {
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
-		if (pending.approvalStatus.status === 'WaitingForSigner') return true
+		if (isPastUserDecision(pending.approvalStatus)) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.
 		return isRejectOnlyTransaction(pending) || getSendAnywayOverrideReason(pending) !== undefined

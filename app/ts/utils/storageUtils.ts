@@ -6,12 +6,11 @@ import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addr
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
-import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import { PendingAccessRequests } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
-import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
@@ -106,6 +105,7 @@ const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'ac
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress', EthereumAddressOrMissing)
 const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress', activeSigningSafeAddress)
 const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress', independentActiveSimulationAddress)
+
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	...startupStoragePartialCodecs,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
@@ -134,7 +134,6 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
-	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
@@ -177,43 +176,21 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('pendingWatchAssetRequests'),
 	funtypes.Literal('popupRefreshGeneration'),
-	funtypes.Literal('pendingTerminalReplies'),
 )
 
-const LocalStorageItems2Runtype: funtypes.Partial<{
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray<typeof PendingTransactionOrSignableMessage>
-}, true> = funtypes.ReadonlyPartial({
-	pendingTransactionsAndMessages: funtypes.ReadonlyArray(PendingTransactionOrSignableMessage)
-})
-type LocalStorageItems2 = funtypes.Static<typeof LocalStorageItems2Runtype>
-const LocalStorageItems2: typeof LocalStorageItems2Runtype = LocalStorageItems2Runtype
-
-type LocalStorageKey2 = funtypes.Static<typeof LocalStorageKey2>
-const LocalStorageKey2 = funtypes.Union(
-	funtypes.Literal('pendingTransactionsAndMessages'),
-)
-
-// these methods are split to 1 and 2 to make the funtypes types simpler
-export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStorageKey2[]): Promise<LocalStorageItems2> {
-	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+// Keys that only their owners read and write, in the pending-request storage transaction: storageVariables.ts owns the pending requests and pendingTerminalReplies.ts the reply outbox. The generic codecs leave them out, and every generic helper refuses them at runtime, as the codecs' presence-aware address properties let any key through structurally and a caller can cast around the key types.
+const PENDING_REQUEST_TRANSACTION_KEYS: readonly string[] = ['pendingTransactionsAndMessages', 'pendingTerminalReplies']
+const OWNED_KEY_ERROR = 'The pending requests and the reply outbox are read and written only by their owners, in the pending-request storage transaction.'
+// Called before any storage access, so a refused key never reaches browser storage.
+const assertGenericStorageKeys = (keys: readonly string[]) => {
+	if (keys.some((key) => PENDING_REQUEST_TRANSACTION_KEYS.includes(key))) throw new Error(OWNED_KEY_ERROR)
 }
-
-export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | LocalStorageKey2[]) {
-	const storedItems = await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
-	try {
-		return { success: true as const, value: LocalStorageItems2.parse(storedItems) }
-	} catch (error) {
-		if (!(error instanceof funtypes.ValidationError)) throw error
-		return { success: false as const, error }
-	}
-}
-
-export async function browserStorageLocalSet2(items: LocalStorageItems2) {
-	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
-}
+const toKeyList = (keys: LocalStorageKey | LocalStorageKey[]): LocalStorageKey[] => Array.isArray(keys) ? keys : [keys]
 
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
-	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	const keyList = toKeyList(keys)
+	assertGenericStorageKeys(keyList)
+	return LocalStorageItems.parse(await browser.storage.local.get(keyList))
 }
 export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
 	const parsed = LocalStorageItems.safeParse(items)
@@ -221,13 +198,20 @@ export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems 
 	return undefined
 }
 export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
-	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	const keyList = toKeyList(keys)
+	assertGenericStorageKeys(keyList)
+	return browserStorageLocalSafeParse(await browser.storage.local.get(keyList))
 }
 
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
-	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
+	const keyList = toKeyList(keys)
+	assertGenericStorageKeys(keyList)
+	return await browser.storage.local.remove(keyList)
 }
-export async function browserStorageLocalSet(items: LocalStorageItems) {
+export type GenericStorageItems = LocalStorageItems & { readonly pendingTransactionsAndMessages?: never, readonly pendingTerminalReplies?: never }
+
+export async function browserStorageLocalSet(items: GenericStorageItems) {
+	assertGenericStorageKeys(Object.keys(items))
 	return await browser.storage.local.set(serialize(LocalStorageItems, items))
 }
 

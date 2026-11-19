@@ -2,10 +2,11 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { keccak_256 } from '@noble/hashes/sha3'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
+import type { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { createSafeTxFromMessage } from '../../app/ts/safe/safeCore.js'
 import { decodeSafeExecution } from '../../app/ts/safe/safeExecution.js'
-import { InterceptorTransactionStack, PreSimulationTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorTransactionStack, PreSimulationTransaction, type SignedMessageTransaction, type SimulationInputTransaction, type SimulationStateInput, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState, type SimulationStateInputMinimalData, toSimulationStateInputMinimalData, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransactionOrFailed } from '../../app/ts/types/visualizer-types.js'
 import { EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { getSignedTransactionForSimulation } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { isUnpreparedSimulationInputError } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -386,7 +387,7 @@ test('drops the zero base fee flag of a Safe proposal stored by an earlier versi
 // Opens a confirmation's Gnosis Safe preparation and stores its flow in the pending transaction as openConfirmTransactionDialogForTransaction does, then returns the fee mode the confirmation formed the transaction with and the one every refresh reads back from the pending transaction.
 async function getOpenedAndRefreshedGasPayments(transactionParams: SendTransactionParams, simulationMode: boolean, selectedActiveAddress: bigint) {
 	const { getPendingTransactionGasPayment } = await import('../../app/ts/safe/safePendingFlow.js')
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
@@ -433,7 +434,7 @@ type PendingTransaction = Extract<Awaited<ReturnType<typeof modules.getPendingTr
 
 // Opens a signing-mode confirmation of the configured Gnosis Safe.
 async function openSigningModeSafeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, transactionParams: SendTransactionParams, safeRequestContext?: { readonly operation: 0 | 1 }) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork })
@@ -467,7 +468,7 @@ async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransa
 	await assertFailure('when the confirmation opens')
 	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
 	await assertFailure('after a refresh')
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 	return simulator
 }
@@ -518,7 +519,7 @@ for (const { description, outcome } of safeProposalFormationFailures) {
 		assert.equal(formed.safeFlow.safeTransaction.safeTxHash, safeTxHash)
 		assert.equal(formed.safeFlow.safeTransaction.safeTx.message.operation, 0n)
 		assert.equal(getPendingTransactionGasPayment(formed), 'simulated-safe-executor')
-		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 		await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 	})
 }
@@ -534,7 +535,7 @@ test('keeps a Gnosis Safe proposal whose transaction did not form as it is when 
 	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
 	assert.deepEqual(await getFirstPendingTransaction('after the refresh'), opened)
 	assert.equal(simulator.simulatedCalls.length, simulatedCallCount, 'nothing is formed or simulated')
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 })
 
 // A contract creation from the configured Safe, which it can't make through execTransaction, with or without the page's gas.
@@ -737,10 +738,10 @@ test('counts a Safe proposal toward its executor\'s nonce, not the Safe\'s', asy
 	assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, preparedInput, SAFE_EXECUTION_SIMULATION_EXECUTOR), 1n, 'the executor sends the proposal\'s execTransaction call')
 })
 
-test('repairs a wrong nonce of an ordinary transaction from a Gnosis Safe without counting the Safe\'s executions', async () => {
-	configureSafe()
-	// The node rejects every call but the executor's for its nonce.
-	const nonceRejectingEthereum = new modules.EthereumClientService({
+// A node that rejects calls from the senders rejectsNonceFrom picks for their nonce, by default every call but the executor's, and answers the rest as the fake node does, reporting multicallBalance for balance lookups.
+const createNonceRejectingEthereum = (rejectsNonceFrom: (from: bigint) => boolean = (from) => from !== SAFE_EXECUTION_SIMULATION_EXECUTOR, multicallBalance = 0n) => {
+	const [succeededCall] = makeFakeEthSimulateResult(multicallBalance, modules.Multicall3ABI).calls
+	return new modules.EthereumClientService({
 		rpcUrl: fakeRpcNetwork.httpsRpc,
 		clearCache() { return undefined },
 		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
@@ -749,12 +750,17 @@ test('repairs a wrong nonce of an ordinary transaction from a Gnosis Safe withou
 			const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
 			return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => ({
 				...makeFakeEthSimulateResult(0n, modules.Multicall3ABI, []),
-				calls: blockStateCall.calls.map((call: { readonly from: string }) => BigInt(call.from) === SAFE_EXECUTION_SIMULATION_EXECUTOR
-					? { status: 'success' as const, gasUsed: 21_000n, logs: [], returnData: new Uint8Array() }
-					: { status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: -32000, message: 'wrong transaction nonce' } }),
+				calls: blockStateCall.calls.map((call: { readonly from: string }) => rejectsNonceFrom(BigInt(call.from))
+					? { status: 'failure' as const, gasUsed: 21_000n, returnData: new Uint8Array(), error: { code: -32000, message: 'wrong transaction nonce' } }
+					: succeededCall),
 			})))
 		},
 	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+}
+
+test('repairs a wrong nonce of an ordinary transaction from a Gnosis Safe without counting the Safe\'s executions', async () => {
+	configureSafe()
+	const nonceRejectingEthereum = createNonceRejectingEthereum()
 	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
 	const staleSafeCall = { ...safeCall, signedTransaction: { ...safeCall.signedTransaction, nonce: 5n } }
 	const ordinarySafeTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
@@ -763,6 +769,38 @@ test('repairs a wrong nonce of an ordinary transaction from a Gnosis Safe withou
 	const repaired = await getNonceFixedSimulationStateInput(nonceRejectingEthereum, undefined, preparedInput)
 	assert.equal(repaired.nonceFixed, true)
 	assert.deepEqual(repaired.simulationStateInput[0]?.transactions.map((transaction) => transaction.signedTransaction.nonce), [5n, 0n], 'the ordinary transaction gets the Safe\'s nonce from the node, which the execution before it did not raise')
+})
+
+const createSignedMessage = (message: string, messageIdentifier: bigint): SignedMessageTransaction => {
+	const originalRequestParameters: PersonalSignParams = { method: 'personal_sign', params: [message, ORDINARY_ACCOUNT] }
+	return {
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		created,
+		fakeSignedFor: ORDINARY_ACCOUNT,
+		originalRequestParameters,
+		request: { ...originalRequestParameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } } },
+		simulationMode: true,
+		messageIdentifier,
+	}
+}
+
+test('RPC preparation keeps every block\'s signed messages through the Gnosis Safe execution, base-fee and nonce steps', async () => {
+	configureSafe()
+	// Rejects only the Safe's ordinary transaction, and reports a balance that lets the base-fee step raise its fee.
+	const nonceRejectingEthereum = createNonceRejectingEthereum((from) => from === SAFE_ADDRESS, 10n ** 24n)
+	const safeCall = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const ordinarySafeTransaction = createSafeCall({ value: 1n, input: new Uint8Array(), gas: 21_000n }, undefined)
+	const wrongNonceTransaction = { ...ordinarySafeTransaction, signedTransaction: { ...ordinarySafeTransaction.signedTransaction, nonce: 9n } }
+	const stackInput: SimulationStateInput = [
+		{ ...createBlock([safeCall, wrongNonceTransaction]), signedMessages: [createSignedMessage('0x68656c6c6f', 1n), createSignedMessage('0X6869', 2n)] },
+		{ ...createBlock([]), signedMessages: [createSignedMessage('0x6869', 3n)] },
+	]
+	const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const preparedInput = await prepareSimulationInputForRpc(stackInput, nonceRejectingEthereum)
+	assert.equal(preparedInput[0]?.transactions[0]?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR, 'the Gnosis Safe execution step ran')
+	assert.notDeepEqual(preparedInput[0]?.transactions.map((transaction) => transaction.signedTransaction.maxFeePerGas), stackInput[0]?.transactions.map((transaction) => transaction.signedTransaction.maxFeePerGas), 'the base-fee step ran')
+	assert.equal(preparedInput[0]?.transactions[1]?.signedTransaction.nonce, 0n, 'the nonce step ran')
+	assert.deepEqual(preparedInput.map((block) => block.signedMessages), stackInput.map((block) => block.signedMessages))
 })
 
 for (const { description, message, errorData, returnData } of revertResponses) {
@@ -847,7 +885,7 @@ function createRecordingSimulator(contractCreationSimulationOutcome: SimulationO
 }
 
 async function openSimulationModeConfirmation(simulator: ReturnType<typeof createRecordingSimulator>, selectedActiveAddress: bigint, transactionParams: SendTransactionParams, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: selectedActiveAddress })
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(

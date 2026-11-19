@@ -124,7 +124,7 @@ function supersedeDuringAddressLookup(ethereum: InstanceType<typeof modules.Ethe
 
 // Opens the confirmation dialog the way a website's eth_sendTransaction does, and checks that the website's request is left waiting for the user instead of being rejected.
 async function openTransactionConfirmation(confirmationSimulator: ReturnType<typeof createFeeValidatingSimulator>, transactionParams: SendTransactionParams) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: activeAddress })
 	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
 		connections: {
@@ -348,7 +348,7 @@ test('stores the names of a metadata refresh on a successful run from before a b
 		simulateWithZeroBaseFee: false,
 		transactions: [{ signedTransaction, website, created, originalRequestParameters, transactionIdentifier }],
 	}]
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [{
 		...pendingTransaction,
 		popupVisualisation: { ...successfulPopupVisualisation, data: { ...successfulRun, confirmationRunId: runBeforeRestart, simulationState: { ...successfulRun.simulationState, simulationStateInput } } },
 	}] })
@@ -399,7 +399,7 @@ test('stores the names of a metadata refresh on its run when another field of th
 	// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the stored run changes.
 	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const ethereumDerivingStoredRunAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
 	})
 
 	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumDerivingStoredRunAgainDuringLookup, confirmationSimulator.tokenPriceService, undefined))

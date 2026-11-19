@@ -21,7 +21,7 @@ const localDappSiweMessage = (chainId: bigint) => [
 
 // Opens the confirmation dialog for a personal_sign request sent by a frame at `pageUrl` and returns the reply to the page together with the stored pending message.
 async function openSignInConfirmation(siweMessage: string, pageUrl: string, livePortUrl = pageUrl) {
-	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.seedPendingRequestStorage({ pendingTransactionsAndMessages: [] })
 	const signRequest = {
 		method: 'personal_sign' as const,
 		params: [bytesToHex(stringToBytes(siweMessage)), activeAddress] as const,
