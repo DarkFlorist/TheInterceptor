@@ -32,6 +32,7 @@
 		"webRequestBlocking"
 	],
 	"web_accessible_resources": [
+		"inpage/js/inpage-metamask-compatibility.js",
 		"inpage/js/inpage.js"
 	],
 	"content_security_policy": "object-src 'self'; script-src 'self'"

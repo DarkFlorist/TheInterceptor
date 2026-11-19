@@ -4,7 +4,7 @@ import { type FirefoxPage, type FirefoxSession, launchFirefoxSession } from './f
 
 // Checks the Firefox provider injection in a real browser: a dapp's first script must already see the provider, with and without a strict CSP, and MetaMask compatibility, disabled sites, access approval and revocation, and an extension update must keep working.
 const firstPageScript = [
-	'const observations = { providerAtFirstPageScript: window.ethereum?.isInterceptor === true, firstPageScriptAt: performance.now(), bridgePortMessages: 0, accountsChangedEvents: [] }',
+	'const observations = { providerAtFirstPageScript: window.ethereum?.isInterceptor === true, isMetaMaskAtFirstPageScript: window.ethereum?.isMetaMask === true, firstPageScriptAt: performance.now(), bridgePortMessages: 0, accountsChangedEvents: [] }',
 	'window.injectionObservations = observations',
 	'addEventListener("message", (event) => { if (event.source === window && event.data?.type === "interceptor_bridge_port") observations.bridgePortMessages += 1 })',
 	'addEventListener("DOMContentLoaded", () => { observations.domContentLoadedAt = performance.now() })',
@@ -26,6 +26,7 @@ const accessApproveButtonSelector = 'nav.popup-button-row button.is-primary:not(
 
 type InjectionObservations = {
 	readonly providerAtFirstPageScript: boolean
+	readonly isMetaMaskAtFirstPageScript: boolean
 	readonly firstPageScriptAt: number
 	readonly domContentLoadedAt?: number
 	readonly loadAt?: number
@@ -137,10 +138,6 @@ async function readRegisteredContentScripts(controlPage: FirefoxPage) {
 	return scripts
 }
 
-async function setStorage(controlPage: FirefoxPage, items: Record<string, unknown>) {
-	await controlPage.evaluate(`browser.storage.local.set(${ JSON.stringify(items) }).then(() => true)`)
-}
-
 async function waitFor(condition: () => Promise<boolean>, timeoutMilliseconds: number) {
 	const deadline = Date.now() + timeoutMilliseconds
 	while (Date.now() < deadline) {
@@ -188,17 +185,19 @@ async function main() {
 		}
 		report.loads = loads
 
-		// MetaMask compatibility is read from the background when the provider connects, so each mode needs a fresh page.
+		// Changing MetaMask compatibility registers that mode's provider file, so a fresh page's first script already sees the mode's isMetaMask.
 		const compatibility: Record<string, unknown> = {}
 		for (const metamaskCompatibilityMode of [true, false]) {
-			await setStorage(controlPage, { metamaskCompatibilityMode })
+			await sendPopupMessage(controlPage, { method: 'popup_ChangeSettings', data: { metamaskCompatibilityMode } })
 			const page = await session.openPage(`${ pageServer.baseUrl }${ noCspPath }?compatibility=${ metamaskCompatibilityMode }`)
 			await waitForProviderObservation(page, 10000)
+			const isMetaMaskAtFirstPageScript = await page.evaluate<boolean>('window.injectionObservations?.isMetaMaskAtFirstPageScript === true')
 			const chainId = await requestChainId(page)
 			const isMetaMask = await waitFor(async () => await page.evaluate<boolean>('window.ethereum?.isMetaMask === true') === true, metamaskCompatibilityMode ? 5000 : 1000)
 			await page.close()
-			compatibility[String(metamaskCompatibilityMode)] = { chainId, isMetaMask }
+			compatibility[String(metamaskCompatibilityMode)] = { chainId, isMetaMask, isMetaMaskAtFirstPageScript }
 			expect(isMetaMask === metamaskCompatibilityMode, `MetaMask compatibility ${ metamaskCompatibilityMode ? 'on' : 'off' }: window.ethereum.isMetaMask was ${ isMetaMask }`)
+			expect(isMetaMaskAtFirstPageScript === metamaskCompatibilityMode, `MetaMask compatibility ${ metamaskCompatibilityMode ? 'on' : 'off' }: the page's first script saw isMetaMask ${ isMetaMaskAtFirstPageScript }`)
 		}
 		report.compatibility = compatibility
 
