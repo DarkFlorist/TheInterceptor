@@ -775,6 +775,13 @@ const UpdateRPCList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
+// Answers popup_requestRpcList. It is separate from popup_update_rpc_list, which means the stored list changed, so listeners that react to changes (Home's live data) ignore a page merely reading the list. It is broadcast to every open window, so it carries the request's requestId and only the requesting page applies it.
+type RpcListRequestReply = funtypes.Static<typeof RpcListRequestReply>
+const RpcListRequestReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestRpcListReply'),
+	data: funtypes.ReadonlyObject({ requestId: funtypes.String, rpcEntries: RpcEntries }),
+})
+
 export { ChangeActiveChain } from './popupSettingsRequests.js'
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
@@ -871,7 +878,6 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
-		rpcEntries: RpcEntries,
 	})
 }).asReadonly()
 
@@ -1025,6 +1031,7 @@ const messageToPopupPayloadCodecs: [
 	typeof ImportSettingsReply,
 	typeof ActiveSigningAddressChanged,
 	typeof UpdateRPCList,
+	typeof RpcListRequestReply,
 	typeof SimulationUpdateStartedOrEnded,
 	typeof PartiallyParsedSimulateExecutionReply,
 	typeof SettingsOpenedReply,
@@ -1052,6 +1059,7 @@ const messageToPopupPayloadCodecs: [
 	ImportSettingsReply,
 	ActiveSigningAddressChanged,
 	UpdateRPCList,
+	RpcListRequestReply,
 	SimulationUpdateStartedOrEnded,
 	PartiallyParsedSimulateExecutionReply,
 	SettingsOpenedReply,
@@ -1113,6 +1121,7 @@ const PopupMessageRuntype = funtypes.Union(
 	SimulateGovernanceContractExecution,
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestRpcList'), data: funtypes.ReadonlyObject({ requestId: funtypes.String }) }),
 	ChangeSettings,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,

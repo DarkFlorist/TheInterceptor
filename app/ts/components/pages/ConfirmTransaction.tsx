@@ -36,6 +36,7 @@ import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import type { RpcEntries } from '../../types/rpc.js'
+import { useRpcConnectionsList } from '../hooks/useRpcConnectionsList.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -817,7 +818,7 @@ export function ConfirmTransaction() {
 	const pendingTransactionAddedNotification = useSignal<boolean>(false)
 	const dismissedRawTransactionNotification = useSignal<bigint | undefined>(undefined)
 	const unexpectedError = useSignal<CaughtError | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>([])
+	const rpcEntries = useRpcConnectionsList()
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
@@ -867,14 +868,6 @@ export function ConfirmTransaction() {
 			if (!maybeParsed.success) return false // not a message we are interested in
 			const parsed = maybeParsed.value
 
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
 			if (parsed.method === 'popup_UnexpectedErrorOccured') {
 				unexpectedError.value = parsed.data
 				return false
@@ -935,7 +928,6 @@ export function ConfirmTransaction() {
 		})
 		// Keeps retrying while only the storage first paint is shown, since confirming needs the background's copy.
 		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData, () => { bootstrapGaveUp.value = true })
-		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		return () => {
 			cancelled = true
 		}

@@ -5,6 +5,7 @@ import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -700,6 +701,22 @@ describe('popup clear reset', () => {
 		assert.deepEqual(popupVisualisation, stalePopupVisualisation)
 		assert.deepEqual(resets, [sameChainRpcNetwork])
 		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
+	})
+
+	test('broadcasts the RPC list when changing rpc promotes a new primary', async () => {
+		browserMock.reset()
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, () => ({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }))
+		await browserStorageLocalSet({
+			independentActiveSimulationAddress: activeAddress,
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: true,
+			rpcEntries: [{ ...rpcNetwork, primary: true }, sameChainRpcNetwork],
+		})
+
+		await changeActiveRpc(simulationServicesOwner, new Map(), sameChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
+
+		const rpcListUpdates = browserMock.sentMessages.filter((message) => message.method === 'popup_update_rpc_list')
+		assert.deepEqual(rpcListUpdates, [serialize(MessageToPopup, { role: 'all', method: 'popup_update_rpc_list', data: [{ ...rpcNetwork, primary: false }, { ...sameChainRpcNetwork, primary: true }] })])
 	})
 
 	test('clears the interceptor stack when changing rpc to another chain', async () => {
