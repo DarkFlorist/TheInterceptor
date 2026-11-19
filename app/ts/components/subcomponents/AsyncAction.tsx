@@ -10,7 +10,7 @@ type AsyncStatusIconProps = {
 
 function SpinnerIcon({ size = '1em' }: { size?: string }) {
 	return (
-		<span aria-hidden = 'true' style = { { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, lineHeight: 0 } }>
+		<span aria-hidden = 'true' class = 'async-action-status-icon' style = { { width: size, height: size } }>
 			<Spinner height = { size } color = 'currentColor' />
 		</span>
 	)
@@ -18,7 +18,7 @@ function SpinnerIcon({ size = '1em' }: { size?: string }) {
 
 function CheckIcon({ size = '1em' }: { size?: string }) {
 	return (
-		<span aria-hidden = 'true' style = { { color: 'var(--positive-color, currentColor)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, lineHeight: 0 } }>
+		<span aria-hidden = 'true' class = 'async-action-status-icon async-action-status-icon--resolved' style = { { width: size, height: size } }>
 			<svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
 				<path d = 'M3 8.5L6.5 12L13 4.5' stroke = 'currentColor' stroke-width = '2' stroke-linecap = 'round' stroke-linejoin = 'round' />
 			</svg>
@@ -30,7 +30,7 @@ export function AsyncStatusIcon({ state, size = '1em' }: AsyncStatusIconProps) {
 	switch (state) {
 		case 'inactive': return <></>
 		case 'pending': return <SpinnerIcon size = { size } />
-		case 'rejected': return <span aria-hidden = 'true' style = { { color: 'var(--danger-color)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, lineHeight: 0 } }><XMarkIcon /></span>
+		case 'rejected': return <span aria-hidden = 'true' class = 'async-action-status-icon async-action-status-icon--rejected' style = { { width: size, height: size } }><XMarkIcon /></span>
 		case 'resolved': return <CheckIcon size = { size } />
 	}
 }
@@ -61,11 +61,11 @@ function PendingButtonContent({ children, pending, pendingIndicatorPlacement }: 
 	const indicatorSize = pendingIndicatorPlacement === 'overlay' ? '0.75em' : '1em'
 	const indicator = pending ? <AsyncStatusIcon state = 'pending' size = { indicatorSize } /> : <></>
 	if (pendingIndicatorPlacement === 'overlay') {
-		return <span class = 'async-action-button__stable-content' style = { { display: 'inline-flex', alignItems: 'center', position: 'relative' } }>
+		return <span class = 'async-action-button__stable-content'>
 			<span
 				class = 'async-action-button__status-slot'
 				aria-hidden = 'true'
-				style = { { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', right: 'calc(100% + 0.125em)', top: '50%', transform: 'translateY(-50%)', width: indicatorSize, height: indicatorSize, lineHeight: 0, pointerEvents: 'none', visibility: pending ? 'visible' : 'hidden' } }
+				style = { { width: indicatorSize, height: indicatorSize, visibility: pending ? 'visible' : 'hidden' } }
 			>
 				{ indicator }
 			</span>
@@ -73,7 +73,7 @@ function PendingButtonContent({ children, pending, pendingIndicatorPlacement }: 
 		</span>
 	}
 	if (!pending) return <>{ children }</>
-	return <span class = 'async-action-button__inline-content' style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5em' } }>
+	return <span class = 'async-action-button__inline-content'>
 		{ indicator }
 		<span>{ children }</span>
 	</span>

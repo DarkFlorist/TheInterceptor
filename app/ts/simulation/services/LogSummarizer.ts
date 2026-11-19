@@ -6,6 +6,7 @@ import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 import { getFilledInContactEntry } from '../../utils/addressBookEntries.js'
 import { getGasFeePaidByTransactionSender } from '../../utils/transactionGasAccounting.js'
+import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 
 type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
@@ -165,7 +166,8 @@ const applyNftAllApprovalChange = (state: SummaryState, from: string, to: string
 	const { nextState, preparedSummaries } = prepareSummaries(state, [from])
 	const fromSummary = preparedSummaries.get(from)
 	if (fromSummary === undefined) throw new Error('from summary missing')
-	fromSummary.erc721and1155OperatorChanges.set(tokenAddress, change.allApprovalAdded ? to : undefined)
+	// The summary carries an operator only when the event grants it; a removed operator is stored as undefined.
+	fromSummary.erc721and1155OperatorChanges.set(tokenAddress, tokenEventGrantsSpendingRights(change) ? to : undefined)
 	return nextState
 }
 

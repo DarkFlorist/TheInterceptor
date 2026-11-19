@@ -475,7 +475,13 @@ export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
-	params: funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
+	// Named so the two wallet facts cannot be swapped: signerConnected is the wallet's session, signerReceivesRequests whether the page forwards requests to it (see TabState).
+	params: funtypes.Tuple(funtypes.ReadonlyObject({
+		signerConnected: funtypes.Boolean,
+		signerName: SignerName,
+		signerProviderGeneration: funtypes.Number,
+		signerReceivesRequests: funtypes.Boolean,
+	})),
 }).asReadonly()
 
 

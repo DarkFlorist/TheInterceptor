@@ -893,7 +893,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 2],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 2, signerReceivesRequests: true }],
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
@@ -927,7 +927,7 @@ describe('background eth_accounts', () => {
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
-			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
+			method: 'connected_to_signer', params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 1, signerReceivesRequests: true }],
 		}, connections, noopPublishRpcConnectionStatus)
 		assert.equal(connection.approved, true)
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
@@ -970,7 +970,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 1],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 1, signerReceivesRequests: true }],
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
@@ -1041,7 +1041,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 15, requestSocket: socket },
 			method: 'connected_to_signer',
-			params: [true, 'MetaMask', 1],
+			params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 1, signerReceivesRequests: true }],
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, connectedRequest, websiteTabConnections, noopPublishRpcConnectionStatus)
@@ -1055,7 +1055,7 @@ describe('background eth_accounts', () => {
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			...connectedRequest,
 			uniqueRequestIdentifier: { requestId: 16, requestSocket: socket },
-			params: [false, 'NoSigner', 2],
+			params: [{ signerConnected: false, signerName: 'NoSigner', signerProviderGeneration: 2, signerReceivesRequests: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
 		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 16)?.result?.metamaskCompatibilityMode, false)
@@ -1109,6 +1109,7 @@ describe('background eth_accounts', () => {
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [signerAddress],
 			activeSigningAddress: signerAddress,
 		}))
@@ -1189,6 +1190,7 @@ describe('background eth_accounts', () => {
 				...previousState,
 				signerName: 'MetaMask',
 				signerConnected: true,
+				signerReceivesRequests: true,
 				signerAccounts: [],
 				activeSigningAddress: safeOwner,
 			}))
@@ -1200,7 +1202,7 @@ describe('background eth_accounts', () => {
 					usingInterceptorWithoutSigner: false,
 					uniqueRequestIdentifier: { requestId: 170, requestSocket: socket },
 					method: 'connected_to_signer',
-					params: [true, 'MetaMask', 1],
+					params: [{ signerConnected: true, signerName: 'MetaMask', signerProviderGeneration: 1, signerReceivesRequests: true }],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			} else notifyWebsiteLifecycle(lifecycle(websiteTabConnections)?.signerConnected, socket, false)
 			await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
@@ -1254,6 +1256,7 @@ describe('background eth_accounts', () => {
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
+			signerReceivesRequests: true,
 			signerAccounts: [signerAddress],
 			activeSigningAddress: signerAddress,
 		}))

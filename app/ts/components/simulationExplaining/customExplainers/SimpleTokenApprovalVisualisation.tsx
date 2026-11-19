@@ -7,8 +7,9 @@ import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { TokenApprovalDisplay, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-
-const approvalTextColor = 'var(--danger-color)'
+import { isUnlimitedErc20Approval } from '../../../utils/erc20.js'
+import { tokenEventGrantsSpendingRights } from '../../../utils/approvals.js'
+import { getToneClass } from '../../ui-utils.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
@@ -20,27 +21,33 @@ type SimpleTokenApprovalVisualisation = {
 type TokenApprovalsVisualisationParams = {
 	spender: AddressBookEntry
 	approvals: readonly TokenApprovalDisplay[]
+	// Whether the approvals hand spending rights to the spender or take them away (tokenEventGrantsSpendingRights decides it for a token event).
+	granted: boolean
 	renameAddressCallBack: RenameAddressCallBack
 	children?: ComponentChildren
 }
 
-function ApprovedTokenAmount({ approval, renameAddressCallBack }: { approval: TokenApprovalDisplay, renameAddressCallBack: RenameAddressCallBack }) {
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
-		<div class = 'log-cell' style = 'justify-content: right;'>
-			{ approval.type === 'NFT All approval' ?
+const getApprovalToneClass = (granted: boolean) => `coin-text--strong ${ getToneClass('coin-text', granted ? 'negative' : 'positive') }`
+
+function ApprovedTokenAmount({ approval, granted, renameAddressCallBack }: { approval: TokenApprovalDisplay, granted: boolean, renameAddressCallBack: RenameAddressCallBack }) {
+	const toneClass = getApprovalToneClass(granted)
+	return <span class = 'log-table approval-amount-table'>
+		<div class = 'log-cell log-cell--right'>
+			{ /* A removal names the token only: a zero allowance or "NONE" next to "Stop allowing" would read as a contradiction. */ }
+			{ !granted ? <></> : approval.type === 'NFT All approval' ?
 				<AllApproval
 					{ ...approval }
-					style = { { 'font-weight': '500', color: approvalTextColor } }
+					class = { toneClass }
 					fontSize = 'big'
 				/>
-			: <> { 'amount' in approval && approval.amount >= (2n ** 96n - 1n ) ?
-					<p class = 'ellipsis' style = { `color: ${ approvalTextColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
+			: <> { 'amount' in approval && isUnlimitedErc20Approval(approval.amount) ?
+					<p class = 'ellipsis approval-unlimited-amount'><b>ALL</b></p>
 				:
 					'amount' in approval ?
 						<TokenAmount
 							amount = { approval.amount }
 							tokenEntry = { approval.token }
-							style = { { 'font-weight': '500', color: approvalTextColor } }
+							class = { toneClass }
 							fontSize = 'big'
 						/>
 					: <></>
@@ -51,7 +58,7 @@ function ApprovedTokenAmount({ approval, renameAddressCallBack }: { approval: To
 			<TokenSymbol
 				{ ...tokenEventToTokenSymbolParams(approval) }
 				useFullTokenName = { false }
-				style = { { 'font-weight': '500', color: approvalTextColor } }
+				class = { toneClass }
 				renameAddressCallBack = { renameAddressCallBack }
 				fontSize = 'big'
 			/>
@@ -60,21 +67,22 @@ function ApprovedTokenAmount({ approval, renameAddressCallBack }: { approval: To
 }
 
 export function TokenApprovalsVisualisation(param: TokenApprovalsVisualisationParams) {
+	// A single token's approval is removed by approving the zero address, so there is no spender to show for it.
+	const [onlyApproval] = param.approvals
+	const removesTokenIdApproval = !param.granted && param.approvals.length === 1 && onlyApproval?.type === 'ERC721'
 	return <div class = 'notification transaction-importance-box'>
-		<span style = 'grid-template-columns: auto auto; display: grid;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Allow &nbsp;</p>
-		</span>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
-			<BigAddress
-				addressBookEntry = { param.spender }
-				renameAddressCallBack = { param.renameAddressCallBack }
-			/>
-		</div>
-		<span style = 'grid-template-columns: auto auto; display: grid;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> To Spend &nbsp;</p>
-		</span>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
-			{ param.approvals.map((approval, index) => <ApprovedTokenAmount key = { index } approval = { approval } renameAddressCallBack = { param.renameAddressCallBack }/>) }
+		{ removesTokenIdApproval ? <></> : <>
+			<p class = 'summary-label'>{ param.granted ? 'Allow' : 'Stop allowing' }</p>
+			<div class = 'box summary-leg'>
+				<BigAddress
+					addressBookEntry = { param.spender }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+			</div>
+		</> }
+		<p class = 'summary-label'>{ removesTokenIdApproval ? 'Remove the approval for' : param.granted ? 'To spend' : 'From spending' }</p>
+		<div class = 'box summary-leg'>
+			{ param.approvals.map((approval, index) => <ApprovedTokenAmount key = { index } approval = { approval } granted = { param.granted } renameAddressCallBack = { param.renameAddressCallBack }/>) }
 		</div>
 		{ param.children }
 	</div>
@@ -84,9 +92,10 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 	return <TokenApprovalsVisualisation
 		spender = { param.approval.to }
 		approvals = { [param.approval] }
+		granted = { tokenEventGrantsSpendingRights(param.approval) }
 		renameAddressCallBack = { param.renameAddressCallBack }
 	>
-		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
+		<span class = 'log-table transaction-meta-row summary-meta'>
 			<GasFee tx = { param.transactionGasses } rpcNetwork = { param.rpcNetwork } />
 		</span>
 	</TokenApprovalsVisualisation>

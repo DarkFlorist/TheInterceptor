@@ -4,6 +4,7 @@ import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimesta
 import type { SimulatedAndVisualizedTransaction, ResolvedSimulationResults, SimulationUpdatingState, SimulationResultState, ModifyAddressWindowState, BlockTimeManipulation } from './visualizer-types.js'
 import type { IdentifiedSwapWithMetadata } from '../components/simulationExplaining/SwapTransactions.js'
 import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
+import type { NetworkWithoutRpcWarning } from '../utils/networkWithoutRpcUi.js'
 import { type AddressBookEntries, type AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
@@ -91,6 +92,7 @@ export type FirstCardParams = {
 	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
+	protection: ReadonlySignal<HomeProtection>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richList: Signal<readonly EnrichedRichListElement[]>
@@ -103,8 +105,16 @@ export type FirstCardParams = {
 	isFreshHomeDataLoaded: Signal<boolean>
 }
 
+// Whether the Interceptor simulates and reviews the active tab's requests; the popup makes no protection promise unless this is 'active'. A website the user disabled the Interceptor for gets no Interceptor provider ('disabledOnWebsite'). A network without an RPC carries the shared warning (utils/networkWithoutRpcUi.ts), which says whether its requests still are intercepted and whose wording getNetworkWithoutRpcWarningText owns.
+export type HomeProtection =
+	| { readonly kind: 'active' }
+	| { readonly kind: 'disabledOnWebsite' }
+	| { readonly kind: 'networkWithoutRpc', readonly networkName: string, readonly warning: NetworkWithoutRpcWarning }
+
 export type SimulationStateParam = {
 	simulationMode: ReadonlySignal<boolean>
+	protection: ReadonlySignal<HomeProtection>
+	signerName: ReadonlySignal<SignerName>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
@@ -194,7 +204,10 @@ export type TabState = funtypes.Static<typeof TabState>
 export const TabState = funtypes.ReadonlyObject({
 	tabId: funtypes.Number,
 	website: funtypes.Union(Website, funtypes.Undefined),
+	// Whether the wallet is connected to the page (its session); a disconnect clears it.
 	signerConnected: funtypes.Boolean,
+	// Whether the page forwards requests to a wallet, as each of its requests tells the background's routing (usingInterceptorWithoutSigner); a disconnected wallet still receives them.
+	signerReceivesRequests: funtypes.Boolean,
 	signerName: SignerName,
 	signerAccounts: funtypes.ReadonlyArray(EthereumAddress),
 	signerAccountError: funtypes.Union(ErrorWithCodeAndOptionalData, funtypes.Undefined),
@@ -242,6 +255,7 @@ const WatchAssetForwardingStatus = funtypes.Union(
 )
 type WatchAssetRequestDetails = {
 	readonly website: Website
+	readonly simulationMode: boolean
 	readonly request: InterceptedRequest
 	readonly requestedAsset: WalletWatchAssetParameters
 	readonly currentToken: WatchAssetToken
@@ -259,6 +273,7 @@ type WatchAssetRequestDetails = {
 }
 const WatchAssetRequestDetails: funtypes.Codec<WatchAssetRequestDetails> = funtypes.ReadonlyObject({
 	website: Website,
+	simulationMode: funtypes.Boolean,
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
 	currentToken: WatchAssetToken,
@@ -287,6 +302,7 @@ export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof P
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
+	simulationMode: funtypes.Boolean,
 	simulationOverlayEnabled: funtypes.Boolean,
 	simulationStackVersion: SimulationStackVersion,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,

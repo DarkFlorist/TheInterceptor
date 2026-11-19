@@ -187,7 +187,7 @@ describe('Permit2 signature requests', () => {
 		assertIncludesAll(await renderSignatureCardText(visualized), [
 			'USDT Permit2 transfer',
 			'Allow',
-			'To Spend',
+			'To spend',
 			'USDT',
 			'Chain: Ethereum Mainnet',
 			'Verifying contract: Uniswap Permit2',
@@ -318,7 +318,7 @@ describe('Permit2 signature requests', () => {
 		assertIncludesAll(await renderSignatureCardText(visualized), [
 			'USDT Permit',
 			'Allow',
-			'To Spend',
+			'To spend',
 			'ALL',
 			'USDT',
 			'Verifying contract: Uniswap Permit2',
@@ -348,7 +348,7 @@ describe('Permit2 signature requests', () => {
 		if (visualized.type !== 'Permit2Batch') throw new Error(`Expected a Permit2 batch, got ${ visualized.type }`)
 
 		const text = await assertShowsUnidentifiedTokenApproval(visualized, '5000000')
-		assertIncludesAll(text, ['Allow', 'To Spend', 'ALL', 'USDC'])
+		assertIncludesAll(text, ['Allow', 'To spend', 'ALL', 'USDC'])
 		assert.equal(text.includes(`Raw amount: ${ usdcAmount }`), false)
 
 		const allTokensUnidentified = JSON.parse(permit2PermitBatchMessage)
@@ -356,7 +356,7 @@ describe('Permit2 signature requests', () => {
 		allTokensUnidentified.message.details[1].token = unidentifiedTokenAddress
 		const allUnidentifiedText = await renderSignatureCardText(await visualizeTypedData(JSON.stringify(allTokensUnidentified)))
 		assertIncludesAll(allUnidentifiedText, ['These permitted tokens could not be confirmed as ERC20 tokens and may be NFTs or other contracts', 'Spender: Uniswap Universal Router', `Raw amount: ${ usdcAmount }`, 'Raw amount: 5000000'])
-		assert.equal(allUnidentifiedText.includes('To Spend'), false)
+		assert.equal(allUnidentifiedText.includes('To spend'), false)
 	})
 
 	test('never shows a token that is not an identified ERC20 as a standard approval, whatever its entry type', async () => {
@@ -382,11 +382,11 @@ describe('Permit2 signature requests', () => {
 			for (const request of [{ ...single, token }, { ...transfer, permitted: [{ token, amount: 1000000n }] }]) {
 				const text = await renderSignatureCardText(request)
 				assertIncludesAll(text, [singleTokenWarning, 'Spender: ', `Token: ${ token.name }`, 'Raw amount: '])
-				for (const approvalBoxText of ['Allow', 'To Spend', 'ALL']) assert.equal(text.includes(approvalBoxText), false, `${ request.type } with a ${ entryKind } shows "${ approvalBoxText }"`)
+				for (const approvalBoxText of ['Allow', 'To spend', 'ALL']) assert.equal(text.includes(approvalBoxText), false, `${ request.type } with a ${ entryKind } shows "${ approvalBoxText }"`)
 			}
 			// The warning comes before the approval box, so the token that is not an ERC20 cannot sit unnoticed below a routine looking USDC approval.
 			const batchText = await renderSignatureCardText({ ...batch, details: [usdcDetails, { ...secondDetails, token }] })
-			assertIncludesAll(batchText, [singleTokenWarning, `Token: ${ token.name }`, `Raw amount: ${ secondDetails.amount.toString(10) }`, 'Allow', 'To Spend', 'USDC'])
+			assertIncludesAll(batchText, [singleTokenWarning, `Token: ${ token.name }`, `Raw amount: ${ secondDetails.amount.toString(10) }`, 'Allow', 'To spend', 'USDC'])
 			assert.equal(batchText.indexOf(singleTokenWarning) < batchText.indexOf('Allow'), true, `PermitBatch with a ${ entryKind } shows the approval box first`)
 		}
 	})
@@ -451,7 +451,7 @@ describe('Permit2 signature requests', () => {
 			const transfer = Permit2SignatureTransfer.parse(signedPayload)
 			const expectedFields = { isBatch: getPermit2SignatureTransferKind(transfer).isBatch, chainId: transfer.domain.chainId, nonce: transfer.message.nonce, deadline: transfer.message.deadline }
 			for (const { isBatch, chainId, nonce, deadline } of [visualized, receivedRequest]) assert.deepEqual({ isBatch, chainId, nonce, deadline }, expectedFields)
-			assertIncludesAll(await renderSignatureCardText(receivedRequest), ['Allow', 'To Spend', 'Nonce: ', 'Signature expires in: '])
+			assertIncludesAll(await renderSignatureCardText(receivedRequest), ['Allow', 'To spend', 'Nonce: ', 'Signature expires in: '])
 		}
 	})
 
@@ -481,7 +481,7 @@ describe('Permit2 signature requests', () => {
 			const visualized = await visualizeTypedData(malformedRequest)
 			assert.deepEqual({ type: visualized.type, isValidMessage: visualized.isValidMessage, quarantine: visualized.quarantine }, { type: 'NotParsed', isValidMessage: false, quarantine: true })
 			const text = await renderSignatureCardText(visualized)
-			for (const transferDetail of ['Allow', 'To Spend', 'witness data', 'Verifying contract:', 'Nonce:', 'Signature expires in:']) assert.equal(text.includes(transferDetail), false, transferDetail)
+			for (const transferDetail of ['Allow', 'To spend', 'witness data', 'Verifying contract:', 'Nonce:', 'Signature expires in:']) assert.equal(text.includes(transferDetail), false, transferDetail)
 		}
 	})
 
@@ -535,7 +535,7 @@ describe('EIP-2612 permit signature requests', () => {
 		assertIncludesAll(await renderSignatureCardText(visualized), [
 			'USDC Permit',
 			'Allow',
-			'To Spend',
+			'To spend',
 			'1000',
 			'USDC',
 			'Chain: Ethereum Mainnet',
@@ -547,6 +547,30 @@ describe('EIP-2612 permit signature requests', () => {
 			`Domain Hash: ${ visualized.domainHash }`,
 			`Message Hash: ${ visualized.messageHash }`,
 		])
+	})
+
+	// A zero-value permit is the canonical EIP-2612 revocation, so it is worded as a removal like every other approval view.
+	test('shows a zero-value USDC permit as an allowance removal', async () => {
+		const revocation = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.message.value = '0' }))
+		const text = await renderSignatureCardText(revocation)
+		assertIncludesAll(text, ['Stop allowing', 'From spending', 'USDC'])
+		assert.equal(text.includes('To spend'), false)
+	})
+
+	// A zero-amount SignatureTransfer authorizes no transfer and revokes nothing, so it must not promise a removal.
+	test('does not word a zero-amount Permit2 transfer authorization as an allowance removal', async () => {
+		const visualized = await visualizeTypedData(permit2TransferFromMessage)
+		if (visualized.type !== 'Permit2SignatureTransfer') throw new Error(`Expected a Permit2 signature transfer, got ${ visualized.type }`)
+		const zeroTransfer = { ...visualized, permitted: visualized.permitted.map((tokenAmount) => ({ ...tokenAmount, amount: 0n })) }
+		assert.equal((await renderSignatureCardText(zeroTransfer)).includes('Stop allowing'), false)
+	})
+
+	// An AllowanceTransfer batch can set some allowances to zero and grant others; each gets its own panel.
+	test('shows the removed and the granted allowances of a mixed Permit2 batch in separate panels', async () => {
+		const visualized = await visualizeTypedData(permit2PermitBatchMessage)
+		if (visualized.type !== 'Permit2Batch') throw new Error(`Expected a Permit2 batch, got ${ visualized.type }`)
+		const mixedBatch = { ...visualized, details: visualized.details.map((detail, index) => index === 0 ? { ...detail, amount: 0n } : detail) }
+		assertIncludesAll(await renderSignatureCardText(mixedBatch), ['Stop allowing', 'From spending', 'Allow', 'To spend'])
 	})
 
 	test('identifies a permit whose nonce and deadline are sent as JSON numbers', async () => {
@@ -590,7 +614,7 @@ describe('EIP-2612 permit signature requests', () => {
 		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.domain.verifyingContract = unidentifiedTokenAddress }))
 		assert.notEqual(visualized.verifyingContract.type, 'ERC20')
 		const text = await assertShowsUnidentifiedTokenApproval(visualized, '1000000000')
-		for (const approvalBoxText of ['Allow', 'To Spend']) assert.equal(text.includes(approvalBoxText), false, approvalBoxText)
+		for (const approvalBoxText of ['Allow', 'To spend']) assert.equal(text.includes(approvalBoxText), false, approvalBoxText)
 	})
 
 	test('identifies a permit whose domain version is not an integer', async () => {

@@ -197,6 +197,7 @@ describe('blocking shield icon selection', () => {
 				tabId: 1,
 				website: undefined,
 				signerConnected: false,
+				signerReceivesRequests: false,
 				signerName: 'NoSignerDetected',
 				signerAccounts: [],
 				signerAccountError: undefined,

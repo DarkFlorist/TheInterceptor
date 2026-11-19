@@ -36,7 +36,7 @@ export function SignInWithEthereumVisualizer({ signInRequest, renameAddressCallB
 			{ message.statement === undefined ? <></> : <ExactValue label = 'Statement' value = { message.statement }/> }
 			<ExactValue label = 'URI' value = { message.uri }/>
 		</div>
-		<span class = 'log-table' style = 'margin-top: 10px; justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+		<span class = 'log-table safe-signing-fields safe-signing-exact-values'>
 			<CellElement text = 'Account: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { signInRequest.signInAccount } renameAddressCallBack = { renameAddressCallBack }/> }/>
 			<CellElement text = 'Chain: '/>
@@ -51,9 +51,9 @@ export function SignInWithEthereumVisualizer({ signInRequest, renameAddressCallB
 				<CellElement text = { message.requestId }/>
 			</> }
 		</span>
-		{ message.resources.length === 0 ? <></> : <div class = 'textbox' style = 'margin-top: 10px'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Resources</p>
-			{ message.resources.map((resource, index) => <p key = { index } class = 'paragraph text-legible' style = 'overflow-wrap: anywhere'>{ resource }</p>) }
+		{ message.resources.length === 0 ? <></> : <div class = 'textbox safe-signing-exact-values'>
+			<p class = 'paragraph text-subtitle'>Resources</p>
+			{ message.resources.map((resource, index) => <p key = { index } class = 'paragraph text-legible safe-signing-exact-value'>{ resource }</p>) }
 		</div> }
 	</>
 }

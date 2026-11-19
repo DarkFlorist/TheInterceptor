@@ -30,7 +30,7 @@ function BlockieWithTickerIcon({ address, tickerText }: { address: bigint, ticke
 export function AddressBookEntryIcon({ addressBookEntry }: { addressBookEntry: AddressBookEntry }) {
 	const icon = chooseAddressBookEntryIcon(addressBookEntry)
 	switch (icon.kind) {
-		case 'logo': return <img style = { { minWidth: '1em', minHeight: '1em' } } width = '16' height = '16' src = { icon.logoUri } />
+		case 'logo': return <img class = 'inline-card-logo' width = '16' height = '16' src = { icon.logoUri } />
 		case 'curatedTicker': return <CuratedTickerIcon address = { addressBookEntry.address } tickerText = { icon.tickerText } />
 		case 'blockieWithTicker': return <BlockieWithTickerIcon address = { addressBookEntry.address } tickerText = { icon.tickerText } />
 		case 'blockie': return <Blockie address = { addressBookEntry.address } />

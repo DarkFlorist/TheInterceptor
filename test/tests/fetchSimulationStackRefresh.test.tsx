@@ -139,6 +139,7 @@ const simulationAddress = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
 const pendingFetchSimulationStackRequest: PendingFetchSimulationStackRequestPromise = {
 	website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
 	popupOrTabId: { type: 'popup', id: 41 },
+	simulationMode: true,
 	simulationOverlayEnabled: true,
 	simulationStackVersion: '2.0.0',
 	uniqueRequestIdentifier: { requestId: 7, requestSocket: { tabId: 3, connectionName: 5n } },

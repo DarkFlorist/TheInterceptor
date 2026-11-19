@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /* Flexy Component */
 [class*=flexy] {
 	--gx: var(--gap-x, 0);
@@ -9,14 +13,6 @@
 	gap: var(--gy) var(--gx);
 	align-items: center;
 	padding: var(--py) var(--px);
-}
-.flexy-sm {
-	--pad-y: 0.5rem;
-	--gap-x: 1rem;
-}
-.flexy-lg {
-	--pad-y: 1rem;
-	--gap-x: 2rem;
 }
 
 /* Layout Component */
@@ -67,7 +63,7 @@ form[role='search'] fieldset {
 	align-items: center;
 	border: 1px solid var(--line-color);
 	padding: 0.25rem;
-	border-radius: 2px;
+	border-radius: var(--radius-control);
 	min-width: 0;
 }
 
@@ -116,10 +112,12 @@ input[role=switch] {
 	--bg-color: var(--unchecked-switch-color);
 	--checked-bg-color: var(--checked-switch-color);
 	appearance: none;
+	box-sizing: content-box;
+	flex: 0 0 auto;
 	width: 1.75rem;
 	background: var(--bg-color);
 	display: block;
-	border-radius: 1rem;
+	border-radius: var(--radius-pill);
 	padding: 4px;
 	border: 0 none;
 	cursor: pointer;
@@ -170,15 +168,4 @@ input[role=switch]:checked:before {
 	border: var(--outline);
 }
 
-.status-warn {
-	--bg-color: var(--status-warn-bg-color);
-	--fg-color: var(--status-warn-fg-color);
 }
-
-.status-danger {
-	--bg-color: var(--status-danger-bg-color);
-	--fg-color: var(--status-danger-fg-color);
-}
-
-.status-outline { --outline: 1px solid var(--status-danger-outline-color) }
-.status-lg { font-size: 1.5rem }

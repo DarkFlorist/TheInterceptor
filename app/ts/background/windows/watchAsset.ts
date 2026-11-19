@@ -497,6 +497,8 @@ export async function handleWatchAssetRequest(
 	request: InterceptedRequest,
 	website: Website,
 	params: WalletWatchAsset,
+	// The facts of the request itself, named so they cannot be swapped: the mode it was made in and the address it was made for.
+	{ simulationMode, activeAddress }: { readonly simulationMode: boolean, readonly activeAddress: bigint | undefined },
 	dependencies: {
 		identifyAddress?: typeof itentifyAddressViaOnChainInformation,
 		getAddressBookEntries?: () => Promise<AddressBookEntries>,
@@ -507,7 +509,6 @@ export async function handleWatchAssetRequest(
 		loadErc20?: typeof loadLegacyErc20Metadata,
 		loadNft?: typeof loadNftMetadataAndVerifyOwnership,
 	} = {},
-	activeAddress: bigint | undefined = undefined,
 ) {
 	const validationError = validateWatchAssetParameters(params, ethereumClientService.getChainId())
 	if (validationError !== undefined) return invalidWatchAssetRequest(validationError)
@@ -599,6 +600,7 @@ export async function handleWatchAssetRequest(
 			: currentToken
 	const requestBeforeSignerCheck: StoredWatchAssetRequest = {
 		website,
+		simulationMode,
 		popupOrTabId: undefined,
 		request,
 		requestedAsset,

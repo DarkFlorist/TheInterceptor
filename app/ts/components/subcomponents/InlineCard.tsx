@@ -3,6 +3,7 @@ import { useSignal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
 import { useHintContainer } from './Hint.js'
 import { CopyIcon, EditIcon } from './icons.js'
+import { withModifierClass } from '../ui-utils.js'
 import { Tooltip, type TooltipConfig } from './Tooltip.js'
 
 // Carries a card's warning explanation on its signs, and is what the card's hint watches.
@@ -14,6 +15,8 @@ type InlineCardProps = {
 	copyValue?: string
 	noCopy?: boolean
 	style?: JSX.CSSProperties
+	// Classes for the card itself, such as a coin text tone; the card passes a tone's colour on to its label (see .inline-card in interceptor-pages.css).
+	class?: string
 	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement>
 	statusMessageDuration?: number
 	// Explained on hover and keyboard focus by the hint the card hosts itself, so the card needs no Hint container around it.
@@ -43,7 +46,7 @@ export const InlineCard = (props: InlineCardProps) => {
 	const hasAction = !props.noCopy || props.onEditClicked !== undefined
 
 	return (
-		<span ref = { warningHint.setContainerElement } class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
+		<span ref = { warningHint.setContainerElement } class = { withModifierClass('inline-card', props.class) } role = 'figure' style = { props.style } title = { props.label }>
 			{ props.warningMessage ? <WarningSign message = { props.warningMessage } isTrailingSign = { false } /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>

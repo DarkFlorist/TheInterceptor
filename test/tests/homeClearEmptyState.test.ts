@@ -6,6 +6,7 @@ import { act } from 'preact/test-utils'
 import { Home } from '../../app/ts/components/pages/Home.js'
 import { installDomMock } from './domMock.js'
 import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -14,7 +15,6 @@ import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/typ
 import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SignedMessageTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
-import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -428,6 +428,81 @@ describe('Home popup clear empty state', () => {
 			})
 			assert.equal(dom.document.body.textContent?.includes('Unable to refresh mode'), true)
 			assert.equal(getButtonByText(dom.document.body, 'Simulating').getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	// Each phrase promises that the Interceptor simulates or reviews the active tab's requests, which is false while protection is unavailable.
+	const protectionPromises = [/never sent to the chain/, /simulated[^.]*instead of being sent/, /shows what it does before[^.]*signs/, /to be signed and sent to the chain/]
+	const findProtectionPromises = (text: string) => protectionPromises.filter((promise) => promise.test(text)).map((promise) => promise.source)
+	const networkWithoutRpc = { name: 'Unsupported Chain', chainId: 999n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+	const createTabState = (signerName: TabState['signerName'], signerReceivesRequests = signerName === 'MetaMask'): TabState => ({
+		tabId: 1,
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		signerConnected: signerName === 'MetaMask',
+		signerReceivesRequests,
+		signerName,
+		signerAccounts: signerName === 'MetaMask' ? [ACTIVE_ADDRESS] : [],
+		signerAccountError: undefined,
+		signerChain: 1n,
+		tabIconDetails: { icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' },
+		activeSigningAddress: signerName === 'MetaMask' ? ACTIVE_ADDRESS : undefined,
+	})
+	const restoreWebsiteProtection = (params: HomeParams) => { params.interceptorDisabled.value = false }
+	const selectNetworkWithRpc = (params: HomeParams) => { params.rpcNetwork.value = rpcNetwork }
+	// Without an RPC the background (utils/requestRouting.ts) sends requests straight to the wallet only in signing mode with a wallet; otherwise it still intercepts them, so the page must not claim the Interceptor is off.
+	const unprotectedStates = [
+		{ state: 'a disabled website', simulationMode: true, signerName: 'MetaMask', notice: 'Interceptor disabled on this website.', interceptionOff: true, overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: restoreWebsiteProtection },
+		{ state: 'a disabled website', simulationMode: false, signerName: 'MetaMask', notice: 'Interceptor disabled on this website.', interceptionOff: true, overrides: () => ({ interceptorDisabled: new Signal(true) }), restore: restoreWebsiteProtection },
+		{ state: 'a network without an RPC with a wallet', simulationMode: false, signerName: 'MetaMask', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcBypassToSigner' }), interceptionOff: true, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC with a wallet', simulationMode: true, signerName: 'MetaMask', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		{ state: 'a network without an RPC without a wallet', simulationMode: false, signerName: 'NoSigner', notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+		// The page named a wallet but reported no wallet to forward to, so its requests carry usingInterceptorWithoutSigner and are still intercepted; the popup reads that same fact (signerReceivesRequests), not the name.
+		{ state: 'a network without an RPC with a named wallet the page cannot forward to', simulationMode: false, signerName: 'MetaMask', signerReceivesRequests: false, notice: getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' }), interceptionOff: false, overrides: () => ({ rpcNetwork: new Signal(networkWithoutRpc) }), restore: selectNetworkWithRpc },
+	] as const
+	for (const unprotectedState of unprotectedStates) {
+		const { state, simulationMode, signerName, notice, interceptionOff, overrides, restore } = unprotectedState
+		const signerReceivesRequests = 'signerReceivesRequests' in unprotectedState ? unprotectedState.signerReceivesRequests : undefined
+		test(`makes no protection promise anywhere on the page in ${ simulationMode ? 'simulation' : 'signing' } mode on ${ state } and restores it when protection returns`, async () => {
+			const dom = installDomMock()
+			const params = createHomeParams({
+				simulationMode: new Signal(simulationMode),
+				tabState: new Signal<TabState | undefined>(createTabState(signerName, signerReceivesRequests)),
+				simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults())),
+				...overrides(),
+			})
+			try {
+				await act(() => { render(h(Home, params), dom.document.body) })
+				// Let the deferred empty state and hint render before reading the whole page.
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+				const unprotectedText = dom.document.body.textContent ?? ''
+				assert.deepEqual(findProtectionPromises(unprotectedText), [])
+				assert.equal(unprotectedText.includes(notice), true)
+				// The banner is the page's only protection status, and it says the Interceptor is off exactly when it is: the website is disabled, or requests on a network without an RPC go straight to the wallet.
+				assert.equal(unprotectedText.includes('neither simulated nor reviewed') || unprotectedText.includes('The Interceptor is disabled while'), interceptionOff)
+				// The empty state or signing hint is still shown, with the notice instead of a promise.
+				assert.equal(unprotectedText.includes(simulationMode ? 'Nothing simulated yet' : 'Nothing to review'), true)
+				await act(() => { restore(params) })
+				await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+				const protectedText = dom.document.body.textContent ?? ''
+				assert.equal(protectedText.includes(notice), false)
+				assert.equal(protectedText.includes(simulationMode ? 'Transactions are only simulated and are never sent to the chain.' : 'to be signed and sent to the chain'), true)
+				assert.equal(protectedText.includes(simulationMode ? 'Each transaction it sends is simulated and stacked here instead of being sent.' : 'the Interceptor shows what it does before'), true)
+			} finally {
+				render(undefined, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
+	test('keeps showing the existing simulation stack on a website the Interceptor is disabled for', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => { render(h(Home, createHomeParams({ interceptorDisabled: new Signal(true) })), dom.document.body) })
+			assert.equal(dom.document.body.textContent?.includes('Simulation Outcome'), true)
+			assert.deepEqual(findProtectionPromises(dom.document.body.textContent ?? ''), [])
 		} finally {
 			render(undefined, dom.document.body)
 			dom.restore()
@@ -931,6 +1006,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: false,
+						signerReceivesRequests: false,
 						signerName: 'MetaMask',
 						signerAccounts: [ACTIVE_ADDRESS],
 						signerAccountError: undefined,
@@ -965,6 +1041,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: false,
+						signerReceivesRequests: false,
 						signerName: 'NoSigner',
 						signerAccounts: [],
 						signerAccountError: undefined,
@@ -1001,6 +1078,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1058,6 +1136,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1118,6 +1197,7 @@ describe('Home popup clear empty state', () => {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [],
 						signerAccountError: undefined,
@@ -1191,6 +1271,7 @@ test('changes the Safe simulation signer from the popup in simulation mode', asy
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1266,6 +1347,7 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1345,6 +1427,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1524,6 +1607,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [0x6000000000000000000000000000000000000006n, SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1580,6 +1664,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1620,6 +1705,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
+						signerReceivesRequests: true,
 						signerName: 'MetaMask',
 						signerAccounts: [SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
@@ -1642,7 +1728,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-	const networkWithoutRpc: RpcNetwork = {
+	const signerOnlyNetwork: RpcNetwork = {
 		name: 'Signer only',
 		chainId: 5n,
 		httpsRpc: undefined,
@@ -1651,29 +1737,33 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		primary: false,
 		minimized: true,
 	}
-	const interceptorDisabledText = getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcBypassToSigner' })
-	const configureRpcText = getNetworkWithoutRpcWarningText(networkWithoutRpc.name, { kind: 'noRpcNeedsConfig' })
+	// The mode banner is the home page's protection status on a network without an RPC, worded by the shared getNetworkWithoutRpcWarningText.
+	const interceptorDisabledText = getNetworkWithoutRpcWarningText(signerOnlyNetwork.name, { kind: 'noRpcBypassToSigner' })
+	const configureRpcText = getNetworkWithoutRpcWarningText(signerOnlyNetwork.name, { kind: 'noRpcNeedsConfig' })
 
 	async function renderHomeOnNetworkWithoutRpc(simulationMode: boolean, signerName: TabState['signerName'] | undefined) {
 		const dom = installDomMock()
 		try {
 			await act(() => {
 				render(h(Home, createHomeParams({
-					rpcNetwork: new Signal<RpcNetwork | undefined>(networkWithoutRpc),
+					rpcNetwork: new Signal<RpcNetwork | undefined>(signerOnlyNetwork),
 					simulationMode: new Signal(simulationMode),
 					tabState: new Signal<TabState | undefined>(signerName === undefined ? undefined : {
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
-						signerConnected: true,
+						// As the signer handshake stores it: a tab without a detected signer is never connected to one, nor receives requests.
+						signerConnected: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
+						signerReceivesRequests: signerName !== 'NoSigner' && signerName !== 'NoSignerDetected',
 						signerName,
 						signerAccounts: [ACTIVE_ADDRESS],
 						signerAccountError: undefined,
-						signerChain: networkWithoutRpc.chainId,
+						signerChain: signerOnlyNetwork.chainId,
 						tabIconDetails: { icon: simulationMode ? ICON_SIMULATING : ICON_SIGNING, iconReason: 'Test tab.' },
 						activeSigningAddress: ACTIVE_ADDRESS,
 					}),
 				})), dom.document.body)
 			})
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 			return dom.document.body.textContent ?? ''
 		} finally {
 			render(null, dom.document.body)
@@ -1683,19 +1773,19 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 
 	test('does not claim the Interceptor is disabled on a network without an RPC in simulation mode', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(true, 'MetaMask')
-		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(interceptorDisabledText), false)
 		assert.equal(text.includes(configureRpcText), true)
 	})
 
 	test('does not claim the Interceptor is disabled on a network without an RPC when signing mode has no signer', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(false, 'NoSignerDetected')
-		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(interceptorDisabledText), false)
 		assert.equal(text.includes(configureRpcText), true)
 	})
 
 	test('treats a missing tab state as having no signer on a network without an RPC in signing mode', async () => {
 		const text = await renderHomeOnNetworkWithoutRpc(false, undefined)
-		assert.equal(text.includes('The Interceptor is disabled'), false)
+		assert.equal(text.includes(interceptorDisabledText), false)
 		assert.equal(text.includes(configureRpcText), true)
 	})
 

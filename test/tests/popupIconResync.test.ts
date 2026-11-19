@@ -226,6 +226,7 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 			tabId,
 			website: { websiteOrigin: `tab-${ tabId }.invalid`, icon: undefined, title: `Tab ${ tabId }` },
 			signerConnected: false,
+			signerReceivesRequests: false,
 			signerName: 'NoSigner',
 			signerAccounts: [],
 			signerAccountError: undefined,
@@ -379,6 +380,7 @@ describe('popup icon sync', () => {
 				tabState: {
 					...defaultHomePage(1, { icon: ICON_SIGNING, iconReason: 'Signing' }, 1).data.tabState,
 					signerConnected: true,
+					signerReceivesRequests: true,
 					signerName: 'MetaMask',
 					signerAccounts: [loadedAddress],
 				},

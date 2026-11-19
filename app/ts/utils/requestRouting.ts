@@ -5,7 +5,7 @@ export type RequestRoutingState = {
 	readonly signerAvailable: boolean
 }
 
-// Signing mode with an available signer lets the signer answer requests the Interceptor does not handle itself.
+// Signing mode with an available signer lets the signer answer requests the Interceptor does not handle itself. The page states whether it has a wallet once (hasWalletToForwardTo): each request carries it as usingInterceptorWithoutSigner, read by the background's routing, and the signer handshake stores it as the tab's signerReceivesRequests, read by the popup and the toolbar icon.
 export function isForwardingRequestsToSigner({ simulationMode, signerAvailable }: RequestRoutingState) {
 	return !simulationMode && signerAvailable
 }

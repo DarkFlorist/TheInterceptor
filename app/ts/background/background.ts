@@ -1,4 +1,5 @@
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
+import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -32,7 +33,6 @@ import { handleWatchAssetRequest } from './windows/watchAsset.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
-import { isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
@@ -183,7 +183,7 @@ async function handleRPCRequest(
 		eth_signTypedData_v3: rpcRequestHandler('eth_signTypedData_v3', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		eth_signTypedData_v4: rpcRequestHandler('eth_signTypedData_v4', async (_context, rpcRequest) => await signMessage(rpcRequest)),
 		wallet_switchEthereumChain: rpcRequestHandler('wallet_switchEthereumChain', async (_context, rpcRequest) => await switchEthereumChain(simulationServicesOwner, websiteTabConnections, rpcRequest, request, settings.simulationMode, website)),
-		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
+		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, { simulationMode: settings.simulationMode, activeAddress })),
 		wallet_requestPermissions: rpcRequestHandler('wallet_requestPermissions', async () => await requestPermissions(activeAddress, website)),
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
 		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
@@ -200,7 +200,7 @@ async function handleRPCRequest(
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
 		eth_syncing: rpcRequestHandler('eth_syncing', async () => await syncing(ethereum)),
 		eth_getTransactionCount: rpcRequestHandler('eth_getTransactionCount', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getTransactionCount(ethereum, simulationInput, rpcRequest))),
-		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), simulationOverlayEnabled, websiteTabConnections, rpcRequest, website, request, socket)),
+		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), { simulationMode: settings.simulationMode, simulationOverlayEnabled }, websiteTabConnections, rpcRequest, website, request, socket)),
 		eth_simulateV1: rpcRequestHandler('eth_simulateV1', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => ethSimulateV1(ethereum, simulationInput, rpcRequest))),
 		wallet_addEthereumChain: rpcRequestHandler('wallet_addEthereumChain', async (_context, rpcRequest) => {
 			if (forwardToSigner) return getForwardingMessage(rpcRequest)

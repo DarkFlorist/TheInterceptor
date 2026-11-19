@@ -1,3 +1,7 @@
+/* Cascade order, stated in every stylesheet so it holds in any load order: the shared design system, then component layout, whose rules outrank shared rules of any specificity. See interceptor-layout.css. */
+@layer shared, layout;
+@layer shared {
+
 /* Customizations */
 
 header:has(form[role='search']) {
@@ -157,16 +161,18 @@ header:has(form[role='search']) h1 {
 
 [role=option]:has([type=radio]) {
 	--heading-color: var(--text-color);
-	--heading-weight: normal;
+	--heading-weight: 600;
 	--subheading-color: var(--disabled-text-color);
 	margin: 0;
-	border-bottom: 1px solid var(--white-alpha-10);
+	border-bottom: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	padding-inline: 12px;
 	position: relative;
 }
 
 [role=option]:has([type=radio]):focus-within,
 [role=option]:has([type=radio]):hover {
-	background: linear-gradient(to right, transparent 0%, var(--white-alpha-08) 50%, transparent 100%);
+	background: var(--surface-raised-color);
 }
 
 [role=option] [type=radio] {
@@ -174,27 +180,10 @@ header:has(form[role='search']) h1 {
 	opacity: 0;
 }
 
-.access-details {
-	position: fixed;
-	inset: 0;
-	background: var(--bg-color);
-	overflow-y: scroll;
-	overscroll-behavior: contain;
-	z-index: 10;
-}
-
-.input::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    margin: 0;
-}
-
+.input::-webkit-outer-spin-button,
 .input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    margin: 0;
+	appearance: none;
+	margin: 0;
 }
 
 .autosizing-span,
@@ -262,7 +251,6 @@ header:has(form[role='search']) h1 {
 
 .inline-card {
 	--bg-color: transparent;
-	--highlighted-inline-action-color: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
@@ -285,7 +273,9 @@ header:has(form[role='search']) h1 {
 
 	data {
 		line-height: 1em;
-		color: var(--text-color);
+		/* A tone class on the card sets these label properties, so the label follows the card's tone without the class reaching the label itself. */
+		color: var(--inline-card-label-color, var(--text-color));
+		font-weight: var(--inline-card-label-font-weight, normal);
 		padding-inline: 0.25em;
 		padding-right: 0px;
 		text-align: center;
@@ -380,7 +370,7 @@ header:has(form[role='search']) h1 {
 				}
 
 				&:is(:is(:hover,:focus) > *) {
-					color: black;
+					color: var(--highlighted-inline-action-text-color);
 					background: var(--highlighted-inline-action-color);
 					outline: none;
 
@@ -519,8 +509,8 @@ header:has(form[role='search']) h1 {
 
 			&:hover, &:focus {
 				> span {
-					background: var(--white-color);
-					color: var(--black-color);
+					background: var(--highlighted-inline-action-color);
+					color: var(--highlighted-inline-action-text-color);
 
 					span { display: inline }
 					svg { display: none }
@@ -587,10 +577,10 @@ header:has(form[role='search']) h1 {
 
 .tooltip {
 	background: var(--tooltip-color);
-	color: var(--white-color);
+	color: var(--tooltip-text-color);
 	padding: 0.3125rem 0.6875rem;
 	border: 0 none;
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 	font-size: 0.8125rem;
 	white-space: nowrap;
 	pointer-events: none;
@@ -601,7 +591,7 @@ header:has(form[role='search']) h1 {
 	background: unset;
 	color: var(--text-color);
 	border: 1px solid var(--white-alpha-20);
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 }
 
 .chainSelector {
@@ -625,25 +615,6 @@ header:has(form[role='search']) h1 {
 .dropdown button > .truncate {
 	min-width: 0;
 	max-width: 100%;
-}
-
-.sub-importance-box {
-	background-color: var(--alpha-005);
-	box-shadow: unset;
-	margin-bottom: 0px;
-	display: grid;
-	padding: 10px;
-	align-items: center;
-}
-
-.simulation-stack-view {
-	gap: 10px;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-self: center;
-	padding: 10px;
-	max-width: min-content;
 }
 
 .btn.is-small {
@@ -687,16 +658,6 @@ header:has(form[role='search']) h1 {
 	transform: rotateX(180deg)
 }
 
-.card-content-header {
-	padding-left: 10px;
-	background-color: var(--card-content-bg-color);
-	border-bottom-left-radius: 0.25rem;
-	border-bottom-right-radius: 0.25rem;
-	border-left: 1px solid var(--white-alpha-20);
-	border-right: 1px solid var(--white-alpha-20);
-	border-bottom: 1px solid var(--white-alpha-20);
-}
-
 input[type="number"] {
     -moz-appearance: textfield;
 }
@@ -716,8 +677,7 @@ input[type="number"]:focus {
 	--btn-brightness: 1;
 }
 
-.btn.is-primary:not(:disabled):active,
-.btn.is-primary.is-active {
+.btn.is-primary:not(:disabled):active {
 	background-color: var(--highlighted-primary-action-color);
 	color: var(--white-color);
 }
@@ -730,9 +690,7 @@ input[type="number"]:focus {
 	background-color: var(--highlighted-destructive-action-color);
 }
 
-.button.is-primary.is-danger:not(:disabled):active,
-.button.is-primary.is-danger.is-active,
-.button.is-primary.is-danger.is-hovered {
+.button.is-primary.is-danger:not(:disabled):active {
 	background-color: var(--highlighted-destructive-action-color);
 	color: var(--white-color);
 }
@@ -742,14 +700,6 @@ fieldset[disabled] .button.is-primary.is-danger {
 	background-color: var(--destructive-action-color);
 	border-color: var(--destructive-action-color);
 	color: var(--white-color);
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.popup-loading-shape,
-	.popup-data-reveal,
-	.popup-data-reveal-inline {
-		animation: none;
-	}
 }
 
 @media screen and (max-width: 400px) {
@@ -772,4 +722,272 @@ fieldset[disabled] .button.is-primary.is-danger {
 		color: var(--text-color);
 		margin-top: 0.5rem;
 	}
+}
+
+/* Former inline styles of components whose other rules are in the shared stylesheets, kept in the shared layer with them so each component's rules are in one cascade layer (see interceptor-layout.css). */
+
+/* SettingsView.tsx */
+/* Settings page */
+.settings-page { padding: 10px }
+.settings-card { height: 100% }
+.settings-body { padding-bottom: 10px }
+.settings-checkbox { font-size: 1em }
+.settings-import-file-input {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	opacity: 0;
+}
+.settings-rpc-section {
+	--gap-y: 0.5rem;
+	padding: 0.5rem 0;
+}
+.settings-rpc-reset-prompt {
+	display: grid;
+	height: 9rem;
+	text-align: center;
+	row-gap: 0.5rem;
+}
+.settings-rpc-reset-button { font-weight: 600 }
+.settings-rpc-list { --gap-y: 0.5rem }
+
+/* AddressBook.tsx */
+/* Address book page */
+.address-book-removal-card { margin: 10px }
+.address-book-entry-access-setting { padding-top: 10px }
+
+/* App.tsx */
+/* Popup window */
+.popup-frame {
+	background-color: var(--bg-color);
+	width: 520px;
+	height: 600px;
+}
+.navbar-item.popup-brand { cursor: unset }
+.popup-navbar-actions {
+	margin-left: auto;
+	margin-right: 0;
+}
+
+/* ui-utils.tsx */
+.log-cell-text {
+	color: var(--subtitle-text-color);
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+/* SimulationSummary.tsx */
+/* Simulation summary */
+.summary-token-change, .summary-token-change-box { display: flex }
+.summary-approval-change { display: inline-flex }
+.summary-token-change-sign { align-items: center }
+.summary-own-account-changes { margin-bottom: 10px }
+.summary-address-divider {
+	margin-top: 8px;
+	margin-bottom: 8px;
+}
+.summary-gas-fee-label {
+	color: var(--subtitle-text-color);
+	margin-bottom: 0px;
+}
+.summary-meta-text {
+	color: var(--subtitle-text-color);
+	text-align: right;
+	display: inline;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+.summary-freshness-age {
+	font-weight: bold;
+	font-family: monospace;
+}
+.simulation-summary-meta-row {
+	margin-top: 10px;
+	grid-template-columns: auto;
+}
+.summary-gas-limit-field {
+	padding: 2px;
+	background: var(--white-alpha-10);
+	border-bottom: 1.5px solid var(--text-color);
+}
+.summary-raw-transaction {
+	display: flex;
+	flex-direction: column;
+	row-gap: 1rem;
+}
+.summary-gas-limit-value {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.summary-transaction-input-label {
+	color: var(--subtitle-text-color);
+	margin-bottom: 0.25rem;
+}
+
+/* AddressBookEntryIcon.tsx */
+/* Inline card icons */
+.inline-card-logo {
+	min-width: 1em;
+	min-height: 1em;
+}
+
+/* address.tsx */
+/* Address icons and rows */
+.address-icon-image {
+	display: block;
+	width: 1em;
+	min-width: 1em;
+	height: 1em;
+}
+.address-active-cell { display: block }
+.website-origin-text-icon-image {
+	width: 24px;
+	height: 24px;
+}
+
+/* Transactions.tsx */
+/* Transaction cards */
+.transaction-delegation-stack {
+	display: grid;
+	gap: 8px;
+}
+.transaction-safe-notice { margin-bottom: 10px }
+.transaction-raw-request {
+	color: var(--subtitle-text-color);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.transaction-sender-row {
+	margin-top: 10px;
+	column-gap: 5px;
+	justify-content: space-between;
+	grid-template-columns: auto auto;
+}
+.transaction-sender-receiver-row {
+	justify-content: space-between;
+	column-gap: 5px;
+	grid-template-columns: auto auto auto;
+}
+.transaction-party-cell { margin: 2px }
+.transaction-party-cell--end { justify-content: end }
+.transaction-arrow-cell {
+	padding-right: 0.2em;
+	padding-left: 0.2em;
+}
+.transaction-arrow-cell--centered { justify-content: center }
+/* Transaction event logs */
+.transaction-token-log-table {
+	justify-content: center;
+	column-gap: 5px;
+}
+.transaction-token-symbol-cell { padding-right: 0.2em }
+.transaction-event-log-table {
+	justify-content: center;
+	column-gap: 5px;
+	row-gap: 5px;
+}
+.transaction-event-cell { align-items: normal }
+.transaction-event-arguments {
+	grid-column: 2 / 4;
+	display: flex;
+	flex-wrap: wrap;
+}
+.transaction-event-placeholder { display: contents }
+
+/* ConfirmTransaction.tsx */
+/* Confirm transaction page */
+.confirm-popup-block { padding: 0px }
+.confirm-alerts {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+.confirm-body { margin: 10px }
+.confirm-transaction-names { margin-bottom: 10px }
+.confirm-under-transactions { position: relative }
+.confirm-under-transaction-card {
+	margin-bottom: 0px;
+	position: relative;
+}
+.confirm-under-transaction-overlay {
+	background-color: var(--disabled-card-color);
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	top: 0px;
+}
+.confirm-failed-transaction-card {
+	margin-top: 10px;
+	margin-bottom: 10px;
+}
+.confirm-footer {
+	position: sticky;
+	bottom: 0;
+}
+.confirm-checkboxes { display: grid }
+.confirm-checkbox { margin: 0px 20px 10px }
+.confirm-reject-button { display: flex }
+
+/* SimulationStackPage.tsx */
+/* Simulation stack page */
+.stack-page-rich-addresses-card { margin: 10px 0 }
+.stack-page-rich-addresses-content { padding-bottom: 5px }
+
+/* GnosisSafeVisualizer.tsx */
+/* Gnosis Safe visualizer */
+.gnosis-safe-approval-summary {
+	justify-content: center;
+	grid-template-columns: auto auto auto;
+}
+
+/* ens.tsx */
+/* ENS named hash */
+.ens-name-icon { margin-right: 5px }
+.ens-name-icon-image {
+	display: block;
+	width: 1em;
+	height: 1em;
+	min-width: 1em;
+	max-height: 1em;
+}
+.ens-name-text { color: var(--text-color) }
+
+/* DropDownMenu.tsx */
+/* Dropdown menu */
+.dropdown-button-label { contain: content }
+
+/* DinoSays.tsx */
+/* Dino notification */
+.dino-avatar { margin-right: 0.2rem }
+.dino-image {
+	transform: scaleX(-1);
+	justify-content: center;
+	display: flex;
+}
+.dino-speech {
+	overflow-y: hidden;
+	overflow-x: clip;
+	display: block;
+	margin: auto;
+}
+.dino-notification {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.dino-notification-box {
+	padding: 10px;
+	display: flex;
+}
+
+/* TimePicker.tsx */
+.time-picker-label { align-content: center }
+
+/* Hint.tsx */
+/* Hint container */
+.hint-container {
+	position: relative;
+	overflow-x: hidden;
+}
 }

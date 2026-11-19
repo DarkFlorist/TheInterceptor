@@ -454,7 +454,14 @@ async function createFakeSimulator() {
 }
 
 const revertedOutcome = { transactionStatus: 'Transaction Failed' as const, error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
-const CONFIRM_BUTTON_CLASS = 'button is-primary button-overflow dialog-action-button'
+// The dialog marks its actions by role; the confirm button's emphasis classes change when the Interceptor advises against the request.
+const isConfirmButtonClass = (className: unknown) => String(className).split(' ').includes('dialog-action-button--confirm')
+const isRejectButtonClass = (className: unknown) => {
+	const classes = String(className).split(' ')
+	// The reject-only layout (no located result to confirm) shows a standalone reject button.
+	if (classes.includes('dialog-button-left')) return true
+	return classes.includes('dialog-action-button') && !classes.includes('dialog-action-button--confirm') && !classes.includes('dialog-action-button--unsigned')
+}
 
 type RenderedDom = ReturnType<typeof installDomMock>
 type RenderedElementWithAttributes = { readonly attributes: Record<string, string | undefined> }
@@ -465,7 +472,7 @@ const getRenderedProp = (node: object, name: string): unknown => name in node ? 
 const hasBooleanProp = (node: object, name: 'checked' | 'disabled') => name in node ? Reflect.get(node, name) === true : getRenderedProp(node, name) !== undefined
 
 const findSendAnywayCheckbox = (dom: RenderedDom) => findRenderedElement(dom.document.body, (node) => node.tagName === 'INPUT' && getRenderedProp(node, 'type') === 'checkbox')
-const findConfirmButton = (dom: RenderedDom) => findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && getRenderedProp(node, 'class') === CONFIRM_BUTTON_CLASS)
+const findConfirmButton = (dom: RenderedDom) => findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && isConfirmButtonClass(getRenderedProp(node, 'class')))
 
 function isSendAnywayTicked(dom: RenderedDom) {
 	const checkbox = findSendAnywayCheckbox(dom)
@@ -679,7 +686,7 @@ describe('ConfirmTransaction', () => {
 		})
 		const rejectShown = async (pending: ReturnType<typeof makeSimulatedPendingTransaction>) => {
 			await dispatchPendingTransactions(browser, [pending])
-			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && String(getRenderedProp(node, 'class')).includes('is-danger'))
+			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && isRejectButtonClass(getRenderedProp(node, 'class')))
 			if (rejectButton === undefined) throw new Error('Expected the reject button')
 			await act(async () => { await clickRenderedElement(rejectButton) })
 		}
@@ -1156,7 +1163,7 @@ describe('ConfirmTransaction', () => {
 			assert.equal(readyHandshakes, MAX_READY_HANDSHAKES, 'no handshake is sent after giving up')
 			assert.notEqual(findConfirmButton(dom), undefined, 'the stored signature request stays shown')
 			assert.equal(isConfirmEnabled(dom), false, 'a request without a background copy cannot be confirmed')
-			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && String(getRenderedProp(node, 'class')).includes('is-danger'))
+			const rejectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && isRejectButtonClass(getRenderedProp(node, 'class')))
 			if (rejectButton === undefined) throw new Error('Expected the reject button')
 			await act(async () => { await clickRenderedElement(rejectButton) })
 			await settleUntil(() => confirmDialogActions.length > 0)

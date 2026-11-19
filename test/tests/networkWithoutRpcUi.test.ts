@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText, type SignerAvailability } from '../../app/ts/utils/networkWithoutRpcUi.js'
+import { getNetworkWithoutRpcWarningState, getNetworkWithoutRpcWarningText, getTabSignerAvailability, type SignerAvailability } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 const networkWithRpc = { httpsRpc: 'https://example.invalid' }
 const networkWithoutRpc = { httpsRpc: undefined }
@@ -45,5 +45,14 @@ describe('getNetworkWithoutRpcWarningText', () => {
 
 	test('explains both outcomes when the signer is unknown', () => {
 		assert.equal(getNetworkWithoutRpcWarningText('Signer only', { kind: 'noRpcMayBypass' }), 'Signer only has no configured RPC. Until one is configured, the Interceptor cannot simulate requests on Signer only; in signing mode with a connected wallet they go to the wallet directly.')
+	})
+})
+
+describe('getTabSignerAvailability', () => {
+	// The routing forwards by whether the page has a wallet to forward to, which the tab stores as signerReceivesRequests; a named wallet the page cannot forward to is still missing.
+	test('takes the availability from signerReceivesRequests, not the signer name or its session', () => {
+		assert.equal(getTabSignerAvailability({ signerReceivesRequests: true }), 'available')
+		assert.equal(getTabSignerAvailability({ signerReceivesRequests: false }), 'missing')
+		assert.equal(getTabSignerAvailability(undefined), 'missing')
 	})
 })

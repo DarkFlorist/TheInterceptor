@@ -64,10 +64,10 @@ export const DynamicScroller = <T extends {}>({ items, renderItem, }: DynamicScr
 	})
 
 	return (
-		<div ref = { scrollViewRef } style = { { overflowY: 'scroll', maxHeight: '100%' } } onScroll = { recalculateStartIndex }>
+		<div ref = { scrollViewRef } class = 'scroller-viewport' onScroll = { recalculateStartIndex }>
 			<div style = { { height: `${ scrollAreaHeight }px`, '--virtual-scroll-offset': `${ scrollOffset }px` } }>
 				{ visibleItems.value.map((item, index) => (
-					<div key = { clampedStartIndex.value + index } ref = { itemRef } style = { {  contain: 'layout', transform: 'translateY(var(--virtual-scroll-offset))' } }>
+					<div key = { clampedStartIndex.value + index } ref = { itemRef } class = 'scroller-item'>
 						{ renderItem(item) }
 					</div>
 				)) }

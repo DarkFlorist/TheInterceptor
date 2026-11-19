@@ -171,6 +171,7 @@ async function setUpStoredRequestWithoutPendingWaiter(postedMessages: unknown[],
 	await setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
 		popupOrTabId: { type: 'popup', id: dialogWindowId },
+		simulationMode: true,
 		simulationOverlayEnabled: true,
 		simulationStackVersion,
 		uniqueRequestIdentifier,
@@ -196,7 +197,7 @@ function getOnlyPostedMessage(postedMessages: unknown[]) {
 
 async function openNewRequest() {
 	const { openFetchSimulationStackDialog } = await fetchSimulationStackPromise
-	return openFetchSimulationStackDialog(createSnapshot(), true, new Map(), newRequestIdentifier, { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }, { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined })
+	return openFetchSimulationStackDialog(createSnapshot(), { simulationMode: true, simulationOverlayEnabled: true }, new Map(), newRequestIdentifier, { method: 'interceptor_getSimulationStack', params: ['2.0.0'] }, { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined })
 }
 
 async function waitForNewRequestToBeStoredOrSettled(newRequest: Promise<unknown>) {
@@ -373,6 +374,7 @@ describe('fetch simulation stack confirmation after a background restart', () =>
 		const store = setFetchSimulationStackRequestPromise({
 			website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
 			popupOrTabId: { type: 'popup', id: newDialogWindowId },
+			simulationMode: true,
 			simulationOverlayEnabled: true,
 			simulationStackVersion: '2.0.0',
 			uniqueRequestIdentifier: newRequestIdentifier,

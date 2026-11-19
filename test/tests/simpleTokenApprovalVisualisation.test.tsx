@@ -36,13 +36,16 @@ describe('SimpleTokenApprovalVisualisation', () => {
 		{ approval: { ...simulatedEvent, type: 'ERC20', token: erc20Token, amount: 2n ** 96n - 1n, isApproval: true }, expectedText: ['ALL', 'USDC'] },
 		{ approval: { ...simulatedEvent, type: 'ERC721', token: erc721Token, tokenId: 7n, isApproval: true }, expectedText: ['SAM', '#7'] },
 		{ approval: { ...simulatedEvent, type: 'NFT All approval', token: erc721Token, allApprovalAdded: true, isApproval: true }, expectedText: ['ALL', 'SAM'] },
-		{ approval: { ...simulatedEvent, type: 'NFT All approval', token: erc1155Token, allApprovalAdded: false, isApproval: true }, expectedText: ['NONE', 'ITM'] },
+		// Revoking an operator removes spending rights, so it is worded as a removal and names the token without an amount.
+		{ approval: { ...simulatedEvent, type: 'NFT All approval', token: erc1155Token, allApprovalAdded: false, isApproval: true }, expectedText: ['Stop allowing', 'From spending', 'ITM'] },
 	]
 
 	test('shows the spender, the approved token and the gas fee of a simulated approval', async () => {
 		for (const { approval, expectedText } of approvals) {
 			const text = await renderApprovalText(approval)
-			for (const expected of ['Allow', 'Approved Spender', 'To Spend', 'Gas fee:', '0.000021', ...expectedText]) assert.equal(text.includes(expected), true, `Expected "${ expected }" in "${ text }"`)
+			const grantText = approval.type === 'NFT All approval' && !approval.allApprovalAdded ? [] : ['Allow', 'To spend']
+			for (const expected of ['Approved Spender', 'Gas fee:', '0.000021', ...grantText, ...expectedText]) assert.equal(text.includes(expected), true, `Expected "${ expected }" in "${ text }"`)
+			if (grantText.length === 0) assert.equal(text.includes('NONE'), false)
 		}
 	})
 })

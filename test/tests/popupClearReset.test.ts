@@ -543,6 +543,7 @@ describe('popup clear reset', () => {
 				tabId: -1,
 				website: undefined,
 				signerConnected: false,
+				signerReceivesRequests: false,
 				signerName: 'NoSignerDetected',
 				signerAccounts: [],
 				signerAccountError: undefined,

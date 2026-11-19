@@ -2,7 +2,7 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, isUndecodableStoredValueError, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -24,10 +24,14 @@ import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
-const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
-	console.warn(`${ label } was corrupt:`)
-	console.warn(error)
-}
+// Recovers a stored value that no longer decodes by reporting it; the repository then reads it as its default (see createStoredValueRepository). Storage read failures are not recovered.
+const recoverUndecodableStoredValue = (label: string) => ({
+	isUnusableStoredValueError: isUndecodableStoredValueError,
+	recover: async (error: unknown) => {
+		console.warn(`${ label } was corrupt:`)
+		console.warn(error)
+	},
+})
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
@@ -98,6 +102,7 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
+// A request that no longer decodes is reported and treated as absent, so it cannot block every later request; the next write replaces it. That includes one stored by a version before the request carried its mode: an extension update closes its dialog and disconnects the page that made it, so it could not be answered anyway.
 const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
 	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined,
 	write: async (fetchSimulationStackRequestPromise) => {
@@ -105,6 +110,7 @@ const fetchSimulationStackRequestRepository = createStoredValueRepository<Pendin
 		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
 	},
 	getDefault: () => undefined,
+	recovery: recoverUndecodableStoredValue('Simulation stack request'),
 })
 export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
 export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
@@ -116,6 +122,8 @@ const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly
 	read: async () => (await browserStorageLocalGet('pendingWatchAssetRequests')).pendingWatchAssetRequests,
 	write: async (pendingWatchAssetRequests) => { await browserStorageLocalSet({ pendingWatchAssetRequests }) },
 	getDefault: () => [],
+	// Requests that no longer decode are reported and dropped so later requests still queue, including ones queued by a version before the request carried its mode (see the simulation stack request above).
+	recovery: recoverUndecodableStoredValue('Pending watch asset requests'),
 })
 export const getPendingWatchAssetRequests = pendingWatchAssetRequestsRepository.get
 export async function updatePendingWatchAssetRequests(update: (requests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) {
@@ -162,6 +170,7 @@ export async function getTabState(tabId: number) : Promise<TabState> {
 		tabId,
 		website: undefined,
 		signerConnected: false,
+		signerReceivesRequests: false,
 		signerName: await getDefaultSignerName(),
 		signerAccounts: [],
 		signerChain: undefined,
@@ -211,7 +220,7 @@ const rpcConnectionStatusRepository = createStoredValueRepository<RpcConnectionS
 	read: async () => (await browserStorageLocalGet('rpcConnectionStatus')).rpcConnectionStatus,
 	write: async (rpcConnectionStatus) => { await browserStorageLocalSet({ rpcConnectionStatus }) },
 	getDefault: () => undefined,
-	recover: reportCorruptStoredValue('Connection status'),
+	recovery: recoverUndecodableStoredValue('Connection status'),
 })
 export const setRpcConnectionStatus = rpcConnectionStatusRepository.set
 export const getRpcConnectionStatus = rpcConnectionStatusRepository.get
@@ -231,7 +240,7 @@ const rpcListRepository = createStoredValueRepository<RpcEntries>({
 	read: async () => (await browserStorageLocalGet('rpcEntries')).rpcEntries,
 	write: async (rpcEntries) => { await browserStorageLocalSet({ rpcEntries }) },
 	getDefault: () => DEFAULT_RPCS,
-	recover: reportCorruptStoredValue('Rpc entries'),
+	recovery: recoverUndecodableStoredValue('Rpc entries'),
 })
 export const setRpcList = rpcListRepository.set
 export const getRpcList = rpcListRepository.get

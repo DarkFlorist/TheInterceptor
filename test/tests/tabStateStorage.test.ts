@@ -34,6 +34,7 @@ const tabState: TabState = {
 	tabId: 12,
 	website: undefined,
 	signerConnected: false,
+	signerReceivesRequests: false,
 	signerName: 'NoSignerDetected',
 	signerAccounts: [],
 	signerAccountError: undefined,
@@ -55,6 +56,15 @@ describe('tab state storage key selection', () => {
 		storageState.tabState_12_backup = { corrupt: true }
 
 		assert.deepEqual(await getAllTabStates(), [tabState])
+	})
+
+	// A tab state written before the handshake reported signerReceivesRequests takes it from signerConnected, which then carried that fact.
+	test('reads a tab state stored before signerReceivesRequests existed', async () => {
+		await setTabStateToStorage(tabState.tabId, { ...tabState, signerConnected: true, signerReceivesRequests: true, signerName: 'MetaMask' })
+		const { signerReceivesRequests: _omitted, ...legacyTabState } = storageState.tabState_12 as Record<string, unknown>
+		storageState.tabState_12 = legacyTabState
+
+		assert.deepEqual(await getAllTabStates(), [{ ...tabState, signerConnected: true, signerReceivesRequests: true, signerName: 'MetaMask' }])
 	})
 
 	test('clears exact tab state keys without deleting similarly prefixed storage', async () => {

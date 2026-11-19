@@ -5,6 +5,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { assertNever } from '../../utils/typescript.js'
+import { grantsSpendingRights } from '../../utils/approvals.js'
 import { TokenApprovalsVisualisation } from '../simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
@@ -72,7 +73,7 @@ export function SignatureHeader(params: SignatureHeaderParams) {
 				<img src = { params.visualizedPersonalSignRequest.simulationMode ? '../img/head-simulating.png' : '../img/head-signing.png' } width = '24' height = '24' />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+		<p class = 'card-header-title'>
 			<span class = 'card-header-title-text'>{ identifySignature(params.visualizedPersonalSignRequest).title }</span>
 		</p>
 		<WebsiteOriginText
@@ -109,6 +110,8 @@ type PermitTokenAmount = { token: AddressBookEntry, amount: bigint }
 type PermitTokenApprovalsParams = {
 	spender: AddressBookEntry
 	tokenAmounts: readonly PermitTokenAmount[]
+	// Whether the amounts set allowances (EIP-2612 Permit, Permit2 AllowanceTransfer), where a zero amount removes one, or authorize single transfers (Permit2 SignatureTransfer), where a zero amount authorizes nothing and removes nothing.
+	amountsSetAllowances: boolean
 	renameAddressCallBack: RenameAddressCallBack
 }
 
@@ -125,7 +128,7 @@ function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddress
 		: 'These permitted tokens could not be confirmed as ERC20 tokens and may be NFTs or other contracts, so their amounts are shown as raw values without decimals.'
 	return <>
 		<ErrorComponent text = { errorText }/>
-		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+		<span class = 'log-table signature-hash-table'>
 			<CellElement text = 'Spender: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { spender } renameAddressCallBack = { renameAddressCallBack }/> }/>
 			{ tokenAmounts.map(({ token, amount }, index) => <Fragment key = { index }>
@@ -139,16 +142,17 @@ function UnidentifiedPermitTokenApprovals({ spender, tokenAmounts, renameAddress
 }
 
 // Decides from the token entry alone, so a classification gap in the background cannot turn an NFT permit into a routine looking approval: only ERC20 entries get the approval box, and any other token is listed under the warning, which comes first.
-function PermitTokenApprovals({ spender, tokenAmounts, renameAddressCallBack }: PermitTokenApprovalsParams) {
+function PermitTokenApprovals({ spender, tokenAmounts, amountsSetAllowances, renameAddressCallBack }: PermitTokenApprovalsParams) {
 	const approvals = tokenAmounts.flatMap(({ token, amount }) => token.type === 'ERC20' ? [{ type: 'ERC20' as const, token, amount }] : [])
 	const unidentifiedTokenAmounts = tokenAmounts.filter(({ token }) => token.type !== 'ERC20')
+	// A zero allowance (the canonical EIP-2612 revocation) removes it, so allowance grants and removals are shown in separate panels decided by the shared allowance rule. A transfer authorization never removes anything, so all of it is shown as granted.
+	const grantsAllowance = (amount: bigint) => !amountsSetAllowances || grantsSpendingRights({ kind: 'erc20Allowance', allowance: amount })
+	const grantedApprovals = approvals.filter(({ amount }) => grantsAllowance(amount))
+	const removedApprovals = approvals.filter(({ amount }) => !grantsAllowance(amount))
 	return <>
 		{ unidentifiedTokenAmounts.length === 0 ? <></> : <UnidentifiedPermitTokenApprovals spender = { spender } tokenAmounts = { unidentifiedTokenAmounts } renameAddressCallBack = { renameAddressCallBack }/> }
-		{ approvals.length === 0 ? <></> : <TokenApprovalsVisualisation
-			spender = { spender }
-			approvals = { approvals }
-			renameAddressCallBack = { renameAddressCallBack }
-		/> }
+		{ grantedApprovals.length === 0 ? <></> : <TokenApprovalsVisualisation spender = { spender } approvals = { grantedApprovals } granted = { true } renameAddressCallBack = { renameAddressCallBack }/> }
+		{ removedApprovals.length === 0 ? <></> : <TokenApprovalsVisualisation spender = { spender } approvals = { removedApprovals } granted = { false } renameAddressCallBack = { renameAddressCallBack }/> }
 	</>
 }
 
@@ -168,12 +172,12 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 				<Viewer.List>
 					<Viewer.View title = 'View Raw' value = 'raw' isActive = { !isDecodedAsciiOrNumbers }>
 						<div class = 'textbox'>
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ visualizedPersonalSignRequest.message }</p>
+							<p class = 'paragraph text-subtitle'>{ visualizedPersonalSignRequest.message }</p>
 						</div>
 					</Viewer.View>
 					<Viewer.View title = 'View Parsed' value = 'parsed' isActive = { isDecodedAsciiOrNumbers }>
 						<div class = 'textbox'>
-							<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ decoded }</p>
+							<p class = 'paragraph text-subtitle'>{ decoded }</p>
 						</div>
 					</Viewer.View>
 				</Viewer.List>
@@ -190,7 +194,7 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 		case 'SafeMessage': return <>
 			<p class = 'paragraph'>Approve an off-chain Safe owner signature. The app can publish this message and signature to the Safe message service. The Safe threshold must be met before the message is fully signed.</p>
 			<p class = 'paragraph'>{ visualizedPersonalSignRequest.review.isTypedData ? 'EIP-712 typed message (domain, types and values):' : 'Message:' }</p>
-			<div class = 'textbox'><p class = 'paragraph' style = 'white-space: pre-wrap'>{ visualizedPersonalSignRequest.review.text }</p></div>
+			<div class = 'textbox'><p class = 'paragraph'>{ visualizedPersonalSignRequest.review.text }</p></div>
 		</>
 		case 'EIP712': return <ArbitraryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
 		case 'OrderComponents': {
@@ -204,22 +208,26 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 		case 'Permit': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.verifyingContract, amount: visualizedPersonalSignRequest.message.message.value }] }
+			amountsSetAllowances = { true }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { [{ token: visualizedPersonalSignRequest.token, amount: visualizedPersonalSignRequest.message.message.details.amount }] }
+			amountsSetAllowances = { true }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2Batch': return <PermitTokenApprovals
 			spender = { visualizedPersonalSignRequest.spender }
 			tokenAmounts = { visualizedPersonalSignRequest.details }
+			amountsSetAllowances = { true }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
 		case 'Permit2SignatureTransfer': return <>
 			<PermitTokenApprovals
 				spender = { visualizedPersonalSignRequest.spender }
 				tokenAmounts = { visualizedPersonalSignRequest.permitted }
+				amountsSetAllowances = { false }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 			{ visualizedPersonalSignRequest.witness === undefined ? <></> : <Permit2WitnessDetails witness = { visualizedPersonalSignRequest.witness } renameAddressCallBack = { renameAddressCallBack }/> }
@@ -242,9 +250,9 @@ type EIP712Entry = {
 function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
 	function EIP712Value({ entry }: { entry: TypeEnrichedEIP712MessageRecord }) {
 		if (entry.type === 'nestedArray') {
-			return <span style = 'display: inline-flex; flex-wrap: wrap;'>
+			return <span class = 'signature-eip-712-array'>
 				[{
-					entry.value.map((nestedEntry, index) => <span key = { index } style = 'display: inline-flex;'>
+					entry.value.map((nestedEntry, index) => <span key = { index } class = 'signature-eip-712-array-item'>
 						{ index === 0 ? '' : ', ' }
 						<EIP712Value entry = { nestedEntry }/>
 					</span>)
@@ -266,7 +274,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 			<CellElement text = { <EIP712Value entry = { entry }/> }/>
 		</>
 	}
-	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
+	return <span class = { isSubTable ? 'eip-712-table eip-712-table--nested' : 'eip-712-table' }>
 		{ Object.entries(enrichedEIP712Message).map(([name, entry]) => <EIP712Entry key = { name } entry = { entry } name = { name }/>) }
 	</span>
 }
@@ -278,11 +286,13 @@ type ArbitraryEIP712Params = {
 
 function ArbitraryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitraryEIP712Params) {
 	return <>
+		<p class = 'summary-label'>Domain</p>
 		<EIP712Table
 			enrichedEIP712Message = { enrichedEIP712.domain }
 			renameAddressCallBack = { renameAddressCallBack }
 			isSubTable = { false }
 		/>
+		<p class = 'summary-label'>Message</p>
 		<EIP712Table
 			enrichedEIP712Message = { enrichedEIP712.message }
 			renameAddressCallBack = { renameAddressCallBack }
@@ -396,7 +406,7 @@ type GnosisSafeExtraDetailsParams = {
 function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack }: GnosisSafeExtraDetailsParams) {
 	const { domainHash, messageHash, safeTxHash, verifyingContract, to, gasToken, refundReceiver } = visualizedPersonalSignRequestSafeTx
 	// Spans the whole ExtraDetails grid so the full-width hashes and the input do not get squeezed into one grid column.
-	return <div style = 'grid-column: 1 / -1'>
+	return <div class = 'signature-safe-extra-details'>
 		<SafeTxSigningDetails
 			safeTx = { visualizedPersonalSignRequestSafeTx.message }
 			hashes = { { domainHash, messageHash, safeTxHash } }
@@ -404,7 +414,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 			rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork }
 			renameAddressCallBack = { renameAddressCallBack }
 		/>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin-top: 10px'>Gnosis Safe meta transaction input: </p>
+		<p class = 'paragraph signature-safe-input-label'>Gnosis Safe meta transaction input: </p>
 		<TransactionInput parsedInputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } to = { visualizedPersonalSignRequestSafeTx.to } input = { visualizedPersonalSignRequestSafeTx.parsedMessageData.input } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/>
 	</div>
 }
@@ -416,14 +426,12 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 		case 'SafeMessage':
 		case 'SignInWithEthereum':
 		case 'NotParsed': return <>
-			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-				{ visualizedPersonalSignRequest.type === 'NotParsed' || visualizedPersonalSignRequest.type === 'SignInWithEthereum' ? <></> : <>
-					<CellElement text = 'Domain Hash: '/>
-					<CellElement text = { visualizedPersonalSignRequest.domainHash }/>
-				</> }
-				<CellElement text = 'Message Hash: '/>
-				<CellElement text = { visualizedPersonalSignRequest.messageHash }/>
-			</span>
+			{ visualizedPersonalSignRequest.type === 'NotParsed' || visualizedPersonalSignRequest.type === 'SignInWithEthereum' ? <></> : <>
+				<CellElement text = 'Domain Hash: '/>
+				<CellElement text = { visualizedPersonalSignRequest.domainHash }/>
+			</> }
+			<CellElement text = 'Message Hash: '/>
+			<CellElement text = { visualizedPersonalSignRequest.messageHash }/>
 		</>
 		case 'OrderComponents': return <OrderComponentsExtraDetails orderComponents = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/>
 		case 'Permit': return <PermitExtraDetails permit = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
@@ -439,8 +447,8 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	return <CollapsibleCard title = 'Extra details'>
 		<div class = 'card-content'>
-			<div class = 'container' style = 'margin-bottom: 10px;'>
-				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+			<div class = 'container signature-extra-details-container'>
+				<span class = 'log-table signature-hash-table'>
 					<ExtraDetailsInner visualizedPersonalSignRequest = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
 				</span>
 			</div>
@@ -465,11 +473,11 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 }
 
 function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
-	return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
-		<div class = 'log-cell' style = ''>
-			<p style = { 'color: var(--subtitle-text-color);' }> Signing address: </p>
+	return <span class = 'log-table transaction-meta-row signature-signer-row'>
+		<div class = 'log-cell'>
+			<p class = 'text-subtitle'> Signing address: </p>
 		</div>
-		<div class = 'log-cell' style = ''>
+		<div class = 'log-cell'>
 			<SmallAddress
 				addressBookEntry = { signer }
 				textColor = { 'var(--subtitle-text-color)' }
@@ -496,7 +504,7 @@ export function SignatureCard(params: SignatureCardParams) {
 	const headerActionLabel = params.collapsed === undefined ? undefined : params.collapsed ? 'Expand signature details' : 'Collapse signature details'
 	return <div class = 'card' style = { `top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
 		<SignatureHeader { ...params } onHeaderClick = { params.toggleCollapsed } headerActionLabel = { headerActionLabel } ariaExpanded = { params.collapsed === undefined ? undefined : !params.collapsed }/>
-		{ params.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+		{ params.collapsed === true ? <></> : <div class = 'card-content signature-card-content'>
 			<div class = 'container'>
 				<SignRequest { ...params }/>
 			</div>
@@ -510,9 +518,9 @@ export function SignatureCard(params: SignatureCardParams) {
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+			<span class = 'log-table transaction-meta-row signature-created-row'>
 				<div class = 'log-cell'> <TransactionCreated created = { params.visualizedPersonalSignRequest.created } /> </div>
-				<div class = 'log-cell' style = 'justify-content: right;'></div>
+				<div class = 'log-cell log-cell--right'></div>
 			</span>
 		</div> }
 	</div>
