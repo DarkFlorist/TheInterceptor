@@ -67,11 +67,12 @@ export async function exportSettings() {
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList) {
 	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
-		const settings = await getSettings()
+		const [settings, previousEntries] = await Promise.all([getSettings(), getRpcList()])
 		await setRpcList(request.data)
 		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-		const network = resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, request.data)
-		if (network !== undefined) await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
+		const network = resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, previousEntries, request.data)
+		if (network === undefined) return false
+		await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
 		return true
 	}, { updateNetworkMetadata: true })
 }

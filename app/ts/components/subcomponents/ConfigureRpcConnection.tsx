@@ -1,4 +1,4 @@
-import { getRpcEntryIdentityKey, resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
+import { getRpcEntryIdentityKey, getRpcNetworkChange, resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
@@ -159,8 +159,8 @@ export async function saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry: RpcEntry,
 	const updatedRpcEntries = originalIndex === -1 ? [...rpcEntries, savedEntry] : rpcEntries.map((entry, index) => index === originalIndex ? savedEntry : entry)
 	const editingActive = originalEntry !== undefined && getRpcEntryIdentityKey(activeRpcNetwork) === getRpcEntryIdentityKey(originalEntry)
 	if (editingActive && activeRpcNetwork.chainId !== savedEntry.chainId) throw new Error('Switch to another RPC before changing the active connection chain ID.')
-	const nextActive = resolveRpcNetworkAfterListChange(editingActive ? savedEntry : activeRpcNetwork, updatedRpcEntries)
-	if (nextActive !== undefined && getRpcEntryIdentityKey(nextActive) !== getRpcEntryIdentityKey(activeRpcNetwork)) await changeActiveRpc(nextActive)
+	// Endpoint edits require a successful selection change first; same-endpoint metadata edits are reconciled by the list command while the previous selection still identifies its entry.
+	if (editingActive && getRpcNetworkChange(activeRpcNetwork, savedEntry).endpointChanged) await changeActiveRpc(savedEntry)
 
 	await persistRpcEntries(updatedRpcEntries)
 }
@@ -169,7 +169,7 @@ export async function removeRpcEntryAndKeepActiveRpcConsistent(removedEntry: Rpc
 	const removedIndex = rpcEntries.findIndex(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(removedEntry))
 	if (removedIndex === -1) throw new Error('This RPC connection changed. Reopen the editor and try again.')
 	const reducedRpcEntries = rpcEntries.filter((_entry, index) => index !== removedIndex)
-	const nextActive = resolveRpcNetworkAfterListChange(activeRpcNetwork, reducedRpcEntries)
+	const nextActive = resolveRpcNetworkAfterListChange(activeRpcNetwork, rpcEntries, reducedRpcEntries)
 	if (getRpcEntryIdentityKey(removedEntry) === getRpcEntryIdentityKey(activeRpcNetwork) && nextActive === undefined) throw new Error('Switch to another RPC on this chain before removing the active connection.')
 	if (nextActive !== undefined && getRpcEntryIdentityKey(nextActive) !== getRpcEntryIdentityKey(activeRpcNetwork)) await changeActiveRpc(nextActive)
 

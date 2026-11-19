@@ -308,6 +308,8 @@ describe('popup settings changes', () => {
 		if (initial.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const selected = { ...initial, name: 'Selected twin', primary: false, currencyTicker: 'SELECTED' }
 		const other = { ...initial, name: 'Other twin', primary: true, currencyTicker: 'OTHER', blockExplorer: { apiUrl: 'https://other.example/api', apiKey: '' } }
+		const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		await setRpcList([other, selected])
 		await changeSimulationMode({ simulationMode: true, rpcNetwork: selected })
 		const owner = createSimulationServicesOwner(selected, async () => undefined, async (_ethereum, error) => { throw error })
 		const captured = owner.getCurrent()
@@ -320,21 +322,28 @@ describe('popup settings changes', () => {
 		} finally { owner.getCurrent().ethereum.cleanup() }
 	})
 
-	test('RPC-list metadata edits replace installed metadata and refresh without changing captured clients', async () => {
+	for (const source of ['list', 'editor'] as const) test(`RPC metadata edits via ${ source } replace installed metadata and refresh without changing captured clients`, async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { getSettings, changeActiveAddressAndChain } = await loadModules()
 		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 		const settings = await getSettings()
 		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
 		const captured = owner.getCurrent()
-		const edited = { ...settings.activeRpcNetwork, primary: false, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
-		const otherPrimary = { ...edited, primary: true, httpsRpc: 'https://other-primary.example' }
+		const edited = { ...settings.activeRpcNetwork, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
+		const otherPrimary = { ...settings.activeRpcNetwork, name: 'Existing endpoint alias', primary: true }
+		const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		await setRpcList([otherPrimary, settings.activeRpcNetwork])
 		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
 		try {
 			const before = refreshCount()
-			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, edited] })
+			if (source === 'editor') {
+				const { saveRpcEntryAndKeepActiveRpcConsistent } = await import('../../app/ts/components/subcomponents/ConfigureRpcConnection.js')
+				await saveRpcEntryAndKeepActiveRpcConsistent(edited, settings.activeRpcNetwork, [otherPrimary, settings.activeRpcNetwork], settings.activeRpcNetwork,
+					async entries => await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: entries }),
+					async rpcNetwork => await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork }))
+			} else await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, edited] })
 			assert.deepEqual(owner.getCurrent().ethereum.getRpcEntry(), edited)
 			assert.deepEqual((await getSettings()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
 			assert.notEqual(owner.getCurrent(), captured)

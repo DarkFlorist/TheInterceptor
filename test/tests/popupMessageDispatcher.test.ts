@@ -808,7 +808,7 @@ describe('settings import installs the imported network', () => {
 					assert.equal(finished, false)
 				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
 				await Promise.all([importing, changing])
-				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, nextNetwork.httpsRpc)
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, entryPoint === 'direct list' ? importedSepoliaNetwork.httpsRpc : nextNetwork.httpsRpc)
 			}
 		})
 	}
@@ -819,6 +819,30 @@ describe('settings import installs the imported network', () => {
 		const installedRpc = context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry()
 		assert.equal(installedRpc.httpsRpc, importedSepoliaNetwork.httpsRpc)
 		assert.equal(installedRpc.chainId, 11155111n)
+	})
+
+	for (const selection of ['custom', 'same endpoint', 'signer-only'] as const) test(`unrelated list edits preserve an imported ${ selection } selection and its installed services`, async () => {
+		const { getRpcList, setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		const { getSettings } = await import('../../app/ts/background/settings.js')
+		const context = createDispatcherContextWithInstalledServices()
+		const configured = settings.activeRpcNetwork
+		if (configured.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		await setRpcList([configured])
+		const importedNetwork = selection === 'signer-only'
+			? { name: 'Independent signer-only selection', chainId: '0x1', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+			: { ...importedSepoliaNetwork, name: 'Independent imported selection', chainId: '0x1', httpsRpc: selection === 'same endpoint' ? configured.httpsRpc : 'https://imported.example' }
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: buildImportFile(importedNetwork) } })
+		const active = (await getSettings()).activeRpcNetwork
+		const installed = context.simulationServicesOwner.getCurrent()
+		const extra = { ...configured, name: 'Unrelated added entry', httpsRpc: 'https://added.example' }
+		for (const entries of [[configured, extra], [{ ...configured, name: 'Edited entry' }, extra], [extra]]) {
+			const refreshCount = getPopupMessages().filter(message => message.method === 'popup_isSimulationVisualizerOpen').length
+			assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_set_rpc_list', data: entries }), { type: 'PopupSettingsChangeReply', ok: true })
+			assert.deepEqual(await getRpcList(), entries)
+			assert.deepEqual((await getSettings()).activeRpcNetwork, active)
+			assert.equal(context.simulationServicesOwner.getCurrent(), installed)
+			assert.equal(getPopupMessages().filter(message => message.method === 'popup_isSimulationVisualizerOpen').length, refreshCount)
+		}
 	})
 
 	test('a later popup selection of the imported network keeps the imported services installed', async () => {

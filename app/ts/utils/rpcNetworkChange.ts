@@ -32,8 +32,13 @@ export function getRpcChangeRoute(previous: RpcNetwork, next: RpcNetwork, simula
 	return !simulationMode && change.chainChanged ? 'wallet' : 'local'
 }
 
-// Keep an exact configured entry first, then edited endpoint metadata, then the selected chain's primary (or first) remaining entry.
-export const resolveRpcNetworkAfterListChange = (active: RpcNetwork, entries: RpcEntries) => entries.find(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(active))
-	?? entries.find(entry => !getRpcNetworkChange(active, entry).endpointChanged)
-	?? entries.find(entry => entry.chainId === active.chainId && entry.primary)
-	?? entries.find(entry => entry.chainId === active.chainId)
+// List edits reconcile only a selection that belonged to the previous list. Imported/custom and signer-only selections remain independent of unrelated list changes.
+export const resolveRpcNetworkAfterListChange = (active: RpcNetwork, previousEntries: RpcEntries, entries: RpcEntries) => {
+	if (isSignerOnlyNetwork(active) || !previousEntries.some(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(active))) return undefined
+	// Prefer newly edited endpoint metadata over an unchanged alias when the selected identity was replaced.
+	return entries.find(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(active))
+		?? entries.find(entry => !getRpcNetworkChange(active, entry).endpointChanged && !previousEntries.some(previous => getRpcEntryIdentityKey(previous) === getRpcEntryIdentityKey(entry)))
+		?? entries.find(entry => !getRpcNetworkChange(active, entry).endpointChanged)
+		?? entries.find(entry => entry.chainId === active.chainId && entry.primary)
+		?? entries.find(entry => entry.chainId === active.chainId)
+}
