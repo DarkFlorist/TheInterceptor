@@ -22,7 +22,8 @@ import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { createEip1559Or7702Transaction, getAccountNonceAfterTransactions, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { getAccountNonceAfterTransactions } from '../accountNonce.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
@@ -300,7 +301,7 @@ const isInactivePrecompileRelocationError = (error: unknown) => error instanceof
 // A transaction raises the nonces the call the node runs raises (getExecutedTransaction). For a Gnosis Safe execution that is its executor's nonce, not the Safe's: no account sends the Safe's own call, so its nonce field raises nothing, also before the input is prepared with the executor's call.
 const getNonceRaisingCall = (transaction: RpcTransaction) => transaction.executedTransaction === undefined && transaction.executedCallAuthorized ? undefined : getExecutedTransaction(transaction)
 
-// Project the actual nonce-raising calls (including Safe executor selection); the authorization module owns all nonce sequencing and code eligibility.
+// Project the actual nonce-raising calls (including Safe executor selection); the account-nonce helper owns sender and authorization sequencing and code eligibility.
 const getTransactionCountAfterTransactions = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, transactions: Iterable<RpcTransaction>, address: bigint, blockTag: EthereumBlockTag) => {
 	const initialNonce = await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
 	return await getAccountNonceAfterTransactions({
@@ -309,7 +310,7 @@ const getTransactionCountAfterTransactions = async (ethereumClientService: Ether
 			const call = getNonceRaisingCall(transaction)
 			return { sender: call?.from, authorizationList: call?.type === '7702' ? call.authorizationList : [] }
 		}),
-		getCode: async () => await ethereumClientService.getCode(address, blockTag, requestAbortController),
+		getCode: async accountAddress => await ethereumClientService.getCode(accountAddress, blockTag, requestAbortController),
 	})
 }
 

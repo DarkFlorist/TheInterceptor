@@ -20,7 +20,8 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
-import { getAccountNonceAfterTransactions, type Eip7702Authorization, getDelegateFromCode, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
+import { type Eip7702Authorization, getDelegateFromCode, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
+import { getAccountNonceAfterTransactions } from '../../app/ts/simulation/accountNonce.js'
 
 function parseRequest<T>(data: string): T {
 	const jsonRpcResponse = JsonRpcResponse.parse(JSON.parse(data))
@@ -709,7 +710,7 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		describe('EIP-7702 nonce fold', () => {
-			const nonceAfter = (authorization: Eip7702Authorization, initialNonce = 0n, getCode: () => Promise<Uint8Array | undefined> = async () => new Uint8Array()) => getAccountNonceAfterTransactions({ address: testAuthority, chainId: rpcNetwork.chainId, initialNonce, transactions: [{ sender: undefined, authorizationList: [authorization] }], getCode })
+			const nonceAfter = (authorization: Eip7702Authorization, initialNonce = 0n, getCode: (address: bigint) => Promise<Uint8Array | undefined> = async () => new Uint8Array()) => getAccountNonceAfterTransactions({ address: testAuthority, chainId: rpcNetwork.chainId, initialNonce, transactions: [{ sender: undefined, authorizationList: [authorization] }], getCode })
 			const delegate = 0x00000000000000000000000000000000000d1e9an
 
 			test('the nonce must be below 2**64 - 1', async () => {
@@ -809,7 +810,7 @@ describe('SimulationModeEthereumClientService', () => {
 						{ sender: undefined, authorizationList: [signed(3n)] },
 						{ sender: testAuthority, authorizationList: [signed(5n)] },
 					],
-					getCode: async () => { reads++; return new Uint8Array() },
+					getCode: async address => { assert.equal(address, testAuthority); reads++; return new Uint8Array() },
 				}), 6n)
 				assert.equal(reads, 1)
 				const failure = new Error('Authority code unavailable')
