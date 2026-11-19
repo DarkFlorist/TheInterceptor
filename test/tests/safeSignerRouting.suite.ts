@@ -149,6 +149,8 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 })
 
 test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 typed data', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [recipientAddress],
@@ -226,6 +228,8 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 })
 
 test('routes a Safe co-signing request through the wallet-selected owner', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 	const safeSignerAddress = BigInt(ownerAccount.address)
 	const alternateOwnerAccount = privateKeyToAccount('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')
@@ -406,6 +410,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 })
 
 test('returns a Safe signer error when the wallet-selected co-signer is not a current owner', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const safeSignerAddress = recipientAddress
 	const currentOwner = safeTestOwnerAddress
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
@@ -769,6 +774,7 @@ test('signs Safe transaction typed data normally when the active signing address
 })
 
 test('uses the configured Safe simulation signer without changing the active Safe account', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const simulationSignerAddress = 0x4444444444444444444444444444444444444444n
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -1044,6 +1050,8 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 })
 
 test('routes a completed active Safe execution through its configured signer and rechecks signer changes', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const safeSignerAddress = recipientAddress
 	const existingOwnerAccount = safeTestOwnerAccount

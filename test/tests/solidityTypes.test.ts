@@ -6,6 +6,7 @@ import { decodeEventLoose } from '../../app/ts/utils/abiRuntime.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { parseInputData } from '../../app/ts/simulation/parsing.js'
+import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
@@ -335,7 +336,7 @@ describe('parseAbiParametersToSolidityVariables', () => {
 				to: TUPLE_INPUT_CONTRACT_ADDRESS,
 				value: 0n,
 				input: EthereumData.parse(input),
-			}, createTestEthereumClientService(), undefined)
+			}, identifyAddressWith(createTestEthereumClientService(), undefined))
 
 			assert.equal(parsedInputData.type, 'Parsed')
 			if (parsedInputData.type !== 'Parsed') throw new Error('expected calldata to parse')
