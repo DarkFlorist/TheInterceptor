@@ -23,12 +23,12 @@ test('the service owner publishes each installed pair and retains captured snaps
 })
 
 
-test('a reset permanently retires the replaced client', () => {
+test('network reconciliation permanently retires the replaced client', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const owner = createSimulationServicesOwner(rpc, async () => undefined, async () => undefined)
 	const replaced = owner.getCurrent()
 	try {
-		owner.reset({ ...rpc, chainId: 10n, httpsRpc: 'https://replacement.invalid' })
+		assert.equal(owner.ensureNetwork({ ...rpc, chainId: 10n, httpsRpc: 'https://replacement.invalid' }), 'replaced')
 		replaced.ethereum.setBlockPolling(true)
 		assert.equal(replaced.ethereum.isBlockPolling(), false)
 	} finally {
