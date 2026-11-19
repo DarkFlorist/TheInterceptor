@@ -602,7 +602,7 @@ describe('EIP-2612 permit signature requests', () => {
 	test('quarantines a permit whose owner is not the signing account', async () => {
 		const visualized = await visualizeEip2612Permit(modifyUsdcPermit((permit) => { permit.message.owner = '0x5555555555555555555555555555555555555555' }))
 		assert.equal(visualized.quarantine, true)
-		assert.deepEqual(visualized.quarantineReasons, ['The signature request is for an account that is different from your active address.'])
+		assert.deepEqual(visualized.quarantineReasons, ['The account named in the message differs from the signing account.'])
 	})
 
 	test('renders a permit after it is serialized for the popup and the simulation stack', async () => {
