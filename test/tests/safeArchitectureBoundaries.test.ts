@@ -5,6 +5,7 @@ const backgroundSource = await Bun.file(new URL('../../app/ts/background/backgro
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
+const simulationInputBuildingSource = await Bun.file(new URL('../../app/ts/background/simulationInputBuilding.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const serviceLifecycleSource = await Bun.file(new URL('../../app/ts/simulation/serviceLifecycle.ts', import.meta.url)).text()
 const ethereumClientServiceSource = await Bun.file(new URL('../../app/ts/simulation/services/EthereumClientService.ts', import.meta.url)).text()
@@ -155,16 +156,17 @@ test('the Gnosis Safe domain layer does not import background orchestration', ()
 	for (const safeSource of safeSources) assert.doesNotMatch(safeSource, /from '\.\.\/background\//u)
 })
 
-test('general simulation orchestration gets active stack policy from the shared utility layer', () => {
+test('simulation input building and orchestration use shared stack and selection policies', () => {
 	assert.match(activeSettingsSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
-	assert.match(simulationUpdatingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(simulationInputBuildingSource, /from '\.\.\/utils\/activeStackContext\.js'/u)
+	assert.match(simulationUpdatingSource, /buildSimulationStateInput\(selection, /u)
 	assert.match(activeSettingsSource, /from '\.\.\/utils\/simulationSelection\.js'/u)
 	assert.match(activeSettingsSource, /if \(selectionNeedsRefresh\(previousSettings, updatedSettings\)\)/u)
 	assert.doesNotMatch(activeSettingsSource, /activeStackContextsEqual/u)
 	assert.doesNotMatch(activeSettingsSource, /from '\.\.\/safe\/safeStack\.js'/u)
 	assert.doesNotMatch(activeSettingsSource, /previousSettings\.activeSigningSafeAddress !== updatedSettings\.activeSigningSafeAddress/u)
 	assert.doesNotMatch(simulationUpdatingSource, /from '\.\.\/safe\/safeStack\.js'/u)
-	assert.doesNotMatch(simulationUpdatingSource, /if \(!settings\.simulationMode\) break/u)
+	assert.doesNotMatch(simulationInputBuildingSource, /if \(!selection\.simulationMode\) break/u)
 })
 
 test('the confirmation presentation imports shared Safe flow policy from the domain layer', () => {
