@@ -12,6 +12,12 @@ export const getWebsiteOrigin = (urlString: string): string => {
 	return url.href
 }
 
+// `getHostWithPort` with the scheme of the URL in front, such as `https://example.com:8443`, so the host and port are normalized in one place. Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
+export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`
+
+// Both origins of a requesting frame, derived from its URL in one place: `websiteOrigin` is the canonical origin that website access settings are keyed by, and `requestOrigin` is the frame's scheme, host and port that sign-in messages are compared with.
+export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getWebsiteOrigin(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
+
 export const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
 	try {
 		const url = new URL(websiteOrigin)

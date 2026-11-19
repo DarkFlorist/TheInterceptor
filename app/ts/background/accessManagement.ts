@@ -20,9 +20,8 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
-import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
+import { applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -150,10 +149,6 @@ function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: st
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
-}
-
-export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => applyInterceptorDisabledDecision(previousWebsiteAccess, website, interceptorDisabled))
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {

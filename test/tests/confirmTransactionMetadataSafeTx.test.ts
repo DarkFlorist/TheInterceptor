@@ -635,11 +635,13 @@ describe('SafeTx confirm transaction metadata', () => {
 				wantsToConnect: true,
 			},
 		} }]])
+		const { getReviewedResultId } = await import('../../app/ts/background/reviewedResult.js')
 		const confirmationBase = {
 			method: 'popup_confirmDialog' as const,
 			data: {
 				action: 'accept' as const,
 				uniqueRequestIdentifier: quarantinedPendingMessage.uniqueRequestIdentifier,
+				reviewedResultId: getReviewedResultId(quarantinedPendingMessage),
 			},
 		}
 

@@ -1,24 +1,27 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
-import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
+import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
+import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
+import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
+import { getSafeSignatureRequirement } from '../safe/safeSignatureRequirement.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
-import type { PendingTransaction } from '../types/accessRequest.js'
+import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type TransactionGasPayment, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
-import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
+import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
@@ -65,7 +68,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
-	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
@@ -73,13 +75,12 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 		previousBlockTimeManipulation = blockTimeManipulation
 		currentBlockSignedMessages = []
 		currentBlockStateOverrides = {}
 		currentBlockTransactions = []
-		currentBlockSimulateWithZeroBaseFee = false
 	}
 
 	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
@@ -91,11 +92,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
 				) break
-				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
-				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
-					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
-				}
-				currentBlockSimulateWithZeroBaseFee = simulateWithZeroBaseFee
 				currentBlockTransactions.push(operation.preSimulationTransaction)
 				break
 			}
@@ -123,7 +119,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
+			simulateWithZeroBaseFee: false,
 		})
 	}
 	return inputBlocks
@@ -191,6 +187,54 @@ export async function getMetadataForSimulation(
 		namedTokenIds,
 		addressBookEntries: addressBookEntries,
 		ens: await ensPromise
+	}
+}
+
+// The failure view (FailedTransactionPreviewDetails) shows the sender, recipient and calldata of the website's eth_sendTransaction request, whether or not it was formed into a transaction. Forming can fill in a different sender, the active address, which the view doesn't show. The view shows a raw transaction only as its signed bytes, so a raw transaction has nothing to name or parse.
+const getFailedTransactionFields = (transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
+	const request = transactionToSimulate.originalRequestParameters
+	if (request.method !== 'eth_sendTransaction') return undefined
+	const transaction = request.params[0]
+	return {
+		// Request validation (JsonRpc-types) rejects a transaction whose input and data both exist but differ, so this preview and the dialog's raw input view show the same calldata whichever field they read first.
+		call: { to: transaction.to, value: transaction.value ?? 0n, input: getInputFieldFromDataOrInput(transaction) },
+		addressFields: transaction,
+	}
+}
+
+/** The failure view's counterpart of getMetadataForSimulation for a transaction without simulation results: parses its calldata and names its addresses with the address collection and lookups metadataUtils shares with simulated transactions. Like getMetadataForSimulation it lives here because it also parses calldata, and the parser already depends on metadataUtils. */
+export async function getFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview> {
+	const fields = getFailedTransactionFields(transactionToSimulate)
+	if (fields === undefined) return { addressBookEntries: [], parsedInputData: { type: 'NonParsed', input: new Uint8Array() } }
+	const parsedInputData = await parseInputData(fields.call, ethereum, requestAbortController)
+	const addressBookEntries = await getAddressBookEntriesForTransactionWithoutSimulation(ethereum, requestAbortController, fields.addressFields, parsedInputData)
+	return { addressBookEntries, parsedInputData }
+}
+
+// Missing names or ABIs must not hide why the transaction failed, so an RPC failure or a newer refresh interrupting the lookup leaves the failure as it is. Any other error is a defect and propagates to withFailedTransactionPreviewUnlessCancelled.
+async function tryGetFailedTransactionPreview(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed): Promise<FailedTransactionPreview | undefined> {
+	try {
+		return await getFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
+	} catch (error: unknown) {
+		if (isExpectedInfrastructureError(error)) return undefined
+		throw error
+	}
+}
+
+/**
+ * Attaches a freshly resolved failure preview to a confirmation that shows a transaction failure. Both the confirmation simulation and the confirmation metadata refresh attach previews only through this, so they share one error policy.
+ * Undefined when a newer refresh aborted this one, so the caller drops this outdated failure like any cancelled refresh instead of letting it replace the newer refresh's stored result. The signal is checked rather than the lookup error because the lookup can also finish from cached metadata without noticing the abort.
+ * An address-book change does not abort a running simulation, so a simulation that resolved names before the change can still store them after the change's metadata refresh. Successful simulations store their names the same way. Catching a stored run up with address-book changes made while it ran is a concern of every confirmation run, not of this preview.
+ */
+export async function withFailedTransactionPreviewUnlessCancelled<Failure extends { readonly data: object }>(ethereum: EthereumClientService, requestAbortController: AbortController | undefined, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed, failure: Failure): Promise<Failure | undefined> {
+	try {
+		const failedTransactionPreview = await tryGetFailedTransactionPreview(ethereum, requestAbortController, transactionToSimulate)
+		if (requestAbortController?.signal.aborted) return undefined
+		return failedTransactionPreview === undefined ? failure : { ...failure, data: { ...failure.data, failedTransactionPreview } }
+	} catch (error: unknown) {
+		// Callers store the failure returned here, and the dialog opener turns any thrown error into a rejection of the website's request, so a defective preview is reported at this boundary, as refreshConfirmTransactionSimulation reports unexpected simulation errors, and the transaction's own failure is kept.
+		await reportUnexpectedError(error, { code: 'failed_transaction_preview_failed' })
+		return requestAbortController?.signal.aborted ? undefined : failure
 	}
 }
 
@@ -296,7 +340,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereum)
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
@@ -350,9 +394,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	}
 }
 
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, stackSimulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
+		const simulationInput = await prepareSafeExecutionsForRpc(stackSimulationInput, ethereumClientService)
+		await assertSafeTxPreviewAllowed(ethereumClientService, gnosisSafeMessage.verifyingContract.address, gnosisSafeMessage.activeAddress.address, gnosisSafeMessage.message.domain.chainId)
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
@@ -408,8 +454,12 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
-		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
+		const [simulationStateAfterGnosisSafeMetaTransaction, safeSignatureRequirement] = await Promise.all([
+			appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides),
+			getSafeSignatureRequirement(ethereumClientService, simulationInput, gnosisSafeMessage.verifyingContract.address, gnosisSafeMessage.activeAddress.address),
+		])
+		const visualization = await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined)
+		return { success: true as const, result: safeSignatureRequirement === undefined ? visualization : { ...visualization, safeSignatureRequirement } }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
@@ -450,10 +500,24 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
+	const parentBlock = await ethereum.getBlock(undefined)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	// The simulation reads the latest block again. If a newer block arrives in between, the executor's maximum fee of twice the base fee leaves room for the base fee to rise, as EIP-1559 wallets do.
+	return await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+}
+
+// The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Safe layer owns it (createSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Safe execution simulation.
+export const getExecutedCallFormation = (ethereum: EthereumClientService, gasPayment: TransactionGasPayment) => gasPayment === 'simulated-safe-executor' ? createSafeExecutionCallFormation(ethereum) : undefined
+
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
+	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) await validateSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
+	// Before the base-fee repair, whose balance lookups simulate the input up to each transaction, so those lookups run the Safe executions as the executor's calls too.
+	simulationInput = await prepareSafeExecutionsForRpc(simulationInput, ethereum)
 	const parentBlock = await ethereum.getBlock(undefined)
 	const getBaseFeeFixedInputStateBlocks = async () => {
 		if (parentBlock === undefined) return simulationInput

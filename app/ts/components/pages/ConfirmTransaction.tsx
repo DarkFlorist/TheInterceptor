@@ -10,26 +10,28 @@ import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/use
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { type CaughtError, ErrorCheckBox, UnexpectedError } from '../subcomponents/Error.js'
-import { QuarantineReasons, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
+import { QuarantineReasons, SafeExecutionSimulationNotice, SenderReceiver, TransactionImportanceBlock } from '../simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../simulationExplaining/identifyTransaction.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import type { BackgroundPendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage, ShownPendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import type { EthereumBytes32 } from '../../types/wire-types.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
+import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
 import { getWebsiteWarningMessage } from '../../utils/websiteData.js'
-import { getResultsForTransaction, requiresTransactionOverrideAcknowledgement } from '../../utils/transactionOverrideAcknowledgement.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
-import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
+import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { Link } from '../subcomponents/link.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { identifySignature } from '../simulationExplaining/identifySignature.js'
-import { InvalidMessage, SignatureCard, SignatureHeader, isPossibleToSignMessage } from './PersonalSign.js'
-import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
+import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
+import { getResultsForTransaction, getVisualizedTransactionResult } from '../../utils/visualizedTransactionResult.js'
+import { isPossibleToSignMessage } from '../../utils/personalSignRequest.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -38,7 +40,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { bigintToDecimalString, dataStringWith0xStart, nanoString, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
@@ -46,14 +48,24 @@ import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
-import { getSignerNonce, isTransactionRequestForwardedToWallet } from '../../utils/signerFacingTransactionRequest.js'
+import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
 
 type UnderTransactionsParams = {
-	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
+	pendingTransactionsAndSignableMessages: ReadonlySignal<ShownPendingTransactionOrSignableMessage[]>
 }
 
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
-const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
+const CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS = 10
+export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS = 3000
+// About 24 seconds of retry delays. The 1.5 seconds that sufficed when any shown request ended the handshake is too short now that it must reach a background copy, and signature requests have no block-triggered update to recover through.
+export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 20
+export const CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS = 1000
+
+// Retries quickly at first, then doubles the delay up to a cap, so a popup still showing only the storage first paint keeps asking for the background copy an accept needs.
+export const getConfirmTransactionBootstrapRetryDelay = (attempt: number) => {
+	if (attempt < CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS) return CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS
+	return Math.min(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS * 2 ** (attempt - CONFIRM_TRANSACTION_BOOTSTRAP_RAPID_ATTEMPTS + 1), CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS)
+}
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
 	storage: 1,
 	bootstrap: 2,
@@ -63,29 +75,40 @@ const CONFIRM_TRANSACTION_DATA_PRIORITY = {
 const waitForDelay = async (delayMs: number) => await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs))
 
 type ConfirmTransactionBootstrapData = {
-	pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]
+	pendingTransactionAndSignableMessages: readonly PopupPendingTransactionOrSignableMessage[]
 	currentBlockNumber: bigint
 	rpcConnectionStatus: RpcConnectionStatus
 	visualizedSimulatorState: CompleteVisualizedSimulation
 }
 
+// Runs until a background copy is shown, the popup unmounts or the attempts run out. Giving up only stops the polling: a background copy that arrives later is still applied.
 async function bootstrapConfirmTransactionDialog(
-	hasLoadedPendingTransaction: () => boolean,
+	isBootstrapDone: () => boolean,
 	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
+	giveUp: () => void,
 ) {
-	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
-		if (hasLoadedPendingTransaction()) return
-		const reply = await sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } })
-		if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
-			applyBootstrapData(reply.data.confirmTransactionBootstrap)
-		}
-		if (hasLoadedPendingTransaction()) return
-		await waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS)
+	for (let attempt = 0; attempt < CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS && !isBootstrapDone(); attempt++) {
+		const handshake = sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
+			if (reply?.method === 'popup_readyAndListening' && reply.data.confirmTransactionBootstrap !== undefined) {
+				applyBootstrapData(reply.data.confirmTransactionBootstrap)
+			}
+		})
+		// A reply can wait up to a minute on the RPC behind it, which must not postpone giving up.
+		await Promise.race([handshake, waitForDelay(CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS)])
+		if (isBootstrapDone()) return
+		await waitForDelay(getConfirmTransactionBootstrapRetryDelay(attempt))
 	}
+	if (!isBootstrapDone()) giveUp()
 }
 
+// Only the background's copies carry the reviewed-result id an accept needs; requests read directly from storage for the first paint do not.
+const isBackgroundCopy = (pending: ShownPendingTransactionOrSignableMessage | undefined): pending is BackgroundPendingTransactionOrSignableMessage => pending?.source === 'background'
+
+const backgroundCopy = (pending: PopupPendingTransactionOrSignableMessage): BackgroundPendingTransactionOrSignableMessage => ({ ...pending, source: 'background' })
+
 async function hydratePendingTransactionsFromStorage() {
-	return (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
+	const pendingRequests = (await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages ?? []
+	return pendingRequests.map((pending): ShownPendingTransactionOrSignableMessage => ({ ...pending, source: 'storage' }))
 }
 
 export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addressBookEntries: readonly AddressBookEntry[]) {
@@ -97,12 +120,6 @@ export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addre
 }
 
 const HALF_HEADER_HEIGHT = 48 / 2
-
-// Quarantined signature requests need this acknowledgement before confirming, so offer it wherever acknowledging lets the request proceed: always in signing mode, and in simulation mode when the simulation signer can sign it or the RPC can simulate it, matching shouldDisableSignableMessageConfirm.
-export function canAcknowledgeQuarantinedSignature(visualizedPersonalSignRequest: VisualizedPersonalSignRequest) {
-	return isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address)
-		|| visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined
-}
 
 export function shouldDisableSignableMessageConfirm(params: {
 	isValidMessage: boolean
@@ -188,10 +205,10 @@ function UnderTransactions(param: UnderTransactionsParams) {
 type TransactionNamesParams = {
 	includeCurrentTransaction: boolean
 	completeVisualizedSimulation: Signal<CompleteVisualizedSimulation>
-	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage| undefined>
+	currentPendingTransaction: Signal<ShownPendingTransactionOrSignableMessage| undefined>
 }
 
-export function getTransactionStatusLabel(status: PendingTransactionOrSignableMessage['transactionOrMessageCreationStatus']) {
+export function getTransactionStatusLabel(status: ShownPendingTransactionOrSignableMessage['transactionOrMessageCreationStatus']) {
 	if (status === 'FailedToSimulate') return 'Simulation failed'
 	return status
 }
@@ -203,7 +220,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return getTransactionStatusLabel(currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus)
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
 		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
-		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = getVisualizedTransactionResult(currentPendingTransactionOrSignableMessage.popupVisualisation, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return 'Could not find transaction...'
 		return identifyTransaction(lastTx).title
 	}
@@ -234,8 +251,8 @@ const TransactionNames = (param: TransactionNamesParams) => {
 }
 
 type TransactionCardParams = {
-	currentPendingTransaction: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
-	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
+	currentPendingTransaction: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined>,
+	pendingTransactionsAndSignableMessages: readonly ShownPendingTransactionOrSignableMessage[],
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	currentBlockNumber: Signal<bigint | undefined>,
@@ -243,25 +260,12 @@ type TransactionCardParams = {
 	numberOfUnderTransactions: number,
 }
 
-const SELECTED_BY_WALLET = 'Selected by your wallet'
-
-function getRequestedFeesText(request: Extract<OriginalSendRequestParameters, { method: 'eth_sendTransaction' }>['params'][0]) {
-	const fees = [
-		...(request.gasPrice === undefined ? [] : [`gas price ${ nanoString(request.gasPrice) } nanoeth/gas`]),
-		// Websites may send null for dynamic fee fields, which sets no fee value.
-		...(request.maxFeePerGas === undefined || request.maxFeePerGas === null ? [] : [`max fee ${ nanoString(request.maxFeePerGas) } nanoeth/gas`]),
-		...(request.maxPriorityFeePerGas === undefined || request.maxPriorityFeePerGas === null ? [] : [`max priority fee ${ nanoString(request.maxPriorityFeePerGas) } nanoeth/gas`]),
-	]
-	return fees.length === 0 ? SELECTED_BY_WALLET : fees.join(', ')
-}
-
-// Shown when the confirmation simulation fails; this view offers only rejection. If a stale or non-popup acceptance with the override acknowledgement still reaches the background, exactly this website request is forwarded, so every forwarded field is listed and omitted ones are marked as wallet-selected; simulation mode keeps the plain summary because acceptance only adds the locally prepared transaction to the simulation.
-export function FailedTransactionPreviewDetails({
+function FailedTransactionPreviewDetails({
 	website,
-	forwardsRequestToWallet,
 	transactionIdentifier,
 	originalRequestParameters,
 	addressMetaData,
+	parsedInputData,
 	created,
 	errorMessage,
 	isGasEstimationError,
@@ -272,10 +276,10 @@ export function FailedTransactionPreviewDetails({
 	renameAddressCallBack,
 }: {
 	website: Website
-	forwardsRequestToWallet: boolean
 	transactionIdentifier: bigint
 	originalRequestParameters: OriginalSendRequestParameters
 	addressMetaData: readonly AddressBookEntry[]
+	parsedInputData: EnrichedEthereumInputData | undefined
 	created: Date
 	errorMessage: string
 	isGasEstimationError: boolean
@@ -318,25 +322,14 @@ export function FailedTransactionPreviewDetails({
 					<dd>{ request === undefined ? 'Unknown' : `${ bigintToDecimalString(request.value ?? 0n, 18n) } ether` }</dd>
 					<dt>Gas limit </dt>
 					<dd>
-						{ forwardsRequestToWallet && request !== undefined && gasLimit === undefined ? <span>{ SELECTED_BY_WALLET } </span> : <></> }
 						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />
 					</dd>
-					{ !forwardsRequestToWallet || request === undefined ? <></> : <>
-						<dt>Nonce</dt>
-						<dd>{ request.nonce === undefined ? SELECTED_BY_WALLET : request.nonce.toString(10) }</dd>
-						<dt>Fees</dt>
-						<dd>{ getRequestedFeesText(request) }</dd>
-					</> }
 				</dl>
 			</div>
-			{ !forwardsRequestToWallet || request === undefined ? <></> : <div class = 'textbox' style = 'margin-top: 10px;'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Request sent to your wallet</p>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;'>{ stringifyJSONWithBigInts(originalRequestParameters, 2) }</p>
-			</div> }
 			<div style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
 				{ rawRequest === undefined
-					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
+					? <TransactionInput parsedInputData = { parsedInputData } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
 				}
 			</div>
@@ -373,7 +366,7 @@ function TransactionCard(param: TransactionCardParams) {
 
 type TransactionCardContentParams = {
 	currentPendingTransaction: ReadonlySignal<SimulatedPendingTransaction | undefined>,
-	pendingTransactionsAndSignableMessages: readonly PendingTransactionOrSignableMessage[],
+	pendingTransactionsAndSignableMessages: readonly ShownPendingTransactionOrSignableMessage[],
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	currentBlockNumber: Signal<bigint | undefined>,
@@ -381,7 +374,7 @@ type TransactionCardContentParams = {
 	numberOfUnderTransactions: number,
 }
 
-function getRenderableTransaction(currentPendingTransaction: PendingTransactionOrSignableMessage | undefined): SimulatedPendingTransaction | undefined {
+function getRenderableTransaction(currentPendingTransaction: ShownPendingTransactionOrSignableMessage | undefined): SimulatedPendingTransaction | undefined {
 	if (currentPendingTransaction === undefined || currentPendingTransaction.type !== 'Transaction') return undefined
 	if (currentPendingTransaction.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransaction.transactionOrMessageCreationStatus !== 'FailedToSimulate') return undefined
 	return currentPendingTransaction
@@ -403,15 +396,16 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
-		const addressMetaData = popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : []
+		const failedTransactionPreview = popupVisualisation.data.failedTransactionPreview
+		const addressMetaData = failedTransactionPreview?.addressBookEntries ?? []
 		const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
 		return <>
 			<FailedTransactionPreviewDetails
 				website = { currentPendingTransaction.transactionToSimulate.website }
-				forwardsRequestToWallet = { isTransactionRequestForwardedToWallet(currentPendingTransaction, safeFlow?.kind) }
 				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
 				addressMetaData = { addressMetaData }
+				parsedInputData = { failedTransactionPreview?.parsedInputData }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
 				isGasEstimationError = { !popupVisualisation.data.transactionToSimulate.success }
@@ -422,7 +416,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
-				safeTransaction = { safeFlow.pending.safeTransaction }
+				safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 				addressMetaData = { addressMetaData }
 				rpcNetwork = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.simulationState.rpcNetwork : undefined }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -495,8 +489,10 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } signerNonce = { getSignerNonce(currentPendingTransaction, safeFlow?.kind) } />
 
+				<SafeExecutionSimulationNotice transaction = { simTx }/>
+
 				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
-					safeTransaction = { safeFlow.pending.safeTransaction }
+					safeTransaction = { safeFlow.pending.safeFlow.safeTransaction }
 					addressMetaData = { addressMetaData.value }
 					rpcNetwork = { rpcNetwork.value }
 					renameAddressCallBack = { param.renameAddressCallBack }
@@ -508,18 +504,18 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: max-content auto auto; grid-column-gap: 5px;'>
-					<div class = 'log-cell'>
-						{ simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
-							<span class = 'log-table' style = { { display: 'inline-flex'} }>
-							<GasFee tx = { simTx } rpcNetwork = { rpcNetwork } />
+				<div class = 'transaction-card-footer'>
+					{ simTx.transactionStatus === 'Failed To Simulate' ? <></> :
+						<div class = 'log-cell'>
+							<span class = 'log-table' style = { { display: 'inline-flex' } }>
+								<GasFee tx = { simTx } rpcNetwork = { rpcNetwork } />
 							</span>
-						</> }
-					</div>
-					<div class = 'log-cell' style = 'justify-content: center;'>
+						</div>
+					}
+					<div class = 'log-cell'>
 						<TransactionCreated created = { currentPendingTransaction.created } />
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { simulationBlockNumber }
 							currentBlockNumber = { param.currentBlockNumber }
@@ -527,14 +523,14 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					</div>
-				</span>
+				</div>
 			</div>
 		</div>
 	</>
 }
 
 type CheckBoxesParams = {
-	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
+	currentPendingTransactionOrSignableMessage: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined>,
 	forceSend: Signal<boolean>,
 	addressBookEntries?: readonly AddressBookEntry[],
 }
@@ -547,7 +543,7 @@ function SafeSignerErrorAddress({ label, address, addressBookEntries }: { label:
 }
 
 function SafeSignerErrorDetails({ details, addressBookEntries }: {
-	details: NonNullable<Extract<PendingTransactionOrSignableMessage['approvalStatus'], { status: 'SignerError' }>['safeSignerErrorDetails']>,
+	details: NonNullable<Extract<ShownPendingTransactionOrSignableMessage['approvalStatus'], { status: 'SignerError' }>['safeSignerErrorDetails']>,
 	addressBookEntries: readonly AddressBookEntry[],
 }) {
 	switch (details.kind) {
@@ -580,6 +576,12 @@ function SafeSignerErrorDetails({ details, addressBookEntries }: {
 	}
 }
 
+const SEND_ANYWAY_OVERRIDE_TEXTS: Record<SendAnywayOverrideReason, string> = {
+	failingTransaction: 'I understand that the transaction will fail but I want to send it anyway.',
+	quarantinedTransaction: 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.',
+	quarantinedSignature: 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.',
+}
+
 export const CheckBoxes = (params: CheckBoxesParams) => {
 	const current = params.currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
@@ -593,6 +595,13 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
+	const overrideReason = getSendAnywayOverrideReason(current)
+	// A signer error keeps the request open for a retry, and a changed failure or quarantine reason during it clears the override, so the checkbox stays reachable.
+	const overrideCheckBox = overrideReason === undefined
+		? <></>
+		: <div style = { margins }>
+			<ErrorCheckBox text = { SEND_ANYWAY_OVERRIDE_TEXTS[overrideReason] } checked = { params.forceSend } />
+		</div>
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorComponent text = { current.approvalStatus.message } />
@@ -601,39 +610,16 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 				: <SafeSignerErrorDetails details = { current.approvalStatus.safeSignerErrorDetails } addressBookEntries = { addressBookEntries } />
 			}
 		</div>
+		{ overrideCheckBox }
 	</div>
-	if (current?.type === 'SignableMessage') {
-		const visualizedPersonalSignRequest = current.visualizedPersonalSignRequest
-		return  <>
-			{ visualizedPersonalSignRequest.quarantine && canAcknowledgeQuarantinedSignature(visualizedPersonalSignRequest)
-				? <div style = 'display: grid'>
-					<div style = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px; '>
-						<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
-					</div>
-				</div>
-				: <></>
-			}
-		</>
-	}
-	if (current?.popupVisualisation.statusCode !== 'success' || current.popupVisualisation.data.visualizedSimulationState.success === false) return <></>
-	const currentResults = getResultsForTransaction(current.popupVisualisation.data.visualizedSimulationState, current.transactionIdentifier)
-
-	if (currentResults === undefined) return <></>
-	if (currentResults.transactionStatus !== 'Transaction Succeeded') return <div style = 'display: grid'>
-		<div style = { margins }>
-			<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { params.forceSend } />
-		</div>
+	if (overrideReason === undefined) return <></>
+	return <div style = 'display: grid'>
+		{ overrideCheckBox }
 	</div>
-	if (currentResults.quarantine === true) return <div style = 'display: grid'>
-		<div style = { margins }>
-			<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
-		</div>
-	</div>
-	return <></>
 }
 
 type NetworkErrorParams = {
-	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
+	currentPendingTransactionOrSignableMessage: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined>
 }
 
 const WebsiteErrors = ({ currentPendingTransactionOrSignableMessage }: NetworkErrorParams) => {
@@ -677,14 +663,19 @@ function ConfirmTransactionModal({ modalState, activeAddress, rpcEntries }: {
 	</div>
 }
 
-function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction }: {
+function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction, backgroundCopyUnavailable }: {
 	unexpectedError: CaughtError | undefined
 	clearUnexpectedError: () => Promise<void>
 	rpcConnectionStatus: ReadonlySignal<RpcConnectionStatus>
-	currentPendingTransaction: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
+	currentPendingTransaction: ReadonlySignal<ShownPendingTransactionOrSignableMessage | undefined>
+	backgroundCopyUnavailable: ReadonlySignal<boolean>
 }) {
 	return <>
 		<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError }/>
+		{ backgroundCopyUnavailable.value
+			? <ErrorComponent text = { 'This request could not be loaded from the background, so it cannot be confirmed. Confirming becomes available if the background responds later.' }/>
+			: <></>
+		}
 		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 		<WebsiteErrors currentPendingTransactionOrSignableMessage = { currentPendingTransaction }/>
 		<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransaction }/>
@@ -708,7 +699,7 @@ const RejectButton = ({ onClick, state }: RejectButtonParams) => {
 }
 
 type ButtonsParams = {
-	currentPendingTransactionOrSignableMessage: PendingTransactionOrSignableMessage | undefined
+	currentPendingTransactionOrSignableMessage: ShownPendingTransactionOrSignableMessage | undefined
 	reject: () => void
 	rejectButtonState: AsyncStates
 	approve: () => void
@@ -782,7 +773,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 	</div>
 }
 
-export const shouldDisableConfirmForApprovalStatus = (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
+export const shouldDisableConfirmForApprovalStatus = (approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
@@ -791,7 +782,7 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
 	const identify = () => {
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
-		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
+		const lastTx = getVisualizedTransactionResult(currentPendingTransactionOrSignableMessage.popupVisualisation, currentPendingTransactionOrSignableMessage.transactionIdentifier)
 		if (lastTx === undefined) return undefined
 		return identifyTransaction(lastTx)
 	}
@@ -815,12 +806,12 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 }
 
 export function ConfirmTransaction() {
-	const currentPendingTransactionOrSignableMessage = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
+	const currentPendingTransactionOrSignableMessage = useSignal<ShownPendingTransactionOrSignableMessage | undefined>(undefined)
 	const currentSafeTransactionFlow = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		return pending?.type === 'Transaction' ? getSafeTransactionPendingFlow(pending) : undefined
 	})
-	const pendingTransactionsAndSignableMessages = useSignal<readonly PendingTransactionOrSignableMessage[]>([])
+	const pendingTransactionsAndSignableMessages = useSignal<readonly ShownPendingTransactionOrSignableMessage[]>([])
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const forceSend = useSignal<boolean>(false)
 	const currentBlockNumber = useSignal<undefined | bigint>(undefined)
@@ -833,8 +824,11 @@ export function ConfirmTransaction() {
 	const pendingTransactionsDataPriority = useSignal(0)
 	const simulationDataPriority = useSignal(0)
 	const networkDataPriority = useSignal(0)
+	const bootstrapGaveUp = useSignal<boolean>(false)
+	// Derived from the shown request, so any background copy clears the error however it arrives.
+	const backgroundCopyUnavailable = useComputed(() => bootstrapGaveUp.value && !isBackgroundCopy(currentPendingTransactionOrSignableMessage.value))
 
-	const applyPendingTransactions = (pendingTransactions: readonly PendingTransactionOrSignableMessage[], priority: number) => {
+	const applyPendingTransactions = (pendingTransactions: readonly ShownPendingTransactionOrSignableMessage[], priority: number) => {
 		if (priority < pendingTransactionsDataPriority.value) return
 		pendingTransactionsDataPriority.value = priority
 		const previousPendingTransactions = pendingTransactionsAndSignableMessages.value
@@ -843,9 +837,8 @@ export function ConfirmTransaction() {
 		const firstMessage = pendingTransactions[0]
 		if (firstMessage === undefined) return
 		const previousMessage = currentPendingTransactionOrSignableMessage.value
-		if (previousMessage === undefined || !doesUniqueRequestIdentifiersMatch(previousMessage.uniqueRequestIdentifier, firstMessage.uniqueRequestIdentifier)) {
-			forceSend.value = false
-		}
+		// Re-simulations that only change fees, timestamps or balances keep the override; a new request, failure or quarantine reason needs a new acknowledgement.
+		if (previousMessage === undefined || !isSameSendAnywayConsent(previousMessage, firstMessage)) forceSend.value = false
 		currentPendingTransactionOrSignableMessage.value = firstMessage
 		if (firstMessage.type === 'Transaction' && firstMessage.transactionOrMessageCreationStatus === 'Simulating') {
 			markPerformanceOnce(POPUP_PERFORMANCE_MARKS.confirmTransactionSimulationStarted)
@@ -921,19 +914,18 @@ export function ConfirmTransaction() {
 				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
-				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
+				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages.map(backgroundCopy), CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}, [])
 
 	useEffect(() => {
 		let cancelled = false
 		const applyBootstrapData = (bootstrapData: ConfirmTransactionBootstrapData) => {
 			if (cancelled) return
-			applyPendingTransactions(bootstrapData.pendingTransactionAndSignableMessages, CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
+			applyPendingTransactions(bootstrapData.pendingTransactionAndSignableMessages.map(backgroundCopy), CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap)
 			if (CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap >= simulationDataPriority.value) {
 				simulationDataPriority.value = CONFIRM_TRANSACTION_DATA_PRIORITY.bootstrap
 				completeVisualizedSimulation.value = bootstrapData.visualizedSimulatorState
@@ -944,30 +936,20 @@ export function ConfirmTransaction() {
 			if (cancelled || pendingTransactions.length === 0) return
 			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
 		})
-		void sendPopupMessageWithReply({ method: 'popup_readyAndListening', data: { page: 'confirmTransaction' } }).then((reply) => {
-			if (cancelled || reply?.method !== 'popup_readyAndListening') return
-			const bootstrapData = reply.data.confirmTransactionBootstrap
-			if (bootstrapData === undefined) return
-			applyBootstrapData(bootstrapData)
-		})
-		void bootstrapConfirmTransactionDialog(() => cancelled || currentPendingTransactionOrSignableMessage.value !== undefined, applyBootstrapData)
+		// Keeps retrying while only the storage first paint is shown, since confirming needs the background's copy.
+		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData, () => { bootstrapGaveUp.value = true })
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 		return () => {
 			cancelled = true
 		}
 	}, [])
 
-	async function approveTransaction() {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) throw new Error('dialogState is not set')
+	async function approveTransaction(accept: TransactionConfirmation) {
 		pendingTransactionAddedNotification.value = false
 		const currentWindow = await browser.windows.getCurrent()
 		checkAndThrowRuntimeLastError()
 		if (currentWindow.id === undefined) throw new Error('could not get our own Id!')
-		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
-			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
-			action: 'accept',
-			forceSend: forceSend.value,
-		} })
+		const deliveryError = await sendConfirmDialogMessage(accept)
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}
 	async function rejectTransaction() {
@@ -984,9 +966,7 @@ export function ConfirmTransaction() {
 			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
 			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 			if (pending.type !== 'Transaction') return undefined
-			if (pending.popupVisualisation.statusCode !== 'success' ) return undefined
-			if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return undefined
-			const results = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
+			const results = getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier)
 			if (results === undefined) return undefined
 			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
 		}
@@ -1006,8 +986,17 @@ export function ConfirmTransaction() {
 		waitForRejectTransaction(rejectTransaction)
 	}
 	const approve = () => {
+		const pending = currentPendingTransactionOrSignableMessage.value
+		if (!isBackgroundCopy(pending)) return
+		// Captured at click time, so results that arrive while the approval is in flight cannot change what is accepted.
+		const accept: TransactionConfirmation = { method: 'popup_confirmDialog', data: {
+			uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+			action: 'accept',
+			reviewedResultId: pending.reviewedResultId,
+			forceSend: forceSend.value,
+		} }
 		resetApproveButton()
-		waitForApproveTransaction(approveTransaction)
+		waitForApproveTransaction(async () => await approveTransaction(accept))
 	}
 	const addToSafeStack = () => {
 		const pending = currentPendingTransactionOrSignableMessage.value
@@ -1033,29 +1022,30 @@ export function ConfirmTransaction() {
 	}
 
 	const isConfirmDisabled = useComputed(() => {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
-		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
-		if (shouldDisableConfirmForApprovalStatus(currentPendingTransactionOrSignableMessage.value.approvalStatus)) return true
-		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
+		const pending = currentPendingTransactionOrSignableMessage.value
+		if (!isBackgroundCopy(pending)) return true
+		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
+		if (isRejectOnlyTransaction(pending)) return true
+		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
+		if (pending.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
-				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
-				canSignMessage: isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress),
+				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
+				canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
 				forceSendEnabled: forceSend.value,
-				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
-				quarantined: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.quarantine,
+				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+				quarantined: pending.visualizedPersonalSignRequest.quarantine,
 			})
 		}
-		if (forceSend.value) return false
-		return requiresTransactionOverrideAcknowledgement(currentPendingTransactionOrSignableMessage.value.popupVisualisation, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
+		return false
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
-		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
-		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
-		const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
-		return lastTx === undefined || lastTx.transactionStatus !== 'Transaction Succeeded' || lastTx.quarantine
+		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.
+		return isRejectOnlyTransaction(pending) || getSendAnywayOverrideReason(pending) !== undefined
 	})
 
 	function getCurrentAddressBookEntries() {
@@ -1077,7 +1067,7 @@ export function ConfirmTransaction() {
 		}
 	}
 
-	const getLoadingText = (current: PendingTransactionOrSignableMessage | undefined) => {
+	const getLoadingText = (current: ShownPendingTransactionOrSignableMessage | undefined) => {
 		if (current === undefined) return 'Initializing...'
 		if (current.transactionOrMessageCreationStatus === 'Crafting') return 'Crafting Transaction...'
 		if (current.transactionOrMessageCreationStatus === 'Simulating') return 'Simulating Transaction...'
@@ -1099,7 +1089,7 @@ export function ConfirmTransaction() {
 					<Hint>
 						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
 						<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
-							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
 								<CenterToPageTextSpinner text = { loadingText }/>
 					</div>
 				</Hint>
@@ -1112,7 +1102,7 @@ export function ConfirmTransaction() {
 					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<div style = 'position: sticky; top: 0; z-index: 1;'>
-							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'margin: 10px'>
@@ -1125,11 +1115,11 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeTransaction.messageReview } /> : <></> }
+							{ currentSafeTransactionFlow.value?.kind === 'proposal' ? <SafeProposalDetails safeTx = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx } messageReview = { currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.messageReview } /> : <></> }
 							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
-									narrowSummary = { `Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
+									narrowSummary = { `Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeFlow.safeTransaction.safeTx.message.nonce.toString() }` }
 									close = { () => undefined }
 								/>
 								: <></>
