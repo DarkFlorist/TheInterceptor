@@ -61,12 +61,21 @@ describe('untrusted token card', () => {
 		}
 	})
 
-	test('applies explicit label styles to normal, expanded and noninteractive labels even with a warning', async () => {
+	test('sets no inline style on the labels of normal, expanded and noninteractive cards, so the stylesheet decides their color and weight', async () => {
 		for (const nonInteractive of [false, true]) {
-			const colors = await renderIntoDom(<InlineCard icon = { () => <span /> } label = 'Warning' warningMessage = 'Untrusted' nonInteractive = { nonInteractive } style = { { color: 'red' } } labelStyle = { { color: 'white' } } />, (container) => collectTokenNames(container).map((name) => name.style?.['color']))
-			assert.ok(colors.length >= 2)
-			assert.ok(colors.every((color) => color === 'white'))
+			const labelStyles = await renderIntoDom(<InlineCard icon = { () => <span /> } label = 'Warning' warningMessage = 'Untrusted' nonInteractive = { nonInteractive } style = { { color: 'red', 'font-weight': '500' } } />, (container) => collectTokenNames(container).map((name) => name.style?.['color'] ?? name.style?.['font-weight']))
+			assert.ok(labelStyles.length >= 2)
+			assert.ok(labelStyles.every((style) => style === undefined))
 		}
+	})
+
+	// The DOM mock applies no stylesheet, so the inheritance the labels rely on is checked in the stylesheet itself: the global data rule resets font-weight on the element, which the card rule has to undo.
+	test('makes card labels inherit the card color and weight, and keeps warning card labels readable', async () => {
+		const css = await Bun.file('app/css/interceptor-pages.css').text()
+		const labelRule = /\n\tdata \{([^}]*)\}/.exec(css.slice(css.indexOf('\n.inline-card {')))?.[1] ?? ''
+		assert.match(labelRule, /color: inherit;/)
+		assert.match(labelRule, /font-weight: inherit;/)
+		assert.match(css, /&:has\(\.inline-card-warning-sign\) \{[^}]*data \{ color: var\(--text-color\); \}/)
 	})
 
 	test('keeps both warning signs that turn the card red', async () => {

@@ -287,6 +287,8 @@ header:has(form[role='search']) h1 {
 	data {
 		line-height: 1em;
 		color: inherit;
+		/* The global data rule sets font-weight: normal on the element itself, so the card's weight is inherited explicitly. */
+		font-weight: inherit;
 		padding-inline: 0.25em;
 		padding-right: 0px;
 		text-align: center;
