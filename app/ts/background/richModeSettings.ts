@@ -1,16 +1,14 @@
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
-import { EthereumAddress } from '../types/wire-types.js'
 import type { RichAccountBalance, RichModeState, RichToken } from '../types/richMode.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { reconcileRichTokenMetadata, getDefaultRichTokenAmount, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
-import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries } from './addressBookStorage.js'
+import { browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, getStoredActiveSimulationAddressAndNetwork } from '../utils/storageUtils.js'
+import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
-// All funding and address-book mutations enter through this owner; transaction-local methods keep related writes under one lock.
-const richModeSemaphore = new Semaphore(1)
+// All funding and address-book mutations enter through this owner; they run under the settings storage lock so funding and address-book writes land in one storage set.
 const legacyKeys = ['makeCurrentAddressRich', 'fixedAddressRichList', 'richNativeAmount', 'richTokens', 'richAccountBalances']
 
 export const richTokensForPresentation = (state: RichModeState): readonly RichToken[] => state.tokenLayouts.map((layout) => ({ ...layout, amount: getDefaultRichTokenAmount(layout.decimals) }))
@@ -35,15 +33,14 @@ export async function getRichModeState(chainId?: bigint, addresses: readonly big
 		console.warn('richModeState was corrupt; startup or the next mutation will reset funding state.')
 		return { makeCurrentAddressRich: false, fixedAddressRichList: [], defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value, tokenLayouts: [], accountBalances: [] }
 	}
-	const { makeCurrentAddressRich: rawSelection, fixedAddressRichList: rawFixed, richNativeAmount: rawNative, richTokens: rawTokens, richAccountBalances: rawProfiles, independentActiveSimulationAddress: rawActive, activeRpcNetwork: rawNetwork } = await browser.storage.local.get([...legacyKeys, 'independentActiveSimulationAddress', 'activeRpcNetwork'])
+	const { makeCurrentAddressRich: rawSelection, fixedAddressRichList: rawFixed, richNativeAmount: rawNative, richTokens: rawTokens, richAccountBalances: rawProfiles } = await browser.storage.local.get(legacyKeys)
+	const migrationContext = await getStoredActiveSimulationAddressAndNetwork()
 	const selection = browserStorageLocalSafeParse({ makeCurrentAddressRich: rawSelection })
 	const fixed = browserStorageLocalSafeParse({ fixedAddressRichList: rawFixed })
 	const native = browserStorageLocalSafeParse({ richNativeAmount: rawNative })
 	const tokens = browserStorageLocalSafeParse({ richTokens: rawTokens })?.richTokens ?? []
 	const profiles = browserStorageLocalSafeParse({ richAccountBalances: rawProfiles })?.richAccountBalances ?? []
-	const parsedActiveAddress = EthereumAddress.safeParse(rawActive)
-	const activeAddress = parsedActiveAddress.success ? parsedActiveAddress.value : DEFAULT_ACTIVE_ADDRESSES[0]?.address
-	const active = browserStorageLocalSafeParse({ activeRpcNetwork: rawNetwork })
+	const activeAddress = migrationContext.activeSimulationAddress ?? DEFAULT_ACTIVE_ADDRESSES[0]?.address
 	const fixedAddressRichList = fixed?.fixedAddressRichList ?? []
 	const makeCurrentAddressRich = selection?.makeCurrentAddressRich ?? false
 	const defaultNativeAmount = native?.richNativeAmount ?? MAKE_YOU_RICH_TRANSACTION.transaction.value
@@ -52,7 +49,7 @@ export async function getRichModeState(chainId?: bigint, addresses: readonly big
 		...fixedAddressRichList.filter((entry) => entry.makingRich).map((entry) => entry.address),
 		...(makeCurrentAddressRich && activeAddress !== undefined ? [activeAddress] : []),
 	])]
-	const migrationChains = [...new Set([...(chainId === undefined ? [] : [chainId]), ...(active?.activeRpcNetwork === undefined ? DEFAULT_RPCS.slice(0, 1).map((network) => network.chainId) : [active.activeRpcNetwork.chainId]), ...tokens.map((token) => token.chainId)])]
+	const migrationChains = [...new Set([...(chainId === undefined ? [] : [chainId]), ...(migrationContext.activeRpcNetwork === undefined ? DEFAULT_RPCS.slice(0, 1).map((network) => network.chainId) : [migrationContext.activeRpcNetwork.chainId]), ...tokens.map((token) => token.chainId)])]
 	const accountBalances = rawProfiles === undefined
 		? migrationChains.flatMap((migrationChainId) => migrationAddresses.map((address): RichAccountBalance => ({
 			chainId: migrationChainId,
@@ -71,24 +68,28 @@ export async function getRichAccountBalancesForAddresses(chainId: bigint, addres
 	return profilesForAddresses(await getRichModeState(chainId, addresses), chainId, addresses)
 }
 
+const richModeStateStorageWrite = (richModeState: RichModeState): StorageWrite => ({ richModeState })
+
+// Removing obsolete replicas after the canonical write is safe even when interrupted, because reads prefer canonical state.
+export const removeLegacyRichModeKeys = async () => { await browser.storage.local.remove(legacyKeys) }
+
 export async function mutateRichMode<Result>(operation: (store: ReturnType<typeof createRichModeTransaction>) => Promise<Result>, chainId?: bigint, addresses: readonly bigint[] = []) {
-	return await richModeSemaphore.execute(async () => {
+	const { result, wroteRichModeState } = await runSettingsStorageTransaction(async () => {
 		const store = createRichModeTransaction(await getRichModeState(chainId, addresses))
 		const result = await operation(store)
-		await store.commit()
-		return result
+		const writes = await store.getStorageWrites()
+		return { writes, result: { result, wroteRichModeState: writes.length > 0 } }
 	})
+	if (wroteRichModeState) await removeLegacyRichModeKeys()
+	return result
 }
 
-// Imports can replace corrupt state; address-book entries and funding state are committed together.
-export async function replaceRichModeState(state: RichModeState, entries?: AddressBookEntries) {
-	await richModeSemaphore.execute(async () => {
-		const store = createRichModeTransaction(state)
-		store.replace(state)
-		if (entries === undefined) await store.reconcileAddressBook(await getUserAddressBookEntries())
-		else await store.updateAddressBook(() => entries)
-		await store.commit()
-	})
+// The settings import replaces funding state and the address book in its own storage transaction, so it composes these writes instead of taking the lock again; call removeLegacyRichModeKeys after that transaction commits.
+export async function getImportedRichModeStorageWrites(state: RichModeState, entries: AddressBookEntries) {
+	const store = createRichModeTransaction(state)
+	store.replace(state)
+	await store.updateAddressBook(() => entries)
+	return await store.getStorageWrites()
 }
 
 function createRichModeTransaction(initial: RichModeState) {
@@ -138,11 +139,9 @@ function createRichModeTransaction(initial: RichModeState) {
 			addressBookEntries = entries
 			return await transaction.reconcileAddressBook(entries)
 		},
-		commit: async () => {
-			if (!changed && addressBookEntries === undefined && (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState !== undefined) return
-			await browserStorageLocalSet(addressBookEntries === undefined ? { richModeState: state } : { richModeState: state, userAddressBookEntriesV3: addressBookEntries })
-			// Publish the new owner before removing obsolete replicas; interrupted cleanup is safe because reads prefer canonical state.
-			await browser.storage.local.remove(legacyKeys)
+		getStorageWrites: async (): Promise<readonly StorageWrite[]> => {
+			if (!changed && addressBookEntries === undefined && (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState !== undefined) return []
+			return addressBookEntries === undefined ? [richModeStateStorageWrite(state)] : [richModeStateStorageWrite(state), userAddressBookEntriesStorageWrite(addressBookEntries)]
 		},
 	}
 	return transaction

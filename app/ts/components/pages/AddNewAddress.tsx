@@ -23,6 +23,8 @@ import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from 
 import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSection, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 import { parseUserEnteredAddress } from '../../utils/addressValidation.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
+import { ON_CHAIN_TOKEN_METADATA_WARNING } from '../subcomponents/onChainTokenWarnings.js'
+import { requiresOnChainTokenMetadataConfirmation } from '../../utils/onChainTokenMetadata.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
@@ -662,16 +664,13 @@ export function AddNewAddress(param: AddAddressParam) {
 		})
 	}
 
-	const showOnChainVerificationErrorBox = useComputed(() => {
-		const incompleteAddressBookEntry = param.modifyAddressWindowState.value.incompleteAddressBookEntry
-		return incompleteAddressBookEntry.entrySource === 'OnChain' && (incompleteAddressBookEntry.type === 'ERC20' || incompleteAddressBookEntry.type === 'ERC721')
-	})
+	const requiresOnChainTokenMetadataVerification = useComputed(() => requiresOnChainTokenMetadataConfirmation(param.modifyAddressWindowState.value.incompleteAddressBookEntry))
 
 	const isSubmitButtonDisabled = useComputed(() => {
 		return saveEntryState.value.state === 'pending' || !isCurrentSafeLookupComplete.value || isAddressBookSubmissionDisabled({
 			areInputsValid: areInputsValid.value,
 			blockEditing: param.modifyAddressWindowState.value.errorState?.blockEditing === true,
-			requiresOnChainVerification: showOnChainVerificationErrorBox.value,
+			requiresOnChainVerification: requiresOnChainTokenMetadataVerification.value,
 			isOnChainInformationVerified: onChainInformationVerifiedByUser.value,
 			isBlockExplorerLookupPending: isBlockExplorerLookupPending.value,
 		})
@@ -702,7 +701,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				{ completeAddressBookEntryOrError.value.type !== 'error' || !isCurrentSafeLookupComplete.value ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
 				{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
 				{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }
-				{ !showOnChainVerificationErrorBox.value ? <></> : <ErrorCheckBox text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` } checked = { onChainInformationVerifiedByUser }/> }
+				{ !requiresOnChainTokenMetadataVerification.value ? <></> : <ErrorCheckBox text = { ON_CHAIN_TOKEN_METADATA_WARNING } checked = { onChainInformationVerifiedByUser }/> }
 			</div>
 		</InterceptorDialogBody>
 		<InterceptorDialogFooter>

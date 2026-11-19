@@ -3,7 +3,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole, createAcceptConfirmation, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
 	browserMock.sentMessages.length = 0
@@ -99,7 +99,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 			...pendingTransaction,
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForSigner' },
-			safeTransaction: {
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,
 				safeVersion: '1.4.1',
@@ -112,7 +112,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 				},
 				safeTxHash,
 				safeTx,
-			},
+			} },
 		}],
 	})
 
@@ -145,7 +145,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 		code: -32603,
 		message: 'Keyring Controller signTypedMessage: Error: Scan cancelled',
 	})
-	assert.equal(retryableTransaction?.safeTransaction?.safeTxHash, safeTxHash)
+	assert.equal(getPendingSafeProposal(retryableTransaction)?.safeTxHash, safeTxHash)
 })
 
 test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 typed data', async () => {
@@ -179,9 +179,9 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	}, 0n)
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
-			...pendingTransaction,
+			...withSimulatedTransactionResult(pendingTransaction),
 			simulationMode: false,
-			safeTransaction: {
+			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
 				safeAddress: activeAddress,
 				safeSignerAddress: recipientAddress,
 				safeVersion: '1.4.1',
@@ -194,16 +194,13 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 				},
 				safeTxHash: BigInt(getSafeTxHash(safeTx)),
 				safeTx,
-			},
+			} },
 		}],
 	})
 
 	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: activeAddress }])
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(changedOwnersProposal?.approvalStatus.status, 'SignerError')
@@ -215,10 +212,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing Safe signer request')
@@ -382,10 +376,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	const [refreshedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedCoSignRequest?.type === 'SignableMessage' ? refreshedCoSignRequest.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, alternateOwnerAddress)
 	assert.equal(refreshedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing Safe co-signer request')
@@ -577,7 +568,7 @@ test('shows Safe transaction context failures in the co-signing dialog without r
 	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(pendingMessage?.approvalStatus.status, 'SignerError')
 	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe context validation error')
-	assert.match(pendingMessage.approvalStatus.message, /chain ID does not match/u)
+	assert.match(pendingMessage.approvalStatus.message, /prepared for chain 1338, but the connected network is chain 1337\./u)
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
@@ -1131,10 +1122,10 @@ test('routes a completed active Safe execution through its configured signer and
 	const [disconnectedExecution] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(disconnectedExecution?.type, 'Transaction')
 	if (disconnectedExecution?.type !== 'Transaction') throw new Error('Missing disconnected direct Safe execution request')
-	assert.deepEqual(disconnectedExecution.safeExecutionOriginalRequestParameters, transactionParams)
-	assert.equal(disconnectedExecution.safeExecutionSignerAddress, undefined)
-	assert.notEqual(disconnectedExecution.safeExecutionReviewedSafeState, undefined)
-	assert.equal(disconnectedExecution.safeTransaction, undefined)
+	if (disconnectedExecution.safeFlow.kind !== 'directExecution') throw new Error('Expected a direct Safe execution flow')
+	assert.deepEqual(disconnectedExecution.safeFlow.safeExecutionOriginalRequestParameters, transactionParams)
+	assert.equal(disconnectedExecution.safeFlow.safeExecutionSignerAddress, undefined)
+	assert.notEqual(disconnectedExecution.safeFlow.safeExecutionReviewedSafeState, undefined)
 	assert.equal(disconnectedExecution.approvalStatus.status, 'SignerError')
 
 	await modules.updateTabState(socket.tabId, (state) => ({
@@ -1152,9 +1143,9 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(pendingExecution?.type, 'Transaction')
 	if (pendingExecution?.type !== 'Transaction') throw new Error('Missing direct Safe execution request')
 	assert.equal(pendingExecution.transactionOrMessageCreationStatus, 'Simulated')
-	assert.equal(pendingExecution.safeTransaction, undefined)
-	assert.equal(pendingExecution.safeExecutionSignerAddress, safeSignerAddress)
-	assert.deepEqual(pendingExecution.safeExecutionOriginalRequestParameters, transactionParams)
+	if (pendingExecution.safeFlow.kind !== 'directExecution') throw new Error('Expected a direct Safe execution flow')
+	assert.equal(pendingExecution.safeFlow.safeExecutionSignerAddress, safeSignerAddress)
+	assert.deepEqual(pendingExecution.safeFlow.safeExecutionOriginalRequestParameters, transactionParams)
 	assert.equal(pendingExecution.activeAddress, safeSignerAddress)
 	assert.equal(pendingExecution.originalRequestParameters.method, 'eth_sendTransaction')
 	if (pendingExecution.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Unexpected direct Safe execution method')
@@ -1200,10 +1191,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		},
+		await createAcceptConfirmation(),
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	)), false)
 	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
@@ -1213,10 +1201,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		},
+		await createAcceptConfirmation(),
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	)), false)
 	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
@@ -1225,16 +1210,13 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		},
+		await createAcceptConfirmation(),
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedExecution] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedExecution?.approvalStatus.status, 'WaitingForUser')
-	assert.equal(refreshedExecution?.type === 'Transaction' ? refreshedExecution.safeExecutionSignerAddress : undefined, alternateSignerAddress)
+	assert.equal(refreshedExecution?.type === 'Transaction' && refreshedExecution.safeFlow.kind === 'directExecution' ? refreshedExecution.safeFlow.safeExecutionSignerAddress : undefined, alternateSignerAddress)
 	assert.equal(refreshedExecution?.originalRequestParameters.method === 'eth_sendTransaction' ? refreshedExecution.originalRequestParameters.params[0].from : undefined, alternateSignerAddress)
 
 	await modules.updateTabState(socket.tabId, (state) => ({
@@ -1251,10 +1233,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		},
+		await createAcceptConfirmation(),
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -1273,10 +1252,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		},
+		await createAcceptConfirmation(),
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
@@ -1294,10 +1270,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		websiteTabConnections,
-		{
-			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
-		},
+		await createAcceptConfirmation(),
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')

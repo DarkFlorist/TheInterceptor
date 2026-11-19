@@ -3,6 +3,7 @@ import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type 
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import type { StorageWrite } from './settingsStorageTransaction.js'
 
 // Storage reads and legacy recovery stay independent of the funding transaction owner; user-requested mutations enter through mutateRichMode.
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
@@ -39,3 +40,5 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
+
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })

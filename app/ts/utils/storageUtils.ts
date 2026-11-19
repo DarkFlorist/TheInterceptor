@@ -47,30 +47,80 @@ export const OldActiveAddressEntry = funtypes.ReadonlyObject({
 
 export { RichListElement } from '../types/richMode.js'
 
+// Shared with startup reads so validating one setting never traverses unrelated storage unions.
+const startupStorageCodecs = {
+	independentActiveSimulationAddress: EthereumAddressOrMissing,
+	activeSigningSafeAddress: EthereumAddressOrMissing,
+	openedPageV2: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	activeRpcNetwork: RpcNetwork,
+	makeCurrentAddressRich: funtypes.Boolean,
+	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
+	signingAddressPreferences: SigningAddressPreferences,
+}
+
+export type StartupStorageValues = { [Key in keyof typeof startupStorageCodecs]: funtypes.Static<typeof startupStorageCodecs[Key]> }
+const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
+
+// Explicit writers preserve each storage key's value type when repairing corrupt startup data.
+const startupStorageDefaultWriters: { [Key in keyof StartupStorageValues]: (value: StartupStorageValues[Key]) => Promise<void> } = {
+	independentActiveSimulationAddress: async (value) => await browserStorageLocalSet({ independentActiveSimulationAddress: value }),
+	activeSigningSafeAddress: async (value) => await browserStorageLocalSet({ activeSigningSafeAddress: value }),
+	openedPageV2: async (value) => await browserStorageLocalSet({ openedPageV2: value }),
+	useSignersAddressAsActiveAddress: async (value) => await browserStorageLocalSet({ useSignersAddressAsActiveAddress: value }),
+	websiteAccess: async (value) => await browserStorageLocalSet({ websiteAccess: value }),
+	simulationMode: async (value) => await browserStorageLocalSet({ simulationMode: value }),
+	activeRpcNetwork: async (value) => await browserStorageLocalSet({ activeRpcNetwork: value }),
+	makeCurrentAddressRich: async (value) => await browserStorageLocalSet({ makeCurrentAddressRich: value }),
+	fixedAddressRichList: async (value) => await browserStorageLocalSet({ fixedAddressRichList: value }),
+	signingAddressPreferences: async (value) => await browserStorageLocalSet({ signingAddressPreferences: value }),
+}
+
+export async function getStartupStorageValueOrDefault<Key extends keyof StartupStorageValues>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
+	const rawValue = storedItems[key]
+	// Check presence before decoding: the stored 'missing' marker decodes to undefined, but represents an explicitly cleared address and must not select the default.
+	if (!hasOwnKey(storedItems, key) || rawValue === undefined) return defaultValue
+	const parsedValue = startupStorageValueCodecs[key].safeParse(rawValue)
+	if (parsedValue.success) return parsedValue.value
+	console.warn(`${ key } was corrupt:`)
+	console.warn(rawValue)
+	await startupStorageDefaultWriters[key](defaultValue)
+	return defaultValue
+}
+
+const { independentActiveSimulationAddress, activeSigningSafeAddress, ...startupStoragePartialCodecs } = startupStorageCodecs
+
+// Rich-mode legacy migration derives per-account funding from these settings without owning, or repairing, their storage keys.
+export async function getStoredActiveSimulationAddressAndNetwork() {
+	const { independentActiveSimulationAddress: rawActiveSimulationAddress, activeRpcNetwork: rawActiveRpcNetwork } = await browser.storage.local.get(['independentActiveSimulationAddress', 'activeRpcNetwork'])
+	const activeSimulationAddress = EthereumAddress.safeParse(rawActiveSimulationAddress)
+	const activeRpcNetwork = RpcNetwork.safeParse(rawActiveRpcNetwork)
+	return {
+		activeSimulationAddress: activeSimulationAddress.success ? activeSimulationAddress.value : undefined,
+		activeRpcNetwork: activeRpcNetwork.success ? activeRpcNetwork.value : undefined,
+	}
+}
+
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
-	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress', codec: typeof EthereumAddressOrMissing) => funtypes.Union(
+	funtypes.ReadonlyObject({ [propertyName]: codec })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
 		.withConstraint((item) => !hasOwnKey(item, propertyName)),
 )
-const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
-const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress')
-const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress')
+const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress', EthereumAddressOrMissing)
+const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress', activeSigningSafeAddress)
+const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress', independentActiveSimulationAddress)
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
-	openedPageV2: Page,
-	useSignersAddressAsActiveAddress: funtypes.Boolean,
-	websiteAccess: WebsiteAccessArray,
-	activeRpcNetwork: RpcNetwork,
-	simulationMode: funtypes.Boolean,
+	...startupStoragePartialCodecs,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
-	makeCurrentAddressRich: funtypes.Boolean,
 	richNativeAmount: EthereumQuantity,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
-	signingAddressPreferences: SigningAddressPreferences,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
 	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,
@@ -89,7 +139,6 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	ensNameHashes: ENSNameHashes,
 	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	richTokens: funtypes.ReadonlyArray(RichToken),
 	richAccountBalances: RichAccountBalances,
 	richModeState: RichModeState,
@@ -98,7 +147,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 }), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
-type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
+export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>

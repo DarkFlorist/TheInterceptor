@@ -729,6 +729,12 @@
 	width: 100%;
 }
 
+.safe-outcome-panel__signatures {
+	display: grid;
+	row-gap: 8px;
+	font-weight: 650;
+}
+
 .safe-outcome-panel__empty,
 .safe-outcome-panel__loading {
 	display: grid;

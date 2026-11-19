@@ -21,7 +21,8 @@ import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLarg
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
-export { getUserAddressBookEntries, getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst, repairLegacyAddressBookEntries, repairLegacyAddressBookEntry } from './addressBookStorage.js'
+export { getUserAddressBookEntries, getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst, repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
+import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -97,10 +98,18 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
-export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
-	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
-	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
+	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined,
+	write: async (fetchSimulationStackRequestPromise) => {
+		if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+	},
+	getDefault: () => undefined,
+})
+export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
+export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
+export async function clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await fetchSimulationStackRequestRepository.update((storedRequest) => storedRequest !== undefined && doesUniqueRequestIdentifiersMatch(storedRequest.uniqueRequestIdentifier, uniqueRequestIdentifier) ? undefined : storedRequest)
 }
 
 const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
@@ -264,15 +273,14 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 	}
 }
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await mutateRichMode(async (store) => { await store.updateAddressBook(updateFunc) })
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
+		return { writes: [{ userAddressBookEntriesV2: updateFunc(entries) }], result: undefined }
 	})
 }
 
