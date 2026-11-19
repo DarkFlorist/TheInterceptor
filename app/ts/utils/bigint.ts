@@ -1,3 +1,4 @@
+import { bytesFromHex, isHexString } from './ethereumBytes.js'
 import { getAddress, isAddress, formatUnits } from './ethereumPrimitives.js'
 
 export function bigintToDecimalString(value: bigint, power: bigint) {
@@ -60,6 +61,8 @@ export function stringToAddress(addressString: string | undefined) {
 export const bytes32String = (bytes32: bigint): `0x${ string }` => `0x${ bytes32.toString(16).padStart(64, '0') }`
 
 export function stringToUint8Array(data: string) {
+	if (data.length % 2 === 0 && isHexString(data)) return bytesFromHex(data)
+	// Any other string keeps its original reading as a BigInt literal sized by its character count, so callers see the same bytes or the same rejection.
 	const dataLength = (data.length - 2) / 2
 	if (dataLength === 0) return new Uint8Array()
 	return bigintToUint8Array(BigInt(data), dataLength)
@@ -77,19 +80,21 @@ export function dataStringWith0xStart(data: Uint8Array | null): `0x${ string }` 
 export function bigintToUint8Array(value: bigint, numberOfBytes: number) {
 	if (typeof value === 'number') value = BigInt(value)
 	if (value >= 2n ** BigInt(numberOfBytes * 8) || value < 0n) throw new Error(`Cannot fit ${ value } into a ${ numberOfBytes }-byte unsigned integer.`)
-	const result = new Uint8Array(numberOfBytes)
-	for (let i = 0; i < result.length; ++i) {
-		result[i] = Number((value >> BigInt(numberOfBytes - i - 1) * 8n) & 0xffn)
-	}
-	return result
+	// Uint8Array truncates a size of 0.5 to zero, so the old shift loop never evaluated a fractional BigInt shift for sub-byte sizes.
+	if (numberOfBytes < 1) return new Uint8Array()
+	if (!Number.isInteger(numberOfBytes)) throw new RangeError(`Cannot split a value into a fractional number of bytes (${ numberOfBytes }).`)
+	return bytesFromHex(`0x${ value.toString(16).padStart(numberOfBytes * 2, '0') }`)
+}
+
+// The one JSON encoding of bigints and bytes, for use inside a JSON.stringify replacer. Reviewed-result ids hash this encoding, so changing it changes every id.
+export const encodeBigIntOrBytesForJson = (value: unknown): unknown => {
+	if (typeof value === 'bigint') return `0x${ value.toString(16) }`
+	if (value instanceof Uint8Array) return dataStringWith0xStart(value)
+	return value
 }
 
 export function stringifyJSONWithBigInts(value: unknown, space?: string | number): string {
-	return JSON.stringify(value, (_key, value) => {
-		if (typeof value === 'bigint') return `0x${ value.toString(16) }`
-		if (value instanceof Uint8Array) return '0x' + Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('')
-		return value
-	}, space)
+	return JSON.stringify(value, (_key, nested: unknown) => encodeBigIntOrBytesForJson(nested), space)
 }
 
 export function bytesToUnsigned(bytes: Uint8Array): bigint {
@@ -134,8 +139,11 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	return sortedData[sortedData.length - 1]?.dataPoint ?? 0n
 }
 
+// JavaScript dates can represent at most 8.64e15 milliseconds from the epoch.
+export const MAX_DATE_SECONDS = 8640000000000n
+
 export const bigintSecondsToDate = (seconds: bigint) => {
-	if (seconds > 8640000000000n) throw new Error(`Too big seconds value: ${ seconds }`)
+	if (seconds > MAX_DATE_SECONDS) throw new Error(`Too big seconds value: ${ seconds }`)
 	if (seconds < 0) throw new Error(`Got negative seconds: ${ seconds }`)
 	return new Date(Number(seconds) * 1000)
 }
