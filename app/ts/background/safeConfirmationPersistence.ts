@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
+import type { PendingTransactionOrSignableMessageExceptBatch } from '../types/accessRequest.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { getErrorMessage } from '../utils/errors.js'
@@ -25,7 +25,7 @@ const signerError = (message: string): SafeSignerReplyResolution => ({
 
 export async function resolveSafeSignerReply(
 	ethereum: EthereumClientService,
-	pending: PendingTransactionOrSignableMessage,
+	pending: PendingTransactionOrSignableMessageExceptBatch,
 	signerReply: unknown,
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
@@ -47,7 +47,7 @@ export async function resolveSafeSignerReply(
 	return { status: 'not-safe' }
 }
 
-type PendingSafeTransaction = Extract<PendingTransactionOrSignableMessage, { readonly type: 'Transaction' }> & {
+type PendingSafeTransaction = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'Transaction' }> & {
 	readonly transactionOrMessageCreationStatus: 'Simulated'
 }
 
@@ -188,7 +188,7 @@ async function persistSafeTransaction(
 
 export async function persistUnsignedSafeTransaction(
 	ethereum: EthereumClientService,
-	pending: PendingTransactionOrSignableMessage,
+	pending: PendingTransactionOrSignableMessageExceptBatch,
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind !== 'proposal' || flow.pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'not-safe' }

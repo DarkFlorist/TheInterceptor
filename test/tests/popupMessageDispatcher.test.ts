@@ -166,7 +166,6 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 		settings,
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
-		confirmTransactionAbortController: new AbortController(),
 		resetSimulationState,
 	}
 }

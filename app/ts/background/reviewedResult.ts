@@ -2,6 +2,7 @@ import type { PendingTransactionOrSignableMessage } from '../types/accessRequest
 import { encodeBigIntOrBytesForJson } from '../utils/bigint.js'
 import { keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isRecord } from '../utils/runtimeTypeGuards.js'
+import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../utils/sendAnywayConsent.js'
 
 type FieldOf<T> = T extends unknown ? keyof T : never
 type PendingRequestField = FieldOf<PendingTransactionOrSignableMessage>
@@ -28,6 +29,15 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	approvalStatus: false,
 	// Bind the visualization and its signing inputs together, including the simulated signer and Safe message review.
 	signedMessageTransaction: true,
+	// A wallet_sendCalls batch: the calls prepared from the request, the website, account and network it is approved for, how its website is shown, and whether its calls run as Gnosis Safe executions are all shown or simulated for review.
+	transactionsToSimulate: true,
+	binding: true,
+	websiteDisplay: true,
+	executeCallsThroughSafe: true,
+	// The simulation input the batch preview ran on. Approval commits only against that input, so an accept is bound to it like to the preview itself.
+	simulatedInputFingerprint: true,
+	// The id returned to the website. It is fixed when the batch is admitted and is identity, like uniqueRequestIdentifier, rather than reviewed content.
+	batchId: false,
 }
 
 const isReviewedField = (field: string) => Object.entries(IS_REVIEWED_FIELD).some(([reviewedField, isReviewed]) => isReviewed && reviewedField === field)
@@ -42,4 +52,11 @@ export const stringifyCanonically = (value: unknown) => JSON.stringify(value, (_
 export const getReviewedResultId = (pending: PendingTransactionOrSignableMessage) => {
 	const reviewedContent = Object.fromEntries(Object.entries(pending).filter(([field]) => isReviewedField(field)))
 	return keccak256(stringToBytes(stringifyCanonically(reviewedContent)))
+}
+
+// An accept authorizes only the stored request whose reviewed content the user saw. A transaction or batch without a reviewable result cannot be accepted at all, and a failing or quarantined result also needs the send-anyway override.
+export function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { readonly reviewedResultId: string, readonly forceSend: boolean }) {
+	if (getReviewedResultId(pending) !== accept.reviewedResultId) return false
+	if (isRejectOnlyTransaction(pending)) return false
+	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }

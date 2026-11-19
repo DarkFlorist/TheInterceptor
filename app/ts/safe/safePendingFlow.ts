@@ -1,9 +1,12 @@
-import type { PendingTransactionOrSignableMessage, PendingTransactionSafeFlow } from '../types/accessRequest.js'
+import type { PendingTransactionOrSignableMessageExceptBatch } from '../types/accessRequest.js'
+import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeMessageCoSignSnapshot, SafeTransactionRequestContext, SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import type { PendingTransactionSafeFlow } from '../types/accessRequest.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
+import { isSafeExecutableRequestFromActiveAddress } from './safeExecutionRouting.js'
 
-type PendingTransaction = Extract<PendingTransactionOrSignableMessage, { readonly type: 'Transaction' }>
-type PendingSignableMessage = Extract<PendingTransactionOrSignableMessage, { readonly type: 'SignableMessage' }>
+type PendingTransaction = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'Transaction' }>
+type PendingSignableMessage = Extract<PendingTransactionOrSignableMessageExceptBatch, { readonly type: 'SignableMessage' }>
 type DirectSafeExecutionSafeFlow = Extract<PendingTransactionSafeFlow, { readonly kind: 'directExecution' }>
 type CreatedSafeProposalSafeFlow = Extract<PendingTransactionSafeFlow, { readonly kind: 'proposal', readonly state: 'created' }>
 
@@ -82,7 +85,12 @@ export function getPendingTransactionGasPayment(pending: PendingTransaction): Tr
 	return getSafeTransactionFlowGasPayment(getPendingTransactionFlowKind(pending))
 }
 
-export function getSafePendingFlow(pending: PendingTransactionOrSignableMessage): SafePendingFlow | undefined {
+// The fee mode of one call of a wallet_sendCalls batch, read back like getPendingTransactionGasPayment so the preview, every refresh and approval form the call the same way. The batch's admission decided once whether its account is a Gnosis Safe the simulation runs transactions through (isSimulationModeSafeAccount). If it is, each call the Safe can make through execTransaction (isSafeExecutableRequestFromActiveAddress) runs through the Safe, like the same call sent on its own, and the others are simulated as ordinary transactions from the Safe.
+export function getTransactionBatchCallGasPayment(batchExecutesCallsThroughSafe: boolean, callParams: SendTransactionParams, batchAccount: bigint): TransactionGasPayment {
+	return batchExecutesCallsThroughSafe && isSafeExecutableRequestFromActiveAddress(callParams, batchAccount) ? 'simulated-safe-executor' : 'transaction-sender'
+}
+
+export function getSafePendingFlow(pending: PendingTransactionOrSignableMessageExceptBatch): SafePendingFlow | undefined {
 	if (pending.type === 'Transaction') return getSafeTransactionPendingFlow(pending)
 	if (pending.safeMessageCoSignSnapshot === undefined) return undefined
 	return {

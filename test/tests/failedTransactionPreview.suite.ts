@@ -1,3 +1,4 @@
+import { runConfirmationSimulation } from '../../app/ts/background/confirmationSimulationRun.js'
 import * as assert from 'assert'
 import { setSystemTime, test as testWithDefaultNetwork } from 'bun:test'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
@@ -20,7 +21,8 @@ const successfulPopupVisualisation = { ...sharedSuccessfulPopupVisualisation, da
 	simulationState: { ...sharedSuccessfulPopupVisualisation.data.simulationState, rpcNetwork: previewRpcNetwork },
 } }
 const test = (name: string, run: () => Promise<void>) => testWithDefaultNetwork(name, async () => {
-	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
+	const { getSettings } = await import('../../app/ts/background/storedSettings.js')
 	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: previewRpcNetwork })
 	await run()
 })
@@ -192,14 +194,7 @@ test('resolves address-book names and parses calldata when the confirmation simu
 test('resolves address-book names and parses calldata when the transaction could not be formed', async () => {
 	await useInvoiceAddressBook()
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const popupVisualisation = await refreshConfirmTransactionSimulation(
-		simulator.ethereum,
-		simulator.tokenPriceService,
-		activeAddress,
-		true,
-		uniqueRequestIdentifier,
-		await createUnformedUsdcTransfer(7n),
-	)
+	const popupVisualisation = await runConfirmationSimulation(uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService, activeAddress, true, confirmationRun, await createUnformedUsdcTransfer(7n)))
 
 	assert.equal(popupVisualisation?.statusCode, 'success')
 	assert.equal(popupVisualisation?.data.transactionToSimulate.success, false)
@@ -240,7 +235,7 @@ test('refreshes the metadata of a confirmation stored without a confirmation run
 	const confirmationSimulator = createFeeValidatingSimulator(TOO_LITTLE_ETH_FOR_FEES, previewRpcNetwork)
 	await openUsdcTransferConfirmation(confirmationSimulator)
 	await setStoredConfirmationRunId(undefined)
-	assert.deepEqual((await getPendingFailedTransactionVisualisation()).data.confirmationRunId, { lifetime: '', sequence: 0 }, 'a confirmation stored without a confirmation run id decodes as a run of no lifetime')
+	assert.equal((await getPendingFailedTransactionVisualisation()).data.confirmationRunId, undefined, 'a legacy confirmation without a run id remains readable')
 	await modules.updateUserAddressBookEntries((entries) => [
 		...entries,
 		{ type: 'ERC20', name: 'Circle USD', symbol: 'USDC', decimals: 6n, address: USDC_ADDRESS, entrySource: 'User', chainId: previewRpcNetwork.chainId },
@@ -284,21 +279,12 @@ test('keeps a newer simulation run stored during the failure preview metadata re
 })
 
 test('gives the runs of a restarted background a new lifetime while their sequence starts over', async () => {
-	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	// A query string evaluates the module again, which is what a background restart does to its run counter and lifetime.
-	const restartedModulePath: string = '../../app/ts/background/confirmTransactionSimulation.js?background-restart'
-	const restartedBackground: typeof import('../../app/ts/background/confirmTransactionSimulation.js') = await import(restartedModulePath)
-	const simulateRun = async (simulate: typeof refreshConfirmTransactionSimulation) => {
-		const popupVisualisation = await simulate(simulator.ethereum, simulator.tokenPriceService, activeAddress, true, uniqueRequestIdentifier, await createUnformedUsdcTransfer(7n))
-		if (popupVisualisation === undefined) throw new Error('The confirmation simulation was cancelled')
-		return popupVisualisation.data.confirmationRunId
-	}
-
-	const runBeforeRestart = await simulateRun(refreshConfirmTransactionSimulation)
-	const runAfterRestart = await simulateRun(restartedBackground.refreshConfirmTransactionSimulation)
-
-	assert.equal(runAfterRestart.sequence, 1)
-	assert.notEqual(runAfterRestart.lifetime, runBeforeRestart.lifetime)
+ const restartedModulePath: string = '../../app/ts/background/confirmationSimulationRun.js?background-restart'
+ const restarted: typeof import('../../app/ts/background/confirmationSimulationRun.js') = await import(restartedModulePath)
+ const before = await runConfirmationSimulation(uniqueRequestIdentifier, async (run) => run.confirmationRunId)
+ const after = await restarted.runConfirmationSimulation(uniqueRequestIdentifier, async (run) => run.confirmationRunId)
+ assert.equal(after.sequence, 1)
+ assert.notEqual(after.lifetime, before.lifetime)
 })
 
 const LIFETIME_BEFORE_RESTART = 'background lifetime before the restart'
@@ -495,7 +481,7 @@ test('neither names, parses nor probes anything for a failed raw transaction, wh
 	await useInvoiceAddressBook()
 	const { Transaction } = await import('micro-eth-signer')
 	const { SendRawTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
-	const { formSendRawTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { formSendRawTransaction } = await import('../../app/ts/background/transactionPreparation.js')
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const unknownRecipient = 0x7777777777777777777777777777777777777777n
 	const signedTransfer = Transaction.prepare({
@@ -516,7 +502,7 @@ test('neither names, parses nor probes anything for a failed raw transaction, wh
 		if (rpcRequest.method === 'eth_getCode') probedAddresses.push(rpcRequest.params?.[0])
 		return rpcRequest.method === 'eth_getBlockByNumber' ? createRpcError('block lookup unavailable') : undefined
 	})
-	const popupVisualisation = await refreshConfirmTransactionSimulation(failingSimulator.ethereum, failingSimulator.tokenPriceService, activeAddress, true, uniqueRequestIdentifier, formedRawTransaction)
+	const popupVisualisation = await runConfirmationSimulation(uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(failingSimulator.ethereum, failingSimulator.tokenPriceService, activeAddress, true, confirmationRun, formedRawTransaction))
 	if (popupVisualisation?.statusCode !== 'failed') throw new Error('Expected the raw transaction confirmation to fail')
 	assert.equal(popupVisualisation.data.error.message, 'block lookup unavailable')
 	assert.deepEqual(popupVisualisation.data.failedTransactionPreview?.addressBookEntries, [])
@@ -583,14 +569,7 @@ test('stores the names of a newer metadata refresh that read the confirmation be
 test('resolves address-book names and parses calldata when the confirmation simulation throws', async () => {
 	await useInvoiceAddressBook()
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	const popupVisualisation = await refreshConfirmTransactionSimulation(
-		createSimulatorWithRpcFailure((rpcRequest) => rpcRequest.method === 'eth_getBalance' ? createRpcError('balance lookup unavailable') : undefined).ethereum,
-		simulator.tokenPriceService,
-		activeAddress,
-		true,
-		uniqueRequestIdentifier,
-		await createFormedUsdcTransfer(9n),
-	)
+	const popupVisualisation = await runConfirmationSimulation(uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(createSimulatorWithRpcFailure((rpcRequest) => rpcRequest.method === 'eth_getBalance' ? createRpcError('balance lookup unavailable') : undefined).ethereum, simulator.tokenPriceService, activeAddress, true, confirmationRun, await createFormedUsdcTransfer(9n)))
 
 	if (popupVisualisation?.statusCode !== 'failed') throw new Error('Expected the confirmation simulation to fail')
 	assert.equal(popupVisualisation.data.error.message, 'balance lookup unavailable')
@@ -770,7 +749,7 @@ test('keeps the newer stored simulation when a refresh is superseded during its 
 
 const refreshUsdcTransferSimulation = async (ethereum: InstanceType<typeof modules.EthereumClientService>, transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed) => {
 	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
-	return await refreshConfirmTransactionSimulation(ethereum, simulator.tokenPriceService, activeAddress, true, uniqueRequestIdentifier, transactionToSimulate)
+	return await runConfirmationSimulation(uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(ethereum, simulator.tokenPriceService, activeAddress, true, confirmationRun, transactionToSimulate))
 }
 
 // Each scenario reaches a different failure branch with the transfer recipient missing from the empty address book. The recipient is first looked up on chain by the failure preview, except after a failed simulation, whose own visualisation looks it up and saves it, so its failure preview then finds it locally without noticing an abort.

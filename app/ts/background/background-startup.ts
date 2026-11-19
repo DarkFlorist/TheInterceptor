@@ -1,7 +1,8 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
-import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { updateKnownWebsiteMetadata } from './settings.js'
+import { getSettings } from './storedSettings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'

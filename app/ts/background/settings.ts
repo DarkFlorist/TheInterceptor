@@ -1,15 +1,16 @@
 import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
-import type { Settings } from '../types/interceptor-messages.js'
+
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
+
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
-import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
-import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
+import { FIXED_ADDRESS_RICH_LIST_SETTING, MAKE_CURRENT_ADDRESS_RICH_SETTING, WEBSITE_ACCESS_SETTING, getPreSimulationBlockTimeManipulationFromStoredItems, getSettings, readStoredSettingFromStorage, type StoredSetting } from './storedSettings.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 
@@ -26,8 +27,6 @@ export const networkPriceSources = {
 
 export const defaultRpcs = DEFAULT_RPCS
 
-export const defaultSimulationMode = true
-
 const wethForChainId = new Map<string, EthereumAddress>([
 	['1', 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n], // Mainnet
 	['11155111', 0x105083929bf9bb22c26cb1777ec92661170d4285n], // Sepolia
@@ -40,47 +39,18 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
-async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageValues>(key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
-	return await getStartupStorageValueOrDefault(await browser.storage.local.get(key), key, defaultValue)
-}
-
-export async function getSettings() : Promise<Settings> {
-	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
-	const defaultPage: Page = { page: 'Home' }
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
-		'independentActiveSimulationAddress',
-		'activeSigningSafeAddress',
-		'openedPageV2',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'simulationMode',
-		'activeRpcNetwork',
-	]))
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
-	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
-		activeSimulationAddressPromise,
-		activeSigningSafeAddressPromise,
-		openedPagePromise,
-		useSignersAddressAsActiveAddressPromise,
-		websiteAccessPromise,
-		activeRpcNetworkPromise,
-		simulationModePromise,
-	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
-}
+// Import getSettings directly from storedSettings.ts; its lack of background dependencies also lets storageVariables.ts read settings without a cycle.
 
 export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
 export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
+
+const SIGNING_ADDRESS_PREFERENCES_SETTING: StoredSetting<'signingAddressPreferences'> = { storageKey: 'signingAddressPreferences', defaultValue: [] }
+
+
 export async function getSigningAddressPreferences() {
-	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
+	return await readStoredSettingFromStorage(SIGNING_ADDRESS_PREFERENCES_SETTING)
 }
 
 export const signingAddressPreferencesStorageWrite = (signingAddressPreferences: SigningAddressPreferences): StorageWrite => ({ signingAddressPreferences })
@@ -93,7 +63,7 @@ export async function rememberSigningAddressPreference(preference: SigningAddres
 }
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
-export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
+export const getMakeCurrentAddressRich = async() => await readStoredSettingFromStorage(MAKE_CURRENT_ADDRESS_RICH_SETTING)
 
 const makeMeRichSettingsSemaphore = new Semaphore(1)
 
@@ -108,7 +78,7 @@ export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRi
 }
 
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
-export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
+export async function getFixedAddressRichList() { return await readStoredSettingFromStorage(FIXED_ADDRESS_RICH_LIST_SETTING) }
 
 function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {
@@ -179,7 +149,7 @@ export async function changeSimulationMode(changes: SimulationModeChanges) {
 }
 
 async function getNormalizedWebsiteAccessFromStorage() {
-	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
+	const rawWebsiteAccess = await readStoredSettingFromStorage(WEBSITE_ACCESS_SETTING)
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
@@ -257,4 +227,4 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
-export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
+export const getPreSimulationBlockTimeManipulation = async() => getPreSimulationBlockTimeManipulationFromStoredItems(await browser.storage.local.get('preSimulationBlockTimeManipulation'))

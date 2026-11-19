@@ -496,7 +496,7 @@ const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../.
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 // The background sends the popup its copies of stored requests, stamped with their reviewed-result ids.
-const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/confirmationDialogUpdates.js')
 async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) {
 	await act(() => {
 		browser.dispatch({

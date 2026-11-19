@@ -1,12 +1,12 @@
 import * as funtypes from 'funtypes'
 import { PopupOrTabId, Website } from './websiteAccessTypes.js'
 import { AddressBookEntry } from './addressBookTypes.js'
-import { EthereumAddress, EthereumQuantity, EthereumTimestamp, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
 import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
-import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
+import { OriginalSendRequestParameters, SendTransactionParams, WalletSendCalls } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
 import { EnrichedEthereumInputData } from './EnrichedEthereumData.js'
@@ -32,44 +32,59 @@ export type PendingAccessRequests = funtypes.Static<typeof PendingAccessRequests
 export const PendingAccessRequests = funtypes.ReadonlyArray(PendingAccessRequest)
 
 export type FailedTransactionPreview = funtypes.Static<typeof FailedTransactionPreview>
-const FailedTransactionPreview = funtypes.ReadonlyObject({
-	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-	parsedInputData: EnrichedEthereumInputData,
-})
+const FailedTransactionPreview = funtypes.ReadonlyObject({ addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry), parsedInputData: EnrichedEthereumInputData })
 
-// Identifies the confirmation simulation run that produced a visualisation, across background restarts too: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A confirmation stored by a version without run ids decodes as a run of no lifetime, which no run's lifetime matches: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
-export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
-const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
-const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
-const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, ConfirmationRunId>(undefined, CONFIRMATION_RUN_OF_NO_LIFETIME)))
+// A run is ordered within a background lifetime and compared by value across storage reads. Legacy numeric ids have no lifetime and cannot match any newly started run.
+export type ConfirmationRunId = funtypes.Static<typeof CurrentConfirmationRunId>
+const CurrentConfirmationRunId = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
+export const ConfirmationRunId = funtypes.Union(CurrentConfirmationRunId, funtypes.Number.withParser({
+	parse: (input) => {
+		const parsed = funtypes.Number.safeParse(input)
+		return parsed.success ? { success: true, value: { lifetime: '', sequence: parsed.value } } : parsed
+	},
+	serialize: (value: ConfirmationRunId) => ({ success: true, value: value.sequence }),
+}))
 
-type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
-const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
+type ConfirmationSimulationCommonData = funtypes.Static<typeof ConfirmationSimulationCommonData>
+const ConfirmationSimulationCommonData = funtypes.ReadonlyObject({
 	activeAddress: EthereumAddress,
 	simulationMode: funtypes.Boolean,
 	simulationStartedTimestamp: EthereumTimestamp,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
-	// Names one confirmation simulation run of this pending transaction.
-	confirmationRunId: ConfirmationRunIdCodec,
 }).And(funtypes.ReadonlyPartial({
-	// Present when the transaction has no simulation results, so the failure view can still show its address-book names and parsed input.
+	// Names one confirmation simulation run of this pending transaction: the run that produced this visualisation. Confirmations stored by older versions have none.
+	confirmationRunId: ConfirmationRunId,
 	failedTransactionPreview: FailedTransactionPreview,
 }))
 
-type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
-const ConfirmTransactionDialogState = funtypes.Intersect(
-	ConfirmTransactionSimulationBaseData,
-	funtypes.ReadonlyObject({
-		addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
-		tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
-		namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
-		simulationState: SimulationState,
-		activeAddress: OptionalEthereumAddress,
-		visualizedSimulationState: VisualizedSimulationState
-	}),
+type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
+const ConfirmTransactionSimulationBaseData = funtypes.Intersect(
+	ConfirmationSimulationCommonData,
+	funtypes.ReadonlyObject({ transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed }),
 )
+
+type VisualizedConfirmationSimulation = funtypes.Static<typeof VisualizedConfirmationSimulation>
+const VisualizedConfirmationSimulation = funtypes.ReadonlyObject({
+	addressBookEntries: funtypes.ReadonlyArray(AddressBookEntry),
+	tokenPriceEstimates: funtypes.ReadonlyArray(TokenPriceEstimate),
+	namedTokenIds: funtypes.ReadonlyArray(NamedTokenId),
+	simulationState: SimulationState,
+	activeAddress: OptionalEthereumAddress,
+	visualizedSimulationState: VisualizedSimulationState
+})
+
+type FailedConfirmationSimulation = funtypes.Static<typeof FailedConfirmationSimulation>
+const FailedConfirmationSimulation = funtypes.ReadonlyObject({
+	error: DecodedError,
+	simulationState: funtypes.ReadonlyObject({
+		blockNumber: EthereumQuantity,
+		simulationConductedTimestamp: EthereumTimestamp,
+	})
+})
+
+type ConfirmTransactionDialogState = funtypes.Static<typeof ConfirmTransactionDialogState>
+const ConfirmTransactionDialogState = funtypes.Intersect(ConfirmTransactionSimulationBaseData, VisualizedConfirmationSimulation)
 
 type ConfirmTransactionSimulationStateChanged = funtypes.Static<typeof ConfirmTransactionSimulationStateChanged>
 const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
@@ -80,20 +95,28 @@ const ConfirmTransactionSimulationStateChanged = funtypes.ReadonlyObject({
 type ConfirmTransactionSimulationFailed = funtypes.Static<typeof ConfirmTransactionSimulationFailed>
 const ConfirmTransactionSimulationFailed = funtypes.ReadonlyObject({
 	statusCode: funtypes.Literal('failed'),
-	data: funtypes.Intersect(
-		ConfirmTransactionSimulationBaseData,
-		funtypes.ReadonlyObject({
-			error: DecodedError,
-			simulationState: funtypes.ReadonlyObject({
-				blockNumber: EthereumQuantity,
-				simulationConductedTimestamp: EthereumTimestamp,
-			})
-		})
-	)
+	data: funtypes.Intersect(ConfirmTransactionSimulationBaseData, FailedConfirmationSimulation)
 }).asReadonly()
 
 export type ConfirmTransactionTransactionSingleVisualization = funtypes.Static<typeof ConfirmTransactionTransactionSingleVisualization>
 export const ConfirmTransactionTransactionSingleVisualization = funtypes.Union(ConfirmTransactionSimulationFailed, ConfirmTransactionSimulationStateChanged)
+
+// What one confirmation simulation run records, whichever flow ran it. simulateConfirmationRun in confirmationSimulationRun.ts is the only producer, so every flow's success and failure records have the same shape.
+export type ConfirmationSimulationRecord = funtypes.Static<typeof ConfirmationSimulationRecord>
+export const ConfirmationSimulationRecord = funtypes.Union(
+	funtypes.ReadonlyObject({
+		statusCode: funtypes.Literal('success'),
+		data: funtypes.Intersect(ConfirmationSimulationCommonData, VisualizedConfirmationSimulation),
+	}),
+	funtypes.ReadonlyObject({
+		statusCode: funtypes.Literal('failed'),
+		data: funtypes.Intersect(ConfirmationSimulationCommonData, FailedConfirmationSimulation),
+	}),
+)
+
+// A batch is visualized as one simulation in which every successfully prepared call is appended, in order, on top of the current simulation stack. It stores the run's record as it is, a single transaction adds its prepared transaction to it.
+export type ConfirmTransactionBatchVisualization = ConfirmationSimulationRecord
+export const ConfirmTransactionBatchVisualization = ConfirmationSimulationRecord
 
 type PendingTransactionApprovalStatus = funtypes.Static<typeof PendingTransactionApprovalStatus>
 const PendingTransactionApprovalStatus = funtypes.Union(
@@ -178,6 +201,70 @@ const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 export type PendingTransaction = funtypes.Static<typeof PendingTransaction>
 export const PendingTransaction = funtypes.Union(CraftingTransactionPendingTransaction, WaitingForSimulationPendingTransaction, SimulatedPendingTransaction)
 
+// Captured when wallet_sendCalls is admitted and re-checked on approval, so a batch is only ever approved for the website, account and network it was simulated for.
+export type WalletSendCallsBinding = funtypes.Static<typeof WalletSendCallsBinding>
+export const WalletSendCallsBinding = funtypes.ReadonlyObject({
+	websiteOrigin: funtypes.String,
+	account: EthereumAddress,
+	chainId: EthereumQuantity,
+})
+
+// How the website that requested a batch is shown. Its origin is not repeated here: the binding's origin is the only one a batch has (see getTransactionBatchWebsite).
+type WebsiteDisplay = funtypes.Static<typeof WebsiteDisplay>
+const WebsiteDisplay = funtypes.ReadonlyObject({
+	icon: funtypes.Union(funtypes.String, funtypes.Undefined),
+	title: funtypes.Union(funtypes.String, funtypes.Undefined),
+})
+
+type PendingTransactionBatchBase = funtypes.Static<typeof PendingTransactionBatchBase>
+const PendingTransactionBatchBase = funtypes.ReadonlyObject({
+	type: funtypes.Literal('TransactionBatch'),
+	popupOrTabId: PopupOrTabId,
+	// The canonical request rebuilt from the validated calls. The same calls are simulated, shown, approved and added to the simulation stack.
+	originalRequestParameters: WalletSendCalls,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	// Signing mode refuses wallet_sendCalls (see getSigningModeWalletCallsReply), so every batch belongs to simulation mode.
+	simulationMode: funtypes.Literal(true),
+	created: EthereumTimestamp,
+	approvalStatus: PendingTransactionApprovalStatus,
+	// The batch's only record of its website origin, account and network. Unlike the other confirmations, a batch stores no separate activeAddress or website, so the account and origin that form, label, authorize and register it cannot diverge.
+	binding: WalletSendCallsBinding,
+	websiteDisplay: WebsiteDisplay,
+	// Returned to the website when the batch is added to the simulation stack.
+	batchId: funtypes.String,
+}).And(funtypes.ReadonlyPartial({
+	// The admission's decision, made once like a single transaction's executeThroughSafe, that the batch's account is a Gnosis Safe the simulation runs transactions through (isSimulationModeSafeAccount). Every preparation of the batch forms each call that the Safe can make through execTransaction as a Safe execution from it (getTransactionBatchCallGasPayment), so its calls get simulationOptions.executeThroughSafe and consecutive Safe call nonces.
+	executeCallsThroughSafe: funtypes.Literal(true),
+}))
+
+export type PendingTransactionBatch = funtypes.Static<typeof PendingTransactionBatch>
+export const PendingTransactionBatch = funtypes.Intersect(
+	PendingTransactionBatchBase,
+	funtypes.Union(
+		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Crafting') }),
+		funtypes.ReadonlyObject({
+			// Simulated when every call could be prepared as a transaction, FailedToSimulate otherwise.
+			transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Simulated'), funtypes.Literal('FailedToSimulate')),
+			transactionsToSimulate: funtypes.ReadonlyArray(WebsiteCreatedEthereumTransactionOrFailed),
+			popupVisualisation: ConfirmTransactionBatchVisualization,
+			// Identifies the simulation input the preview simulated: the stack with the batch's calls appended (getStackSimulationInputFingerprint). Approval refuses the batch once the input it would commit differs.
+			simulatedInputFingerprint: funtypes.String,
+		}),
+	),
+)
+
+// The website a batch is shown with: the binding's origin, which every other batch module also reads, with the stored display metadata.
+export const getTransactionBatchWebsite = (pendingBatch: Pick<PendingTransactionBatch, 'binding' | 'websiteDisplay'>): Website => ({ websiteOrigin: pendingBatch.binding.websiteOrigin, ...pendingBatch.websiteDisplay })
+
+// One wallet_sendCalls batch id that a website uses, with the binding its batch was admitted with and the calls that approving it adds to the simulation stack (see walletSendCallsBatchIds.ts for when records are added and removed).
+export type WalletSendCallsBatchIdRecord = funtypes.Static<typeof WalletSendCallsBatchIdRecord>
+export const WalletSendCallsBatchIdRecord = funtypes.ReadonlyObject({
+	// The batch's website origin, account and network: the origin keeps ids unique per website, and wallet_getCallsStatus reports the bundle only to that account on that network.
+	binding: WalletSendCallsBinding,
+	batchId: funtypes.String,
+	transactionIdentifiers: funtypes.ReadonlyArray(EthereumQuantity),
+})
+
 type PendingSignableMessage = funtypes.Static<typeof PendingSignableMessage>
 const PendingSignableMessage = funtypes.Intersect(
 	funtypes.ReadonlyObject({
@@ -204,6 +291,9 @@ const PopupReviewedResultId = funtypes.String
 export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
 export const PopupPendingTransaction = funtypes.Intersect(PendingTransaction, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
 
+export type PopupPendingTransactionBatch = funtypes.Static<typeof PopupPendingTransactionBatch>
+export const PopupPendingTransactionBatch = funtypes.Intersect(PendingTransactionBatch, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
+
 type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({
 	type: funtypes.Literal('SignableMessage'),
@@ -227,12 +317,14 @@ export const PopupPendingSignableMessage = funtypes.Intersect(
 	)
 )
 
-export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction
-const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction)
+export type PendingTransactionOrSignableMessage = PendingSignableMessage | PendingTransaction | PendingTransactionBatch
+// The confirmations that the single-transaction, message and Gnosis Safe flows handle: every kind except wallet_sendCalls batches, which walletSendCallsConfirmation.ts confirms.
+export type PendingTransactionOrSignableMessageExceptBatch = Exclude<PendingTransactionOrSignableMessage, { readonly type: 'TransactionBatch' }>
+const PendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PendingTransactionOrSignableMessage> = funtypes.Union(PendingSignableMessage, PendingTransaction, PendingTransactionBatch)
 export const PendingTransactionOrSignableMessage: typeof PendingTransactionOrSignableMessageRuntype = PendingTransactionOrSignableMessageRuntype
 
-export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PopupPendingTransaction
-const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PopupPendingTransaction)
+export type PopupPendingTransactionOrSignableMessage = PopupPendingSignableMessage | PopupPendingTransaction | PopupPendingTransactionBatch
+const PopupPendingTransactionOrSignableMessageRuntype: funtypes.Runtype<PopupPendingTransactionOrSignableMessage> = funtypes.Union(PopupPendingSignableMessage, PopupPendingTransaction, PopupPendingTransactionBatch)
 export const PopupPendingTransactionOrSignableMessage: typeof PopupPendingTransactionOrSignableMessageRuntype = PopupPendingTransactionOrSignableMessageRuntype
 
 // Popup-local provenance, never persisted or sent over the wire. The disjoint source tags prevent storage first paint from being treated as a background-reviewed, confirmable request.

@@ -3,7 +3,7 @@ import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
 import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
 import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
-import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { decodeCallDataLoose, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeTx, SAFE_ABI, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
@@ -209,6 +209,8 @@ export async function loadModules() {
 		safeSimulation,
 		safeCore,
 		safeConfirmationPersistence,
+		confirmationDialogUpdates,
+		transactionPreparation,
 		errors,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
@@ -232,6 +234,8 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
+		import('../../app/ts/background/confirmationDialogUpdates.js'),
+		import('../../app/ts/background/transactionPreparation.js'),
 		import('../../app/ts/utils/errors.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
@@ -251,9 +255,9 @@ export async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
-		toPopupPendingTransactionOrSignableMessage: confirmTransaction.toPopupPendingTransactionOrSignableMessage,
-		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
-		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
+		toPopupPendingTransactionOrSignableMessage: confirmationDialogUpdates.toPopupPendingTransactionOrSignableMessage,
+		updateConfirmTransactionView: confirmationDialogUpdates.updateConfirmTransactionView,
+		formEthSendTransaction: transactionPreparation.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
@@ -339,11 +343,8 @@ const SIMULATED_GET_CODE_ABI = [{ type: 'function', name: 'at', stateMutability:
 
 const isSimulatedGetCodeCall = (call: unknown) => isRecord(call) && (typeof call.to === 'bigint' || typeof call.to === 'string') && BigInt(call.to) === SIMULATED_GET_CODE_CONTRACT
 
-// Answers code reads with non-empty code, so simulated calls to contracts such as a Safe produce a result, and every other call with a multicall balance result.
+// Answers each simulated call: see getFakeSimulatedCallReturnData.
 export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], calls: readonly unknown[] = [{}]) {
-	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
-	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
-	const getCodeResult = encodeFunctionReturn(SIMULATED_GET_CODE_ABI, 'at', ['0x01'])
 	return {
 		number: 123n,
 		hash: 0x9876n,
@@ -355,9 +356,25 @@ export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi
 			status: 'success' as const,
 			gasUsed: 21_000n,
 			logs: [],
-			returnData: hexToBytes(isSimulatedGetCodeCall(call) ? getCodeResult : aggregate3Result),
+			returnData: getFakeSimulatedCallReturnData(call, multicallBalance, multicallAbi),
 		})),
 	}
+}
+
+// The code a simulated code read returns, like eth_getCode: the active address, which Safe tests use as the Safe, has code so simulated Safe calls produce a result, and other addresses have the owner code, empty by default, so protectors see them as accounts without code.
+function getSimulatedCode(call: unknown) {
+	const input = isRecord(call) && call.input instanceof Uint8Array ? call.input : undefined
+	const target = input === undefined ? undefined : decodeCallDataLoose(SIMULATED_GET_CODE_ABI, input)?.args[0]
+	return (typeof target === 'string' || typeof target === 'bigint') && BigInt(target) === activeAddress ? '0x01' : fakeSafeContract.ownerCode
+}
+
+// Code reads are answered by getSimulatedCode. Balance lookups are Multicall3 aggregate3 calls answered with one balance per query, so simulations with several calldata-carrying transactions run end to end.
+function getFakeSimulatedCallReturnData(call: unknown, multicallBalance: bigint, multicallAbi: readonly string[]) {
+	if (isSimulatedGetCodeCall(call)) return hexToBytes(encodeFunctionReturn(SIMULATED_GET_CODE_ABI, 'at', [getSimulatedCode(call)]))
+	const decodedCall = isRecord(call) && call.input instanceof Uint8Array ? decodeCallDataLoose(multicallAbi, call.input) : undefined
+	const balanceQueries = decodedCall?.name === 'aggregate3' ? decodedCall.args[0] : undefined
+	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
+	return hexToBytes(encodeFunctionReturn(multicallAbi, 'aggregate3', [Array.from({ length: Array.isArray(balanceQueries) ? balanceQueries.length : 1 }, () => ({ success: true, returnData: balanceResult }))]))
 }
 
 export const browserMock = createBrowserMock()
@@ -414,6 +431,7 @@ export const fakeSafeContract = {
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
+	getEthSimulateFailure: undefined as ((rpcRequest: { method: string, params?: readonly unknown[] }) => Error | undefined) | undefined,
 	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
@@ -430,6 +448,7 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
+	fakeSafeContract.getEthSimulateFailure = undefined
 	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
 
@@ -478,8 +497,10 @@ export const fakeRequestHandler = {
 					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
 				}
 			}
-			case 'eth_simulateV1':
+			case 'eth_simulateV1': {
 				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
+				const ethSimulateFailure = fakeSafeContract.getEthSimulateFailure?.(rpcRequest)
+				if (ethSimulateFailure !== undefined) throw ethSimulateFailure
 				return modules.serialize(
 					modules.EthSimulateV1Result,
 					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => {
@@ -489,6 +510,7 @@ export const fakeRequestHandler = {
 						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])) } : callResult) }
 					}),
 				)
+			}
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 		}

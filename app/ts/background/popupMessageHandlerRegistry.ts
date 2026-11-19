@@ -11,7 +11,6 @@ export type PopupMessageDispatcherContext = {
 	settings: Settings
 	publishRpcConnectionStatus: PublishRpcConnectionStatus
 	simulationAbortController: AbortController
-	confirmTransactionAbortController: AbortController
 	resetSimulationState: () => Promise<void>
 }
 

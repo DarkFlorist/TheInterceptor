@@ -13,7 +13,7 @@ Object.defineProperty(globalThis, 'browser', {
 	} } },
 })
 const { browserStorageLocalSafeParse } = await import('../../app/ts/utils/storageUtils.js')
-const { getSettings } = await import('../../app/ts/background/settings.js')
+const { getSettings } = await import('../../app/ts/background/storedSettings.js')
 
 beforeEach(() => {
 	for (const key of Object.keys(storedItems)) delete storedItems[key]

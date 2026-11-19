@@ -254,7 +254,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			import('../../app/ts/utils/storageUtils.js'),
 			import('../../app/ts/background/settings.js'),
 			import('../../app/ts/background/storageVariables.js'),
-			import('../../app/ts/background/windows/confirmTransaction.js'),
+			import('../../app/ts/background/confirmationDialogUpdates.js'),
 			import('../../app/ts/components/pages/ConfirmTransaction.js'),
 			import('../../app/ts/simulation/services/EthereumClientService.js'),
 			import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -335,7 +335,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const pendingTransaction = makePendingTransaction()
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
-		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/confirmationDialogUpdates.js')
 		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
@@ -392,7 +392,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		const freshPendingTransaction = makePendingTransaction('fresh pushed transaction')
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
 		const { serialize } = await import('../../app/ts/types/wire-types.js')
-		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+		const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/confirmationDialogUpdates.js')
 		const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../../app/ts/types/interceptor-messages.js')
 		const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
 		const browser = installBrowserMock(async (message) => {

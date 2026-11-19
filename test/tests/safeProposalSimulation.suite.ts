@@ -275,12 +275,14 @@ test('runs the pre-sign confirmation simulation of a Safe proposal through the S
 		input: new Uint8Array(),
 	}, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
-	const popupVisualisation = await (await import('../../app/ts/background/confirmTransactionSimulation.js')).refreshConfirmTransactionSimulation(
+	const { refreshConfirmTransactionSimulation } = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const { runConfirmationSimulation } = await import('../../app/ts/background/confirmationSimulationRun.js')
+	const popupVisualisation = await runConfirmationSimulation(uniqueRequestIdentifier, async (confirmationRun) => await refreshConfirmTransactionSimulation(
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		activeAddress,
 		false,
-		uniqueRequestIdentifier,
+		confirmationRun,
 		pendingTransaction.transactionToSimulate,
 		{
 			safeAddress: activeAddress,
@@ -291,7 +293,7 @@ test('runs the pre-sign confirmation simulation of a Safe proposal through the S
 			safeTx,
 			executionGasLimit: 123_456n,
 		},
-	)
+	))
 
 	assert.equal(popupVisualisation?.statusCode, 'success')
 	if (popupVisualisation?.statusCode !== 'success') throw new Error('Safe confirmation simulation failed')
@@ -427,7 +429,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: [{ type: 'Transaction', preSimulationTransaction }],
 	}))
-	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await (await import('../../app/ts/background/storedSettings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
 	assert.equal((await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput())[0]?.transactions.length, 1)
 	await modules.setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },

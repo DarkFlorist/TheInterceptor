@@ -3,7 +3,7 @@ import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequest
 import { applyWebsiteAccessUpdate } from '../applyWebsiteAccessUpdate.js'
 import { withInterceptorDisabledForWebsite, withExternalRequestsBlockedOrAllowed, withoutAddressAccess, withAddressAccessForWebsite, withoutWebsiteAccess } from '../websiteAccessMutations.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getSettings } from '../settings.js'
+import { getSettings } from '../storedSettings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'

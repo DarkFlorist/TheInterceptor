@@ -1,4 +1,5 @@
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
+import type { JSX } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
@@ -15,7 +16,7 @@ import { identifyTransaction } from '../simulationExplaining/identifyTransaction
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { BackgroundPendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage, ShownPendingTransactionOrSignableMessage, SimulatedPendingTransaction } from '../../types/accessRequest.js'
+import { getTransactionBatchWebsite, type BackgroundPendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage, type ShownPendingTransactionOrSignableMessage, type SimulatedPendingTransaction } from '../../types/accessRequest.js'
 import { WebsiteOriginText } from '../subcomponents/address.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
@@ -48,6 +49,7 @@ import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getSimulatedTransactionBatch, getTransactionBatchErrorMessage, getTransactionBatchTitle, TransactionBatchCard } from './ConfirmTransactionBatch.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<ShownPendingTransactionOrSignableMessage[]>
@@ -154,16 +156,176 @@ export async function sendConfirmDialogMessage(message: TransactionConfirmation)
 	return undefined
 }
 
+type PendingConfirmationOfKind<Kind extends ShownPendingTransactionOrSignableMessage['type']> = Extract<ShownPendingTransactionOrSignableMessage, { readonly type: Kind }>
+
+// How the confirmation window shows, labels and gates one kind of confirmation. getConfirmationKindView picks it with an exhaustive switch, so a new kind of confirmation does not compile until it has one. Callers narrow only by creation status, so each member checks the status it needs itself.
+type ConfirmationKindView = {
+	// Keys the confirmation's card in the queue shown under the current confirmation.
+	readonly stackItemKey: string
+	readonly website: Website
+	readonly activeAddress: bigint | undefined
+	// The header text of a queued confirmation whose simulation failed.
+	readonly getFailedToSimulateTitle: () => string
+	// The header card of a queued confirmation that was simulated.
+	readonly renderSimulatedUnderCard: (style: string, absoluteStyle: string) => JSX.Element
+	// The title of the current confirmation once it was simulated.
+	readonly getSimulatedTitle: () => string
+	// What the approval buttons name and whom they sign with, or undefined to show only the reject button.
+	readonly getButtonLabels: () => { readonly identified: ConfirmationActionButtonsParams['identified'], readonly signerName: SignerName } | undefined
+	// The error passed to the website when the user rejects.
+	readonly getRejectionErrorString: () => string | undefined
+	// Whether approving is disabled once the checks shared by every kind passed, including the shared send-anyway rules (getSendAnywayOverrideReason, isRejectOnlyTransaction).
+	readonly isConfirmDisabled: (forceSend: boolean) => boolean
+	// The address book entries that a signer error's details may name.
+	readonly getSignerErrorAddressBookEntries: () => readonly AddressBookEntry[]
+	// The address book entries of the shown preview, or undefined to use those of the simulation stack.
+	readonly getPreviewAddressBookEntries: () => readonly AddressBookEntry[] | undefined
+	readonly renderCard: (params: TransactionCardParams) => JSX.Element
+}
+
+function getTransactionView(pending: PendingConfirmationOfKind<'Transaction'>): ConfirmationKindView {
+	const getSimulatedResults = () => pending.transactionOrMessageCreationStatus === 'Simulated' ? getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier) : undefined
+	return {
+		stackItemKey: `transaction-${ pending.transactionIdentifier.toString() }`,
+		website: pending.website,
+		activeAddress: pending.activeAddress,
+		getFailedToSimulateTitle: () => pending.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pending.transactionToSimulate.error.message : getTransactionStatusLabel(pending.transactionOrMessageCreationStatus),
+		renderSimulatedUnderCard: (style, absoluteStyle) => {
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return <></>
+			if (pending.popupVisualisation.statusCode === 'success' && pending.popupVisualisation.data.visualizedSimulationState.success) {
+				const simTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
+				if (simTx === undefined) throw new Error('No simulated and visualized transactions')
+				return <div key = { `transaction-${ pending.transactionIdentifier.toString() }` } class = 'card' style = { style }>
+					<TransactionHeader simTx = { simTx } />
+					<div style = { absoluteStyle }></div>
+				</div>
+			}
+			return <div key = { `transaction-${ pending.transactionIdentifier.toString() }` } class = 'card' style = { style }>
+				<TransactionHeaderForFailedToSimulate website = { pending.transactionToSimulate.website } />
+				<div style = { absoluteStyle }></div>
+			</div>
+		},
+		getSimulatedTitle: () => {
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return getTransactionStatusLabel(pending.transactionOrMessageCreationStatus)
+			if (pending.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
+			const lastTx = getSimulatedResults()
+			if (lastTx === undefined) return 'Could not find transaction...'
+			return identifyTransaction(lastTx).title
+		},
+		getButtonLabels: () => {
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
+			const lastTx = getSimulatedResults()
+			if (lastTx === undefined) return undefined
+			return { identified: identifyTransaction(lastTx), signerName: pending.popupVisualisation.data.signerName }
+		},
+		getRejectionErrorString: () => {
+			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
+			const results = getSimulatedResults()
+			if (results === undefined) return undefined
+			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
+		},
+		// A missing, failing or quarantined result is covered by the shared send-anyway rules.
+		isConfirmDisabled: () => false,
+		getSignerErrorAddressBookEntries: () => [],
+		getPreviewAddressBookEntries: () => pending.transactionOrMessageCreationStatus === 'Simulated' && pending.popupVisualisation.statusCode === 'success' ? pending.popupVisualisation.data.addressBookEntries : undefined,
+		renderCard: (params) => <TransactionCard { ...params } />,
+	}
+}
+
+function getSignableMessageView(pending: PendingConfirmationOfKind<'SignableMessage'>): ConfirmationKindView {
+	return {
+		stackItemKey: `message-${ pending.uniqueRequestIdentifier.requestId.toString() }`,
+		website: pending.website,
+		activeAddress: pending.activeAddress,
+		// A message is never left FailedToSimulate, so only its status is shown.
+		getFailedToSimulateTitle: () => getTransactionStatusLabel(pending.transactionOrMessageCreationStatus),
+		renderSimulatedUnderCard: (style, absoluteStyle) => {
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return <></>
+			return <div key = { `message-${ pending.uniqueRequestIdentifier.requestId.toString() }` } class = 'card' style = { style }>
+				<SignatureHeader visualizedPersonalSignRequest = { pending.visualizedPersonalSignRequest }/>
+				<div style = { absoluteStyle }></div>
+			</div>
+		},
+		getSimulatedTitle: () => pending.transactionOrMessageCreationStatus === 'Simulated' ? identifySignature(pending.visualizedPersonalSignRequest).title : getTransactionStatusLabel(pending.transactionOrMessageCreationStatus),
+		getButtonLabels: () => pending.transactionOrMessageCreationStatus === 'Simulated' ? { identified: identifySignature(pending.visualizedPersonalSignRequest), signerName: pending.visualizedPersonalSignRequest.signerName } : undefined,
+		getRejectionErrorString: () => undefined,
+		isConfirmDisabled: (forceSend) => {
+			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+			return shouldDisableSignableMessageConfirm({
+				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
+				canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
+				forceSendEnabled: forceSend,
+				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
+			})
+		},
+		getSignerErrorAddressBookEntries: () => pending.transactionOrMessageCreationStatus !== 'Simulated' ? [] : [
+			pending.visualizedPersonalSignRequest.account,
+			pending.visualizedPersonalSignRequest.activeAddress,
+			...(pending.visualizedPersonalSignRequest.type === 'SafeTx' ? [pending.visualizedPersonalSignRequest.verifyingContract, ...pending.visualizedPersonalSignRequest.parsedMessageDataAddressBookEntries] : []),
+		],
+		getPreviewAddressBookEntries: () => undefined,
+		renderCard: (params) => pending.transactionOrMessageCreationStatus !== 'Simulated' ? <></> : <>
+			<SignatureCard
+				visualizedPersonalSignRequest = { pending.visualizedPersonalSignRequest }
+				renameAddressCallBack = { params.renameAddressCallBack }
+				removeTransactionOrSignedMessage = { undefined }
+				numberOfUnderTransactions = { params.numberOfUnderTransactions }
+				editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }
+			/>
+		</>,
+	}
+}
+
+function getTransactionBatchView(pending: PendingConfirmationOfKind<'TransactionBatch'>): ConfirmationKindView {
+	const simulatedBatch = getSimulatedTransactionBatch(pending)
+	return {
+		stackItemKey: `batch-${ pending.uniqueRequestIdentifier.requestId.toString() }`,
+		website: getTransactionBatchWebsite(pending),
+		activeAddress: pending.binding.account,
+		getFailedToSimulateTitle: () => (simulatedBatch === undefined ? undefined : getTransactionBatchErrorMessage(simulatedBatch)) ?? 'Simulation failed',
+		renderSimulatedUnderCard: (style, absoluteStyle) => <div key = { `batch-${ pending.uniqueRequestIdentifier.requestId.toString() }` } class = 'card' style = { style }>
+			<header class = 'card-header'>
+				<p class = 'card-header-title' style = 'white-space: nowrap;'>{ getTransactionBatchTitle(pending) }</p>
+				<WebsiteOriginText website = { getTransactionBatchWebsite(pending) } class = 'card-header-website' />
+			</header>
+			<div style = { absoluteStyle }></div>
+		</div>,
+		getSimulatedTitle: () => getTransactionBatchTitle(pending),
+		getButtonLabels: () => simulatedBatch === undefined ? undefined : { identified: { title: getTransactionBatchTitle(pending), signingAction: 'Send batch', simulationAction: 'Simulate batch', rejectAction: 'Reject batch' }, signerName: simulatedBatch.popupVisualisation.data.signerName },
+		getRejectionErrorString: () => simulatedBatch === undefined ? undefined : getTransactionBatchErrorMessage(simulatedBatch),
+		// A call without a result, or one that fails or is quarantined, is covered by the shared send-anyway rules.
+		isConfirmDisabled: () => false,
+		getSignerErrorAddressBookEntries: () => [],
+		getPreviewAddressBookEntries: () => simulatedBatch?.popupVisualisation.statusCode === 'success' ? simulatedBatch.popupVisualisation.data.addressBookEntries : undefined,
+		renderCard: (params) => <div style = { `position: relative; top: ${ params.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
+			<TransactionBatchCard
+				currentPendingTransaction = { params.currentPendingTransaction }
+				renameAddressCallBack = { params.renameAddressCallBack }
+				editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }
+				currentBlockNumber = { params.currentBlockNumber }
+				rpcConnectionStatus = { params.rpcConnectionStatus }
+			/>
+		</div>,
+	}
+}
+
+export function getConfirmationKindView(pending: ShownPendingTransactionOrSignableMessage): ConfirmationKindView {
+	switch (pending.type) {
+		case 'Transaction': return getTransactionView(pending)
+		case 'SignableMessage': return getSignableMessageView(pending)
+		case 'TransactionBatch': return getTransactionBatchView(pending)
+		default: return assertNever(pending)
+	}
+}
+
 function UnderTransactions(param: UnderTransactionsParams) {
 	const absoluteStyle = 'background-color: var(--disabled-card-color); position: absolute; width: 100%; height: 100%; top: 0px'
 	const nTx = param.pendingTransactionsAndSignableMessages.value.length
 	return <div style = { `position: relative; top: ${ nTx * -HALF_HEADER_HEIGHT }px;` }>
 		{ param.pendingTransactionsAndSignableMessages.value.map((pendingTransaction, index) => {
 			const style = `margin-bottom: 0px; scale: ${ Math.pow(0.95, nTx - index) }; position: relative; top: ${ (nTx - index) * HALF_HEADER_HEIGHT }px;`
-			const stackItemKey = pendingTransaction.type === 'Transaction'
-				? `transaction-${ pendingTransaction.transactionIdentifier.toString() }`
-				: `message-${ pendingTransaction.uniqueRequestIdentifier.requestId.toString() }`
-			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div key = { stackItemKey } class = 'card' style = { style }>
+			const view = getConfirmationKindView(pendingTransaction)
+			if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return <div key = { view.stackItemKey } class = 'card' style = { style }>
 				<header class = 'card-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
@@ -171,30 +333,13 @@ function UnderTransactions(param: UnderTransactionsParams) {
 						</span>
 					</div>
 					<p class = 'card-header-title' style = 'white-space: nowrap;'>
-						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? pendingTransaction.transactionToSimulate.error.message : 'Simulating...' }
+						{ pendingTransaction.transactionOrMessageCreationStatus === 'FailedToSimulate' ? view.getFailedToSimulateTitle() : 'Simulating...' }
 					</p>
-					<WebsiteOriginText website = { pendingTransaction.website } class = 'card-header-website' />
+					<WebsiteOriginText website = { view.website } class = 'card-header-website' />
 				</header>
 				<div style = { absoluteStyle }></div>
 			</div>
-			if (pendingTransaction.type === 'Transaction') {
-				if (pendingTransaction.popupVisualisation.statusCode === 'success' && pendingTransaction.popupVisualisation.data.visualizedSimulationState.success) {
-					const simTx = getResultsForTransaction(pendingTransaction.popupVisualisation.data.visualizedSimulationState, pendingTransaction.transactionIdentifier)
-					if (simTx === undefined) throw new Error('No simulated and visualized transactions')
-					return <div key = { stackItemKey } class = 'card' style = { style }>
-						<TransactionHeader simTx = { simTx } />
-						<div style = { absoluteStyle }></div>
-					</div>
-				}
-				return <div key = { stackItemKey } class = 'card' style = { style }>
-					<TransactionHeaderForFailedToSimulate website = { pendingTransaction.transactionToSimulate.website } />
-					<div style = { absoluteStyle }></div>
-				</div>
-			}
-			return <div key = { stackItemKey } class = 'card' style = { style }>
-				<SignatureHeader visualizedPersonalSignRequest = { pendingTransaction.visualizedPersonalSignRequest }/>
-				<div style = { absoluteStyle }></div>
-			</div>
+			return view.renderSimulatedUnderCard(style, absoluteStyle)
 		}) }
 	</div>
 }
@@ -215,11 +360,7 @@ const TransactionNames = (param: TransactionNamesParams) => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction.value
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
 		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return getTransactionStatusLabel(currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus)
-		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
-		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
-		const lastTx = getVisualizedTransactionResult(currentPendingTransactionOrSignableMessage.popupVisualisation, currentPendingTransactionOrSignableMessage.transactionIdentifier)
-		if (lastTx === undefined) return 'Could not find transaction...'
-		return identifyTransaction(lastTx).title
+		return getConfirmationKindView(currentPendingTransactionOrSignableMessage).getSimulatedTitle()
 	}
 
 	const namesWithCurrentTransaction = useComputed(() => {
@@ -577,6 +718,7 @@ const SEND_ANYWAY_OVERRIDE_TEXTS: Record<SendAnywayOverrideReason, string> = {
 	failingTransaction: 'I understand that the transaction will fail but I want to send it anyway.',
 	quarantinedTransaction: 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.',
 	quarantinedSignature: 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.',
+	failingOrQuarantinedBatchCalls: 'I understand that some calls in this batch fail or have issues, but I want to send the whole batch anyway against Interceptors recommendations.',
 }
 
 export const CheckBoxes = (params: CheckBoxesParams) => {
@@ -584,14 +726,8 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 	if (current === undefined) return <></>
 	if (current?.transactionOrMessageCreationStatus !== 'Simulated') return <></>
 	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
-	const visualizedAddressBookEntries = current.type === 'SignableMessage'
-		? [
-			current.visualizedPersonalSignRequest.account,
-			current.visualizedPersonalSignRequest.activeAddress,
-			...(current.visualizedPersonalSignRequest.type === 'SafeTx' ? [current.visualizedPersonalSignRequest.verifyingContract, ...current.visualizedPersonalSignRequest.parsedMessageDataAddressBookEntries] : []),
-		]
-		: []
-	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
+	const view = getConfirmationKindView(current)
+	const addressBookEntries = [...view.getSignerErrorAddressBookEntries(), ...(params.addressBookEntries ?? [])]
 	const overrideReason = getSendAnywayOverrideReason(current)
 	// A signer error keeps the request open for a retry, and a changed failure or quarantine reason during it clears the override, so the checkbox stays reachable.
 	const overrideCheckBox = overrideReason === undefined
@@ -622,7 +758,7 @@ type NetworkErrorParams = {
 const WebsiteErrors = ({ currentPendingTransactionOrSignableMessage }: NetworkErrorParams) => {
 	const current = currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
-	const message = getWebsiteWarningMessage(current.website.websiteOrigin, current.simulationMode)
+	const message = getWebsiteWarningMessage(getConfirmationKindView(current).website.websiteOrigin, current.simulationMode)
 	if (message === undefined) return <></>
 	if (message.suggestedAlternative === undefined) return <ErrorComponent warning = { true } text = { message.message }/>
 	return <ErrorComponent warning = { true } text = { <> { message.message } <Link url = { message.suggestedAlternative } text = { 'Suggested alternative' } websiteSocket = { current.uniqueRequestIdentifier.requestSocket } /> </> }/>
@@ -776,15 +912,9 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
-	const signerName = currentPendingTransactionOrSignableMessage.type === 'Transaction' ? currentPendingTransactionOrSignableMessage.popupVisualisation.data.signerName : currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest.signerName
-	const identify = () => {
-		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest)
-		const lastTx = getVisualizedTransactionResult(currentPendingTransactionOrSignableMessage.popupVisualisation, currentPendingTransactionOrSignableMessage.transactionIdentifier)
-		if (lastTx === undefined) return undefined
-		return identifyTransaction(lastTx)
-	}
-	const identified = identify()
-	if (identified === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
+	const buttonLabels = getConfirmationKindView(currentPendingTransactionOrSignableMessage).getButtonLabels()
+	if (buttonLabels === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
+	const { identified, signerName } = buttonLabels
 
 	return <ConfirmationActionButtons
 		identified = { identified }
@@ -960,12 +1090,7 @@ export function ConfirmTransaction() {
 		const getPossibleErrorString = () => {
 			const pending = currentPendingTransactionOrSignableMessage.value
 			if (pending === undefined) return undefined
-			if (pending.transactionOrMessageCreationStatus === 'FailedToSimulate') return pending.transactionToSimulate.error.message
-			if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
-			if (pending.type !== 'Transaction') return undefined
-			const results = getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier)
-			if (results === undefined) return undefined
-			return results.transactionStatus !== 'Transaction Succeeded' ? results.error.message : undefined
+			return getConfirmationKindView(pending).getRejectionErrorString()
 		}
 
 		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
@@ -1025,15 +1150,7 @@ export function ConfirmTransaction() {
 		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
 		if (isRejectOnlyTransaction(pending)) return true
 		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
-		if (pending.type !== 'Transaction') {
-			return shouldDisableSignableMessageConfirm({
-				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
-				canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
-				forceSendEnabled: forceSend.value,
-				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
-			})
-		}
-		return false
+		return getConfirmationKindView(pending).isConfirmDisabled(forceSend.value)
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
@@ -1046,10 +1163,7 @@ export function ConfirmTransaction() {
 
 	function getCurrentAddressBookEntries() {
 		const current = currentPendingTransactionOrSignableMessage.value
-		if (current?.type === 'Transaction' && current.transactionOrMessageCreationStatus === 'Simulated' && current.popupVisualisation.statusCode === 'success') {
-			return current.popupVisualisation.data.addressBookEntries
-		}
-		return completeVisualizedSimulation.value.addressBookEntries
+		return (current === undefined ? undefined : getConfirmationKindView(current).getPreviewAddressBookEntries()) ?? completeVisualizedSimulation.value.addressBookEntries
 	}
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
@@ -1083,7 +1197,7 @@ export function ConfirmTransaction() {
 		return <>
 				<main>
 					<Hint>
-						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
+						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value === undefined ? undefined : getConfirmationKindView(currentPendingTransactionOrSignableMessage.value).activeAddress } rpcEntries = { rpcEntries }/>
 						<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
 							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
 								<CenterToPageTextSpinner text = { loadingText }/>
@@ -1095,7 +1209,7 @@ export function ConfirmTransaction() {
 	return (
 			<main>
 				<Hint>
-					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
+					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value === undefined ? undefined : getConfirmationKindView(currentPendingTransactionOrSignableMessage.value).activeAddress } rpcEntries = { rpcEntries }/>
 					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
 						<div style = 'position: sticky; top: 0; z-index: 1;'>
 							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage } backgroundCopyUnavailable = { backgroundCopyUnavailable }/>
@@ -1132,25 +1246,15 @@ export function ConfirmTransaction() {
 							</div>
 							<UnderTransactions pendingTransactionsAndSignableMessages = { underTransactions }/>
 							<div style = { `top: ${ underTransactions.value.length * -HALF_HEADER_HEIGHT }px` }></div>
-							{ currentPendingTransactionOrSignableMessage.value.type === 'Transaction' ?
-								<TransactionCard
-									currentPendingTransaction = { currentPendingTransactionOrSignableMessage }
-									pendingTransactionsAndSignableMessages = { pendingTransactionsAndSignableMessages.value }
-									renameAddressCallBack = { renameAddressCallBack }
-									editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-									currentBlockNumber = { currentBlockNumber }
-									rpcConnectionStatus = { rpcConnectionStatus }
-									numberOfUnderTransactions = { underTransactions.value.length }
-								/>
-							: <>
-								<SignatureCard
-									visualizedPersonalSignRequest = { currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest }
-									renameAddressCallBack = { renameAddressCallBack }
-									removeTransactionOrSignedMessage = { undefined }
-									numberOfUnderTransactions = { underTransactions.value.length }
-									editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
-								/>
-							</> }
+							{ getConfirmationKindView(currentPendingTransactionOrSignableMessage.value).renderCard({
+								currentPendingTransaction: currentPendingTransactionOrSignableMessage,
+								pendingTransactionsAndSignableMessages: pendingTransactionsAndSignableMessages.value,
+								renameAddressCallBack,
+								editEnsNamedHashCallBack,
+								currentBlockNumber,
+								rpcConnectionStatus,
+								numberOfUnderTransactions: underTransactions.value.length,
+							}) }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
 							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
