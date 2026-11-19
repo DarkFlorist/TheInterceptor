@@ -1,4 +1,5 @@
 import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
+import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -109,7 +110,7 @@ function createSignedMessageTransaction(message: string, requester: Requester = 
 async function visualize(message: string, requester?: Requester) {
 	const restoreBrowser = installBrowserStorageMock()
 	try {
-		return await craftPersonalSignPopupMessage(ethereum, undefined, createSignedMessageTransaction(message, requester), rpcEntry)
+		return await craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), createSignedMessageTransaction(message, requester), rpcEntry)
 	} finally {
 		restoreBrowser()
 	}
