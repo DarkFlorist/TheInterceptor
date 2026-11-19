@@ -1,3 +1,4 @@
+import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -377,7 +378,7 @@ describe('import simulation stack', () => {
 
 		const rpcEntry = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: false }
 		const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async () => { throw new Error('RPC should not be called') } }, async () => undefined, async () => undefined, rpcEntry)
-		const visualized = await modules.craftPersonalSignPopupMessage(ethereum, undefined, importedOperation.signedMessageTransaction, rpcEntry)
+		const visualized = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), importedOperation.signedMessageTransaction, rpcEntry)
 		assert.equal(visualized.type, 'SignInWithEthereum')
 		assert.equal(visualized.quarantine, true)
 		assert.deepEqual(visualized.quarantineReasons, ['This sign-in message is for https://example.com, but the Interceptor did not record the full origin of the website that requested it, so it cannot check that they match.'])
