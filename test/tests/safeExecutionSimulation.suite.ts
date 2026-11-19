@@ -1093,3 +1093,31 @@ test('an imported Safe call runs ordinarily and stays out of signing-mode simula
 	await changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
 	assert.equal((await getCurrentSimulationInput([])).flatMap((block) => block.transactions).length, 1, 'switching back preserves the imported scenario')
 })
+
+for (const shape of ['access-list transaction', 'contract creation', 'EOA sender']) test(`import admission removes Safe execution authority from an ${ shape } before RPC preparation`, async () => {
+	const { admitImportedSimulationStackOperations } = await import('../../app/ts/background/importedSimulationStack.js')
+	const { prepareSafeExecutionsForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+	const transaction = createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, SAFE_EXECUTION_SIMULATION_OPTIONS)
+	const signed = transaction.signedTransaction
+	if (signed.type !== '1559') throw new Error('Expected the EIP-1559 fixture')
+	const signedTransaction: PreSimulationTransaction['signedTransaction'] = shape === 'access-list transaction'
+		? { ...signed, type: '2930', gasPrice: 1n }
+		: shape === 'contract creation' ? { ...signed, to: null } : { ...signed, from: ORDINARY_ACCOUNT }
+	// Decode the untrusted wire shape first, exactly as import does; all three shapes are valid ordinary transactions but invalid Safe execution claims.
+	const decoded = InterceptorTransactionStack.parse(InterceptorTransactionStack.serialize({ operations: [{ type: 'Transaction', preSimulationTransaction: { ...transaction, signedTransaction } }] }))
+	const [decodedOperation] = decoded.operations
+	if (decodedOperation?.type !== 'Transaction') throw new Error('Expected a decoded transaction')
+	const decodedTransaction = decodedOperation.preSimulationTransaction.signedTransaction
+	const admission = admitImportedSimulationStackOperations(decoded.operations)
+	if (!admission.admitted) throw new Error(admission.rejection)
+	const [operation] = admission.operations
+	if (operation?.type !== 'Transaction') throw new Error('Expected an admitted ordinary transaction')
+	assert.deepEqual(operation.preSimulationTransaction.signedTransaction, decodedTransaction)
+	assert.deepEqual(operation.preSimulationTransaction.simulationOptions, ORDINARY_SIMULATION_OPTIONS)
+	const prepared = await prepareSafeExecutionsForRpc([{
+		stateOverrides: {}, transactions: [operation.preSimulationTransaction], signedMessages: [],
+		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }, simulateWithZeroBaseFee: false,
+	}], ethereum)
+	assert.equal(prepared[0]?.transactions[0]?.executedTransaction, undefined)
+	assert.deepEqual(prepared[0]?.transactions[0]?.signedTransaction, decodedTransaction)
+})
