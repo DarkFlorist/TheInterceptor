@@ -55,7 +55,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 
 // Shared with startup reads so validating one setting never traverses unrelated storage unions.
 const startupStorageCodecs = {
-	selectedSigningAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	selectedSigningAddress: EthereumAddressOrMissing,
 	independentActiveSimulationAddress: EthereumAddressOrMissing,
 	activeSigningSafeAddress: EthereumAddressOrMissing,
 	openedPageV2: Page,
@@ -98,10 +98,10 @@ export async function getStartupStorageValueOrDefault<Key extends keyof StartupS
 	return defaultValue
 }
 
-const { independentActiveSimulationAddress, activeSigningSafeAddress, ...startupStoragePartialCodecs } = startupStorageCodecs
+const { independentActiveSimulationAddress, activeSigningSafeAddress, selectedSigningAddress, ...startupStoragePartialCodecs } = startupStorageCodecs
 
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress', codec: typeof EthereumAddressOrMissing) => funtypes.Union(
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress' | 'selectedSigningAddress', codec: typeof EthereumAddressOrMissing) => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: codec })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
@@ -110,6 +110,8 @@ const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'ac
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress', EthereumAddressOrMissing)
 const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress', activeSigningSafeAddress)
 const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress', independentActiveSimulationAddress)
+// The settings import resets the explicit signing address inside its single storage set, which needs a stored value for "no address" rather than a key removal.
+const OptionalSelectedSigningAddressStorageProperty = presenceAwareOptionalAddress('selectedSigningAddress', selectedSigningAddress)
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	...startupStoragePartialCodecs,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
@@ -141,7 +143,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
+}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty, OptionalSelectedSigningAddressStorageProperty)
 export type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 

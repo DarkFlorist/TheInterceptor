@@ -4,7 +4,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalRemove, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
 import { getAddressBookAndSigningWalletBindings } from './signingAddressBookCoordinator.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -82,7 +82,9 @@ export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedP
 export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
-export const clearSelectedSigningAddress = async () => await browserStorageLocalRemove('selectedSigningAddress')
+export const selectedSigningAddressStorageWrite = (selectedSigningAddress: EthereumAddress | undefined): StorageWrite => ({ selectedSigningAddress })
+// Runs under the settings storage lock, so an explicit selection and a settings import that resets it apply in the order they started.
+export const setSelectedSigningAddress = async (selectedSigningAddress: EthereumAddress | undefined) => await runSettingsStorageTransaction(async () => ({ writes: [selectedSigningAddressStorageWrite(selectedSigningAddress)], result: undefined }))
 
 export async function getSigningAddressPreferences() {
 	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import * as fs from 'node:fs'
-import { beforeEach, describe, test } from 'bun:test'
+import { beforeEach, describe, spyOn, test } from 'bun:test'
 import * as ts from 'typescript'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -550,6 +550,7 @@ describe('settings import', () => {
 	})
 
 	const preImportSigningPreference = { signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
+	const preImportSelectedSigningAddress = 0x9696969696969696969696969696969696969690n
 
 	const storePreImportSettings = async () => {
 		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
@@ -562,6 +563,7 @@ describe('settings import', () => {
 		await setUseTabsInsteadOfPopup(false)
 		await setSafeAppsCompatibilityMode(true)
 		await persistMetamaskCompatibilityMode(true)
+		await (await settingsModulePromise).setSelectedSigningAddress(preImportSelectedSigningAddress)
 	}
 
 	// One export per accepted version, each with a check of the values that version imports or preserves over storePreImportSettings.
@@ -679,7 +681,41 @@ describe('settings import', () => {
 
 			assert.equal(browserMock.takeSetCalls().length, 1, `version ${ exportedSettings.version } import wrote storage more than once`)
 			await assertImportedValues()
+			assert.equal((await (await settingsModulePromise).getSettings()).selectedSigningAddress, undefined, `version ${ exportedSettings.version } import kept the selected signing address`)
 		}
+	})
+
+	test('the import resets the selected signing address in its storage set, so no later storage removal can fail after the settings were replaced', async () => {
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
+		if (currentVersionExport === undefined) throw new Error('Expected a current settings export')
+		browserMock.reset()
+		await storePreImportSettings()
+		const removal = spyOn(browser.storage.local, 'remove').mockRejectedValue(new Error('Storage removal unavailable'))
+		try {
+			await importSettingsAndAddressBook(currentVersionExport)
+		} finally {
+			removal.mockRestore()
+		}
+		assert.equal((await getSettings()).selectedSigningAddress, undefined)
+	})
+
+	test('a signing address selected while an import holds the settings storage lock applies after the import instead of being erased by it', async () => {
+		const { getSettings, importSettingsAndAddressBook, setSelectedSigningAddress } = await settingsModulePromise
+		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
+		if (currentVersionExport === undefined) throw new Error('Expected a current settings export')
+		const laterSelectedSigningAddress = 0x9797979797979797979797979797979797979790n
+		browserMock.reset()
+		await storePreImportSettings()
+		const importWriteGate = browserMock.blockNextAddressBookWrite()
+		const settingsImport = importSettingsAndAddressBook(currentVersionExport)
+		await importWriteGate.started
+		const laterSelection = setSelectedSigningAddress(laterSelectedSigningAddress)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal((await getSettings()).selectedSigningAddress, preImportSelectedSigningAddress, 'the selection waits for the import holding the lock')
+		importWriteGate.release()
+		await Promise.all([settingsImport, laterSelection])
+		assert.equal((await getSettings()).selectedSigningAddress, laterSelectedSigningAddress)
 	})
 
 	test('a failed import storage write leaves storage unchanged for every export version', async () => {

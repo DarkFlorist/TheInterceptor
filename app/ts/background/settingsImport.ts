@@ -1,7 +1,7 @@
 import type { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { normalizeSettingsImport } from '../utils/settingsImport.js'
-import { clearSelectedSigningAddress, defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
+import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, selectedSigningAddressStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getUserAddressBookEntries } from './addressBookStore.js'
 import { addressBookAndSigningWalletBindingsImportWrites } from './signingAddressBookCoordinator.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
@@ -28,6 +28,8 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 					activeSigningAddress: undefined,
 					activeSigningSafeAddress: imported.activeSigningSafeAddress,
 				}),
+				// An explicit signing address chosen before the import may not exist in the imported address book, so the import resets it like the active signing address.
+				selectedSigningAddressStorageWrite(undefined),
 				signingAddressPreferencesStorageWrite(imported.signingAddressPreferences),
 				useSignersAddressAsActiveAddressStorageWrite(imported.useSignersAddressAsActiveAddress),
 				websiteAccessStorageWrite(imported.websiteAccess),
@@ -37,6 +39,4 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 			],
 		}
 	})
-	// An explicit signing address chosen before the import may not exist in the imported address book; the import resets it like the active signing address.
-	await clearSelectedSigningAddress()
 }
