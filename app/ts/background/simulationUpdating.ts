@@ -36,7 +36,6 @@ import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/r
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getActiveStackContext } from '../utils/activeStackContext.js'
 import type { SimulationSelection } from '../utils/simulationSelection.js'
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
