@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 import { createEthereumWithGetBlockCounter, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import { test } from 'bun:test'
-import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, createSimulationServicesOwnerForServices } from '../../app/ts/simulation/serviceLifecycle.js'
 
 test('the service owner publishes each installed pair and retains captured snapshots', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -80,7 +80,7 @@ test('reconciles selected networks against the installed client', () => {
 	}
 })
 
-test('the test owner starts from its actual client and uses the production replacement policy', () => {
+test('the test owner tracks replacement selections without changing injected client metadata', () => {
 	const services = createEthereumWithGetBlockCounter({ count: 0 })
 	const initialNetwork = services.ethereum.getRpcEntry()
 	let replacements = 0
@@ -90,7 +90,32 @@ test('the test owner starts from its actual client and uses the production repla
 	assert.equal(replacements, 0)
 	const next = { ...initialNetwork, httpsRpc: 'https://replacement.example' }
 	assert.equal(owner.ensureNetwork(next), 'replaced')
-	assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, next.httpsRpc)
+	assert.equal(owner.getCurrent(), services)
+	assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, initialNetwork.httpsRpc)
 	assert.equal(owner.ensureNetwork(next), 'unchanged')
 	assert.equal(replacements, 1)
+})
+
+
+test('injected owner selection is explicit and advances only after replacement succeeds', () => {
+	const services = createEthereumWithGetBlockCounter({ count: 0 })
+	const actual = services.ethereum.getRpcEntry()
+	const installed = { ...actual, httpsRpc: 'https://explicit-initial.example' }
+	const next = { ...installed, httpsRpc: 'https://explicit-next.example' }
+	let shouldFail = true
+	let replacements = 0
+	const owner = createSimulationServicesOwnerForServices(installed, services, (current) => {
+		replacements++
+		if (shouldFail) throw new Error('Replacement failed')
+		return current
+	})
+	assert.equal(owner.ensureNetwork(installed), 'unchanged')
+	assert.throws(() => owner.ensureNetwork(next), /Replacement failed/)
+	assert.equal(owner.ensureNetwork(installed), 'unchanged')
+	shouldFail = false
+	assert.equal(owner.ensureNetwork(next), 'replaced')
+	assert.equal(owner.ensureNetwork(next), 'unchanged')
+	assert.equal(replacements, 2)
+	assert.equal(owner.getCurrent(), services)
+	assert.deepEqual(services.ethereum.getRpcEntry(), actual)
 })

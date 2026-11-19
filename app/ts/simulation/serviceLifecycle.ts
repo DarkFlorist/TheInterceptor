@@ -80,22 +80,24 @@ export function createSimulationServicesOwner(
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
 	return createSimulationServicesOwnerForServices(
+		rpcNetwork,
 		createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks),
 		(current, nextRpc) => resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks),
 	)
 }
 
-// The same owner can manage real clients or injected services, with one reconciliation policy and no separate endpoint bookkeeping.
-export function createSimulationServicesOwnerForServices(initial: SimulationServices, replace: (current: SimulationServices, network: RpcEntry) => SimulationServices): SimulationServicesOwner {
+// The owner records the installed selection explicitly, so injected services need not spoof client metadata to participate in reconciliation.
+export function createSimulationServicesOwnerForServices(initialNetwork: RpcEntry, initial: SimulationServices, replace: (current: SimulationServices, network: RpcEntry) => SimulationServices): SimulationServicesOwner {
 	let current = initial
+	let installedNetwork = initialNetwork
 	return {
 		getCurrent: () => current,
 		ensureNetwork: (nextNetwork, options = {}) => {
 			if (isSignerOnlyNetwork(nextNetwork)) return 'signerOnly'
-			const installedNetwork = current.ethereum.getRpcEntry()
 			const entryChanged = options.updateMetadata && getRpcEntryIdentityKey(installedNetwork) !== getRpcEntryIdentityKey(nextNetwork)
 			if (!entryChanged && !getRpcNetworkChange(installedNetwork, nextNetwork).endpointChanged) return 'unchanged'
 			current = replace(current, nextNetwork)
+			installedNetwork = nextNetwork
 			return 'replaced'
 		},
 	}

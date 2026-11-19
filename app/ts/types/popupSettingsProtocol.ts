@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import type { ImportSettingsReply } from './interceptor-messages.js'
 import type { ImportSettings, PopupSettingsRequest } from './popupSettingsRequests.js'
 
 export type PopupSettingsAdmittedRequest = PopupSettingsRequest | ImportSettings
@@ -10,10 +11,10 @@ export const popupSettingsOperations = {
 	popup_changeActiveRpc: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_modifyMakeMeRich: { operation: 'rich', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_set_rpc_list: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
-	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', method: 'popup_initiate_export_settings_reply' } },
+	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', createFailure: (errorMessage: string): ImportSettingsReply => ({ method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage } }) } },
 } as const satisfies Record<PopupSettingsAdmittedRequest['method'], {
 	operation: string
-	reply: { transport: 'direct', type: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' } | { transport: 'broadcast', method: 'popup_initiate_export_settings_reply' }
+	reply: { transport: 'direct', type: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' } | { transport: 'broadcast', createFailure: (message: string) => ImportSettingsReply }
 }>
 
 export type DirectPopupSettingsMethod = {

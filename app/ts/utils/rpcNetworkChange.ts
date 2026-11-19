@@ -1,4 +1,4 @@
-import { RpcNetwork } from '../types/rpc.js'
+import { RpcNetwork, type RpcEntries } from '../types/rpc.js'
 
 export type RpcNetworkChange = {
 	readonly chainChanged: boolean
@@ -31,3 +31,9 @@ export function getRpcChangeRoute(previous: RpcNetwork, next: RpcNetwork, simula
 	if (!change.selectionChanged) return 'unchanged'
 	return !simulationMode && change.chainChanged ? 'wallet' : 'local'
 }
+
+// Keep an exact configured entry first, then edited endpoint metadata, then the selected chain's primary (or first) remaining entry.
+export const resolveRpcNetworkAfterListChange = (active: RpcNetwork, entries: RpcEntries) => entries.find(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(active))
+	?? entries.find(entry => !getRpcNetworkChange(active, entry).endpointChanged)
+	?? entries.find(entry => entry.chainId === active.chainId && entry.primary)
+	?? entries.find(entry => entry.chainId === active.chainId)

@@ -225,6 +225,15 @@ describe('UI boundary fixes', () => {
 		}
 	})
 
+	test('removing the active RPC uses the shared primary-first fallback', async () => {
+		const active: RpcEntry = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
+		const first = { ...active, name: 'First', httpsRpc: 'https://first.example' }
+		const primary = { ...active, name: 'Primary', httpsRpc: 'https://primary.example', primary: true }
+		const changes: RpcEntry[] = []
+		await removeRpcEntryAndKeepActiveRpcConsistent(active, [active, first, primary], active, async () => undefined, async entry => { changes.push(entry) })
+		assert.deepEqual(changes, [primary])
+	})
+
 	test('rejects stale RPC edits and duplicate connections before persistence', async () => {
 		const entry: RpcEntry = { name: 'Original', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 		const stale = { ...entry, name: 'Stale' }

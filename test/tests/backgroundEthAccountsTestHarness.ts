@@ -302,15 +302,5 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 }
 
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }): SimulationServicesOwner {
-	return createSimulationServicesOwnerForServices(initial, (_current, network) => {
-		const next = reset === undefined ? initial : reset(network)
-		// Preserve fake method behavior while making the installed client's endpoint match the requested replacement.
-		const ethereum = new Proxy(next.ethereum, {
-			get(target, property, receiver) {
-				if (property === 'getRpcEntry') return () => network
-				return Reflect.get(target, property, receiver)
-			},
-		})
-		return { ...next, ethereum }
-	})
+	return createSimulationServicesOwnerForServices(initial.ethereum.getRpcEntry(), initial, (_current, network) => reset === undefined ? initial : reset(network))
 }

@@ -5,11 +5,11 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
+import { getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, changeSimulationMode } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getRpcEntryIdentityKey, getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
+import { resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
 import { runActiveSettingsTransition } from '../activeSettings.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
@@ -70,10 +70,7 @@ export async function setNewRpcList(simulationServicesOwner: SimulationServicesO
 		const settings = await getSettings()
 		await setRpcList(request.data)
 		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-		// Preserve an exact configured selection before matching an endpoint whose metadata may have been edited.
-		const selected = request.data.find((entry) => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(settings.activeRpcNetwork))
-			?? request.data.find((entry) => !getRpcNetworkChange(settings.activeRpcNetwork, entry).endpointChanged)
-		const network = selected ?? await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
+		const network = resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, request.data)
 		if (network !== undefined) await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
 		return true
 	}, { updateNetworkMetadata: true })

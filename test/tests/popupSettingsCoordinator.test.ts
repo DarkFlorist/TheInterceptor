@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { ImportSettingsReply } from '../../app/ts/types/interceptor-messages.js'
 import { createPopupSettingsCoordinator } from '../../app/ts/background/popupSettingsCoordinator.js'
 import { acceptPopupSettingsChangeStatus, popupSettingsOperations, PopupSettingsOperation, type PopupSettingsChangeStatus } from '../../app/ts/types/popupSettingsProtocol.js'
 import { createDeferredValue } from './backgroundEthAccountsTestHarness.js'
@@ -31,4 +32,10 @@ test('admitted operation validation is derived from every protocol descriptor, i
 	assert.equal(popupSettingsOperations.popup_import_settings.operation, 'import')
 	for (const descriptor of Object.values(popupSettingsOperations)) assert.equal(PopupSettingsOperation.parse(descriptor.operation), descriptor.operation)
 	assert.equal(PopupSettingsOperation.safeParse('unknown').success, false)
+})
+
+
+test('the import descriptor owns a valid broadcast admission-failure reply', () => {
+	const reply = popupSettingsOperations.popup_import_settings.reply.createFailure('Settings are busy')
+	assert.deepEqual(ImportSettingsReply.parse(reply), { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Settings are busy' } })
 })

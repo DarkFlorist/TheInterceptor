@@ -18,7 +18,7 @@ function settingsCommand<Method extends PopupSettingsAdmittedRequest['method']>(
 		const message = 'Another popup is changing settings. Please wait for it to finish, then try again.'
 		const reply = descriptor.reply
 		if (reply.transport === 'broadcast') {
-			await sendPopupMessageToOpenWindows({ method: reply.method, data: { success: false, errorMessage: message } })
+			await sendPopupMessageToOpenWindows(reply.createFailure(message))
 			return
 		}
 		return { type: reply.type, ok: false, message }
