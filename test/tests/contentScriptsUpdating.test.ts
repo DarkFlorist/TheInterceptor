@@ -1113,7 +1113,7 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(disabledHostProvider?.js?.flatMap(({ file }) => file === undefined ? [] : [file]), ['/inpage/js/inpage-metamask-compatibility.js'])
 	})
 
-	test('keeps the previous disabled Firefox hosts registered when the registered scripts roll back', async () => {
+	test('keeps only the previous disabled Firefox hosts registered when the registered scripts roll back', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], updateError: new Error('update failed') })
 		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
 
@@ -1121,10 +1121,25 @@ describe('content script injection strategy', () => {
 		setWebsiteAccess([disabledWebsiteAccessEntry('example.com')])
 		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategy(), /update failed/))
 
-		// The restored registrations still exclude localhost, so its own registration stays, beside the one just added for example.com.
+		// The restored registrations still exclude localhost and not example.com, so localhost keeps its own registration and the one added for example.com during the attempt is removed again.
 		assert.deepEqual(getRegisteredContentScripts().map(({ excludeMatches }) => excludeMatches), [['http://localhost/*', 'https://localhost/*'], ['http://localhost/*', 'https://localhost/*']])
-		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'register 3', 'register 4'])
-		assert.equal(getActiveFirefoxContentScripts().length, 4)
+		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'register 3', 'register 4', 'unregister 3', 'unregister 4'])
+		assert.deepEqual(getActiveFirefoxContentScripts().flatMap(({ matches }) => matches), ['http://localhost/*', 'https://localhost/*', 'http://localhost/*', 'https://localhost/*'])
+	})
+
+	test('keeps only the previous compatibility mode\'s disabled Firefox host registrations when a mode change rolls back', async () => {
+		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setStoredMetamaskCompatibilityMode } = installBrowserMock({ manifestVersion: 2, metamaskCompatibilityMode: false, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], registerErrors: [undefined, new Error('registration failed')] })
+		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+
+		await updateContentScriptInjectionStrategy()
+		setStoredMetamaskCompatibilityMode(true)
+		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategy(), /registration failed/))
+
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
+		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'register 3', 'register 4', 'unregister 3', 'unregister 4'])
+		const disabledHostProviders = getActiveFirefoxContentScripts().filter(({ world }) => world === 'MAIN')
+		assert.deepEqual(disabledHostProviders.map(({ js }) => js?.flatMap(({ file }) => file === undefined ? [] : [file])), [['/inpage/js/inpage.js']])
+		assert.equal(getActiveFirefoxContentScripts().length, 2)
 	})
 
 	test('declares the Firefox permission and minimum version that MAIN-world registration needs', () => {

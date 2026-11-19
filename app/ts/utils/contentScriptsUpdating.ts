@@ -170,17 +170,42 @@ async function unregisterFirefoxDisabledHostContentScripts(key: string) {
 	firefoxDisabledHostContentScripts.delete(key)
 }
 
-// Two registrations that match a page at once are harmless, because each script runs once per document, while a moment with none leaves a page without the provider. So a disabled host's own registration is added before the registered scripts stop matching that host, and removed only after they match it again. If the scripting update fails and rolls back, the previous host registrations are kept, because the restored registrations may still exclude those hosts; the next update removes any that are no longer needed.
+// Removes the disabled-host registrations an update added before its scripting update failed and rolled back, so only the host registrations that matched the restored registrations remain.
+async function unregisterFirefoxDisabledHostContentScriptsAddedDuringFailedUpdate(addedKeys: readonly string[]) {
+	for (const key of addedKeys) {
+		try {
+			await unregisterFirefoxDisabledHostContentScripts(key)
+		} catch (unregisterError: unknown) {
+			// A failed removal is a second failure that the rethrown scripting error does not carry, so only it is reported here; the next update retries the removal, because the key stays tracked until it is unregistered.
+			await reportUnexpectedError(unregisterError, { code: 'content_script_registration_rollback_failed' })
+		}
+	}
+}
+
+// Two registrations that match a page at once are harmless, because each script runs once per document, while a moment with none leaves a page without the provider. So a disabled host's own registration is added before the registered scripts stop matching that host, and removed only after they match it again. If the scripting update fails and rolls back, the host registrations added in this update are removed again and the earlier ones are kept, which restores the previous configuration.
 async function updateFirefoxContentScripts(contentScriptDefinitions: readonly ContentScriptDefinition[], exactOriginExcludeMatches: readonly string[]) {
 	const { excludeMatches, disabledHosts } = getFirefoxContentScriptExclusions(exactOriginExcludeMatches)
 	const desiredDisabledHostKeys = new Set(disabledHosts.map((disabledHost) => getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions)))
+	const addedDisabledHostKeys: string[] = []
 	const registrationErrors: unknown[] = []
 	for (const disabledHost of disabledHosts) {
-		if (firefoxDisabledHostContentScripts.has(getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions))) continue
-		// A host whose own registration failed is still excluded below, because giving its disabled origin the provider would ignore the user's setting; its other origins go without the provider until the next update registers it again.
-		await registerFirefoxDisabledHostContentScripts(disabledHost, contentScriptDefinitions).catch((error: unknown) => { registrationErrors.push(error) })
+		const key = getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions)
+		if (firefoxDisabledHostContentScripts.has(key)) continue
+		try {
+			await registerFirefoxDisabledHostContentScripts(disabledHost, contentScriptDefinitions)
+			addedDisabledHostKeys.push(key)
+		} catch (error: unknown) {
+			// A host whose own registration failed is still excluded below, because giving its disabled origin the provider would ignore the user's setting; its other origins go without the provider until the next update registers it again.
+			registrationErrors.push(error)
+		}
 	}
-	await updateRegisteredContentScripts(contentScriptDefinitions, excludeMatches)
+	try {
+		await updateRegisteredContentScripts(contentScriptDefinitions, excludeMatches)
+	} catch (error: unknown) {
+		await unregisterFirefoxDisabledHostContentScriptsAddedDuringFailedUpdate(addedDisabledHostKeys)
+		// The caller reports the scripting failure with the code of its own context, so it is only rethrown here.
+		throw error
+	}
 	for (const key of [...firefoxDisabledHostContentScripts.keys()]) {
 		if (!desiredDisabledHostKeys.has(key)) await unregisterFirefoxDisabledHostContentScripts(key)
 	}
