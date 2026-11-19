@@ -406,10 +406,10 @@ describe('import simulation stack', () => {
 				if (request.method === 'eth_getCode') return '0x'
 				throw new Error(`Unexpected RPC: ${ request.method }`)
 			} }, async () => undefined, async () => undefined, rpcEntry)
-			const visualized = await modules.craftPersonalSignPopupMessage(ethereum, undefined, operation.signedMessageTransaction, rpcEntry)
+			const visualized = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), operation.signedMessageTransaction, rpcEntry)
 			assert.equal(visualized.quarantineReasons.some((reason) => reason.includes('account named in the message')), signer !== VITALIK_ADDRESS)
 			assert.equal(visualized.quarantineReasons.some((reason) => reason.includes('signature was imported')), false)
-			const plainMessage = await modules.craftPersonalSignPopupMessage(ethereum, undefined, {
+			const plainMessage = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), {
 				...operation.signedMessageTransaction,
 				// A Safe's declared account can differ from the owner used to fake its signature.
 				fakeSignedFor: VITALIK_ADDRESS,
