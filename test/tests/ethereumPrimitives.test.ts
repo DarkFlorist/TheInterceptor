@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { Abi, Hex } from '../../app/ts/utils/ethereumPrimitives.js'
-import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
+import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, tryRecoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { stringToAddress } from '../../app/ts/utils/bigint.js'
 import { canVerifyStructArray, d2Array, d2ArrayFixed, d3ArrayFixed, hasFixedArray } from './data/eip712Data.js'
@@ -839,6 +839,11 @@ describe('local Ethereum primitive helpers', () => {
 			r: '0xbfd5d3b10061eb98701a35adcf1e2a39d5814067517a4f4d0cee146ed56f46b6',
 			s: '0x4bda3d34d90a39235f8ca9dde1cd4a1f48a6b66bbaa616bcd1fbf9ad1aeafbe7',
 		} as const
+		assert.equal(tryRecoverAddress({ hash: recoverHash, signature: recoverSignature }), accountAddress)
+		assert.equal(tryRecoverAddress({ hash: recoverHash, signature: { r: 5n, s: 7n, yParity: 0 } }), undefined)
+		await assert.rejects(recoverAddress({ hash: recoverHash, signature: { r: 5n, s: 7n, yParity: 0 } }), Error)
+		assert.throws(() => tryRecoverAddress({ hash: recoverHash, signature: { r: 0n, s: 7n, yParity: 0 } }), Error)
+
 		assert.equal(await recoverAddress({ hash: recoverHash, signature: recoverSignature }), accountAddress)
 		assert.equal(await recoverAddress({ hash: recoverHash, signature: { ...recoverSignatureObject, v: 0n } }), accountAddress)
 		assert.equal(await recoverAddress({ hash: recoverHash, signature: { ...recoverSignatureObject, v: 27n } }), accountAddress)

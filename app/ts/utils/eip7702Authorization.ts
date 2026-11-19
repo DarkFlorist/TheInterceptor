@@ -1,11 +1,6 @@
-import { authorization as eip7702Authorization } from 'micro-eth-signer'
 import { EthereumAddress } from '../types/wire-types.js'
-import { addressString, bytes32String, bigintToUint8Array } from './bigint.js'
-import { secp256k1 } from '@noble/curves/secp256k1'
-import { invert, mod } from '@noble/curves/abstract/modular'
-import { rlpEncode } from './ethereum.js'
-import { keccak256 } from './ethereumPrimitives.js'
-import { stripLeadingZeros } from './typed-arrays.js'
+import { getEip7702AuthorizationSigningHash } from './ethereum.js'
+import { tryRecoverAddress } from './ethereumPrimitives.js'
 
 export type Eip7702Authorization = {
 	readonly chainId: bigint
@@ -74,42 +69,23 @@ export const SECP256K1_HALF_ORDER = SECP256K1_ORDER / 2n
 // EIP-7702 skips an authorization whose nonce is not below 2**64 - 1.
 const EIP7702_AUTHORIZATION_NONCE_LIMIT = 2n ** 64n - 1n
 
-const recoverEip7702AuthorizationAuthoritySync = (authorization: SignedEip7702Authorization): bigint => EthereumAddress.parse(eip7702Authorization.getAuthority({
-	chainId: authorization.chainId,
-	address: addressString(authorization.address),
-	nonce: authorization.nonce,
-	r: BigInt(bytes32String(authorization.r)),
-	s: BigInt(bytes32String(authorization.s)),
-	yParity: authorization.yParity === 'even' ? 0 : 1,
-}))
+// Both normalization and node accounting recover the same signed payload through the shared library-backed recovery boundary. Node applicability (including low-s) is checked separately below.
+const recoverEip7702AuthorizationAuthority = (authorization: SignedEip7702Authorization): bigint | undefined => {
+	const address = tryRecoverAddress({
+		hash: getEip7702AuthorizationSigningHash(authorization),
+		signature: { r: authorization.r, s: authorization.s, yParity: authorization.yParity === 'even' ? 0 : 1 },
+	})
+	return address === undefined ? undefined : EthereumAddress.parse(address)
+}
 
-const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => recoverEip7702AuthorizationAuthoritySync(authorization)
-
-// Recover with explicit curve checks: invalid points and the point at infinity are node-skipped signatures, independent of a signature library's exception wording. ECDSA recovery is Q = r^-1(sR - hash*G), with R.x = r and the supplied parity.
+// Validate imported quantities before fixed-width encoding or curve recovery. Invalid tuples are skipped by the node; authority metadata is never part of its signed payload.
 export const getNodeRecoveredEip7702Authority = (authorization: Eip7702Authorization): bigint | undefined => {
 	if (!hasEip7702AuthorizationSignature(authorization)) return undefined
+	if (authorization.chainId < 0n || authorization.chainId >= 2n ** 256n) return undefined
+	if (authorization.nonce < 0n || authorization.nonce >= EIP7702_AUTHORIZATION_NONCE_LIMIT) return undefined
+	if (authorization.address < 0n || authorization.address >= 2n ** 160n) return undefined
 	if (authorization.r < 1n || authorization.r >= SECP256K1_ORDER || authorization.s < 1n || authorization.s > SECP256K1_HALF_ORDER) return undefined
-	const field = secp256k1.CURVE.Fp
-	const ySquared = field.add(field.mul(field.sqr(authorization.r), authorization.r), 7n)
-	const root = field.pow(ySquared, (field.ORDER + 1n) / 4n)
-	if (!field.eql(field.sqr(root), ySquared)) return undefined
-	const parity = authorization.yParity === 'even' ? 0n : 1n
-	const y = root % 2n === parity ? root : field.neg(root)
-	const recoveryPoint = secp256k1.ProjectivePoint.fromAffine({ x: authorization.r, y })
-	const payload = rlpEncode([
-		stripLeadingZeros(bigintToUint8Array(authorization.chainId, 32)),
-		bigintToUint8Array(authorization.address, 20),
-		stripLeadingZeros(bigintToUint8Array(authorization.nonce, 32)),
-	])
-	const hash = BigInt(keccak256(new Uint8Array([0x05, ...payload])))
-	const inverseR = invert(authorization.r, SECP256K1_ORDER)
-	const publicKey = secp256k1.ProjectivePoint.BASE.multiplyAndAddUnsafe(
-		recoveryPoint,
-		mod(-hash * inverseR, SECP256K1_ORDER),
-		mod(authorization.s * inverseR, SECP256K1_ORDER),
-	)
-	if (publicKey === undefined) return undefined
-	return BigInt(keccak256(publicKey.toRawBytes(false).slice(1))) % (2n ** 160n)
+	return recoverEip7702AuthorizationAuthority(authorization)
 }
 
 // The authority's account state an authorization is checked against; undefined fields are unknown.
@@ -139,7 +115,11 @@ const normalizeEip7702Authorization = async (authorization: Eip7702Authorization
 		address: authorization.address,
 		nonce: authorization.nonce,
 	}
-	if (hasEip7702AuthorizationSignature(authorization)) return { ...authorization, authority: await recoverEip7702AuthorizationAuthority(authorization) }
+	if (hasEip7702AuthorizationSignature(authorization)) {
+		const authority = recoverEip7702AuthorizationAuthority(authorization)
+		if (authority === undefined) throw new Error('EIP-7702 authorization signature has no recoverable authority')
+		return { ...authorization, authority }
+	}
 	if (hasPartialEip7702AuthorizationSignature(authorization)) throw new Error('EIP-7702 authorization signature is missing required fields')
 	if (authorization.authority !== undefined) return { ...base, authority: authorization.authority }
 	return base

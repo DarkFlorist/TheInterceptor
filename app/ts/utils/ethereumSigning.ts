@@ -178,7 +178,7 @@ export const privateKeyToAccount = (privateKey: Hex) => {
 	}
 }
 
-export const recoverAddress = async ({ hash, signature }: {
+type RecoverAddressParameters = {
 	readonly hash: Hex | Uint8Array
 	readonly signature: Hex | {
 		readonly r: Hex | bigint
@@ -186,7 +186,11 @@ export const recoverAddress = async ({ hash, signature }: {
 		readonly yParity?: number
 		readonly v?: bigint | number
 	}
-}): Promise<Hex> => {
+}
+
+type AddressRecoveryResult = { readonly success: true, readonly address: Hex } | { readonly success: false, readonly error: Error }
+
+const recoverAddressResult = ({ hash, signature }: RecoverAddressParameters): AddressRecoveryResult => {
 	const digest = bytesFromHexOrBytes(hash)
 	const normalizedSignature = typeof signature === 'string'
 		? signatureToParts(signature)
@@ -196,7 +200,27 @@ export const recoverAddress = async ({ hash, signature }: {
 			yParity: normalizeSignatureYParity(signature),
 		}
 	const recoveredSignature = initSig({ r: normalizedSignature.r, s: normalizedSignature.s }, normalizedSignature.yParity)
-	return ensureHex(addr.fromPublicKey(recoveredSignature.recoverPublicKey(digest).toBytes(false)), 'recovered address')
+	let publicKey
+	try {
+		// Only public-key recovery is fallible here: for validated signature parts the library throws a plain Error when no curve key recovers. Encoding, signature construction and address conversion stay outside this boundary; other exception types propagate.
+		publicKey = recoveredSignature.recoverPublicKey(digest)
+	} catch (error: unknown) {
+		if (!(error instanceof Error) || error.name !== 'Error') throw error
+		return { success: false, error }
+	}
+	return { success: true, address: ensureHex(addr.fromPublicKey(publicKey.toBytes(false)), 'recovered address') }
+}
+
+// Expected curve-recovery failure is data for callers modeling node-skipped signatures; malformed parameters and unexpected failures still throw.
+export const tryRecoverAddress = (parameters: RecoverAddressParameters): Hex | undefined => {
+	const result = recoverAddressResult(parameters)
+	return result.success ? result.address : undefined
+}
+
+export const recoverAddress = async (parameters: RecoverAddressParameters): Promise<Hex> => {
+	const result = recoverAddressResult(parameters)
+	if (!result.success) throw result.error
+	return result.address
 }
 
 const signatureToParts = (signature: Hex): { readonly r: bigint, readonly s: bigint, readonly yParity: number } => {

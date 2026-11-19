@@ -3,7 +3,7 @@ import * as assert from 'assert'
 import { addr, authorization as eip7702Authorization } from 'micro-eth-signer'
 import { isAbiDataDecodeError, keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, getEip7702AuthorizationSigningHash, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { addressString, bigintToUint8Array, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
 import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getDeployedContractAddress, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHash, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
@@ -632,6 +632,18 @@ describe('SimulationModeEthereumClientService', () => {
 				return fromState
 			}
 
+			test('oversized authorization quantities in stored simulation state do not break nonce accounting', async () => {
+				const signed = signAuthorization(rpcNetwork.chainId, 0n)
+				const valid = await authorizationTransaction(sponsor, 0n, [signed], 299n)
+				if (valid.signedTransaction.type !== '7702') throw new Error('Expected an authorization transaction')
+				const state = await createSimulationState(ethereum, undefined, stackOf([valid]))
+				if (state.success === false) throw new Error('simulation unexpectedly failed')
+				for (const authorization of [{ ...signed, chainId: 2n ** 256n }, { ...signed, nonce: 2n ** 256n }]) {
+					const imported = { ...valid, signedTransaction: { ...valid.signedTransaction, authorizationList: [authorization] } }
+					assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState({ ...state, simulationStateInput: stackOf([imported]) }), authority), 0n)
+				}
+			})
+
 			test('a valid sponsored authorization raises its authority nonce', async () => {
 				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 200n)]), 1n)
 				assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(0n, 0n)], 201n)]), 1n)
@@ -733,6 +745,22 @@ describe('SimulationModeEthereumClientService', () => {
 				}
 				assert.equal(parities.size, 2)
 			})
+
+			test('the shared authorization hash matches the signing library at quantity boundaries', () => {
+				for (const chainId of [0n, rpcNetwork.chainId, 2n ** 256n - 1n]) {
+					for (const nonce of [0n, 2n ** 64n - 2n]) {
+						assert.equal(getEip7702AuthorizationSigningHash({ chainId, address: delegate, nonce }), dataStringWith0xStart(eip7702Authorization._getHash({ chainId, address: addressString(delegate), nonce })))
+					}
+				}
+			})
+
+			test('out-of-range imported authorization quantities are skipped before encoding', () => {
+				const signed = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				for (const chainId of [-1n, 2n ** 256n]) assert.equal(getNodeRecoveredEip7702Authority({ ...signed, chainId }), undefined)
+				for (const nonce of [-1n, 2n ** 64n - 1n, 2n ** 256n]) assert.equal(getNodeRecoveredEip7702Authority({ ...signed, nonce }), undefined)
+				for (const address of [-1n, 2n ** 160n]) assert.equal(getNodeRecoveredEip7702Authority({ ...signed, address }), undefined)
+			})
+
 
 			test('an in-range signature no public key recovers from is skipped, not thrown', () => {
 				const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
