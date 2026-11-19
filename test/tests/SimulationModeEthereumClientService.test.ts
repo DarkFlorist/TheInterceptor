@@ -106,7 +106,9 @@ class MockEthereumJSONRpcRequestHandler {
 	public minimumSuccessfulGasLimit: bigint | undefined = undefined
 	public malformedGetCodeReturn = false
 	public balance = 0n
-	public readonly codeByAddress = new Map<bigint, string>()
+	public readonly codeByAddress = new Map<bigint, string>([[0x1234n, '0x1234']])
+	public readonly codeChangesByInput = new Map<string, { address: bigint, code: string }>()
+	public transactionCountReads = 0
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
 	public syncingResponse: unknown = false
@@ -128,7 +130,7 @@ class MockEthereumJSONRpcRequestHandler {
 			case 'eth_syncing':
 				this.ethSyncingBypassCacheArguments.push(bypassCache)
 				return this.syncingResponse
-			case 'eth_getTransactionCount': return '0x0'
+			case 'eth_getTransactionCount': { this.transactionCountReads++; return '0x0' }
 			case 'eth_getCode': return this.codeByAddress.get(rpcRequest.params[0]) ?? '0x'
 			case 'eth_getBalance':
 				this.ethGetBalanceCalls.push(rpcRequest)
@@ -185,6 +187,18 @@ class MockEthereumJSONRpcRequestHandler {
 					throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'gas required' } })
 				}
 				if (lastCallInput !== undefined && dataStringWith0xStart(lastCallInput).startsWith(getCodeSelector)) {
+					const decoded = decodeFunctionDataStrict(getCodeAbi, dataStringWith0xStart(lastCallInput))
+					if (decoded.functionName !== 'at') throw new Error('Expected code lookup')
+					const target = BigInt(decoded.args[0])
+					let code = this.codeByAddress.get(target) ?? '0x'
+					for (const prefix of rpcRequest.params[0].blockStateCalls.slice(0, -1)) {
+						const override = prefix.stateOverrides?.[addressString(target)]?.code
+						if (override !== undefined) code = dataStringWith0xStart(override)
+						for (const call of prefix.calls) {
+							const change = this.codeChangesByInput.get(call.input === undefined ? '0x' : dataStringWith0xStart(call.input))
+							if (change?.address === target) code = change.code
+						}
+					}
 					const singleTransactionBlock = ethSimulateSingleBlockResult[0]
 					const singleCall = singleTransactionBlock?.calls[0]
 					if (singleTransactionBlock === undefined || singleCall === undefined) throw new Error('missing single transaction simulation fixture')
@@ -192,7 +206,7 @@ class MockEthereumJSONRpcRequestHandler {
 						...singleTransactionBlock,
 						calls: [{
 							...singleCall,
-							returnData: this.malformedGetCodeReturn ? '0x' : encodeFunctionReturn(getCodeAbi, 'at', ['0x1234']),
+							returnData: this.malformedGetCodeReturn ? '0x' : encodeFunctionReturn(getCodeAbi, 'at', [code]),
 						}],
 					})
 				}
@@ -686,8 +700,46 @@ describe('SimulationModeEthereumClientService', () => {
 					requestHandler.codeByAddress.set(authority, `0xef0100${ addressString(delegate).slice(2) }`)
 					assert.equal(await authorityNonceAfter([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 212n)]), 1n)
 				} finally {
-					requestHandler.codeByAddress.clear()
+					requestHandler.codeByAddress.delete(authority)
 				}
+			})
+
+			test('authorization eligibility sees code overrides at each transaction prefix', async () => {
+				const transactions = [await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 310n), await authorizationTransaction(sponsor, 1n, [signAuthorization(rpcNetwork.chainId, 0n)], 311n)]
+				const input = stackOf(transactions).map((block, index) => ({ ...block, stateOverrides: { [addressString(authority)]: { code: index === 0 ? new Uint8Array([0x60, 0x00]) : new Uint8Array() } } }))
+				const state = await createSimulationState(ethereum, undefined, input)
+				if (!state.success) throw new Error('Simulation failed')
+				const queries: readonly { tag: bigint | 'latest' | 'pending', expected: bigint }[] = [{ tag: state.blockNumber + 1n, expected: 0n }, { tag: 'latest', expected: 1n }, { tag: 'pending', expected: 1n }]
+				for (const { tag, expected } of queries) {
+					assert.equal(await getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(state), authority, tag), expected)
+					assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(input), authority, tag), expected)
+				}
+			})
+
+			test('nonce accounting propagates malformed prefix code views', async () => {
+				const input = stackOf([await authorizationTransaction(sponsor, 0n, [signAuthorization(rpcNetwork.chainId, 0n)], 314n)])
+				const state = await createSimulationState(ethereum, undefined, input)
+				if (!state.success) throw new Error('Simulation failed')
+				requestHandler.malformedGetCodeReturn = true
+				try {
+					for (const read of [() => getSimulatedTransactionCount(ethereum, undefined, toResolvedSimulationState(state), authority), () => getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput(input), authority)]) await assert.rejects(read, isAbiDataDecodeError)
+				} finally { requestHandler.malformedGetCodeReturn = false }
+			})
+
+			for (const before of [true, false]) test(`code changes ${ before ? 'before' : 'during' } the authorization transaction affect only later eligibility`, async () => {
+				const marker = new Uint8Array([0x60, 0x01])
+				const base = await authorizationTransaction(sponsor, 0n, !before ? [signAuthorization(rpcNetwork.chainId, 0n)] : [], 312n)
+				const changing = { ...base, signedTransaction: mockSignTransaction({ ...example7702Transaction, chainId: rpcNetwork.chainId, from: sponsor, nonce: 0n, authorizationList: base.signedTransaction.type === '7702' ? base.signedTransaction.authorizationList : [], input: marker }) }
+				requestHandler.codeChangesByInput.set(dataStringWith0xStart(marker), { address: authority, code: '0x6000' })
+				try {
+					const transactions = before ? [changing, await authorizationTransaction(sponsor, 1n, [signAuthorization(rpcNetwork.chainId, 0n)], 313n)] : [changing]
+					assert.equal(await authorityNonceAfter(transactions), before ? 0n : 1n)
+					if (before) {
+						const [first] = stackOf(transactions)
+						if (first === undefined) throw new Error('Missing prefix block')
+						assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, toResolvedSimulationInput([{ ...first, transactions }]), authority), 0n)
+					}
+				} finally { requestHandler.codeChangesByInput.clear() }
 			})
 
 			test('a mock-signed authorization (r = s = 0) whose metadata names the account raises nothing', async () => {
@@ -800,7 +852,7 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(await getAccountNonceAfterTransactions({ address: testAuthority + 1n, chainId: rpcNetwork.chainId, initialNonce: 0n, transactions: [{ sender: undefined, authorizationList: [authorization] }], getCode: unexpectedRead }), 0n)
 			})
 
-			test('owns nonce advancement across senders, repeated tuples and transactions with one code read', async () => {
+			test('owns nonce advancement across senders, repeated tuples and transactions with one code read per transaction', async () => {
 				let reads = 0
 				const signed = (nonce: bigint) => signTestAuthorization(rpcNetwork.chainId, nonce, delegate)
 				assert.equal(await getAccountNonceAfterTransactions({
@@ -812,7 +864,7 @@ describe('SimulationModeEthereumClientService', () => {
 					],
 					getCode: async address => { assert.equal(address, testAuthority); reads++; return new Uint8Array() },
 				}), 6n)
-				assert.equal(reads, 1)
+				assert.equal(reads, 3)
 				const failure = new Error('Authority code unavailable')
 				await assert.rejects(nonceAfter(signed(0n), 0n, async () => { throw failure }), error => error === failure)
 			})
@@ -1702,6 +1754,16 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(dataStringWith0xStart(simulatedCode.getCodeReturn), '0x1234')
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.hasGetCodeOverride, true)
+		})
+
+		test('code views do not query sender nonces recursively', async () => {
+			const input = createSimulationStateInput()
+			const state = await createSimulationState(ethereum, undefined, input)
+			if (!state.success) throw new Error('Simulation failed')
+			const reads = requestHandler.transactionCountReads
+			await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(input), 0x1234n)
+			await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(state), 0x1234n)
+			assert.equal(requestHandler.transactionCountReads, reads)
 		})
 
 		test('getSimulatedCodeFromInput propagates malformed code lookup output', async () => {
