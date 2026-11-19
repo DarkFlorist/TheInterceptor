@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path'
 import { realpath } from 'node:fs/promises'
-import { recoverEthereumPublicKey } from '../app/ts/utils/ethereumRecoveryBackend.js'
+// This environment-neutral adapter self-checks both invalid-point outcomes on import, including in the shipped extension.
+import '../app/ts/utils/ethereumRecoveryBackend.js'
 import { getRecordProperty, isRecord } from '../app/ts/utils/runtimeTypeGuards.js'
 
 const projectRoot = join(import.meta.dir, '..')
@@ -27,10 +28,4 @@ if (getRecordProperty(dependencies, '@noble/curves') !== curveVersion || getReco
 const patch = isRecord(patches) && typeof curveVersion === 'string' ? getRecordProperty(patches, `@noble/curves@${ curveVersion }`) : undefined
 if (typeof patch !== 'string' || !await Bun.file(join(projectRoot, patch)).exists()) throw new Error('The Noble copy resolved by micro-eth-signer must have a version-pinned patch')
 
-// Probe the same adapter application signing uses, so resolution or patch drift fails before tests or extension compilation.
-const digest = new Uint8Array(32)
-digest[31] = 1
-for (const r of [5n, 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n]) {
-	if (recoverEthereumPublicKey(digest, { r, s: 1n, yParity: 0 }).success) throw new Error('Recovery dependency must skip both tagged invalid-point outcomes')
-}
 console.log(`Verified recovery and vendor dependency: micro-eth-signer ${ microVersion }, patched Noble ${ curveVersion }`)

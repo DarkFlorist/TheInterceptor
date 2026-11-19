@@ -64,6 +64,7 @@ export const hasPartialEip7702AuthorizationSignature = (authorization: Eip7702Au
 	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
 }
 
+// EIP-7702 Behavior step 3 explicitly requires s <= n/2 (https://eips.ethereum.org/EIPS/eip-7702#behavior), unlike the ECRECOVER precompile.
 // The secp256k1 group order n. The node accepts an authorization signature only with r and s in [1, n - 1] and s no greater than n / 2: replacing s with n - s and flipping yParity yields a second signature that recovers the same authority.
 const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
 export const SECP256K1_HALF_ORDER = SECP256K1_ORDER / 2n

@@ -20,3 +20,20 @@ test('a failed recovery preflight leaves existing vendor output intact', () => {
 		fs.rmSync(directory, { recursive: true, force: true })
 	}
 })
+
+test('a custom bundle rejects an unpatched recovery backend at module initialization', async () => {
+	const bundle = await Bun.build({
+		entrypoints: [path.resolve(import.meta.dir, '../../app/ts/utils/ethereumRecoveryBackend.ts')],
+		target: 'bun',
+		plugins: [{ name: 'unpatched-recovery-fixture', setup(build) {
+			build.onResolve({ filter: /^micro-eth-signer\/utils\.js$/u }, () => ({ path: 'unpatched-recovery', namespace: 'fixture' }))
+			build.onLoad({ filter: /.*/u, namespace: 'fixture' }, () => ({ contents: 'export const initSig = () => ({ recoverPublicKey() { throw new Error(\'Untagged invalid point\') } })', loader: 'js' }))
+		} }],
+	})
+	assert.equal(bundle.success, true)
+	const output = bundle.outputs[0]
+	assert.ok(output)
+	const result = Bun.spawnSync([process.execPath, '--eval', await output.text()], { stdout: 'pipe', stderr: 'pipe' })
+	assert.notEqual(result.exitCode, 0)
+	assert.match(new TextDecoder().decode(result.stderr), /Untagged invalid point/u)
+})

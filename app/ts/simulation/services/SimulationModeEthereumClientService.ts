@@ -5,7 +5,6 @@ import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, typ
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import { authorizesExecutedCall, type SimulatedTransaction, type SimulationState, type TokenBalancesAfter, type PreSimulationTransaction, type SimulationStateBlock, type SimulationStateInput, type SimulationStateInputMinimalData, type SimulationStateInputMinimalDataBlock, type ExecutionSimulatedTransaction, type ExecutionSimulationState, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, toSimulationStateInputMinimalData, toSimulationStateInputMinimalTransaction } from '../../types/visualizer-types.js'
-import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthGetStorageAtResponse, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
@@ -24,7 +23,7 @@ import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getAccountNonceAfterTransactions } from '../accountNonce.js'
-import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
+import { probeSimulatedCode, type SimulatedCodeResult } from '../simulatedCodeProbe.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
@@ -37,21 +36,6 @@ export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
-const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
-const getCodeAbi = [
-	{
-		type: 'function',
-		name: 'at',
-		stateMutability: 'view',
-		inputs: [{ name: 'target', type: 'address' }],
-		outputs: [{ name: 'code', type: 'bytes' }],
-	},
-] as const satisfies Abi
-
-const getCodeStateOverrides = (): StateOverrides => ({
-	[addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() },
-})
-
 type GroupedEthSimulateV1BlockResult = {
 	inputBlock: SimulationStateInputMinimalDataBlock
 	baseFeePerGas: bigint
@@ -950,8 +934,6 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 	return await ethereumClientService.getBalance(address, blockTag, requestAbortController)
 }
 
-type SimulatedCodeResult = { readonly statusCode: 'success', readonly getCodeReturn: Uint8Array } | { readonly statusCode: 'failure', readonly getCodeReturn?: undefined }
-
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest'): Promise<SimulatedCodeResult> => {
 	if (simulationState.kind === 'passthrough' || await canQueryNodeDirectly(simulationState.value, blockTag)) return await getSimulatedCodeFromPreparedContext(ethereumClientService, requestAbortController, undefined, address, blockTag)
 	if (!simulationState.value.success) return { statusCode: 'failure' }
@@ -1290,24 +1272,8 @@ const getSimulatedCodeFromPreparedContext = async (
 	blockTag: EthereumBlockTag = 'latest',
 ): Promise<SimulatedCodeResult> => {
 	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) return { statusCode: 'success', getCodeReturn: await ethereumClientService.getCode(address, blockTag, requestAbortController) }
-	const transaction: SimulatedBlockCall = {
-		type: '1559', from: MOCK_ADDRESS, nonce: 0n, chainId: ethereumClientService.getChainId(),
-		maxFeePerGas: 0n, maxPriorityFeePerGas: 0n, to: GET_CODE_CONTRACT, value: 0n,
-		input: stringToUint8Array(encodeFunctionCall(getCodeAbi, 'at', [addressString(address)])), accessList: [],
-	}
-	try {
-		// Seed only the synthetic sender's nonce in the probe block. Querying code must not recurse through account-nonce calculation; account code itself remains untouched.
-		const result = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, transaction, {
-			simulationPrefixBlockCount: getExecutionBlocksUpToTag(context, blockTag).length,
-			extraOverrides: { ...getCodeStateOverrides(), [addressString(MOCK_ADDRESS)]: { nonce: 0n } },
-		})
-		if (result === undefined) throw new Error('Missing simulated code probe result')
-		if (result.status === 'failure') return { statusCode: 'failure' }
-		return { statusCode: 'success', getCodeReturn: EthereumData.parse(decodeFunctionOutput(getCodeAbi, 'at', result.returnData)) }
-	} catch (error: unknown) {
-		if (error instanceof JsonRpcResponseError) return { statusCode: 'failure' }
-		throw error
-	}
+	const prefixCount = getExecutionBlocksUpToTag(context, blockTag).length
+	return await probeSimulatedCode(ethereumClientService, requestAbortController, context.prepared.request.params[0].blockStateCalls.slice(0, prefixCount), context.parentBlock, prefixCount === 0 ? undefined : context.prepared.blockOverrides[prefixCount - 1], address)
 }
 
 export const getSimulatedCodeFromInput = async (
