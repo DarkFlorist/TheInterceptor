@@ -562,6 +562,37 @@ test('does not forward an accepted request whose website approval is suspended w
 	await assertRefusedForwardStaysRejectable(websiteTabConnections, postedMessages)
 })
 
+test('does not forward an accepted request whose website approval is suspended while the confirmation view updates after the claim', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createApprovedConnections(postedMessages)
+	const connection = websiteTabConnections.get(uniqueRequestIdentifier.requestSocket.tabId)?.connections[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]
+	if (connection === undefined) throw new Error('Missing website connection')
+	const accept = await createAcceptConfirmation()
+	let claimed = false
+	let suspendedDuringViewUpdate = false
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (JSON.stringify(items.pendingTransactionsAndMessages ?? null).includes('WaitingForSigner')) claimed = true
+		writeStoredItems()
+	})
+	// The approval holds through the claim and is suspended only once the claimed request's confirmation view is sent to the popup.
+	browserMock.setRuntimeSendMessageHandler(async (message) => {
+		if (!claimed || suspendedDuringViewUpdate || message.method !== 'popup_update_confirm_transaction_dialog_pending_transactions') return
+		suspendedDuringViewUpdate = true
+		connection.approved = false
+		connection.approvedAddress = undefined
+	})
+	try {
+		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept), false)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+		browserMock.setRuntimeSendMessageHandler(undefined)
+	}
+	assert.equal(suspendedDuringViewUpdate, true)
+	assert.equal(postedMessages.some(isForwardToSigner), false)
+	await assertRefusedForwardStaysRejectable(websiteTabConnections, postedMessages)
+})
+
 test('does not forward an accepted request to an MV2 reconnected port whose website approval was not restored', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
 	const socket = uniqueRequestIdentifier.requestSocket
