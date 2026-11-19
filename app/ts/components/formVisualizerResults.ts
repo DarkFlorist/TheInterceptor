@@ -81,7 +81,7 @@ export const getFromAndToMetadata = (transaction: { from: bigint, to: bigint | n
 	return { from: enrichedFrom, to: enrichedTo }
 }
 
-export function formSimulatedAndVisualizedTransactions(simulatedTransactions: readonly SimulatedTransaction[], eventsForEachTransaction: readonly EnrichedEthereumEvents[], rpcNetwork: RpcNetwork, parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined, delegationAddressBySender: ReadonlyMap<string, AddressBookEntry | undefined>): readonly SimulatedAndVisualizedTransaction[] {
+export function formSimulatedAndVisualizedTransactions(simulatedTransactions: readonly SimulatedTransaction[], eventsForEachTransaction: readonly EnrichedEthereumEvents[], rpcNetwork: RpcNetwork, parsedInputData: readonly EnrichedEthereumInputData[], protectorResults: readonly ProtectorResults[], addressBookEntries: readonly AddressBookEntry[], namedTokenIds: readonly NamedTokenId[], ens: { ensNameHashes: MaybeENSNameHashes, ensLabelHashes: MaybeENSLabelHashes }, tokenPriceEstimates: readonly TokenPriceEstimate[], tokenPriceQuoteToken: Erc20TokenEntry | undefined, delegationEntries: readonly (AddressBookEntry | undefined)[]): readonly SimulatedAndVisualizedTransaction[] {
 	const addressMetaData = new Map(addressBookEntries.map((x) => [addressString(x.address), x]))
 	return simulatedTransactions.map((simulatedTx, index) => {
 		const transactionEvents = eventsForEachTransaction[index]
@@ -133,7 +133,8 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			.map((entry) => 'abi' in entry && entry.abi !== undefined && entry.abi !== '' ? entry.abi : undefined)
 			.filter((abiOrUndefined): abiOrUndefined is string => abiOrUndefined !== undefined)
 		const toFrom = getFromAndToMetadata(simulatedTx.preSimulationTransaction.signedTransaction, addressBookEntries)
-		const delegationAddress = delegationAddressBySender.get(addressString(simulatedTx.preSimulationTransaction.signedTransaction.from))
+		// The delegate this transaction's sender runs with, aligned with simulatedTransactions.
+		const delegationAddress = delegationEntries[index]
 		return {
 			transaction: { ...toFrom, ...(delegationAddress !== undefined ? { delegationAddress } : {}), rpcNetwork, ...otherFields },
 			...(toFrom.to !== undefined ? { to: toFrom.to } : {}),

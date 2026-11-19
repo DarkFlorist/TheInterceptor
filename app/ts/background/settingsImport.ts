@@ -2,26 +2,25 @@ import type { ActiveAddress, ExportedSettings } from '../types/exportedSettingsT
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
+import { defaultActiveAddresses, defaultRpcs, delegateClearingPreferencesStorageWrite, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './storageVariables.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
-function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previousEntries: AddressBookEntries) {
-	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || exportedSettings.version === '1.6') return exportedSettings.settings.addressBookEntries
+function getImportedAddressBookEntries(settings: ExportedSettings['settings'], previousEntries: AddressBookEntries) {
+	if ('addressBookEntries' in settings) return settings.addressBookEntries
 	const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-	return getUniqueItemsByProperties(previousEntries.concat(exportedSettings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSettings.settings.contacts ?? []), ['address'])
+	return getUniqueItemsByProperties(previousEntries.concat(settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(settings.contacts ?? []), ['address'])
 }
 
-function getImportedSimulationModeStorageWrite(exportedSettings: ExportedSettings, defaultActiveAddress: EthereumAddress) {
+function getImportedSimulationModeStorageWrite(settings: ExportedSettings['settings'], defaultActiveAddress: EthereumAddress) {
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
-	if (exportedSettings.version === '1.0') return simulationModeStorageWrite({ simulationMode: exportedSettings.settings.simulationMode, rpcNetwork: defaultRpcs[0], activeSimulationAddress: defaultActiveAddress, activeSigningAddress: undefined, activeSigningSafeAddress: undefined })
-	const hasIndependentAddresses = exportedSettings.version === '1.5' || exportedSettings.version === '1.6'
+	const hasIndependentAddresses = 'signingAddressPreferences' in settings
 	return simulationModeStorageWrite({
-		simulationMode: exportedSettings.settings.simulationMode,
-		rpcNetwork: exportedSettings.settings.rpcNetwork,
-		activeSimulationAddress: hasIndependentAddresses ? exportedSettings.settings.activeSimulationAddress : defaultActiveAddress,
+		simulationMode: settings.simulationMode,
+		rpcNetwork: 'rpcNetwork' in settings ? settings.rpcNetwork : defaultRpcs[0],
+		activeSimulationAddress: hasIndependentAddresses ? settings.activeSimulationAddress : defaultActiveAddress,
 		activeSigningAddress: undefined,
-		activeSigningSafeAddress: hasIndependentAddresses ? exportedSettings.settings.activeSigningSafeAddress : undefined,
+		activeSigningSafeAddress: hasIndependentAddresses ? settings.activeSigningSafeAddress : undefined,
 	})
 }
 
@@ -29,19 +28,21 @@ function getImportedSimulationModeStorageWrite(exportedSettings: ExportedSetting
 export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
-	const version = exportedSettings.version
+	const settings = exportedSettings.settings
+	// Supported fields come from each decoded schema, so newer versions inherit existing import behavior without extending version predicates.
 	await runSettingsStorageTransaction(async () => ({
 		result: undefined,
 		writes: [
-			...version === '1.3' || version === '1.4' || version === '1.5' || version === '1.6' ? [pageStorageWrite(exportedSettings.settings.openedPage)] : [],
-			userAddressBookEntriesStorageWrite(getImportedAddressBookEntries(exportedSettings, await getUserAddressBookEntries())),
-			getImportedSimulationModeStorageWrite(exportedSettings, defaultActiveAddress),
-			signingAddressPreferencesStorageWrite(version === '1.5' || version === '1.6' ? exportedSettings.settings.signingAddressPreferences : []),
-			useSignersAddressAsActiveAddressStorageWrite(exportedSettings.settings.useSignersAddressAsActiveAddress),
-			websiteAccessStorageWrite(exportedSettings.settings.websiteAccess),
-			useTabsInsteadOfPopupStorageWrite(exportedSettings.settings.useTabsInsteadOfPopup),
-			safeAppsCompatibilityModeStorageWrite(version === '1.6' ? exportedSettings.settings.safeAppsCompatibilityMode : false),
-			...version !== '1.0' && version !== '1.1' ? [metamaskCompatibilityModeStorageWrite(exportedSettings.settings.metamaskCompatibilityMode)] : [],
+			delegateClearingPreferencesStorageWrite('delegateClearingPreferences' in settings ? settings.delegateClearingPreferences : []),
+			...'openedPage' in settings ? [pageStorageWrite(settings.openedPage)] : [],
+			userAddressBookEntriesStorageWrite(getImportedAddressBookEntries(settings, await getUserAddressBookEntries())),
+			getImportedSimulationModeStorageWrite(settings, defaultActiveAddress),
+			signingAddressPreferencesStorageWrite('signingAddressPreferences' in settings ? settings.signingAddressPreferences : []),
+			useSignersAddressAsActiveAddressStorageWrite(settings.useSignersAddressAsActiveAddress),
+			websiteAccessStorageWrite(settings.websiteAccess),
+			useTabsInsteadOfPopupStorageWrite(settings.useTabsInsteadOfPopup),
+			safeAppsCompatibilityModeStorageWrite('safeAppsCompatibilityMode' in settings ? settings.safeAppsCompatibilityMode : false),
+			...'metamaskCompatibilityMode' in settings ? [metamaskCompatibilityModeStorageWrite(settings.metamaskCompatibilityMode)] : [],
 		],
 	}))
 }

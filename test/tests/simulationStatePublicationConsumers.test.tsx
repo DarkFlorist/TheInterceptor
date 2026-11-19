@@ -87,6 +87,7 @@ const settings: Settings = {
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
 	simulationMode: true,
+	delegateClearingPreferences: [],
 }
 const tabId = 7
 

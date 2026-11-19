@@ -143,7 +143,7 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 }))
 
 /**
- * A transaction of a simulation input, which prepareSimulationInputForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
+ * A transaction of a simulation input, which repairFeesAndNoncesAndProjectSafeCallsForRpc may give the call the node runs in place of signedTransaction: for a Gnosis Safe execution, the executor's execTransaction call (prepareSafeExecutionSimulationInput). signedTransaction stays the Safe's own call, which the dialog shows and the protectors check.
  * Only the preparation sets executedTransaction. The simulation stack, its imports and pending transactions hold PreSimulationTransaction, whose parser drops the field, so no stored or imported transaction can run a call other than the one it shows.
  */
 export type SimulationInputTransaction = funtypes.Static<typeof SimulationInputTransaction>
@@ -244,13 +244,13 @@ export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationS
 export const SimulationStateInputMinimalData = funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)
 
 // Projects a simulation input transaction into the minimal transaction the RPC client simulates: the calls it sends and the domain decision whether its executed call is authorized, without any Gnosis Safe data.
-export const toSimulationStateInputMinimalTransaction = (transaction: SimulationInputTransaction): SimulationStateInputMinimalDataBlock['transactions'][number] => ({
+export const toSimulationStateInputMinimalTransaction = (transaction: SimulationInputTransaction | SimulationStateInputMinimalDataBlock['transactions'][number]): SimulationStateInputMinimalDataBlock['transactions'][number] => 'executedCallAuthorized' in transaction ? transaction : ({
 	signedTransaction: transaction.signedTransaction,
 	...(transaction.executedTransaction === undefined ? {} : { executedTransaction: transaction.executedTransaction }),
 	executedCallAuthorized: authorizesExecutedCall(transaction),
 })
 
-export const toSimulationStateInputMinimalData = (simulationStateInput: SimulationStateInput): SimulationStateInputMinimalData => simulationStateInput.map((block) => ({
+export const toSimulationStateInputMinimalData = (simulationStateInput: readonly (SimulationStateInputBlock | SimulationStateInputMinimalDataBlock)[]): SimulationStateInputMinimalData => simulationStateInput.map((block) => ({
 	stateOverrides: block.stateOverrides,
 	transactions: block.transactions.map(toSimulationStateInputMinimalTransaction),
 	signedMessages: block.signedMessages,
@@ -258,10 +258,8 @@ export const toSimulationStateInputMinimalData = (simulationStateInput: Simulati
 	simulateWithZeroBaseFee: block.simulateWithZeroBaseFee,
 }))
 
-export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlock>
-export const SimulationStateBlock = funtypes.Intersect(
+const SimulationStateBlockFields = funtypes.Intersect(
 	funtypes.ReadonlyObject({
-		stateOverrides: StateOverrides,
 		simulatedTransactions: funtypes.ReadonlyArray(SimulatedTransaction),
 		signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 		blockTimestamp: EthereumTimestamp,
@@ -273,6 +271,10 @@ export const SimulationStateBlock = funtypes.Intersect(
 	}),
 )
 
+// Account overrides belong only to the captured replay recipe. Legacy result fields are ignored when decoding.
+export type SimulationStateBlock = funtypes.Static<typeof SimulationStateBlockFields>
+export const SimulationStateBlock = SimulationStateBlockFields
+
 type SimulationStateSuccess = funtypes.Static<typeof SimulationStateSuccess>
 const SimulationStateSuccess = funtypes.ReadonlyObject({
 	success: funtypes.Literal(true),
@@ -283,7 +285,10 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	baseFeePerGas: EthereumQuantity,
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Persisted replay recipe: simulationStateInput is raw and must be paired with these captured initial overrides through getSimulationExecutionInputFromState. simulatedBlocks contains execution observations only and never duplicates account overrides. Older recipes have no initial overrides.
+	simulationOverrides: StateOverrides,
+}))
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.Union(
@@ -301,7 +306,7 @@ export const SimulationState = funtypes.Union(
 		baseFeePerGas: EthereumQuantity,
 		simulationConductedTimestamp: EthereumTimestamp,
 		rpcNetwork: RpcNetwork,
-	})
+	}).And(funtypes.ReadonlyPartial({ simulationOverrides: StateOverrides }))
 )
 
 export type PassthroughState = funtypes.Static<typeof PassthroughState>
@@ -320,17 +325,28 @@ export const ResolvedSimulationState = funtypes.Union(
 	})
 )
 
-export type ResolvedSimulationInput = funtypes.Static<typeof ResolvedSimulationInput>
+// What one eth_simulateV1 run executes: the simulation blocks (SimulationStateInput, in value) together with the initial account state applied before them.
+export type SimulatedExecutionInput<TInput extends readonly (SimulationStateInputBlock | SimulationStateInputMinimalDataBlock)[] = readonly (SimulationStateInputBlock | SimulationStateInputMinimalDataBlock)[]> = {
+	readonly kind: 'simulated'
+	readonly value: TInput
+	/** Canonical account state applied before the first simulated block; derive block-level overrides only through utils/simulationStateOverrides.ts. */
+	readonly simulationOverrides: StateOverrides
+}
+export type SimulationExecutionInput = SimulatedExecutionInput<SimulationStateInput>
+export type ResolvedSimulationInput = PassthroughState | SimulationExecutionInput
 export const ResolvedSimulationInput = funtypes.Union(
 	PassthroughState,
 	funtypes.ReadonlyObject({
 		kind: funtypes.Literal('simulated'),
 		value: SimulationStateInput,
+		simulationOverrides: StateOverrides,
 	})
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const toResolvedSimulationInput = (value: SimulationStateInput): ResolvedSimulationInput => ({ kind: 'simulated', value })
+export const createSimulatedExecutionInput = <TInput extends readonly (SimulationStateInputBlock | SimulationStateInputMinimalDataBlock)[]>(value: TInput, simulationOverrides: StateOverrides = {}): SimulatedExecutionInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
+// The only conversion from a persisted raw replay recipe to an execution input. Effective result blocks must never be fed back here: their initial overrides are already applied.
+export const getSimulationExecutionInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationExecutionInput => createSimulatedExecutionInput(state.simulationStateInput, state.simulationOverrides)
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

@@ -5,6 +5,7 @@ import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
 import { SigningAddressPreferences } from './signerTypes.js'
+import { DelegateClearingPreferences } from './delegateClearing.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -50,6 +51,22 @@ const rpcLegacyExportedSettingsFields = {
 const compatibilityExportedSettingsFields = {
 	...rpcLegacyExportedSettingsFields,
 	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
+// Version 1.7 extends the 1.6 schema with delegate simulation preferences.
+const safeAppsExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
+	signingAddressPreferences: SigningAddressPreferences,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+	safeAppsCompatibilityMode: funtypes.Boolean,
 }
 
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
@@ -120,18 +137,15 @@ export const ExportedSettings = funtypes.Union(
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.6'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
-			safeAppsCompatibilityMode: funtypes.Boolean,
+			...safeAppsExportedSettingsFields,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.7'),
+		settings: funtypes.ReadonlyObject({
+			...safeAppsExportedSettingsFields,
+			delegateClearingPreferences: DelegateClearingPreferences,
 		})
 	}),
 )

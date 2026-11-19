@@ -127,6 +127,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			baseFeePerGas: 1n,
 			simulationConductedTimestamp: created,
 			rpcNetwork,
+			simulationOverrides: {},
 		}
 		const originalConsoleWarn = console.warn
 		const originalConsoleError = console.error
@@ -221,6 +222,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			baseFeePerGas: 1n,
 			simulationConductedTimestamp: created,
 			rpcNetwork,
+			simulationOverrides: {},
 		}
 
 		const visualized = await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
@@ -292,6 +294,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			baseFeePerGas: 1n,
 			simulationConductedTimestamp: created,
 			rpcNetwork,
+			simulationOverrides: {},
 		}
 
 		await assert.rejects(

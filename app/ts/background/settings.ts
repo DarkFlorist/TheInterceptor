@@ -12,6 +12,8 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import type { DelegateClearingPreferences } from '../types/delegateClearing.js'
+import { hasDelegateClearingPreference } from '../utils/delegateClearingState.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -55,6 +57,7 @@ export async function getSettings() : Promise<Settings> {
 		'websiteAccess',
 		'simulationMode',
 		'activeRpcNetwork',
+		'delegateClearingPreferences',
 	]))
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
@@ -63,7 +66,8 @@ export async function getSettings() : Promise<Settings> {
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	const delegateClearingPreferencesPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'delegateClearingPreferences', []))
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode, delegateClearingPreferences] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
@@ -71,13 +75,34 @@ export async function getSettings() : Promise<Settings> {
 		websiteAccessPromise,
 		activeRpcNetworkPromise,
 		simulationModePromise,
+		delegateClearingPreferencesPromise,
 	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode, delegateClearingPreferences }
 }
 
 export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
 export const setPage = async (page: Page) => await browserStorageLocalSet(pageStorageWrite(page))
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
+
+
+export async function getDelegateClearingPreferences() {
+	return await getParsedStorageValueOrDefault('delegateClearingPreferences', [])
+}
+
+export async function isDelegateClearingEnabled(address: bigint, chainId: bigint) {
+	return hasDelegateClearingPreference(await getDelegateClearingPreferences(), address, chainId)
+}
+
+export const delegateClearingPreferencesStorageWrite = (delegateClearingPreferences: DelegateClearingPreferences): StorageWrite => ({ delegateClearingPreferences })
+
+export async function setDelegateClearingEnabled(address: bigint, chainId: bigint, enabled: boolean) {
+	return await runSettingsStorageTransaction(async () => {
+		const preferences = await getDelegateClearingPreferences()
+		if (hasDelegateClearingPreference(preferences, address, chainId) === enabled) return { writes: [], result: false }
+		const updated = enabled ? [...preferences, { address, chainId }] : preferences.filter((entry) => entry.address !== address || entry.chainId !== chainId)
+		return { writes: [delegateClearingPreferencesStorageWrite(updated)], result: true }
+	})
+}
 
 export async function getSigningAddressPreferences() {
 	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
@@ -237,12 +262,13 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.6' as const,
+		version: '1.7' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
 			activeSigningSafeAddress: settings.activeSigningSafeAddress,
 			signingAddressPreferences,
+			delegateClearingPreferences: settings.delegateClearingPreferences,
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
@@ -255,6 +281,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 		}
 	}
 }
+
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
 export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION

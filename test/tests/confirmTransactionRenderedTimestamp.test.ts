@@ -340,6 +340,7 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 				namedTokenIds: [],
 				simulationState: {
 					success: true as const,
+					simulationOverrides: {},
 					simulationStateInput: [],
 					simulatedBlocks: [],
 					blockNumber: 123n,

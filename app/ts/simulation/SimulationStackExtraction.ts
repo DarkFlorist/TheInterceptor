@@ -1,3 +1,5 @@
+import { getEffectiveSimulationOverrides } from '../utils/simulationStateOverrides.js'
+import { getSimulationExecutionInputFromState } from '../types/visualizer-types.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import type { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from '../types/simulationStackTypes.js'
 import type { ResolvedSimulationState, SimulatedTransaction } from '../types/visualizer-types.js'
@@ -44,8 +46,9 @@ const getETHBalanceChanges = (transaction: SimulatedTransaction) => {
 export const getSimulatedStackV2 = (simulationState: ResolvedSimulationState): GetSimulationStackReplyV2 => {
 	if (simulationState.kind === 'passthrough') return { stateOverrides: {}, transactions: [] }
 	if (simulationState.value.success === false) return { stateOverrides: {}, transactions: [] }
+
 	return {
-		stateOverrides: mergeSimulationOverrides(simulationState.value.simulatedBlocks.map((simulatedBlock) => simulatedBlock.stateOverrides)),
+		stateOverrides: mergeSimulationOverrides([...getEffectiveSimulationOverrides(getSimulationExecutionInputFromState(simulationState.value))]),
 		transactions: simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((simulatedTransaction) => ({ ethBalanceChanges: getETHBalanceChanges(simulatedTransaction), simulatedTransaction }))
 	}
 }

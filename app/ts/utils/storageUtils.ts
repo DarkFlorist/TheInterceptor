@@ -12,6 +12,7 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { DelegateClearingPreferences } from '../types/delegateClearing.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
@@ -53,6 +54,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 
 // Shared with startup reads so validating one setting never traverses unrelated storage unions.
 const startupStorageCodecs = {
+	delegateClearingPreferences: DelegateClearingPreferences,
 	independentActiveSimulationAddress: EthereumAddressOrMissing,
 	activeSigningSafeAddress: EthereumAddressOrMissing,
 	openedPageV2: Page,
@@ -70,6 +72,7 @@ const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes
 
 // Explicit writers preserve each storage key's value type when repairing corrupt startup data.
 const startupStorageDefaultWriters: { [Key in keyof StartupStorageValues]: (value: StartupStorageValues[Key]) => Promise<void> } = {
+	delegateClearingPreferences: async (value) => await browserStorageLocalSet({ delegateClearingPreferences: value }),
 	independentActiveSimulationAddress: async (value) => await browserStorageLocalSet({ independentActiveSimulationAddress: value }),
 	activeSigningSafeAddress: async (value) => await browserStorageLocalSet({ activeSigningSafeAddress: value }),
 	openedPageV2: async (value) => await browserStorageLocalSet({ openedPageV2: value }),
@@ -173,6 +176,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ensNameHashes'),
 	funtypes.Literal('ensLabelHashes'),
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
+	funtypes.Literal('delegateClearingPreferences'),
 	funtypes.Literal('fixedAddressRichList'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('pendingWatchAssetRequests'),

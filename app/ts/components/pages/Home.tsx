@@ -33,6 +33,7 @@ import { NetworkWithoutRpcError } from '../subcomponents/NetworkErrors.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import { DelegateClearingOption } from '../subcomponents/DelegateClearingOption.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -659,6 +660,7 @@ function FirstCard(param: FirstCardParams) {
 							changeActiveAddress = { param.changeActiveAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 						/>
+						<DelegateClearingOption activeAddress = { param.activeAddress } rpcNetwork = { param.rpcNetwork } simulationMode = { param.simulationMode } preferences = { param.delegateClearingPreferences } currentBlockNumber = { param.currentBlockNumber }/>
 					</div>
 				}
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
@@ -983,6 +985,8 @@ export function Home(param: HomeParams) {
 			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }
 			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
 			activeAddress = { currentActiveAddress }
+			delegateClearingPreferences = { param.delegateClearingPreferences }
+			currentBlockNumber = { param.currentBlockNumber }
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { param.simulationMode }

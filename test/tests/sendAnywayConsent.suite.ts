@@ -129,9 +129,9 @@ test('the canonical encoding sorts nested keys, keeps array order, encodes bigin
 	assert.equal(encoded, '{"a":{"y":"0x","z":"0x00ff"},"b":"0xff","list":[{"c":null,"d":"0x-1"},null,["0x2","0x1"]],"when":"1970-01-01T00:00:00.000Z"}')
 })
 
-// Pinned so encoding changes are deliberate. This fixture includes the persisted confirmationRunId added with failed-transaction previews; update the digest only with the fixture or reviewed fields.
+// Pinned for this branch's fixture, including its canonical captured simulation overrides, so encoding changes are deliberate. This fixture includes the persisted confirmationRunId added with failed-transaction previews; update the digest only with the fixture or reviewed fields.
 test('the reviewed-result id of a fixed request does not change', () => {
-	assert.equal(getReviewedResultId(pendingTransaction), '0x828eb79768aac48b7ca52c50460911f14aa9f99cec426df0737075e2bc5d2180')
+	assert.equal(getReviewedResultId(pendingTransaction), '0x08b92fbbb5a23b8bff8d32fe4744e3c27d185e7ba87acede5820d64e9ec2748b')
 })
 
 test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Safe co-signing request', async () => {

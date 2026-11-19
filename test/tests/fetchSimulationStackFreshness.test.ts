@@ -80,14 +80,15 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 		simulateWithZeroBaseFee: false,
 	}]
 	return {
-		simulationInput: { kind: 'simulated', value: simulationInput },
+		simulationInput: { kind: 'simulated', value: simulationInput, simulationOverrides: {} },
 		simulationState: {
 			kind: 'simulated',
 			value: {
 				success: true,
+				simulationOverrides: {},
 				simulationStateInput: simulationInput,
 				simulatedBlocks: [{
-					stateOverrides,
+					effectiveStateOverrides: stateOverrides,
 					simulatedTransactions: [],
 					signedMessages: [],
 					blockTimestamp: new Date('2026-01-01T00:00:12.000Z'),

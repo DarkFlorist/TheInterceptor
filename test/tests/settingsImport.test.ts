@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import * as fs from 'node:fs'
-import { beforeEach, describe, test } from 'bun:test'
+import { beforeEach, describe, spyOn, test } from 'bun:test'
 import * as ts from 'typescript'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
@@ -135,9 +136,14 @@ const forEachDescendant = (node: ts.Node, visit: (descendant: ts.Node) => void) 
 	})
 }
 
-const getStringLiterals = (node: ts.Node) => {
+// Shape checks inspect decoded input properties; their string operands are not storage-key accesses.
+const getStorageKeyStringLiterals = (node: ts.Node) => {
 	const literals: string[] = []
-	forEachDescendant(node, (descendant) => { if (ts.isStringLiteral(descendant) || ts.isNoSubstitutionTemplateLiteral(descendant)) literals.push(descendant.text) })
+	forEachDescendant(node, (descendant) => {
+		if (!ts.isStringLiteral(descendant) && !ts.isNoSubstitutionTemplateLiteral(descendant)) return
+		if (ts.isBinaryExpression(descendant.parent) && descendant.parent.operatorToken.kind === ts.SyntaxKind.InKeyword && descendant.parent.left === descendant) return
+		literals.push(descendant.text)
+	})
 	return literals
 }
 
@@ -271,10 +277,11 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('round-trips Safe and delegate simulation settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		const simulationAddress = 0x5555555555555555555555555555555555555555n
+		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, isDelegateClearingEnabled, rememberSigningAddressPreference, setDelegateClearingEnabled, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
@@ -288,24 +295,27 @@ describe('settings import', () => {
 		}])
 		await changeSimulationMode({
 			simulationMode: false,
-			activeSimulationAddress: 0x5555555555555555555555555555555555555555n,
+			activeSimulationAddress: simulationAddress,
 			activeSigningSafeAddress: signingSafeAddress,
 		})
 		await rememberSigningAddressPreference({ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId })
 		await setSafeAppsCompatibilityMode(true)
+		await setDelegateClearingEnabled(simulationAddress, testRpcNetwork.chainId, true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
+		assert.deepEqual(exportedSettings.settings.delegateClearingPreferences, [{ address: simulationAddress, chainId: testRpcNetwork.chainId }])
 
 		browserMock.reset()
 		await importSettingsAndAddressBook(exportedSettings)
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
 		assert.equal(await getSafeAppsCompatibilityMode(), true)
+		assert.equal(await isDelegateClearingEnabled(simulationAddress, testRpcNetwork.chainId), true)
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
 		const previousTabState = await getTabState(1)
 		const transition = await getSigningAddressSelectionTransition(importedSettings, previousTabState, {
@@ -315,6 +325,16 @@ describe('settings import', () => {
 		})
 		assert.equal(transition.shouldActivate, false)
 		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
+	})
+
+	test('clears a saved delegate simulation choice when importing an older export', async () => {
+		const address = 0x5656565656565656565656565656565656565656n
+		const { importSettingsAndAddressBook, isDelegateClearingEnabled, setDelegateClearingEnabled } = await settingsModulePromise
+		await setDelegateClearingEnabled(address, testRpcNetwork.chainId, true)
+		assert.equal(await isDelegateClearingEnabled(address, testRpcNetwork.chainId), true)
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+		assert.equal(await isDelegateClearingEnabled(address, testRpcNetwork.chainId), false)
 	})
 
 	test('publishes imported Safe preferences only after their address book entry', async () => {
@@ -601,6 +621,11 @@ describe('settings import', () => {
 			assert.equal((await settings.getSettings()).activeSigningSafeAddress, undefined)
 			assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
 		}
+		const latestExport = await settings.exportSettingsAndAddressBook()
+		if (latestExport.version !== '1.7') throw new Error('Expected current settings export version')
+		const { delegateClearingPreferences, ...version16Settings } = latestExport.settings
+		assert.deepEqual(delegateClearingPreferences, [])
+		const version16Export: ExportedSettings = { ...latestExport, version: '1.6', settings: version16Settings }
 		return [
 			{ exportedSettings: buildVersion10Import(), assertImportedValues: async () => {
 				await assertResetsSigningState()
@@ -639,7 +664,11 @@ describe('settings import', () => {
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
 			} },
-			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
+			{ exportedSettings: version16Export, assertImportedValues: async () => {
+				assert.deepEqual(await settings.getDelegateClearingPreferences(), [])
+				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+			} },
+			{ exportedSettings: latestExport, assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
@@ -690,7 +719,7 @@ describe('settings import', () => {
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
-		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
+		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
 			settings: {
@@ -776,7 +805,7 @@ describe('settings import', () => {
 		assert.notDeepEqual(writtenKeys, [])
 		for (const path of [settingsStorageModulePaths.settingsImport, settingsStorageModulePaths.settingsStorageTransaction]) {
 			const sourceFile = parseSourceFile(path)
-			const namedKeys = [...getStringLiterals(sourceFile), ...getStorageItemObjectKeys(sourceFile)].filter((name) => writtenKeys.includes(name))
+			const namedKeys = [...getStorageKeyStringLiterals(sourceFile), ...getStorageItemObjectKeys(sourceFile)].filter((name) => writtenKeys.includes(name))
 			assert.deepEqual(namedKeys, [], `${ path } names storage keys instead of composing their owners' writes`)
 		}
 	})
@@ -787,8 +816,35 @@ describe('settings import', () => {
 		for (const key of writtenKeys) {
 			const owners = modules.filter(({ sourceFile }) => getKeysWrittenByStorageWriteFunctions(sourceFile).includes(key)).map(({ path }) => path)
 			assert.equal(owners.length, 1, `${ key } is written by the …StorageWrite functions of ${ owners.length === 0 ? 'no module' : owners.join(' and ') }`)
-			const modulesNamingKey = modules.filter(({ sourceFile }) => getStringLiterals(sourceFile).includes(key)).map(({ path }) => path)
+			const modulesNamingKey = modules.filter(({ sourceFile }) => getStorageKeyStringLiterals(sourceFile).includes(key)).map(({ path }) => path)
 			assert.deepEqual(modulesNamingKey.filter((path) => !owners.includes(path)), [], `${ key } is named outside its owner ${ owners.join('') }`)
 		}
 	})
+})
+
+
+test('settings reply gets delegate preferences and network from the same settings snapshot', async () => {
+	const settings = await import('../../app/ts/background/settings.js')
+	const { settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+	const snapshot = await settings.getSettings()
+	const readSettings = spyOn(settings, 'getSettings').mockResolvedValue(snapshot)
+	const readPreference = spyOn(settings, 'getDelegateClearingPreferences').mockImplementation(async () => { throw new Error('Separate preference read splits the snapshot') })
+	const sendMessage = spyOn(browser.runtime, 'sendMessage')
+	try {
+		await settingsOpened()
+		assert.equal(readSettings.mock.calls.length, 1)
+		assert.equal(readPreference.mock.calls.length, 0)
+		const messages = sendMessage.mock.calls.flatMap(([message]) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success ? [parsed.value] : []
+		})
+		const reply = messages.find((message) => message.method === 'popup_requestSettingsReply')
+		if (reply?.method !== 'popup_requestSettingsReply') throw new Error('Missing settings reply')
+		assert.deepEqual(reply.data.delegateClearingPreferences, snapshot.delegateClearingPreferences)
+		assert.deepEqual(reply.data.activeRpcNetwork, snapshot.activeRpcNetwork)
+	} finally {
+		readSettings.mockRestore()
+		readPreference.mockRestore()
+		sendMessage.mockRestore()
+	}
 })

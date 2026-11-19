@@ -205,6 +205,7 @@ const defaultSettings: Settings = {
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
 	simulationMode: false,
+	delegateClearingPreferences: [],
 }
 
 const defaultRpcEntries = [{ name: 'Ethereum', chainId: '0x1', httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }]
