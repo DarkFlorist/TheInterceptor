@@ -744,7 +744,7 @@ test('a refresh-only transition still refreshes committed selection when a later
 		await updatePopupVisualisationIfNeeded(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { invalidateOldState: true })
 		const simulationsBefore = fixture.getFirstEndpointSimulations()
 		await assert.rejects(fixture.simulationServicesOwner.update(async ({ requestRefresh }) => {
-			await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, { type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }] }))
+			await modules.updateInterceptorTransactionStack((stack) => ({ operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }, ...stack.operations] }))
 			requestRefresh()
 			throw notificationError
 		}), (error) => error === notificationError)
