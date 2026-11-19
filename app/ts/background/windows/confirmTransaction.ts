@@ -16,7 +16,8 @@ import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulati
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
+import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
@@ -345,6 +346,9 @@ function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, a
 	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }
 
+// The outcome of posting a signing-mode request to the wallet: refused because its authorization no longer holds, or delivered or not to the website's connection.
+type SignerForwarding = { readonly status: 'delivered' } | { readonly status: 'notDelivered' } | { readonly status: 'unauthorized', readonly reason: string }
+
 // Why a signing-mode accept must not reach the wallet, or undefined when it may. The website connection must still be approved for the account the request was created under, and a request that asks the wallet to sign a transaction must be from that account. A raw transaction is already signed, so broadcasting it grants no authority over its sender: the website could submit the same bytes to any public RPC. A request that is not simulated yet is refused by claimAcceptedRequest instead.
 function getSignerAuthorizationFailure(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage) {
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
@@ -448,6 +452,21 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	// Derived only when forwarding, after the authorization checks, so rejecting a request never depends on rebuilding its reviewed transaction.
 	const getSignerFacingRequest = (): SendTransactionParams | SendRawTransactionParams | SignMessageParams => safeResolution.signerFacingRequest
 		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage)
+	// Approval can be suspended during any await after the check above, so the claimed request's authorization is checked again synchronously right before each post, including the MV2 reconnect retry.
+	const forwardToSignerIfStillAuthorized = async (): Promise<SignerForwarding> => {
+		const message = { ...getSignerFacingRequest(), type: 'forwardToSigner' as const, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+		const authorizationFailures: string[] = []
+		const delivered = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, message, () => {
+			const authorizationFailure = getSignerAuthorizationFailure(websiteTabConnections, pendingTransactionOrMessage)
+			if (authorizationFailure === undefined) return replyToInterceptedRequest(websiteTabConnections, message)
+			authorizationFailures.push(authorizationFailure)
+			// Undefined ends the delivery attempt without asking the MV2 content script to reconnect.
+			return undefined
+		})
+		const [authorizationFailure] = authorizationFailures
+		if (authorizationFailure !== undefined) return { status: 'unauthorized', reason: authorizationFailure }
+		return delivered === true ? { status: 'delivered' } : { status: 'notDelivered' }
+	}
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => await updateViewAfterPendingRequestLeftQueue(ethereum, tokenPriceService, pendingTransactionOrMessage, simulationStack)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
@@ -495,13 +514,14 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	}
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
-		if (requestWasForwarded) return true
+		const forwarding = await forwardToSignerIfStillAuthorized()
+		if (forwarding.status === 'delivered') return true
+		// Either way the request stays in front of the user, who can reject it.
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
 				status: 'SignerError',
 				code: METAMASK_ERROR_BLANKET_ERROR,
-				message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+				message: forwarding.status === 'unauthorized' ? forwarding.reason : 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
 			}
 		}))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -531,8 +551,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
-		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		// Signing-mode accepts are forwarded above with their authorization check, so no other action may reach the wallet from here.
+		throw new Error(`Unexpected ${ confirmation.data.action } confirmation for a signing-mode request`)
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 

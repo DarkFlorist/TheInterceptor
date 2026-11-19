@@ -10,7 +10,7 @@ import { nanoString } from '../../app/ts/utils/bigint.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { TransactionConfirmation, UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
-import { activeAddress, addressString, browserMock, createAcceptConfirmation, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, simulator, unsignedTransaction, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createAcceptConfirmation, createDisconnectedPort, createWebsitePort, fakeBlock, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, pendingTransaction, recipientAddress, simulator, unsignedTransaction, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
 
 const websiteOnlyRequestParameters = {
 	method: 'eth_sendTransaction' as const,
@@ -523,4 +523,73 @@ test('still refuses a reviewed wallet-signed transaction whose sender is not the
 	assert.equal(pendingRequest?.approvalStatus.status, 'SignerError')
 	assert.match(pendingRequest?.approvalStatus.status === 'SignerError' ? pendingRequest.approvalStatus.message : '', /reviewed transaction sender is not the active authorized account/u)
 	assert.equal(await getLatestUnexpectedError(), undefined)
+})
+
+const isForwardToSigner = (message: unknown) => isRecord(message) && message.type === 'forwardToSigner'
+
+// A refused forward leaves a signer error on the request, which the user can still reject: the website gets the user-rejected reply and nothing reaches the wallet.
+async function assertRefusedForwardStaysRejectable(websiteTabConnections: ReturnType<typeof createApprovedConnections>, postedMessages: readonly unknown[]) {
+	const [refusedRequest] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refusedRequest?.approvalStatus.status, 'SignerError')
+	assert.match(refusedRequest?.approvalStatus.status === 'SignerError' ? refusedRequest.approvalStatus.message : '', /website connection was interrupted/u)
+	assert.equal(await routePopupConfirmation(simulator.ethereum, websiteTabConnections, { action: 'reject', errorString: undefined }), undefined)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.equal(postedMessages.some(isForwardToSigner), false)
+	assert.equal(await getLatestUnexpectedError(), undefined)
+}
+
+test('does not forward an accepted request whose website approval is suspended while the accept is being claimed', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
+	const postedMessages: unknown[] = []
+	const websiteTabConnections = createApprovedConnections(postedMessages)
+	const connection = websiteTabConnections.get(uniqueRequestIdentifier.requestSocket.tabId)?.connections[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]
+	if (connection === undefined) throw new Error('Missing website connection')
+	const accept = await createAcceptConfirmation()
+	// The account changes while the claim is being written, after the accept passed its first authorization check, and suspends the website's approval as accountsChanged handling does.
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if (JSON.stringify(items.pendingTransactionsAndMessages ?? null).includes('WaitingForSigner')) {
+			connection.approved = false
+			connection.approvedAddress = undefined
+		}
+		writeStoredItems()
+	})
+	try {
+		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept), false)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+	assert.equal(postedMessages.some(isForwardToSigner), false)
+	await assertRefusedForwardStaysRejectable(websiteTabConnections, postedMessages)
+})
+
+test('does not forward an accepted request to an MV2 reconnected port whose website approval was not restored', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
+	const socket = uniqueRequestIdentifier.requestSocket
+	const socketKey = modules.websiteSocketToString(socket)
+	const reconnectedPortMessages: unknown[] = []
+	const websiteTabConnections = createApprovedConnections([])
+	const tabConnection = websiteTabConnections.get(socket.tabId)
+	const connection = tabConnection?.connections[socketKey]
+	if (tabConnection === undefined || connection === undefined) throw new Error('Missing website connection')
+	// The first post fails on a disconnected port, so delivery asks the MV2 content script to reconnect and retries on the replacement port.
+	const disconnectedPort = createDisconnectedPort()
+	tabConnection.connections[socketKey] = { ...connection, port: disconnectedPort.port }
+	let reconnectRequests = 0
+	browserMock.setManifestVersion(2)
+	browserMock.setTabMessageHandler(async () => {
+		reconnectRequests += 1
+		// The replacement connection is not approved yet, as a newly connected content script port starts out.
+		tabConnection.connections[socketKey] = { ...connection, port: createWebsitePort(socket, 0, reconnectedPortMessages), approved: false, approvedAddress: undefined }
+		return undefined
+	})
+	try {
+		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), false)
+	} finally {
+		browserMock.setManifestVersion(3)
+		browserMock.setTabMessageHandler(undefined)
+	}
+	assert.equal(disconnectedPort.getPostAttempts(), 1)
+	assert.equal(reconnectRequests, 1)
+	assert.equal(reconnectedPortMessages.some(isForwardToSigner), false)
+	await assertRefusedForwardStaysRejectable(websiteTabConnections, reconnectedPortMessages)
 })
