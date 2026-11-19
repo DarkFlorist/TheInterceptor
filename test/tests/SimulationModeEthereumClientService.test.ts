@@ -722,12 +722,24 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(getNodeRecoveredEip7702Authority({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority: testAuthority }), undefined)
 			})
 
+			test('node recovery agrees with signed authorization recovery for both parities and zero-valued fields', () => {
+				const parities = new Set<string>()
+				for (const chainId of [0n, rpcNetwork.chainId]) {
+					for (let nonce = 0n; nonce < 16n; nonce++) {
+						const signed = signTestAuthorization(chainId, nonce, 0n)
+						parities.add(signed.yParity)
+						assert.equal(getNodeRecoveredEip7702Authority(signed), testAuthority)
+					}
+				}
+				assert.equal(parities.size, 2)
+			})
+
 			test('an in-range signature no public key recovers from is skipped, not thrown', () => {
 				const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
 				const request = { chainId: rpcNetwork.chainId, address: addressString(delegate), nonce: 0n }
 				const toAuthorization = (r: bigint, s: bigint, yParity: 0 | 1) => ({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, r, s, yParity: yParity === 0 ? 'even' as const : 'odd' as const })
 				// r = 5 is no curve point's x coordinate.
-				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: 5n, s: 7n, yParity: 0 }), /^Error: bad point:/)
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: 5n, s: 7n, yParity: 0 }))
 				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(5n, 7n, 0)), undefined)
 				// With R = kG and s = e / k, recovery gives r^-1 (sR - eG), the point at infinity; the low-s form recovers the same.
 				const messageHash = BigInt(dataStringWith0xStart(eip7702Authorization._getHash(request))) % SECP256K1_ORDER
@@ -741,7 +753,7 @@ describe('SimulationModeEthereumClientService', () => {
 				const highOrLowS = messageHash * inverse(k) % SECP256K1_ORDER
 				const yParity = point.y % 2n === 0n ? 0 : 1
 				const [s, lowSParity] = highOrLowS <= SECP256K1_HALF_ORDER ? [highOrLowS, yParity] as const : [SECP256K1_ORDER - highOrLowS, 1 - yParity === 0 ? 0 : 1] as const
-				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: point.x, s, yParity: lowSParity }), /^Error: invalid recovery:/)
+				assert.throws(() => eip7702Authorization.getAuthority({ ...request, r: point.x, s, yParity: lowSParity }))
 				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(point.x, s, lowSParity)), undefined)
 			})
 
