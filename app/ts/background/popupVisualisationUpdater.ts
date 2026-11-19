@@ -11,7 +11,7 @@ import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type Simul
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { retainPreviousVisualisation } from '../utils/popupVisualisationLifecycle.js'
-import { visualizeSimulatorStateAndRecordLookups } from './simulationUpdating.js'
+import { visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
 
 let abortController = new AbortController()
@@ -160,7 +160,7 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 			try {
 				const getUpdatedState = async () => {
 					if (ethereum.getChainId() === simulationState.value.rpcNetwork.chainId) {
-						const refreshed = await visualizeSimulatorStateAndRecordLookups(simulationState.value, ethereum, tokenPriceService, abortController)
+						const refreshed = await visualizeSimulatorState(simulationState.value, ethereum, tokenPriceService, abortController)
 						return await setPopupVisualisationState({ ...refreshed, ...doneState, simulationState: toResolvedSimulationState(refreshed.simulationState), numberOfAddressesMadeRich })
 					}
 					return await setPopupVisualisationState(buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich, 'corrupted'))

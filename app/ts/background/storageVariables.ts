@@ -3,7 +3,7 @@ import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
-import { StoredCompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
@@ -134,17 +134,17 @@ export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	return await getLargeStateValue('popupVisualisation', StoredCompleteVisualizedSimulation) ?? emptyResults
+	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
-export const setPopupVisualisationState = async (newResults: StoredCompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
+export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: StoredCompleteVisualizedSimulation) => Promise<StoredCompleteVisualizedSimulation | undefined>) {
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
 		const newRequests = await update(oldResults)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
-		await setLargeStateValue('popupVisualisation', StoredCompleteVisualizedSimulation, newRequests)
+		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
 		return newRequests
 	})
 }

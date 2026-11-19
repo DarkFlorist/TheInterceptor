@@ -12,7 +12,7 @@ import type { EnrichedEthereumEvents } from '../types/EnrichedEthereumData.js'
 import type { ProtectorChainReads } from './protectorChainReads.js'
 import type { IdentifyAddress } from '../types/metadataLookups.js'
 
-// A protector reads chain state only through chainReads, so the type keeps every chain read recorded with the run and replayable by an address-book re-label; the connected chain id is a plain value. A protector leaves off the trailing parameters it does not use, so identify comes after chainReads, which more protectors use without identifying an address.
+// Protectors receive only the chain reads and address identification they need; the live adapter owns the client and simulated-state details. Trailing parameters are omitted by protectors that do not use them.
 type Protector = (
 	transaction: WebsiteCreatedEthereumTransaction['transaction'],
 	connectedChainId: bigint,
