@@ -1,11 +1,10 @@
-import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { Semaphore } from '../utils/semaphore.js'
+import { runSimulationSettingsTransition } from './simulationSettingsTransition.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './websiteConnectionEvents.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate } from './accessManagement.js'
@@ -16,7 +15,8 @@ import { changeSimulationMode } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
-import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
+import { selectionNeedsRefresh } from '../utils/simulationSelection.js'
 
 async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
@@ -71,7 +71,6 @@ type ActiveSettingsTransition = {
 	readonly signingPreference?: SigningAddressPreference
 }
 
-const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 async function runActiveSettingsChange(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -81,7 +80,7 @@ async function runActiveSettingsChange(
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
-		await changeActiveAddressAndChainSemaphore.execute(async () => {
+		await runSimulationSettingsTransition(simulationServicesOwner, async (servicesUpdate) => {
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -114,13 +113,7 @@ async function runActiveSettingsChange(
 					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
 					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
 					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
-						try {
-							simulationServicesOwner.reset(change.rpcNetwork)
-						} catch (error) {
-							// Only failed provider installation invalidates simulation output here.
-							await publishFailedPopupVisualisation()
-							throw error
-						}
+						servicesUpdate.reset(change.rpcNetwork)
 					}
 					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
 				} finally {
@@ -137,9 +130,9 @@ async function runActiveSettingsChange(
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
-			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+			// The same rule by which a refresh queued for the previous selection steps aside, so the change publishes whatever that refresh no longer may.
+			if (selectionNeedsRefresh(previousSettings, updatedSettings)) {
+				servicesUpdate.requestRefresh()
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})

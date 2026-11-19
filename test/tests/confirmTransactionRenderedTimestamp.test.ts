@@ -12,6 +12,7 @@ import { getReviewedResultId } from '../../app/ts/background/reviewedResult.js'
 import { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
 import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import type { TransactionSimulationOptions } from '../../app/ts/types/visualizer-types.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type CurrentWindowProvider = () => Promise<{ id: number }>
@@ -443,7 +444,7 @@ async function createFakeSimulator() {
 			}
 		},
 	}
-	const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const ethereum = new EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const simulator = {
 		ethereum,
 		tokenPriceService: {

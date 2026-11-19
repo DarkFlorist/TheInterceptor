@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { setSystemTime, test as testWithDefaultNetwork } from 'bun:test'
@@ -11,7 +12,7 @@ import { activeAddress, addressString, browserMock, created, createFeeValidating
 
 // These previews use their own mainnet clients; mutating the shared local-chain fixture can leak into Safe fixtures evaluated while these tests run.
 const previewRpcNetwork = { ...fakeRpcNetwork, chainId: 1n }
-const previewEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, previewRpcNetwork)
+const previewEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, previewRpcNetwork, alwaysLive)
 const simulator = { ethereum: previewEthereum, tokenPriceService: new modules.TokenPriceService(previewEthereum, 60_000) }
 const signedTransaction = modules.mockSignTransaction({ ...sharedSignedTransaction, chainId: previewRpcNetwork.chainId })
 const pendingTransaction = sharedPendingTransaction
@@ -41,7 +42,7 @@ function createSimulatorWithRpcFailure(getFailure: (rpcRequest: RpcRequest) => E
 			if (failure !== undefined) throw failure
 			return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
 		},
-	}, async () => undefined, async () => undefined, previewRpcNetwork)
+	}, async () => undefined, async () => undefined, previewRpcNetwork, alwaysLive)
 	return { ethereum, tokenPriceService: new modules.TokenPriceService(ethereum, 60_000) }
 }
 

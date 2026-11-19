@@ -9,6 +9,7 @@ import { MULTICALL3, Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { SAFE_ABI } from '../../app/ts/safe/safeCore.js'
 import { encodeAbiParameters } from '../../app/ts/utils/ethereumPrimitives.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
@@ -373,7 +374,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const currentStackTransaction = modules.mockSignTransaction({
 			type: '1559',
 			from: activeAddress.address,
@@ -481,7 +482,7 @@ describe('Gnosis Safe stack simulation', () => {
 				}
 			},
 		}
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const safeMessage = createSafeMessage(fakeRpcNetwork, activeAddress, recipient, operation)
 		const namedContract = { ...recipient, address: 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2n }
 
@@ -613,7 +614,7 @@ describe('Gnosis Safe stack simulation', () => {
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 
 		const currentStackTransaction = modules.mockSignTransaction({
@@ -720,7 +721,7 @@ describe('Gnosis Safe stack simulation', () => {
 				}
 			},
 		}
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const safeMessage = createSafeMessage(fakeRpcNetwork, connectedUser, connectedUser)
 		const reply = await modules.simulateGnosisSafeMetaTransaction({ ...safeMessage, verifyingContract: sharedSafe, message: { ...safeMessage.message, domain: { ...safeMessage.message.domain, verifyingContract: sharedSafe.address } } }, [], ethereum, new modules.TokenPriceService(ethereum, 0))
 		if (!reply.success) throw new Error(reply.errorMessage)

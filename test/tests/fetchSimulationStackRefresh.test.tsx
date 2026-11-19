@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -16,6 +17,7 @@ import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedS
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
 import { installDomMock } from './domMock.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => unknown
 
@@ -174,12 +176,9 @@ const requestHandler = {
 		}
 	},
 }
-const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 const tokenPriceService = new TokenPriceService(ethereum, 60_000)
-const simulationServicesOwner = {
-	getCurrent: () => ({ ethereum, tokenPriceService }),
-	reset: () => ({ ethereum, tokenPriceService }),
-}
+const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 
 // Requests that reach the real background dispatcher. The live consumer's cached home-data requests neither simulate nor publish simulation state, so they stay unanswered here.
 const BACKGROUND_SIMULATION_REQUESTS = new Set(['popup_readyAndListening', 'popup_requestCompleteVisualizedSimulation', 'popup_requestSimulationMetadata', 'popup_refreshSimulation'])

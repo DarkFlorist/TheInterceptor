@@ -4,6 +4,7 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRequestHandler, fakeRpcNetwork, fakeSafeContract, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier, createAcceptConfirmation, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
@@ -668,7 +669,7 @@ test('refreshes the selected signer and uses services installed during the walle
 			retiredClientRequests++
 			throw new Error('Confirmation used services captured before the wallet refresh')
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 	const owner = createTestSimulationServicesOwner({
 		ethereum: retiredEthereum,
 		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
@@ -730,7 +731,7 @@ test('refreshes the selected signer and uses services installed during the walle
 
 	const confirmation = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation())
 	await accountRequestEntered.promise
-	owner.reset(fakeRpcNetwork)
+	await owner.update(async ({ reset }) => reset(fakeRpcNetwork))
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply
@@ -1209,7 +1210,7 @@ const otherChainRpcNetwork = { ...fakeRpcNetwork, name: 'Other Test Chain', chai
 
 // Services for a second chain on which the Safe has the same address, owners, and nonce as on fakeRpcNetwork, so only the chain differs.
 function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
-	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork)
+	const otherChainEthereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
 }
 

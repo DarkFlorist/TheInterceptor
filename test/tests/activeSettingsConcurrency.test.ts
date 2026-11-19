@@ -163,7 +163,7 @@ describe('active settings concurrency', () => {
 		])
 	})
 
-	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
+	test.each(['signing preference', 'stack storage', 'settings broadcast'])('keeps committed selection visualization coherent when %s fails', async (failurePoint) => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
 		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
@@ -202,6 +202,7 @@ describe('active settings concurrency', () => {
 				await assert.rejects(transition, error => error === failure)
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 			}
+			// No simulation consumer is open. Normal refresh work keeps the cached view; unrelated transition errors must not force a failed/invalid publication.
 			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
 			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
 		} finally {

@@ -9,6 +9,8 @@ import './signInWithEthereumConfirmation.suite.js'
 import './confirmTransactionStrandedSimulation.suite.js'
 import './confirmTransactionSimulationAbortOrder.suite.js'
 import './terminalReplyDelivery.suite.js'
+import './popupRefreshNewerStack.suite.js'
+
 import './sendAnywayConsent.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)

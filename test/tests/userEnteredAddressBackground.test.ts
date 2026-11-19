@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -105,7 +106,7 @@ function createEthereumClient(modules: Modules, requestedCodeAddresses: bigint[]
 			return '0x'
 		},
 	}
-	return new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
+	return new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 }
 
 function createContactEntry(address: bigint, name: string): ContactEntry {

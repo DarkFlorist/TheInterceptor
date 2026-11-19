@@ -1,4 +1,5 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import type { ClientLiveness } from './clientLiveness.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -137,13 +138,15 @@ export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
+	private readonly liveness: ClientLiveness
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
 
-	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
+	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry, liveness: ClientLiveness) {
 		this.requestHandler = requestHandler
+		this.liveness = liveness
 		this.newBlockAttemptCallback = newBlockAttemptCallback
 		this.onErrorBlockCallback = onErrorBlockCallback
 		this.rpcEntry = rpcEntry
@@ -152,6 +155,9 @@ export class EthereumClientService {
 	}
 
 	public readonly getRpcEntry = () => this.rpcEntry
+
+	// Whether this client's owner still has it installed; a refresh holding a replaced client steps aside.
+	public readonly isCurrent = () => this.liveness()
 
 	public readonly getNewBlockAttemptCallback = () => this.newBlockAttemptCallback
 	public readonly getOnErrorBlockCallback = () => this.onErrorBlockCallback

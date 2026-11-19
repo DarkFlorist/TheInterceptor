@@ -10,6 +10,7 @@ import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import type { SimulationState } from '../../app/ts/types/visualizer-types.js'
 import { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 const storageState: Record<string, unknown> = {}
 
@@ -74,7 +75,7 @@ const requestHandler: IEthereumJSONRpcRequestHandler = {
 	},
 }
 
-const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry)
+const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 
 const simulationState: SimulationState = {
 	success: false,

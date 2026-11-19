@@ -7,6 +7,7 @@ import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
@@ -106,7 +107,9 @@ const exportPayload = {
 }
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
+// A client still installed, so the refresh after import reaches the provider and stops at its expected failure.
 const expectedInfrastructureEthereum = {
+	isCurrent: alwaysLive,
 	getBlock: async () => { throw NEW_BLOCK_ABORT },
 }
 
@@ -377,7 +380,7 @@ describe('import simulation stack', () => {
 		assert.equal('requestOrigin' in importedOperation.signedMessageTransaction, false)
 
 		const rpcEntry = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', currencyLogoUri: undefined, primary: true, minimized: false }
-		const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async () => { throw new Error('RPC should not be called') } }, async () => undefined, async () => undefined, rpcEntry)
+		const ethereum = new modules.EthereumClientService({ rpcUrl: rpcEntry.httpsRpc, clearCache: () => undefined, jsonRpcRequest: async () => { throw new Error('RPC should not be called') } }, async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 		const visualized = await modules.craftPersonalSignPopupMessage(identifyAddressWith(ethereum, undefined), importedOperation.signedMessageTransaction, rpcEntry)
 		assert.equal(visualized.type, 'SignInWithEthereum')
 		assert.equal(visualized.quarantine, true)

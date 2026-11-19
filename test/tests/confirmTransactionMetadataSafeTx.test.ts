@@ -7,6 +7,7 @@ import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/t
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -401,7 +402,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			rpcUrl: fakeRpcNetwork.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest() { throw new Error('RPC should not be called') },
-		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		const storedVisualisation = await modules.getPopupVisualisationState()
 		const refreshError = new Error('Unexpected visualizer failure')
@@ -444,7 +445,7 @@ describe('SafeTx confirm transaction metadata', () => {
 					default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 				}
 			},
-		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		}, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -509,7 +510,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
@@ -558,7 +559,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			},
 		}
 
-		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork, alwaysLive)
 		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
 		await modules.browserStorageLocalSet({
 			simulationMode: true,

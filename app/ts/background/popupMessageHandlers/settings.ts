@@ -1,15 +1,17 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { ImportSettings, ImportSettingsReply, SetRpcList } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
+import { runSimulationSettingsTransition } from '../simulationSettingsTransition.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
+
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -54,9 +56,11 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
-	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList) {
+	await runSimulationSettingsTransition(simulationServicesOwner, async ({ reset }) => {
+		await setRpcList(request.data)
+		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+		const primary = await getPrimaryRpcForChain((await getSettings()).activeRpcNetwork.chainId)
+		if (primary !== undefined) reset(primary)
+	})
 }

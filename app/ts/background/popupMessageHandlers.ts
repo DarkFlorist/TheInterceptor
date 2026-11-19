@@ -2,8 +2,9 @@ import { identifyAddressWith, lookUpMetadataOnChain } from './metadataUtils.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
+import { buildCurrentSimulationInput, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
+
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -1307,7 +1308,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	console.info(`[simulation-stack import] persisted transaction stack at ${ formatEstimatedBytes(updatedStackBytes) }.`)
 
 	try {
-		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
+		await updatePopupVisualisationState(ethereum, tokenPriceService, { throwOnUnexpectedError: true })
 		const popupVisualisation = await getPopupVisualisationState()
 		const popupVisualisationBytes = estimateSerializedStateBytes(CompleteVisualizedSimulation, popupVisualisation)
 		console.info(`[simulation-stack import] persisted popup visualisation at ${ formatEstimatedBytes(popupVisualisationBytes) }.`)
@@ -1325,7 +1326,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await buildCurrentSimulationInput()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {

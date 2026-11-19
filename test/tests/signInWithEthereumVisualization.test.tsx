@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -38,7 +39,7 @@ const ethereum = new EthereumClientService({
 	rpcUrl: rpcEntry.httpsRpc,
 	clearCache: () => undefined,
 	jsonRpcRequest: async () => { throw new Error('RPC should not be called') },
-}, async () => undefined, async () => undefined, rpcEntry)
+}, async () => undefined, async () => undefined, rpcEntry, alwaysLive)
 
 const installBrowserStorageMock = () => {
 	const storageState: Record<string, unknown> = {}

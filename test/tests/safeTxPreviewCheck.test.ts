@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { SAFE_ABI, assertSafeTxPreviewAllowed } from '../../app/ts/safe/safeCore.js'
@@ -29,7 +30,7 @@ const createNode = (replyToCall: CallReply) => {
 			return replyToCall(dataStringWith0xStart(request.params[0].data ?? new Uint8Array()).slice(0, 10))
 		},
 	}
-	return new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Test', chainId: CHAIN_ID, httpsRpc: handler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
+	return new EthereumClientService(handler, async () => undefined, async () => undefined, { name: 'Test', chainId: CHAIN_ID, httpsRpc: handler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true }, alwaysLive)
 }
 // No default values: a default would replace the undefined chain id a message without one passes.
 const check = async (replyToCall: CallReply, activeAddress: bigint, messageChainId: bigint | undefined) => await assertSafeTxPreviewAllowed(createNode(replyToCall), SAFE, activeAddress, messageChainId)

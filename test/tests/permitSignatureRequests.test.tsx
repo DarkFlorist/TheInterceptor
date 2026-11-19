@@ -1,3 +1,4 @@
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -77,7 +78,7 @@ function createSignedTypedDataTransaction(typedData: EIP712Message): SignedMessa
 
 // Decodes the typed data JSON string the same way an eth_signTypedData_v4 request is decoded before it is visualized.
 async function visualizeTypedData(typedData: string, rpcNetwork: RpcEntry = mainnet) {
-	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
+	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 	return await craftPersonalSignPopupMessage(async (address) => await identifyAddress(ethereum, undefined, address), createSignedTypedDataTransaction(EIP712Message.parse(typedData)), rpcNetwork)
 }
 

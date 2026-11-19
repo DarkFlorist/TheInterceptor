@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { alwaysLive } from '../../app/ts/simulation/services/clientLiveness.js'
 
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
@@ -78,7 +79,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest() { throw new Error('Unexpected direct RPC request') },
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 		const ethereum = new Proxy(baseEthereum, {
 			get(target, property, receiver) {
 				if (property === 'getCode') return async () => new Uint8Array([1])
@@ -182,7 +183,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 				if (request.method === 'eth_getCode') return '0x'
 				throw new Error(`Unexpected RPC method: ${ request.method }`)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 
 		const created = new Date('2024-01-01T00:00:00.000Z')
 		const failedSimulationState = {
@@ -253,7 +254,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 				if (request.method === 'eth_getCode') throw NEW_BLOCK_ABORT
 				throw new Error(`Unexpected RPC method: ${ request.method }`)
 			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		}, async () => undefined, async () => undefined, rpcNetwork, alwaysLive)
 
 		const created = new Date('2024-01-01T00:00:00.000Z')
 		const failedSimulationState = {
