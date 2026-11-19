@@ -14,7 +14,7 @@ import { MockRequestHandler } from '../MockRequestHandler.js'
 import { Permit2SignatureTransfer, VisualizedPersonalSignRequestPermit2SignatureTransfer } from '../../app/ts/types/personal-message-definitions.js'
 import { getMessageAndDomainHash } from '../../app/ts/utils/eip712.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
-import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, safeTx, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
+import { daiPermitMessage, eip2612UsdcPermitMessage, eip712Example, maxUint256, openSeaWithTotalOriginalConsiderationItems, permit2BatchTransferFromMessage, permit2BatchWitnessTransferFromMessage, permit2Message, permit2PermitBatchMessage, permit2Signer, permit2TransferFromMessage, permit2UniswapXWitnessTransferFromMessage, permit2WitnessTransferFromWitnessNotLastMessage, safeTx, seaportJsSeaport16Listing, uniswapUniversalRouter, uniswapXExclusiveDutchOrderReactor, usdcAddress } from './data/eip712Data.js'
 
 // Address metadata, tab state and RPC lookups read extension storage, which is empty for these requests.
 Object.defineProperty(globalThis, 'browser', {
@@ -626,7 +626,6 @@ describe('EIP-2612 permit signature requests', () => {
 
 describe('Raw message of identified typed data', () => {
 	test('shows every identified message type as the request the website sent, not re-encoded', async () => {
-		// OrderComponents is left out because no valid request reaches it: its runtime type requires totalOriginalConsiderationItems, which an order that declares all of its fields in the EIP-712 types does not have.
 		const requests = [
 			['Permit', eip2612UsdcPermitMessage],
 			['Permit2', permit2Message],
@@ -636,6 +635,8 @@ describe('Raw message of identified typed data', () => {
 			['Permit2SignatureTransfer', permit2UniswapXWitnessTransferFromMessage],
 			['Permit2SignatureTransfer', permit2BatchWitnessTransferFromMessage],
 			['SafeTx', safeTx],
+			['OrderComponents', seaportJsSeaport16Listing],
+			['OrderComponents', openSeaWithTotalOriginalConsiderationItems],
 			['EIP712', eip712Example],
 		] as const
 		for (const [expectedType, typedData] of requests) {
