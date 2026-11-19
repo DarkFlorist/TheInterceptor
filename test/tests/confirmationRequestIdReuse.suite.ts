@@ -24,6 +24,7 @@ async function startPageConnection(messagesPostedToPage: unknown[] = []) {
 type PageConnections = Awaited<ReturnType<typeof startPageConnection>>
 
 async function sendTransactionFromPage(connections: PageConnections, value: bigint, simulationMode = false) {
+	await modules.changeSimulationMode({ simulationMode })
 	const parameters = { method: 'eth_sendTransaction' as const, params: [{ from: activeAddress, to: recipientAddress, value, gas: 21_000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, input: new Uint8Array() }] as const }
 	const request = { ...parameters, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: pageRequestIdentifier }
 	const reply = await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'transaction', parameters }, simulationMode, activeAddress, pageWebsite, connections)
@@ -31,6 +32,7 @@ async function sendTransactionFromPage(connections: PageConnections, value: bigi
 }
 
 async function sendPersonalSignFromPage(connections: PageConnections, message: string, simulationMode = false) {
+	await modules.changeSimulationMode({ simulationMode })
 	const parameters = { method: 'personal_sign' as const, params: [message, activeAddress] as const }
 	const request = { ...parameters, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: pageRequestIdentifier }
 	const reply = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters }, simulationMode, activeAddress, pageWebsite, connections)
@@ -289,18 +291,17 @@ test('a message metadata refresh that outlives its request does not show the dia
 	}
 })
 
-test('a second request under a still-pending request id does not store its simulation into the first request', async () => {
+test('a duplicate still-pending request id preserves the original request and simulation', async () => {
 	const connections = await startPageConnection()
 	await sendTransactionFromPage(connections, ONE_ETHER)
+	const original = await getOnlyPendingRequest()
 	await sendTransactionFromPage(connections, 0n)
 
-	const [first, second] = await modules.getPendingTransactionsAndMessages()
-	if (first === undefined || second === undefined) throw new Error('Expected both requests to be pending')
-	assert.notEqual(first.instanceId, second.instanceId)
-	assert.equal(getRequestedValue(first), ONE_ETHER)
-	assert.deepEqual(getSimulatedValues(first), { transactionToSimulate: ONE_ETHER, visualised: [ONE_ETHER] })
-	assert.equal(getRequestedValue(second), 0n)
-	assert.deepEqual(getSimulatedValues(second), { transactionToSimulate: 0n, visualised: [0n] })
+	// Main coalesces duplicate pending ids before creating another confirmation.
+	const pending = await getOnlyPendingRequest()
+	assert.equal(pending.instanceId, original.instanceId)
+	assert.equal(getRequestedValue(pending), ONE_ETHER)
+	assert.deepEqual(getSimulatedValues(pending), { transactionToSimulate: ONE_ETHER, visualised: [ONE_ETHER] })
 })
 
 test('a transaction reusing the request id of one already in the simulation stack is shown its own simulation', async () => {

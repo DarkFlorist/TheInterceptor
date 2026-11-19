@@ -377,3 +377,5 @@ test('an identical replacement request instance needs a new reviewed approval', 
 	assert.equal((await getStoredRequest()).instanceId, replacement.instanceId)
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), true)
 })
+
+})
