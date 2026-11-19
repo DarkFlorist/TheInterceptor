@@ -10,7 +10,7 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -23,7 +23,7 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
+
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -146,15 +146,6 @@ function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: st
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
-}
-
-export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => {
-		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
-		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
-	})
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
@@ -391,26 +382,7 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
-// A rejected mutation can precede persistence or follow it (content-script setup runs after the write). Reconcile stored authority; never infer a committed revocation from rejection alone.
-export async function applyWebsiteAccessChange<T>(websiteTabConnections: WebsiteTabConnections, change: () => Promise<T>) {
-	let result: T
-	try {
-		result = await change()
-	} catch (error) {
-		try {
-			const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
-			// Recovery has no success-returning caller to schedule icons, and must not open new access prompts.
-			scheduleWebsiteAccessUiUpdate(undefined, websiteTabConnections, accessUpdate, false)
-		} catch (reconciliationError) {
-			await reportUnexpectedError(reconciliationError)
-		}
-		throw error
-	}
-	const accessUpdate = await reconcileCommittedWebsiteAccess(websiteTabConnections)
-	return { result, accessUpdate }
-}
-
-// Use after a mutation with no post-write setup, or to recover the stored authority after an ambiguous failure.
+// Reconciles live connections with the stored authority after a website-access or address-book change. A failure clears every approval (fails closed) and still refreshes icons.
 export async function reconcileCommittedWebsiteAccess(websiteTabConnections: WebsiteTabConnections) {
 	try {
 		return await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)

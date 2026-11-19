@@ -8,3 +8,9 @@ export function isPendingTransactionGasLimitCurrent(pending: PendingTransactionO
 	return simulatedRequest.method === 'eth_sendTransaction'
 		&& pending.originalRequestParameters.params[0].gas === simulatedRequest.params[0].gas
 }
+
+// The edited gas limit of a request whose stored results are for an earlier gas limit, which a send-anyway accept sends without simulating it first.
+export function getUnsimulatedGasLimitEdit(pending: PendingTransactionOrSignableMessage) {
+	if (isPendingTransactionGasLimitCurrent(pending) || pending.originalRequestParameters.method !== 'eth_sendTransaction') return undefined
+	return pending.originalRequestParameters.params[0].gas
+}

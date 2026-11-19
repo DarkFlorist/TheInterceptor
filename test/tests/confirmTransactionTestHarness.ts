@@ -13,6 +13,10 @@ import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
 import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
+import { type PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
+import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -210,6 +214,7 @@ export async function loadModules() {
 		safeSimulation,
 		safeCore,
 		safeConfirmationPersistence,
+		errors,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -232,6 +237,7 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
 		import('../../app/ts/background/safeConfirmationPersistence.js'),
+		import('../../app/ts/utils/errors.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -241,6 +247,7 @@ export async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
@@ -249,6 +256,7 @@ export async function loadModules() {
 		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		toPopupPendingTransactionOrSignableMessage: confirmTransaction.toPopupPendingTransactionOrSignableMessage,
 		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
@@ -297,6 +305,7 @@ export async function loadModules() {
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
 		EthSimulateV1Result: ethSimulateTypes.EthSimulateV1Result,
+		JsonRpcResponseError: errors.JsonRpcResponseError,
 	}
 }
 
@@ -329,9 +338,17 @@ export function makeFakeBlock() {
 	}
 }
 
-export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], callCount = 1) {
+// The simulator reads contract code during simulation through a call to this helper contract, mirroring the private constant in SimulationModeEthereumClientService.ts.
+const SIMULATED_GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const SIMULATED_GET_CODE_ABI = [{ type: 'function', name: 'at', stateMutability: 'view', inputs: [{ name: 'target', type: 'address' }], outputs: [{ name: 'code', type: 'bytes' }] }] as const
+
+const isSimulatedGetCodeCall = (call: unknown) => isRecord(call) && (typeof call.to === 'bigint' || typeof call.to === 'string') && BigInt(call.to) === SIMULATED_GET_CODE_CONTRACT
+
+// Answers code reads with non-empty code, so simulated calls to contracts such as a Safe produce a result, and every other call with a multicall balance result.
+export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi: readonly string[], calls: readonly unknown[] = [{}]) {
 	const balanceResult = encodeFunctionReturn(multicallAbi, 'getEthBalance', [multicallBalance])
 	const aggregate3Result = encodeFunctionReturn(multicallAbi, 'aggregate3', [[{ success: true, returnData: balanceResult }]])
+	const getCodeResult = encodeFunctionReturn(SIMULATED_GET_CODE_ABI, 'at', ['0x01'])
 	return {
 		number: 123n,
 		hash: 0x9876n,
@@ -339,11 +356,11 @@ export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi
 		gasLimit: 30_000_000n,
 		gasUsed: 21_000n,
 		baseFeePerGas: 1n,
-		calls: Array.from({ length: callCount }, () => ({
+		calls: calls.map((call) => ({
 			status: 'success' as const,
 			gasUsed: 21_000n,
 			logs: [],
-			returnData: hexToBytes(aggregate3Result),
+			returnData: hexToBytes(isSimulatedGetCodeCall(call) ? getCodeResult : aggregate3Result),
 		})),
 	}
 }
@@ -363,6 +380,12 @@ export const fakeRpcNetwork = {
 }
 
 export const fakeBlock = makeFakeBlock()
+const isSafeNonceCall = (call: unknown) => {
+	if (!isRecord(call)) return false
+	const input = call.input instanceof Uint8Array ? call.input : call.data
+	return input instanceof Uint8Array && `0x${ Buffer.from(input).toString('hex').slice(0, 8) }` === encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10)
+}
+
 export const safeSelectors = {
 	messageHash: encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', ['0x']).slice(0, 10),
 	messageSignature: encodeFunctionCall(SAFE_MESSAGE_ABI, 'isValidSignature', [`0x${ '00'.repeat(32) }`, '0x']).slice(0, 10),
@@ -464,9 +487,12 @@ export const fakeRequestHandler = {
 				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
 				return modules.serialize(
 					modules.EthSimulateV1Result,
-					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) =>
-						makeFakeEthSimulateResult(0n, modules.Multicall3ABI, Array.isArray(blockStateCall.calls) ? blockStateCall.calls.length : 0),
-					),
+					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) => {
+						const calls: readonly unknown[] = Array.isArray(blockStateCall.calls) ? blockStateCall.calls : []
+						const result = makeFakeEthSimulateResult(0n, modules.Multicall3ABI, calls)
+						// The simulation reads a Gnosis Safe's nonce with a nonce() call after the input before an execution; the fake Safe executes nothing, so its nonce stays fakeSafeContract.nonce.
+						return { ...result, calls: result.calls.map((callResult, index) => isSafeNonceCall(calls[index]) ? { ...callResult, returnData: hexToBytes(encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])) } : callResult) }
+					}),
 				)
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
@@ -477,6 +503,47 @@ export const ethereum = new modules.EthereumClientService(fakeRequestHandler, as
 export const simulator = {
 	ethereum,
 	tokenPriceService: new modules.TokenPriceService(ethereum, 60_000),
+}
+
+const FEE_VALIDATING_BASE_FEE_PER_GAS = 100_000_000_000n
+// Pays for a transfer only with a fee cap far below the fee-validating block base fee.
+export const TOO_LITTLE_ETH_FOR_FEES = 1_000_000_000_000n
+
+// Like geth's eth_simulateV1 without validation, a call that pays fees must cover the block base fee while a zero-fee call skips the check. Every account holds the given balance.
+export function createFeeValidatingSimulator(accountBalance: bigint, rpcNetwork = fakeRpcNetwork) {
+	const block = { ...fakeBlock, baseFeePerGas: FEE_VALIDATING_BASE_FEE_PER_GAS }
+	const requestHandler = {
+		rpcUrl: rpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest(rpcRequest: { method: string, params?: readonly unknown[] }) {
+			switch (rpcRequest.method) {
+				case 'eth_getBlockByNumber': return modules.serialize(modules.EthereumBlockHeader, block)
+				case 'eth_getBalance': return modules.serialize(modules.EthereumQuantity, accountBalance)
+				case 'eth_simulateV1': {
+					const simulationParams = rpcRequest.params?.[0]
+					const blockStateCalls = isRecord(simulationParams) && Array.isArray(simulationParams.blockStateCalls) ? simulationParams.blockStateCalls : []
+					return modules.serialize(modules.EthSimulateV1Result, blockStateCalls.map((blockStateCall) => {
+						const blockBaseFeePerGas = BigInt(blockStateCall.blockOverrides?.baseFeePerGas ?? block.baseFeePerGas)
+						for (const call of blockStateCall.calls) {
+							const maxFeePerGas = BigInt(call.maxFeePerGas ?? 0n)
+							if (maxFeePerGas === 0n || maxFeePerGas >= blockBaseFeePerGas) continue
+							throw new modules.JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: {
+								code: -32000,
+								message: `err: max fee per gas less than block base fee: address ${ addressString(BigInt(call.from)) }, maxFeePerGas: ${ maxFeePerGas }, baseFee: ${ blockBaseFeePerGas }`,
+							} })
+						}
+						return { ...makeFakeEthSimulateResult(accountBalance, modules.Multicall3ABI, blockStateCall.calls), baseFeePerGas: blockBaseFeePerGas }
+					}))
+				}
+				default: return await fakeRequestHandler.jsonRpcRequest(rpcRequest)
+			}
+		},
+	}
+	const feeValidatingEthereum = new modules.EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
+	return {
+		ethereum: feeValidatingEthereum,
+		tokenPriceService: new modules.TokenPriceService(feeValidatingEthereum, 60_000),
+	}
 }
 
 export const activeAddress = modules.defaultActiveAddresses[0]?.address
@@ -563,6 +630,7 @@ export const popupVisualisation = {
 			transaction: unsignedTransaction,
 		},
 		signerName: 'NoSignerDetected',
+		confirmationRunId: { lifetime: 'fixture', sequence: 1 },
 		addressBookEntries: [],
 		tokenPriceEstimates: [],
 		namedTokenIds: [],
@@ -592,9 +660,70 @@ export const pendingTransaction = {
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
 		popupVisualisation,
+		safeFlow: { kind: 'ordinary' },
 		transactionOrMessageCreationStatus: 'Simulated',
 		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
 	} as const
+
+export type SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' } | { transactionStatus: 'Transaction Failed', error: { code: number, message: string, decodedErrorMessage: string } }
+
+const createContactEntry = (name: string, address: bigint) => ({ type: 'contact' as const, name, address, entrySource: 'User' as const, chainId: fakeRpcNetwork.chainId })
+
+// The simulated result the popup shows for a transaction, with the given outcome and quarantine flag.
+export function createVisualizedTransactionResult(transactionIdentifier: bigint, outcome: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }, quarantine = false) {
+	return {
+		website: pendingTransaction.website,
+		created,
+		parsedInputData: { type: 'NonParsed' as const, input: new Uint8Array() },
+		transactionIdentifier,
+		originalRequestParameters: pendingTransaction.originalRequestParameters,
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 21_000n,
+		realizedGasPrice: 1n,
+		quarantine,
+		quarantineReasons: quarantine ? ['The recipient is a known scam address.'] : [],
+		events: [],
+		transaction: { ...unsignedTransaction, from: createContactEntry('Sender', activeAddress), to: createContactEntry('Recipient', recipientAddress), rpcNetwork: fakeRpcNetwork, hash: signedTransaction.hash },
+		...outcome,
+	}
+}
+
+// The pending transaction with a simulated result for it, so the popup can confirm it and the background accepts it; the base fixture has no result and is reject-only.
+export function withSimulatedTransactionResult<Pending extends { transactionIdentifier: bigint, popupVisualisation: typeof popupVisualisation }>(pending: Pending, outcome: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }, quarantine = false) {
+	return {
+		...pending,
+		popupVisualisation: {
+			...pending.popupVisualisation,
+			data: {
+				...pending.popupVisualisation.data,
+				visualizedSimulationState: {
+					success: true as const,
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [createVisualizedTransactionResult(pending.transactionIdentifier, outcome, quarantine)],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 0n, deltaUnit: 'Seconds' as const },
+					}],
+				},
+			},
+		},
+	}
+}
+
+// The reviewed-result id the popup sends back for a stored request: the one the background stamped on its popup copy, after the message round trip that copy goes through.
+export function getPopupReviewedResultId(pending: PendingTransactionOrSignableMessage) {
+	return PopupPendingTransactionOrSignableMessage.parse(serialize(PopupPendingTransactionOrSignableMessage, modules.toPopupPendingTransactionOrSignableMessage(pending))).reviewedResultId
+}
+
+// Builds the accept the popup sends for the request as currently stored, naming its reviewed content and the send-anyway override.
+export async function createAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier = uniqueRequestIdentifier, forceSend = false) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, requestIdentifier))
+	if (pending === undefined) throw new Error('Expected a stored request to accept')
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: getPopupReviewedResultId(pending), forceSend } }
+}
+// The Gnosis Safe transaction of a pending transaction that is a created Safe proposal.
+export const getPendingSafeProposal = (pending: PendingTransactionOrSignableMessage | undefined) => pending?.type === 'Transaction' ? getCreatedSafeProposal(pending.safeFlow) : undefined
 
 export async function resetConfirmTransactionTestState() {
 	browserMock.reset()

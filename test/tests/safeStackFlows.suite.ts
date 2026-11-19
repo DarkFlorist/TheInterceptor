@@ -59,7 +59,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
-				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId },
 				safeTransaction: localTransaction,
 			},
 		}],
@@ -112,7 +112,7 @@ test('extension Safe stack export and import roundtrip leaves the local stack un
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
-				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId },
 				safeTransaction: localTransaction,
 			},
 		}],
@@ -141,7 +141,7 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
-				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId },
 				safeTransaction: localTransaction,
 			},
 		}],
@@ -170,7 +170,7 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 				...pendingTransaction.transactionToSimulate,
 				transactionIdentifier: secondTransaction.transactionIdentifier,
 				signedTransaction,
-				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId },
 				safeTransaction: secondTransaction,
 			},
 		}],
@@ -207,7 +207,7 @@ test('extension Safe stack import does not recover its index from a different lo
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
-				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId },
 				safeTransaction: differentLocalTransaction,
 			},
 		}],
