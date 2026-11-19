@@ -107,7 +107,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		}
 		// Execution builds its input inside the semaphore; a supplied snapshot (the interactive queue) fixes only the selection and rich addresses. Executions run one at a time, so a later one never reads an older stack than an earlier one published, and a refresh that cancels another then runs the current stack itself.
 		await updatePopupVisualisationState(ethereum, tokenPriceService, { abortController: thisAbortController, snapshot })
-		await finishInvalidationForHiddenStack(ethereum, thisAbortController, invalidatedSimulationId)
+		await finishInvalidationForHiddenStack(thisAbortController, invalidatedSimulationId)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
 		await reportUnexpectedError(error)
@@ -147,13 +147,13 @@ export async function publishFailedPopupVisualisation({ isCurrent = () => true }
 	})
 }
 
-// Selection-lifecycle finalization belongs to the refresh workflow, after execution. Use the same publication lock so the owned invalidation cannot race a newer result.
-async function finishInvalidationForHiddenStack(ethereum: EthereumClientService, controller: AbortController, invalidatedSimulationId: number | undefined) {
+// Finalize only this workflow's still-owned invalidation when the current selection hides the stack. Empty passthrough needs no provider, so retiring its client does not revoke this cleanup; the id, abort signal and publication lock protect newer work.
+async function finishInvalidationForHiddenStack(controller: AbortController, invalidatedSimulationId: number | undefined) {
 	if (invalidatedSimulationId === undefined) return
 	await updateSimulationVisualisationSemaphore.execute(async () => {
 		const current = await getPopupVisualisationState()
 		const selection = await getSettings()
-		if (current.simulationId !== invalidatedSimulationId || controller.signal.aborted || !ethereum.isCurrent() || selectionShowsStack(selection)) return
+		if (current.simulationId !== invalidatedSimulationId || controller.signal.aborted || selectionShowsStack(selection)) return
 		const terminal = await setPopupVisualisationState(buildPassthroughVisualizedState(current.simulationId + 1, 0))
 		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: terminal } })
 	})

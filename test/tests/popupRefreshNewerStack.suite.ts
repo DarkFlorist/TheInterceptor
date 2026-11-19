@@ -660,7 +660,7 @@ test('a refresh resuming from its pre-abort settings read after a reset does not
 })
 
 
-test('a refresh invalidated before switching to ordinary signer mode publishes a terminal empty view', async () => {
+for (const replaceServices of [false, true]) test(`a refresh invalidated before ordinary signer mode publishes a terminal empty view (services replaced: ${ replaceServices })`, async () => {
 	const fixture = createNetworkSwitchFixture()
 	await acceptTransactionOnFirstEndpoint(fixture)
 	const snapshot = await captureSimulationSnapshot()
@@ -673,6 +673,7 @@ test('a refresh invalidated before switching to ordinary signer mode publishes a
 			if (parsed.success && parsed.value.simulationResultState === 'invalid') {
 				switched = true
 				await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined })
+				if (replaceServices) await fixture.simulationServicesOwner.update(async ({ reset }) => { reset(otherEndpointNetwork) })
 			}
 		}
 		return await originalSend(message)
@@ -715,7 +716,7 @@ test('a failed observer queued behind execution cannot publish after its service
 	try {
 		await blocked
 		const { refreshAfterSimulationServicesUpdate } = await import('../../app/ts/background/simulationServiceRefresh.js')
-		failure = refreshAfterSimulationServicesUpdate(fixture.firstEndpointServices, { status: 'failed', error: new Error('Old update failed') })
+		failure = refreshAfterSimulationServicesUpdate(fixture.firstEndpointServices, { status: 'failed', error: new Error('Old update failed'), invalidateOldState: true })
 		await fixture.simulationServicesOwner.update(async ({ reset }) => {
 			await modules.browserStorageLocalSet({ simulationMode: false, useSignersAddressAsActiveAddress: true, activeSigningSafeAddress: undefined, activeRpcNetwork: otherEndpointNetwork })
 			reset(otherEndpointNetwork)
@@ -729,6 +730,31 @@ test('a failed observer queued behind execution cannot publish after its service
 		release.resolve(undefined)
 		browserMock.setStorageGetHandler(undefined)
 		await Promise.all([executing, failure])
+		fixture.releaseAll()
+	}
+})
+
+
+test('a refresh-only transition still refreshes committed selection when a later notification fails', async () => {
+	const fixture = createNetworkSwitchFixture()
+	await acceptTransactionOnFirstEndpoint(fixture)
+	const restoreConsumer = openVisualisationConsumer()
+	const notificationError = new Error('Account notification failed')
+	try {
+		await updatePopupVisualisationIfNeeded(fixture.firstEndpointServices.ethereum, fixture.firstEndpointServices.tokenPriceService, { invalidateOldState: true })
+		const simulationsBefore = fixture.getFirstEndpointSimulations()
+		await assert.rejects(fixture.simulationServicesOwner.update(async ({ requestRefresh }) => {
+			await modules.updateInterceptorTransactionStack((stack) => ({ operations: [...stack.operations, { type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }] }))
+			requestRefresh()
+			throw notificationError
+		}), (error) => error === notificationError)
+		const stored = await getPopupVisualisationState()
+		assert.equal(stored.simulationUpdatingState, 'done')
+		assert.equal(stored.simulationResultState, 'done')
+		assert.ok(fixture.getFirstEndpointSimulations() > simulationsBefore, 'The requested refresh was lost after the notification failure')
+		assert.equal(fixture.simulationServicesOwner.getCurrent(), fixture.firstEndpointServices)
+	} finally {
+		restoreConsumer()
 		fixture.releaseAll()
 	}
 })

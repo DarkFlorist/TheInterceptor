@@ -249,3 +249,23 @@ test('a service replacement does not wait behind a settings transition stalled i
 	// The stalled transition still observes its own pair, which the newer replacement has retired.
 	assert.deepEqual(observed, ['https://replacement.invalid', 'https://transition.invalid'])
 })
+
+for (const replaceServices of [false, true]) test(`a failed update retains its invalidation intent (replacement requested: ${ replaceServices })`, async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const failure = new Error('Notification failed after requesting refresh')
+	let observations = 0
+	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error }, async (_services, outcome) => {
+		observations += 1
+		assert.deepEqual(outcome, { status: 'failed', error: failure, invalidateOldState: replaceServices })
+	})
+	try {
+		await assert.rejects(owner.update(async ({ reset, requestRefresh }) => {
+			if (replaceServices) reset(rpc)
+			else requestRefresh()
+			throw failure
+		}), (error) => error === failure)
+		assert.equal(observations, 1)
+	} finally {
+		owner.getCurrent().ethereum.cleanup()
+	}
+})

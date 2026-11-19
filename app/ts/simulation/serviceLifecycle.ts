@@ -75,7 +75,7 @@ export type SimulationServicesUpdate = {
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 	readonly requestRefresh: () => void
 }
-export type SimulationServicesUpdateOutcome = { readonly status: 'completed', readonly invalidateOldState: boolean } | { readonly status: 'failed', readonly error: unknown }
+export type SimulationServicesUpdateOutcome = { readonly status: 'completed', readonly invalidateOldState: boolean } | { readonly status: 'failed', readonly error: unknown, readonly invalidateOldState: boolean }
 export type SimulationServicesUpdateObserver = (services: SimulationServices, outcome: SimulationServicesUpdateOutcome) => Promise<void>
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
@@ -101,14 +101,14 @@ export function createSimulationServicesOwnerFromOperations(getCurrent: () => Si
 					})
 					return { status: 'completed' as const, invalidateOldState, result, services, refreshRequested }
 				} catch (error: unknown) {
-					return { status: 'failed' as const, error, services, refreshRequested }
+					return { status: 'failed' as const, error, services, refreshRequested, invalidateOldState }
 				} finally {
 					updateOpen = false
 				}
 			})()
 			// The workflow has settled and released its own ordering lock before observing its captured pair.
 			if (completed.refreshRequested) {
-				const outcome: SimulationServicesUpdateOutcome = completed.status === 'failed' ? { status: 'failed', error: completed.error } : { status: 'completed', invalidateOldState: completed.invalidateOldState }
+				const outcome: SimulationServicesUpdateOutcome = completed.status === 'failed' ? { status: 'failed', error: completed.error, invalidateOldState: completed.invalidateOldState } : { status: 'completed', invalidateOldState: completed.invalidateOldState }
 				await observe(completed.services, outcome)
 			}
 			if (completed.status === 'failed') throw completed.error
