@@ -111,7 +111,7 @@ export function createSimulationServicesOwnerFromOperations(getCurrent: () => Si
 								throw error
 							}
 						},
-						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true; if (replacement !== 'replaced') services = getCurrent() },
+						requestRefresh: () => { requireOpenUpdate(); refreshRequested = true; if (replacement === 'unchanged') services = getCurrent() },
 					})
 					return { status: 'completed' as const, replacement, result, services, refreshRequested }
 				} catch (error: unknown) {

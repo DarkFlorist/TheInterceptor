@@ -324,3 +324,41 @@ for (const catchResetError of [false, true]) test(`replacement failure is distin
 		original.getCurrent().ethereum.cleanup()
 	}
 })
+
+test('a refresh request after a caught reset failure stays bound to the pair that failed', async () => {
+	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const makeOwner = (httpsRpc: string) => createSimulationServicesOwner({ ...rpc, httpsRpc }, async () => undefined, async (_ethereum, error) => { throw error }, async () => undefined, async (error) => { throw error })
+	const initialOwner = makeOwner(rpc.httpsRpc)
+	const replacementOwner = makeOwner('https://replacement.invalid')
+	const initialPair = initialOwner.getCurrent()
+	const replacementPair = replacementOwner.getCurrent()
+	let current = initialPair
+	const failure = new Error('Reset construction failed')
+	const failed = new Future<void>()
+	const resume = new Future<void>()
+	const observations: { services: typeof initialPair, replacement: string }[] = []
+	const owner = createSimulationServicesOwnerFromOperations(() => current, (network) => {
+		if (network.httpsRpc === 'https://failed.invalid') throw failure
+		current = replacementPair
+		return current
+	}, async (services, outcome) => { observations.push({ services, replacement: outcome.replacement }) }, async (error) => { throw error })
+	const first = owner.update(async ({ reset, requestRefresh }) => {
+		assert.throws(() => reset({ ...rpc, httpsRpc: 'https://failed.invalid' }), (error) => error === failure)
+		failed.resolve(undefined)
+		await resume
+		requestRefresh()
+	})
+	try {
+		await failed
+		await owner.update(async ({ reset }) => { reset({ ...rpc, httpsRpc: 'https://replacement.invalid' }) })
+		resume.resolve(undefined)
+		await first
+		assert.deepEqual(observations, [{ services: replacementPair, replacement: 'replaced' }, { services: initialPair, replacement: 'failed' }])
+		assert.equal(owner.getCurrent(), replacementPair)
+	} finally {
+		resume.resolve(undefined)
+		await first
+		initialPair.ethereum.cleanup()
+		replacementPair.ethereum.cleanup()
+	}
+})
