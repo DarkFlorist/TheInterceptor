@@ -1,6 +1,7 @@
 import { EthereumAddress } from '../types/wire-types.js'
 import { getEip7702AuthorizationSigningHash } from './ethereum.js'
 import { tryRecoverAddress } from './ethereumPrimitives.js'
+import { dataString } from './bigint.js'
 
 export type Eip7702Authorization = {
 	readonly chainId: bigint
@@ -88,25 +89,30 @@ export const getNodeRecoveredEip7702Authority = (authorization: Eip7702Authoriza
 	return recoverEip7702AuthorizationAuthority(authorization)
 }
 
-// The authority's account state an authorization is checked against; undefined fields are unknown.
-export type Eip7702AuthorityState = {
-	readonly nonce: bigint | undefined
-	// Whether the authority's code may be replaced: empty code or a delegation designator.
-	readonly acceptsAuthorization: boolean | undefined
+// The delegate named by an exact EIP-7702 designator, or undefined for any other code.
+export const getDelegateFromCode = (code: Uint8Array) => {
+	if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
+	return BigInt(`0x${ dataString(code.slice(3)) }`)
 }
 
-// The single owner of EIP-7702's per-authorization validity rules, returning the authority whose nonce the node raises and whose code it sets, or undefined when the node skips the authorization: chain ID 0 or the current chain, a nonce below 2**64 - 1, a signature the node recovers an authority from (getNodeRecoveredEip7702Authority), an authority whose code is empty or a delegation, and a nonce equal to the authority's current nonce. Unknown authority state fails closed.
-export const getApplicableEip7702Authority = (
+// Raw state at the authority's current position in the transaction sequence; undefined fields are unknown.
+export type Eip7702AuthorityState = {
+	readonly nonce: bigint | undefined
+	readonly code: Uint8Array | undefined
+}
+
+// Owns all per-authorization validity rules and returns the applied authority, or undefined when the node skips it. Recover once, then request raw state only for a valid signature on this chain; unknown state fails closed.
+export const getApplicableEip7702Authority = async (
 	authorization: Eip7702Authorization,
 	chainId: bigint,
-	getAuthorityState: (authority: bigint) => Eip7702AuthorityState,
-): bigint | undefined => {
+	getAuthorityState: (authority: bigint) => Promise<Eip7702AuthorityState>,
+): Promise<bigint | undefined> => {
 	if (authorization.chainId !== 0n && authorization.chainId !== chainId) return undefined
-	if (authorization.nonce >= EIP7702_AUTHORIZATION_NONCE_LIMIT) return undefined
 	const authority = getNodeRecoveredEip7702Authority(authorization)
 	if (authority === undefined) return undefined
-	const authorityState = getAuthorityState(authority)
-	return authorityState.acceptsAuthorization === true && authorityState.nonce !== undefined && authorityState.nonce === authorization.nonce ? authority : undefined
+	const state = await getAuthorityState(authority)
+	if (state.nonce !== authorization.nonce || state.code === undefined) return undefined
+	return state.code.length === 0 || getDelegateFromCode(state.code) !== undefined ? authority : undefined
 }
 
 const normalizeEip7702Authorization = async (authorization: Eip7702Authorization): Promise<NormalizedEip7702Authorization> => {

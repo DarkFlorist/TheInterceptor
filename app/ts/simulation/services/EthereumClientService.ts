@@ -3,7 +3,7 @@ import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
+import { addressString, bigintSecondsToDate, bytes32String, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
 import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
 import { getBlockTimeManipulationSeconds, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
@@ -16,7 +16,7 @@ import type { BlockTimeManipulation, SimulationStateInputMinimalData, Simulation
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
-import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { getDelegateFromCode, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -120,12 +120,6 @@ export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, bloc
 	// Nodes reject an eth_simulateV1 block that is not strictly later than its parent, so a zero delay (a block split inserted by getCurrentSimulationInput, or a user's 0) still advances the simulated time by one second.
 	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + max(1n, getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit)))
 	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
-}
-
-// The delegate an EIP-7702 delegation designator (0xef0100 followed by the delegate's address) points to, or undefined for any other code.
-export const getDelegateFromCode = (code: Uint8Array) => {
-	if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
-	return BigInt(`0x${ dataString(code.slice(3)) }`)
 }
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>

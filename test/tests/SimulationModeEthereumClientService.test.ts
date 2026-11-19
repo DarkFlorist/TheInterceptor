@@ -20,7 +20,7 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
-import { getApplicableEip7702Authority, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
+import { getApplicableEip7702Authority, getDelegateFromCode, getNodeRecoveredEip7702Authority, normalizeEip7702AuthorizationList, SECP256K1_HALF_ORDER } from '../../app/ts/utils/eip7702Authorization.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 
 function parseRequest<T>(data: string): T {
@@ -710,25 +710,25 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		describe('EIP-7702 authorization validity (getApplicableEip7702Authority)', () => {
-			const accepting = (nonce: bigint) => () => ({ nonce, acceptsAuthorization: true })
+			const accepting = (nonce: bigint) => async () => ({ nonce, code: new Uint8Array() })
 			const delegate = 0x00000000000000000000000000000000000d1e9an
 
-			test('the nonce must be below 2**64 - 1', () => {
-				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 2n, delegate), rpcNetwork.chainId, accepting(2n ** 64n - 2n)), testAuthority)
-				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 1n, delegate), rpcNetwork.chainId, accepting(2n ** 64n - 1n)), undefined)
+			test('the nonce must be below 2**64 - 1', async () => {
+				assert.equal(await getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 2n, delegate), rpcNetwork.chainId, accepting(2n ** 64n - 2n)), testAuthority)
+				assert.equal(await getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 2n ** 64n - 1n, delegate), rpcNetwork.chainId, accepting(2n ** 64n - 1n)), undefined)
 			})
 
-			test('the chain ID must be 0 or this chain', () => {
-				assert.equal(getApplicableEip7702Authority(signTestAuthorization(0n, 0n, delegate), rpcNetwork.chainId, accepting(0n)), testAuthority)
-				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 0n, delegate), rpcNetwork.chainId, accepting(0n)), testAuthority)
-				assert.equal(getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId + 1n, 0n, delegate), rpcNetwork.chainId, accepting(0n)), undefined)
+			test('the chain ID must be 0 or this chain', async () => {
+				assert.equal(await getApplicableEip7702Authority(signTestAuthorization(0n, 0n, delegate), rpcNetwork.chainId, accepting(0n)), testAuthority)
+				assert.equal(await getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId, 0n, delegate), rpcNetwork.chainId, accepting(0n)), testAuthority)
+				assert.equal(await getApplicableEip7702Authority(signTestAuthorization(rpcNetwork.chainId + 1n, 0n, delegate), rpcNetwork.chainId, accepting(0n)), undefined)
 			})
 
-			test('s may be at most secp256k1n/2, and r and s must be nonzero', () => {
+			test('s may be at most secp256k1n/2, and r and s must be nonzero', async () => {
 				// r = 1 is the x coordinate of a curve point, so these signatures recover some authority.
 				const authorization = { chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, r: 1n, yParity: 'even' as const }
-				assert.notEqual(getApplicableEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER }, rpcNetwork.chainId, accepting(0n)), undefined)
-				assert.equal(getApplicableEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER + 1n }, rpcNetwork.chainId, accepting(0n)), undefined)
+				assert.notEqual(await getApplicableEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER }, rpcNetwork.chainId, accepting(0n)), undefined)
+				assert.equal(await getApplicableEip7702Authority({ ...authorization, s: SECP256K1_HALF_ORDER + 1n }, rpcNetwork.chainId, accepting(0n)), undefined)
 				assert.equal(getNodeRecoveredEip7702Authority({ ...authorization, s: 0n }), undefined)
 				assert.equal(getNodeRecoveredEip7702Authority({ ...authorization, r: 0n, s: 1n }), undefined)
 				assert.equal(getNodeRecoveredEip7702Authority({ chainId: rpcNetwork.chainId, address: delegate, nonce: 0n, authority: testAuthority }), undefined)
@@ -785,12 +785,46 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(getNodeRecoveredEip7702Authority(toAuthorization(point.x, s, lowSParity)), undefined)
 			})
 
-			test('the authority must accept authorizations and have the authorization nonce', () => {
+			test('only empty code or an exact delegation designator permits an authorization', async () => {
 				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
-				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, () => ({ nonce: 0n, acceptsAuthorization: false })), undefined)
-				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, () => ({ nonce: 0n, acceptsAuthorization: undefined })), undefined)
-				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, () => ({ nonce: undefined, acceptsAuthorization: true })), undefined)
-				assert.equal(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, accepting(1n)), undefined)
+				const designator = new Uint8Array([0xef, 0x01, 0x00, ...bigintToUint8Array(delegate, 20)])
+				assert.equal(getDelegateFromCode(designator), delegate)
+				for (const code of [new Uint8Array(), designator]) {
+					assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async () => ({ nonce: 0n, code })), testAuthority)
+				}
+				for (const code of [new Uint8Array([0x60, 0x00]), designator.slice(0, 22), new Uint8Array([...designator, 0]), new Uint8Array([0xee, ...designator.slice(1)])]) {
+					assert.equal(getDelegateFromCode(code), undefined)
+					assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async () => ({ nonce: 0n, code })), undefined)
+				}
+			})
+
+			test('invalid authorizations never request authority state', async () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				const unexpectedRead = async () => { throw new Error('Unexpected authority state read') }
+				assert.equal(await getApplicableEip7702Authority({ ...authorization, chainId: rpcNetwork.chainId + 1n }, rpcNetwork.chainId, unexpectedRead), undefined)
+				assert.equal(await getApplicableEip7702Authority({ ...authorization, s: 0n }, rpcNetwork.chainId, unexpectedRead), undefined)
+				assert.equal(await getApplicableEip7702Authority({ ...authorization, nonce: 2n ** 256n }, rpcNetwork.chainId, unexpectedRead), undefined)
+			})
+
+			test('authority state is requested once with the recovered account and failures propagate', async () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				let reads = 0
+				assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async (authority) => {
+					reads++
+					assert.equal(authority, testAuthority)
+					return { nonce: 0n, code: new Uint8Array() }
+				}), testAuthority)
+				assert.equal(reads, 1)
+				const failure = new Error('Authority state unavailable')
+				await assert.rejects(getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async () => { throw failure }), error => error === failure)
+			})
+
+			test('the authority must accept authorizations and have the authorization nonce', async () => {
+				const authorization = signTestAuthorization(rpcNetwork.chainId, 0n, delegate)
+				assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async () => ({ nonce: 0n, code: new Uint8Array([0x60, 0x00]) })), undefined)
+				assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async () => ({ nonce: 0n, code: undefined })), undefined)
+				assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, async () => ({ nonce: undefined, code: new Uint8Array() })), undefined)
+				assert.equal(await getApplicableEip7702Authority(authorization, rpcNetwork.chainId, accepting(1n)), undefined)
 			})
 		})
 
