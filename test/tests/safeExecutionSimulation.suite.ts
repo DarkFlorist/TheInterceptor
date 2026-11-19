@@ -1059,7 +1059,7 @@ async function importStackedTransaction(transaction: PreSimulationTransaction) {
 
 const ORDINARY_SIMULATION_OPTIONS: TransactionSimulationOptions = { requiredChainId: fakeRpcNetwork.chainId }
 const importCases = [
-	{ description: 'preserves hypothetical Safe execution when importing a simulation scenario', imported: SAFE_EXECUTION_SIMULATION_OPTIONS },
+	{ description: 'drops imported Safe approval assumptions at the admission boundary', imported: SAFE_EXECUTION_SIMULATION_OPTIONS },
 	{ description: 'keeps an imported transaction of the active Gnosis Safe that does not ask to run through the Safe as an ordinary transaction', imported: ORDINARY_SIMULATION_OPTIONS },
 ]
 
@@ -1067,12 +1067,12 @@ for (const { description, imported } of importCases) {
 	test(description, async () => {
 		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 		await (await import('../../app/ts/background/settings.js')).changeSimulationMode({ simulationMode: true, rpcNetwork: fakeRpcNetwork, activeSimulationAddress: SAFE_ADDRESS })
-		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), imported)
+		assert.deepEqual(await importStackedTransaction(createSafeCall({ value: 7n, input: new Uint8Array(), gas: 63_000n }, imported)), ORDINARY_SIMULATION_OPTIONS)
 	})
 }
 
 
-test('an imported hypothetical Safe approval stays out of signing-mode simulation inputs', async () => {
+test('an imported Safe call runs ordinarily and stays out of signing-mode simulation inputs', async () => {
 	configureSafe()
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
 	const { changeSimulationMode } = await import('../../app/ts/background/settings.js')
@@ -1082,7 +1082,7 @@ test('an imported hypothetical Safe approval stays out of signing-mode simulatio
 	const hypotheticalInput = await getCurrentSimulationInput([])
 	assert.equal(hypotheticalInput.flatMap((block) => block.transactions).length, 1)
 	const preparedHypothetical = await prepareSafeExecutionsForRpc(hypotheticalInput, ethereum)
-	assert.equal(preparedHypothetical.at(-1)?.transactions.at(-1)?.executedTransaction?.from, SAFE_EXECUTION_SIMULATION_EXECUTOR)
+	assert.equal(preparedHypothetical.at(-1)?.transactions.at(-1)?.executedTransaction, undefined, 'imported calls cannot assume Safe owner approvals')
 
 	for (const activeSigningSafeAddress of [undefined, SAFE_ADDRESS]) {
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: fakeRpcNetwork, activeSigningSafeAddress })

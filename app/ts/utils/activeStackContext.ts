@@ -33,7 +33,6 @@ export function operationBelongsToActiveStackContext(
 	if (context.simulationMode) {
 		return operation.type !== 'Transaction' || operation.preSimulationTransaction.safeTransaction === undefined
 	}
-	// Signing previews use only synchronized Safe proposals; imported hypothetical calls have no safeTransaction and cannot become their base state.
 	if (operation.type !== 'Transaction' || context.activeSafeAddress === undefined) return false
 	const transaction = operation.preSimulationTransaction
 	return transaction.safeTransaction?.safeTx.domain.verifyingContract === context.activeSafeAddress
