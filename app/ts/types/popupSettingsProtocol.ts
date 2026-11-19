@@ -1,5 +1,6 @@
 import * as funtypes from 'funtypes'
-import type { ImportSettings, ImportSettingsReply, PopupSettingsRequest } from './popupSettingsRequests.js'
+// Depend on leaf request/reply codecs; interceptor-messages consumes this protocol and re-exports those codecs.
+import { createImportSettingsFailureReply, type ImportSettings, type ImportSettingsReply, type PopupSettingsRequest } from './popupSettingsRequests.js'
 
 export type PopupSettingsAdmittedRequest = PopupSettingsRequest | ImportSettings
 
@@ -10,7 +11,7 @@ export const popupSettingsOperations = {
 	popup_changeActiveRpc: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_modifyMakeMeRich: { operation: 'rich', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_set_rpc_list: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
-	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', createFailure: (errorMessage: string): ImportSettingsReply => ({ method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage } }) } },
+	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', createFailure: createImportSettingsFailureReply } },
 } as const satisfies Record<PopupSettingsAdmittedRequest['method'], {
 	operation: string
 	reply: { transport: 'direct', type: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' } | { transport: 'broadcast', createFailure: (message: string) => ImportSettingsReply }

@@ -47,6 +47,12 @@ export const ImportSettingsReply = funtypes.ReadonlyObject({
 	)
 })
 
+// Keep import-specific wire construction beside its codec; protocol descriptors select this builder.
+export const createImportSettingsFailureReply = (errorMessage: string): ImportSettingsReply => ({
+	method: 'popup_initiate_export_settings_reply',
+	data: { success: false, errorMessage },
+})
+
 export type SetRpcList = funtypes.Static<typeof SetRpcList>
 export const SetRpcList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),

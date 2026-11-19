@@ -1,4 +1,4 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList } from '../../types/interceptor-messages.js'
+import { createImportSettingsFailureReply, type ImportSettings, type ImportSettingsReply, type SetRpcList } from '../../types/popupSettingsRequests.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
@@ -34,16 +34,16 @@ export async function settingsOpened() {
 
 export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
+		return createImportSettingsFailureReply('Failed to read the file. It is not a valid JSON file.')
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
+		return createImportSettingsFailureReply('Failed to read the file. It is not a valid interceptor settings file')
 	}
 	try {
 		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
 	} catch (error: unknown) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
+		return createImportSettingsFailureReply(error instanceof Error ? error.message : 'Failed to import settings.')
 	}
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
