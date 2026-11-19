@@ -1,5 +1,6 @@
 // Initialize browser globals at the extension entry point so reusable modules can load without an extension runtime.
 import 'webextension-polyfill'
+import { serializeInpageReply } from '../types/interceptor-messages.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -19,7 +20,7 @@ import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websi
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
@@ -179,11 +180,16 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					&& 'interceptorRequest' in payload.data
 				)) return
 				const rawMessage = RawInterceptedRequest.parse(payload.data)
-				const shouldHandleRequest = acknowledgeAndTrackBridgeRequest(latestReceivedBridgeRequestIds, identifier, rawMessage.requestId, () => {
+				const delivery = acknowledgeAndTrackBridgeRequest(latestReceivedBridgeRequestIds, identifier, rawMessage, () => {
 					port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: rawMessage.requestId })
 					checkAndThrowRuntimeLastError()
 				})
-				if (!shouldHandleRequest) return
+				if (delivery === 'duplicate') return
+				if (delivery === 'invalid') {
+					port.postMessage(serializeInpageReply({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: rawMessage.method, requestId: rawMessage.requestId, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'Invalid request ID: expected a non-negative safe integer.' } }))
+					checkAndThrowRuntimeLastError()
+					return
+				}
 				const { simulationServicesOwner } = await getConnectionInitializationPromise()
 				await pendingRequestLimiter.execute(async () => {
 					const request = {
