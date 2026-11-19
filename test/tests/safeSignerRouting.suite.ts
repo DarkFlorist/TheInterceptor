@@ -410,6 +410,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 })
 
 test('returns a Safe signer error when the wallet-selected co-signer is not a current owner', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const safeSignerAddress = recipientAddress
 	const currentOwner = safeTestOwnerAddress
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
@@ -773,6 +774,7 @@ test('signs Safe transaction typed data normally when the active signing address
 })
 
 test('uses the configured Safe simulation signer without changing the active Safe account', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const simulationSignerAddress = 0x4444444444444444444444444444444444444444n
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
