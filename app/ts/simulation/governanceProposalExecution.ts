@@ -465,12 +465,15 @@ export const simulateGovernanceProposalExecution = async (latestEthereum: Ethere
 		// GovernorAlpha's and GovernorBravo's execute forwards each action's value from the governor, out of the ether its executor sends with it. The preview sends none, since that would let any governor show ether arriving that nobody pays, so the forwarder refuses when the governor, after the user's stack, the queueing and the actions before, holds too little for an action.
 		const lackingEther = decodeGovernorLacksForwardedEther(failure.result.returnData, failure.result.error.data)
 		if (lackingEther !== undefined) return refuse(`action ${ lackingEther.actionIndex + 1n } of ${ proposal.value.actions.length } of proposal ${ proposalId } sends ${ lackingEther.forwardedValue } attoeth, which ${ checksummedAddress(governor) } forwards from the ether sent with its execute. When it comes to that action, the governor holds ${ lackingEther.governorBalance } attoeth, and the preview does not supply the rest for the executor.`)
+		const failureReason = failure.result.error.message
+		// From 4.6 on, an OpenZeppelin governor with a timelock lets its onlyGovernance functions run only for calls its own execute recorded first, and the forwarder calls the timelock without that execute, so such a call fails in the preview (DoubleEndedQueue's QueueEmpty) though it succeeds on chain. A call that does not reach onlyGovernance runs as on chain, so only a failure is refused this way.
+		if (plan.forwardsThroughGovernor && reads.value.isOpenZeppelin && proposal.value.actions.some((action) => action.target === governor)) return refuse(`proposal ${ proposalId } calls ${ checksummedAddress(governor) } itself. An OpenZeppelin governor accepts such a call only while its own execute runs, which the preview cannot run for a proposal that is not queued yet, so the failure it simulates (${ failureReason }) may not happen on chain. The preview runs the governor's own execute once the proposal is queued.`)
 		const failedBlock = plan.blocks.find((block) => block.call === failure.call)
 		const limit = getTransactionGasLimit(ethereum.getChainId(), failedBlock?.time ?? plan.executionTime, parentBlock.gasLimit)
 		const gasAvailable = limit.gas - plan.governorOverheadGas
 		// A call that runs out of gas leaves its caller a 64th of what it had, so a failure that used nearly all of the transaction's gas is reported as running out of it.
 		const outOfGas = failure.result.gasUsed * 64n >= gasAvailable * 62n ? `, after using ${ failure.result.gasUsed } of the ${ gasAvailable } gas it may have: ${ limit.source }, ${ limit.gas }, less ${ plan.governorOverheadGas } for the governor's own work` : ''
-		return refuse(`${ failure.call?.description ?? 'a transaction of the execution' } fails (${ failure.result.error.message })${ outOfGas }.`)
+		return refuse(`${ failure.call?.description ?? 'a transaction of the execution' } fails (${ failureReason })${ outOfGas }.`)
 	}
 	// Reads named the parent block by hash; anything that named its height, such as the ProposalCreated search, stands only if the chain still holds it there.
 	if (!(await ethereum.isPinnedBlockCanonical(undefined))) return refuse(reorganisedAway(parentBlock))

@@ -313,6 +313,22 @@ describe('governance proposal execution preview of real governors', () => {
 		assert.ok(!origins.includes(governor))
 	})
 
+	test('refuses, naming why, a not yet queued OpenZeppelin proposal calling the governor\'s onlyGovernance function, which only the governor\'s own execute authorises', async () => {
+		const { preview, forwarderUsed } = await previewFixture('open-zeppelin-active-calls-only-governance')
+		assert.ok(forwarderUsed)
+		// 0x75e52f4f is DoubleEndedQueue's QueueEmpty(): onlyGovernance found no call recorded by the governor's own execute.
+		assertRefused(preview, /^No outcome is simulated: proposal \d+ calls 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9 itself\. An OpenZeppelin governor accepts such a call only while its own execute runs, which the preview cannot run for a proposal that is not queued yet, so the failure it simulates \(execution reverted: custom error 0x75e52f4f\) may not happen on chain\. The preview runs the governor's own execute once the proposal is queued\.$/)
+	})
+
+	test('executes the same OpenZeppelin proposal through the governor\'s own execute once it is queued, and its onlyGovernance call succeeds as on chain', async () => {
+		const { preview, governor, forwarderUsed } = await previewFixture('open-zeppelin-queued-calls-only-governance')
+		assert.ok(!forwarderUsed)
+		const [transaction] = getExecution(preview).transactions
+		if (transaction?.ethSimulateV1CallResult.status !== 'success') throw new Error('Expected the execution to succeed')
+		const votingDelaySet = transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === governor && log.topics[0] === BigInt(toEventSelector('VotingDelaySet(uint256,uint256)')))
+		assert.deepEqual(votingDelaySet.map((log) => dataStringWith0xStart(log.data)), [`0x${ 1n.toString(16).padStart(64, '0') }${ 7n.toString(16).padStart(64, '0') }`])
+	})
+
 	test('shows no outcome for a proposal that was already executed', async () => {
 		const { preview } = await previewFixture('uniswap-bravo-executed')
 		assertRefused(preview, /proposal 102 is executed, so it will not be executed/)

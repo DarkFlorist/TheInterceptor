@@ -38,6 +38,7 @@ contract GovernorProposalForwarder {
 		TimelockController(timelock).scheduleBatch(targets, values, payloads, bytes32(0), salt, delay);
 	}
 
+	// The governor's own execute also records each action that calls the governor, for its onlyGovernance check from OpenZeppelin 4.6 on; this call does not, so the preview refuses such a proposal when its execution fails (simulateGovernanceProposalExecution).
 	function executeProposalBatch(address timelock, address[] calldata targets, uint256[] calldata values, bytes[] calldata payloads, bytes32 salt) external {
 		require(msg.sender == 0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF, 'GovernorProposalForwarder: only the preview executes');
 		TimelockController(timelock).executeBatch(targets, values, payloads, bytes32(0), salt);
