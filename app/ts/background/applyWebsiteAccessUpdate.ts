@@ -49,7 +49,7 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 	throw createWorkflowStepsError(failures)
 }
 
-// Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
+// Reconcile against saved permissions even when registration or reload fails. A rejected initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
 	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, mutation)
 	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error

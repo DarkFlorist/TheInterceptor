@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { SiweMessage } from '../../app/ts/types/personal-message-definitions.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { getFrameOrigins, getHostWithPort } from '../../app/ts/utils/requests.js'
+import { getFrameOrigins } from '../../app/ts/utils/requests.js'
 import { getSiweLookalikeQuarantineReasons, getSiweMessageOrigin, getSiweOriginText, getSiweQuarantineReasons, getSiweValidityWarnings, looksLikeSiweMessage, parseSiweDateTime, parseSiweMessage, SIWE_LOOKALIKE_QUARANTINE_REASON } from '../../app/ts/utils/siwe.js'
 
 const CHECKSUMMED_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
@@ -220,17 +220,16 @@ describe('Sign-In with Ethereum validity window', () => {
 describe('requesting frame origins', () => {
 	test('derives the website origin and the request origin of a frame from one URL, with the same host and port', () => {
 		for (const [frameUrl, websiteOrigin, requestOrigin] of [
-			['https://Example.COM/login?next=%2F#top', 'example.com', 'https://example.com'],
-			['https://example.com:443/', 'example.com', 'https://example.com'],
-			['https://example.com:8443/app', 'example.com:8443', 'https://example.com:8443'],
-			['http://localhost:3000/login', 'localhost:3000', 'http://localhost:3000'],
-			['http://[::1]:3000/', '[::1]:3000', 'http://[::1]:3000'],
+			['https://Example.COM/login?next=%2F#top', 'https://example.com', 'https://example.com'],
+			['https://example.com:443/', 'https://example.com', 'https://example.com'],
+			['https://example.com:8443/app', 'https://example.com:8443', 'https://example.com:8443'],
+			['http://localhost:3000/login', 'http://localhost:3000', 'http://localhost:3000'],
+			['http://[::1]:3000/', 'http://[::1]:3000', 'http://[::1]:3000'],
 		] as const) {
 			const origins = getFrameOrigins(frameUrl)
 			assert.deepEqual(origins, { websiteOrigin, requestOrigin }, frameUrl)
-			// The website origin is exactly what the rest of the extension keys website access by, and the request origin only adds the scheme to it.
-			assert.equal(origins.websiteOrigin, getHostWithPort(frameUrl), frameUrl)
-			assert.equal(origins.requestOrigin, `${ new URL(frameUrl).protocol }//${ origins.websiteOrigin }`, frameUrl)
+			assert.equal(origins.websiteOrigin, new URL(frameUrl).origin, frameUrl)
+			assert.equal(origins.requestOrigin, origins.websiteOrigin, frameUrl)
 		}
 	})
 })

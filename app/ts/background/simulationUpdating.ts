@@ -632,7 +632,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController, eventsForTransactionPromise)
+				return await runProtectorsForTransaction(slicedSimulationState, { transaction: transaction.transaction, originalRequestParameters: transaction.originalRequestParameters }, ethereum, requestAbortController, eventsForTransactionPromise)
 			})
 		}
 	)

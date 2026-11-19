@@ -35,11 +35,14 @@ const requestsStorageKey = (keys: string | string[] | Record<string, unknown> | 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, firstCurrentTabIdReadError }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly firstCurrentTabIdReadError?: Error } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
+	let registeredScripts: browser.scripting.RegisteredContentScript[] = []
 	const runtimeMessages: unknown[] = []
 	const removedWindowIds: number[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	let webRequestListener: ((details: browser.webRequest._OnBeforeRequestDetails) => browser.webRequest.BlockingResponse | void) | undefined
+	const blockedDomains: string[] = []
 	let currentTabIdReadFailed = false
 	const reloadedTabIds: number[] = []
 	const requestBlockingCalls = {
@@ -87,6 +90,13 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 				},
 			},
 		},
+		scripting: {
+			getRegisteredContentScripts: async () => registeredScripts,
+			registerContentScripts: async (scripts: browser.scripting.RegisteredContentScript[]) => { registeredScripts = [...registeredScripts, ...scripts] },
+			updateContentScripts: async (scripts: browser.scripting.RegisteredContentScript[]) => { registeredScripts = registeredScripts.map((script) => scripts.find(({ id }) => id === script.id) ?? script) },
+			unregisterContentScripts: async ({ ids }: { ids?: string[] }) => { registeredScripts = registeredScripts.filter(({ id }) => ids !== undefined && !ids.includes(id)) },
+		},
+		contentScripts: { register: async () => ({ unregister: async () => undefined }) },
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
@@ -122,7 +132,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules() {
+			async updateDynamicRules(parameters: { addRules?: readonly { condition: { initiatorDomains?: readonly string[] } }[] }) {
+				blockedDomains.splice(0, blockedDomains.length, ...(parameters.addRules?.flatMap((rule) => rule.condition.initiatorDomains ?? []) ?? []))
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
 				return undefined
 			},
@@ -133,10 +144,12 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		},
 		webRequest: {
 			onBeforeRequest: {
-				addListener() {
+				addListener(listener: typeof webRequestListener) {
+					webRequestListener = listener
 					requestBlockingCalls.webRequestListenerAdds += 1
 				},
 				removeListener() {
+					webRequestListener = undefined
 					requestBlockingCalls.webRequestListenerRemovals += 1
 				},
 			},
@@ -148,6 +161,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		waitForDeferredChainChangeRemoval: async () => await chainChangeRemovalStarted.promise,
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
+		blockedDomains,
+		runWebRequest: (details: browser.webRequest._OnBeforeRequestDetails) => webRequestListener?.(details),
 		runtimeMessages,
 		reloadedTabIds,
 		removedWindowIds,

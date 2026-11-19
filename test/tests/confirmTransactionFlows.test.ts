@@ -10,3 +10,5 @@ import './terminalReplyDelivery.suite.js'
 import './sendAnywayConsent.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)
+
+import './transactionSenderRefresh.suite.js'

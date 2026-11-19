@@ -1,28 +1,21 @@
+import type { Protector, ProtectorRequestContext } from './protectorTypes.js'
 import type { EthereumClientService } from './services/EthereumClientService.js'
 import { selfTokenOops } from './protectors/selfTokenOops.js'
-import { feeOops } from './protectors/feeOops.js'
+import { checkRequestedTransactionFees } from './protectors/feeOops.js'
 import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import type { WebsiteCreatedEthereumTransaction, SimulationState } from '../types/visualizer-types.js'
+import type { SimulationState } from '../types/visualizer-types.js'
 import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
 import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import type { EnrichedEthereumEvents } from '../types/EnrichedEthereumData.js'
 
-type Protector = (
-	transaction: WebsiteCreatedEthereumTransaction['transaction'],
-	ethereum: EthereumClientService,
-	requestAbortController: AbortController | undefined,
-	simulationState: SimulationState,
-	eventsPromise: Promise<EnrichedEthereumEvents>,
-) => Promise<string | undefined>
-
-const PROTECTORS: readonly Protector[] = [
+const protectors: readonly Protector[] = [
 	selfTokenOops,
 	commonTokenOops,
-	feeOops,
+	checkRequestedTransactionFees,
 	eoaApproval,
 	eoaCalldata,
 	tokenToContract,
@@ -30,8 +23,8 @@ const PROTECTORS: readonly Protector[] = [
 	chainIdMismatch,
 ]
 
-export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsPromise: Promise<EnrichedEthereumEvents>) => {
-	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState, eventsPromise))
+export const runProtectorsForTransaction = async (simulationState: SimulationState, request: ProtectorRequestContext, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsPromise: Promise<EnrichedEthereumEvents>) => {
+	const reasons = await promiseAllMapAbortSafe(protectors, async (protectorMethod) => await protectorMethod(request, ethereum, requestAbortController, simulationState, eventsPromise))
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {
 		quarantine: filteredReasons.length > 0,

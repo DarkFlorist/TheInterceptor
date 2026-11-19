@@ -1,3 +1,4 @@
+import { getWebsiteOrigin } from './websiteOrigin.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
@@ -162,8 +163,8 @@ export const getHostWithPort = (urlString: string): string => {
 // `getHostWithPort` with the scheme of the URL in front, such as `https://example.com:8443`, so the host and port are normalized in one place. Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
 export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`
 
-// Both origins of a requesting frame, derived from its URL in one place: `websiteOrigin` is the scheme-less host and port that website access settings are keyed by, and `requestOrigin` is the same host and port with the frame's scheme.
-export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getHostWithPort(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
+// Capture the canonical permission identity and the full SIWE origin together before any asynchronous work.
+export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getWebsiteOrigin(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
 
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)

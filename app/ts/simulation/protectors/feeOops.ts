@@ -1,13 +1,22 @@
-import type { SimulationState } from '../../types/visualizer-types.js'
-import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import type { ProtectorRequestContext } from '../protectorTypes.js'
+import { getFeeProtectionInput } from '../feeProtection.js'
+import { getRequestedTransactionFees } from '../../utils/transactionFees.js'
+import type { FeeProtectionInput } from '../feeProtection.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 
-export async function feeOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
-	if (transaction.type === '1559' || transaction.type === '4844' || transaction.type === '7702') {
-		if (transaction.maxPriorityFeePerGas < 10n ** 9n * 10n) return // 10.0 nanoeth/gas
-		return `Attempt to send a transaction with an outrageous fee (${ transaction.maxPriorityFeePerGas / (10n ** 9n) } nanoeth/gas)`
+export async function feeOops({ comparison, pricePerGas }: FeeProtectionInput, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
+	if (comparison === 'priority-fee') {
+		if (pricePerGas < 10n ** 9n * 10n) return // 10.0 nanoeth/gas
+		return `Attempt to send a transaction with an outrageous fee (${ pricePerGas / (10n ** 9n) } nanoeth/gas)`
 	}
-	const gasPrice = await ethereum.getGasPrice(requestAbortController)
-	if (transaction.gasPrice < gasPrice * 10n) return // 10 times the estimate gas price
-	return `Attempt to send a transaction with an outrageous fee. GasPrice: ${ gasPrice }`
+	if (pricePerGas === 0n) return
+	const estimatedGasPrice = await ethereum.getGasPrice(requestAbortController)
+	if (pricePerGas < estimatedGasPrice * 10n) return // 10 times the estimated gas price
+	return `Attempt to send a transaction with an outrageous fee. Gas price: ${ pricePerGas } attoeth/gas`
+}
+
+// Fee policy is derived here from the original request, not by pipeline callers.
+export async function checkRequestedTransactionFees({ transaction, originalRequestParameters }: ProtectorRequestContext, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
+	const requestedFees = originalRequestParameters.method === 'eth_sendTransaction' ? getRequestedTransactionFees(originalRequestParameters.params[0]) : undefined
+	return await feeOops(getFeeProtectionInput(transaction, requestedFees), ethereum, requestAbortController)
 }

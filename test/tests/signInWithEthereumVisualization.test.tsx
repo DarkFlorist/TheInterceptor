@@ -128,10 +128,10 @@ describe('Sign-In with Ethereum personal_sign visualization', () => {
 		const frameOrigins = getFrameOrigins(port.sender.url)
 		const { websiteOrigin } = frameOrigins
 		const websiteTabConnections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, ...frameOrigins, approved: true, wantsToConnect: false } } }]])
-		assert.equal(websiteOrigin, 'localhost:3000')
+		assert.equal(websiteOrigin, 'http://localhost:3000')
 		port.sender.url = 'https://attacker.example/'
-		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, 'attacker.example'), undefined)
-		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, websiteOrigin), `http://${ websiteOrigin }`)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, 'https://attacker.example'), undefined)
+		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, socket, websiteOrigin), websiteOrigin)
 		assert.equal(getWebsiteSocketRequestOrigin(websiteTabConnections, { tabId: socket.tabId, connectionName: 4n }, websiteOrigin), undefined)
 	})
 

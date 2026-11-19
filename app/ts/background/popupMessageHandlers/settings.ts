@@ -43,6 +43,7 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	} catch (error: unknown) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
 	}
+
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

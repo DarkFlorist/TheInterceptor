@@ -506,3 +506,10 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR, options:
 		},
 	}
 }
+
+export async function assertPrivateProviderBridge(connection: CdpConnection) {
+	const semantics = await connection.evaluate<{ native?: { trusted: boolean, sameWindow: boolean }, synthetic?: { trusted: boolean, sameWindow: boolean } }>('globalThis.__postMessageSemantics')
+	if (semantics?.native?.trusted !== true || semantics.native.sameWindow !== true || semantics.synthetic?.trusted !== false || semantics.synthetic.sameWindow !== true) throw new Error(`Unexpected postMessage delivery semantics: ${ JSON.stringify(semantics) }`)
+	const result = await connection.evaluate<{ capturedPorts: number, interceptedSends: number, interceptedReplies: number, replacementReplies: number }>('globalThis.__bridgeSecurity')
+	if (result === undefined || Object.values(result).some((count) => count !== 0)) throw new Error(`The page accessed the private provider bridge: ${ JSON.stringify(result) }`)
+}

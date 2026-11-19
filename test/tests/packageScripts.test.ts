@@ -56,10 +56,11 @@ function parseExactMajorMinor(version: string) {
 }
 
 describe('package scripts', () => {
-	test('test script compiles Solidity contracts and uses the CI-safe timeout before starting the test runner', () => {
+	test('test script generates protocol data and contracts before starting the test runner with the CI-safe timeout', () => {
 		const scripts = getPackageScripts()
 
 		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
+			'bun run generate-inpage-protocol',
 			'bun run compile-contracts',
 			'bun test --timeout 60000',
 		])

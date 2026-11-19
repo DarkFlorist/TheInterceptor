@@ -1,3 +1,4 @@
+import { migrateWebsiteAccessOrigins } from './websiteAccessMigration.js'
 import type { ActiveAddress, ExportedSettings } from '../types/exportedSettingsTypes.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
@@ -38,7 +39,7 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 			getImportedSimulationModeStorageWrite(exportedSettings, defaultActiveAddress),
 			signingAddressPreferencesStorageWrite(version === '1.5' || version === '1.6' ? exportedSettings.settings.signingAddressPreferences : []),
 			useSignersAddressAsActiveAddressStorageWrite(exportedSettings.settings.useSignersAddressAsActiveAddress),
-			websiteAccessStorageWrite(exportedSettings.settings.websiteAccess),
+			websiteAccessStorageWrite(migrateWebsiteAccessOrigins(exportedSettings.settings.websiteAccess)),
 			useTabsInsteadOfPopupStorageWrite(exportedSettings.settings.useTabsInsteadOfPopup),
 			safeAppsCompatibilityModeStorageWrite(version === '1.6' ? exportedSettings.settings.safeAppsCompatibilityMode : false),
 			...version !== '1.0' && version !== '1.1' ? [metamaskCompatibilityModeStorageWrite(exportedSettings.settings.metamaskCompatibilityMode)] : [],

@@ -22,6 +22,17 @@ function postMessageToPortIfConnected(port: browser.runtime.Port, message: Outbo
 	}
 }
 
+// Also used for rejected ports that must never be registered as an authorized website connection.
+export function replyToInterceptedRequestOnPort(port: browser.runtime.Port, message: InterceptedRequestForward) {
+	if (message.type === 'doNotReply') return
+	return postMessageToPortIfConnected(port, { kind: 'reply', value: {
+		...message,
+		interceptorApproved: true,
+		requestId: message.uniqueRequestIdentifier.requestId,
+		...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
+	} })
+}
+
 export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {
 	if (message.type === 'doNotReply') return
 	const tabConnection = websiteTabConnections.get(message.uniqueRequestIdentifier.requestSocket.tabId)
@@ -31,13 +42,7 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		const connection = tabConnection.connections[socketAsString]
 		if (connection === undefined) throw new Error('connection was undefined')
 		if (socketAsString !== identifier) continue
-		const reply = {
-			...message,
-			interceptorApproved: true as const,
-			requestId: message.uniqueRequestIdentifier.requestId,
-			...(message.type === 'result' ? { bridgeRequestSettled: true as const } : {}),
-		}
-		return postMessageToPortIfConnected(connection.port, { kind: 'reply', value: reply })
+		return replyToInterceptedRequestOnPort(connection.port, message)
 	}
 	return false
 }

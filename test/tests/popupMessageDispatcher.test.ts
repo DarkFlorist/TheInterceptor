@@ -207,6 +207,10 @@ describe('popup message dispatcher seams', () => {
 	test('does not refresh content script exclusions after removing an enabled website', async () => {
 		storageState.websiteAccess = [{ ...disabledWebsiteAccess, interceptorDisabled: false }]
 
+		const { reconcileContentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await reconcileContentScriptRegistration()
+		contentScriptUpdateBatches.length = 0
+
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_removeWebsiteAccess',
 			data: { websiteOrigin: 'disabled.test' },
@@ -581,7 +585,7 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(importReply.data, { success: true })
 		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), true)
 		assert.equal(storageState.metamaskCompatibilityMode, true)
-		assert.equal(WebsiteAccessArray.parse(storageState.websiteAccess)[0]?.website.websiteOrigin, 'imported-disabled.test')
+		assert.equal(WebsiteAccessArray.parse(storageState.websiteAccess)[0]?.website.websiteOrigin, 'https://imported-disabled.test')
 		assert.equal(JSON.stringify(storageState.activeRpcNetwork)?.includes('https://example.test/rpc'), true)
 		assert.deepEqual(reloadedTabs, [])
 	})
@@ -648,8 +652,11 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('legacy imports preserve compatibility mode while refreshing content scripts and connected tabs', async () => {
+	test('legacy imports preserve compatibility mode and conservatively migrate disabled hostname settings', async () => {
 		storageState.metamaskCompatibilityMode = true
+		// Start with the current bootstrap installed and no pending retry from an earlier failed update.
+		const { reconcileContentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await reconcileContentScriptRegistration()
 		const importedSettings = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
 			version: '1.0',
@@ -677,7 +684,7 @@ describe('popup message dispatcher seams', () => {
 
 		assert.equal(storageState.metamaskCompatibilityMode, true)
 		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage-metamask-compatibility.js'])
-		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['http://legacy-disabled.test:80/*', 'https://legacy-disabled.test:443/*'])
-		assert.deepEqual(reloadedTabs, [43])
+		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, [])
+		assert.deepEqual(reloadedTabs, [])
 	})
 })

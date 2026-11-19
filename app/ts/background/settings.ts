@@ -1,4 +1,5 @@
 import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
@@ -190,19 +191,15 @@ export async function getWebsiteAccess() {
 
 export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): StorageWrite => ({ websiteAccess: sanitizeWebsiteAccess(websiteAccess) })
 
-// Returns the stored value before and after the update so rollback transactions can restore only what this update changed.
-export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
+// Applies the update to the latest stored value. Configuration workflows reconcile the persisted desired state.
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return await runSettingsStorageTransaction(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		const changed = nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess
-		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: { previousWebsiteAccess: sanitizedWebsiteAccess, updatedWebsiteAccess: nextWebsiteAccess } }
-	})
-}
+		return { writes: changed ? [websiteAccessStorageWrite(nextWebsiteAccess)] : [], result: nextWebsiteAccess }
 
-// Last-write-wins: applies the update to the latest stored value; see tryWebsiteAccessRollback in settingsTransactions.ts for the merge-and-restore variant.
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	return (await updateWebsiteAccessWithSnapshots(updateFunc)).updatedWebsiteAccess
+	})
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {
@@ -255,6 +252,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 		}
 	}
 }
+
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
 export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION

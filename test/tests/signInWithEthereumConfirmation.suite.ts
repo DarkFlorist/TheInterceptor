@@ -47,7 +47,7 @@ async function openSignInConfirmation(siweMessage: string, pageUrl: string, live
 		{ kind: 'message', parameters: signRequest },
 		true,
 		activeAddress,
-		{ websiteOrigin: 'localhost:3000', icon: undefined, title: 'Local dapp' },
+		{ websiteOrigin: new URL(pageUrl).origin, icon: undefined, title: 'Local dapp' },
 		websiteTabConnections,
 	)
 	return { reply, pendingMessages: await modules.getPendingTransactionsAndMessages() }

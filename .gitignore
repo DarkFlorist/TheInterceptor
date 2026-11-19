@@ -10,3 +10,5 @@ node_modules/
 /safe-app/dist/
 /docs/screenshots/
 /**/output*/*
+
+/app/inpage/ts/generated/
