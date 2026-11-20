@@ -37,7 +37,7 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...original.ethereum.getRpcEntry(), httpsRpc: 'https://installed.example' } })
 		let oldReads = 0
 		let newReads = 0
 		original.ethereum.getChainId = () => { oldReads++; return 1n }
@@ -50,7 +50,7 @@ describe('background eth_accounts', () => {
 		}, address, await getSettings(), address, noopPublishRpcConnectionStatus)
 		const pending = (await getPendingAccessRequests())[0]
 		assert.ok(pending !== undefined)
-		owner.reset(installed.ethereum.getRpcEntry())
+		owner.ensureNetwork(installed.ethereum.getRpcEntry())
 		await resolveInterceptorAccess(owner, connections, { userReply: 'Approved', requestAccessToAddress: account, originalRequestAccessToAddress: account, accessRequestId: pending.accessRequestId }, noopPublishRpcConnectionStatus)
 		assert.equal(oldReads, 0)
 		assert.ok(newReads > 0)
@@ -73,7 +73,7 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
-		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...original.ethereum.getRpcEntry(), httpsRpc: 'https://installed.example' } })
 		let originalReads = 0
 		let installedReads = 0
 		original.ethereum.getChainId = () => { originalReads++; return 1n }
@@ -84,7 +84,7 @@ describe('background eth_accounts', () => {
 			interceptorRequest: true, usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 991, requestSocket: socket }, method: 'eth_chainId', params: [],
 		}, connections, noopPublishRpcConnectionStatus)
-		owner.reset(installed.ethereum.getRpcEntry())
+		owner.ensureNetwork(installed.ethereum.getRpcEntry())
 		metadata.resolve(website)
 		await pending
 		assert.equal(originalReads, 0)

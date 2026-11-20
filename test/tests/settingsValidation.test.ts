@@ -43,7 +43,7 @@ test('settings distinguish missing addresses from explicit clears', async () => 
 	assert.equal(writes.length, 0)
 })
 
-test('a corrupt setting is repaired without discarding other valid settings', async () => {
+test('a corrupt simulation mode fails closed without overwriting stored settings', async () => {
 	storedItems.simulationMode = 'invalid'
 	storedItems.useSignersAddressAsActiveAddress = true
 	storedItems.independentActiveSimulationAddress = '0x0000000000000000000000000000000000000002'
@@ -51,7 +51,7 @@ test('a corrupt setting is repaired without discarding other valid settings', as
 	assert.equal(settings.simulationMode, true)
 	assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	assert.equal(settings.activeSimulationAddress, 2n)
-	assert.deepEqual(writes, [{ simulationMode: true }])
+	assert.deepEqual(writes, [])
 })
 
 test('corrupt address repairs use the canonical storage encoding and survive startup', async () => {
