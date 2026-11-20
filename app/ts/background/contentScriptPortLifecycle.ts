@@ -1,10 +1,4 @@
-export function isIgnorablePortLifecycleError(error: Error) {
-	return error.message.includes('the message channel is closed')
-		|| error.message.includes('The message port closed before a response was received')
-		|| error.message.includes('Could not establish connection. Receiving end does not exist')
-		|| error.message.includes('Attempting to use a disconnected port object')
-		|| error.message.includes('Extension context invalidated')
-}
+import { isIgnorablePortLifecycleError } from '../utils/extensionMessaging.js'
 
 export function tryRegisterContentScriptPortListeners(
 	port: browser.runtime.Port,

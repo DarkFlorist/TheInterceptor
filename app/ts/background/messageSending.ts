@@ -3,7 +3,7 @@ import { type WebsiteSocket, checkAndThrowRuntimeLastError, isMissingBrowserTarg
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
-import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
+import { isIgnorablePortLifecycleError } from '../utils/extensionMessaging.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
