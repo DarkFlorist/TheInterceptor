@@ -9,6 +9,7 @@ import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/per
 import { createPassthroughCompleteVisualizedSimulation, type SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import { GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE } from '../../app/ts/utils/governanceExecutionBlock.js'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -181,6 +182,29 @@ function createSimulationFailureReply(transactionOrMessageIdentifier: bigint, er
 	})
 }
 
+// A governance preview reply that simulated the execution, with an empty execution block at timeToSet. visualizationError makes the visualisation of that simulation fail instead.
+function createGovernanceExecutionBroadcast(transactionOrMessageIdentifier: bigint, timeToSet: bigint, visualizationError: string | undefined) {
+	const rpcNetwork = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const executionBlock = { simulatedAndVisualizedTransactions: [], visualizedPersonalSignRequests: [], blockTimeManipulation: { type: 'SetTimetamp' as const, timeToSet } }
+	const visualizedSimulationState = visualizationError === undefined
+		? { success: true as const, visualizedBlocks: [executionBlock] }
+		: { success: false as const, jsonRpcError: { jsonrpc: '2.0' as const, id: 1, error: { code: -32000, message: visualizationError } }, visualizedBlocks: [] }
+	return { role: 'all' as const, ...serialize(SimulateExecutionReply, {
+		method: 'popup_simulateExecutionReply' as const,
+		data: {
+			success: true as const,
+			transactionOrMessageIdentifier,
+			result: {
+				namedTokenIds: [],
+				addressBookEntries: [],
+				visualizedSimulationState,
+				tokenPriceEstimates: [],
+				simulationState: { success: true as const, simulationStateInput: [], simulatedBlocks: [], blockNumber: 100n, blockTimestamp: new Date(1_700_000_000_000), baseFeePerGas: 1n, simulationConductedTimestamp: new Date(1_700_000_000_000), rpcNetwork },
+			},
+		},
+	}) }
+}
+
 function createSimulationFailureBroadcast(transactionOrMessageIdentifier: bigint, errorMessage: string) {
 	return { role: 'all' as const, ...createSimulationFailureReply(transactionOrMessageIdentifier, errorMessage) }
 }
@@ -260,7 +284,7 @@ function createGovernanceVoteInputParameters(proposalId: bigint): GovernanceVote
 	}
 }
 
-function createGovernanceTransactionFixture(transactionIdentifier: bigint): SimulatedAndVisualizedTransaction {
+function createGovernanceTransactionFixture(transactionIdentifier: bigint, governor: { readonly abi: string | undefined } = { abi: '[]' }): SimulatedAndVisualizedTransaction {
 	const governanceTransactionFixture = {
 		transactionIdentifier,
 		transaction: {
@@ -269,7 +293,7 @@ function createGovernanceTransactionFixture(transactionIdentifier: bigint): Simu
 				name: 'Governance',
 				address: 0x1n,
 				entrySource: 'User',
-				abi: '[]',
+				abi: governor.abi,
 				chainId: 1n,
 			},
 		},
@@ -1330,6 +1354,78 @@ describe('popup async action UI', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('Simulating governance execution failed because the background page did not return a reply.'), true)
 		assert.equal(dom.document.body.textContent?.includes('Simulate execution on a passing vote'), true)
+		dom.restore()
+	})
+
+	test('offers the governance simulation for a governor whose ABI is not in the address book', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+
+		await act(() => {
+			render(h(modules.GovernanceVoteVisualizer, {
+				simTx: createGovernanceTransactionFixture(5n, { abi: undefined }),
+				activeAddress: signal(0x2n),
+				renameAddressCallBack: () => undefined,
+				editEnsNamedHashCallBack: () => undefined,
+				governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+			}), dom.document.body)
+		})
+
+		assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.includes('Simulate execution on a passing vote')), true)
+		assert.equal(dom.document.body.textContent?.includes('Add Abi'), false)
+		dom.restore()
+	})
+
+	for (const [outcome, broadcast, shownText] of [
+		['a simulated execution', createGovernanceExecutionBroadcast(5n, 1_800_000_000n, undefined), 'Executed by the governor\'s timelock on'],
+		['a refused preview', createSimulationFailureBroadcast(5n, 'No outcome is simulated: proposal 42 is executed.'), 'No outcome is simulated: proposal 42 is executed.'],
+		['a failed visualisation', createGovernanceExecutionBroadcast(5n, 1_800_000_000n, 'visualisation failed at the node'), 'visualisation failed at the node'],
+	] as const) {
+		test(`says how the preview differs from the real execution with ${ outcome }`, async () => {
+			const modules = await modulesPromise
+			const dom = installDomMock()
+			await act(() => {
+				render(h(modules.GovernanceVoteVisualizer, {
+					simTx: createGovernanceTransactionFixture(5n),
+					activeAddress: signal(0x2n),
+					renameAddressCallBack: () => undefined,
+					editEnsNamedHashCallBack: () => undefined,
+					governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+				}), dom.document.body)
+			})
+			await act(async () => {
+				await emitRuntimeMessage(broadcast)
+				await settleAsyncUpdates()
+			})
+			assert.equal(dom.document.body.textContent?.includes(shownText), true)
+			assert.equal(dom.document.body.textContent?.includes(GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE), true)
+			dom.restore()
+		})
+	}
+
+	test('keeps the governance simulation result when the same vote renders again', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const renderVote = () => render(h(modules.GovernanceVoteVisualizer, {
+			simTx: createGovernanceTransactionFixture(5n),
+			activeAddress: signal(0x2n),
+			renameAddressCallBack: () => undefined,
+			editEnsNamedHashCallBack: () => undefined,
+			// identifyTransaction decodes the vote again on every render, so each render passes a new parameters object.
+			governanceVoteInputParameters: createGovernanceVoteInputParameters(42n),
+		}), dom.document.body)
+
+		await act(() => { renderVote() })
+		await act(async () => {
+			await emitRuntimeMessage(createSimulationFailureBroadcast(5n, 'governance simulation result'))
+			await settleAsyncUpdates()
+		})
+		assert.equal(dom.document.body.textContent?.includes('governance simulation result'), true)
+
+		await act(() => { renderVote() })
+		await act(async () => { await settleAsyncUpdates() })
+
+		assert.equal(dom.document.body.textContent?.includes('governance simulation result'), true)
 		dom.restore()
 	})
 
