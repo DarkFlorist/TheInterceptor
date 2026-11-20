@@ -180,15 +180,19 @@ async function inputElementValue(element: TestDomNode, value: string) {
 	await dispatchElementValueEvent(element, value, ['input'])
 }
 
-// As in a browser, leaving an edited field fires change and then blur.
+// As in a browser, leaving an edited field fires change, blur and focusout; preact/compat, when another test file has loaded it, listens to focusout instead of blur.
 function leaveAmountField(input: TestDomNode) {
 	input.dispatchEvent?.(new Event('change', { bubbles: true }))
 	input.dispatchEvent?.(new Event('blur'))
+	input.dispatchEvent?.(new Event('focusout', { bubbles: true }))
 }
 
-// Types into an amount field the way a user does: focus (whose re-render shows the raw amount), then input events; the edit stays open until focus leaves the field.
+// Types into an amount field the way a user does: focus and focusin (whose re-render shows the raw amount), then input events; the edit stays open until focus leaves the field.
 async function editAmount(input: TestDomNode, value: string) {
-	await act(() => { input.dispatchEvent?.(new Event('focus')) })
+	await act(() => {
+		input.dispatchEvent?.(new Event('focus'))
+		input.dispatchEvent?.(new Event('focusin', { bubbles: true }))
+	})
 	await act(() => {
 		input.value = value
 		input.dispatchEvent?.(new Event('input', { bubbles: true }))
