@@ -1,56 +1,63 @@
 import * as assert from 'node:assert'
-import { test } from 'bun:test'
+import { afterEach, test } from 'bun:test'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { runSettingsStorageTransaction } from '../../app/ts/background/settingsStorageTransaction.js'
+import { userAddressBookEntriesStorageWrite } from '../../app/ts/background/storageVariables.js'
+import { useTabsInsteadOfPopupStorageWrite } from '../../app/ts/background/settings.js'
 
-// A combined import must retain one generic commit boundary, without address-book-specific callbacks or bookkeeping.
-test('mixed name and settings writes use one storage commit and propagate its failure', async () => {
-	installBrowserMock()
-	const originalSet = browser.storage.local.set
-	const writes: unknown[] = []
-	browser.storage.local.set = async (items) => { writes.push(items) }
-	try {
-		const result = await runSettingsStorageTransaction(async () => ({ writes: [{ userAddressBookEntriesV3: [], ensNameHashes: [] }, { ensLabelHashes: [], useTabsInsteadOfPopup: true }], result: 'committed' }))
-		assert.equal(result, 'committed')
-		assert.deepEqual(writes, [{ userAddressBookEntriesV3: [], ensNameHashes: [], ensLabelHashes: [], useTabsInsteadOfPopup: true }])
-		const failure = new Error('Atomic storage write failed')
-		browser.storage.local.set = async () => { throw failure }
-		await assert.rejects(runSettingsStorageTransaction(async () => ({ writes: [{ ensNameHashes: [] }, { useTabsInsteadOfPopup: false }], result: 'not committed' })), (error) => error === failure)
-	} finally {
-		browser.storage.local.set = originalSet
-	}
+let releasePendingCommit: (() => void) | undefined
+let clearStorageHooks: (() => void) | undefined
+
+afterEach(() => {
+	releasePendingCommit?.()
+	clearStorageHooks?.()
+	releasePendingCommit = undefined
+	clearStorageHooks = undefined
 })
 
-test('settings transactions serialize read-modify-write plans and release the lock after a failed commit', async () => {
-	installBrowserMock()
-	const originalSet = browser.storage.local.set
+// A combined import retains one generic commit boundary, without address-book-specific bookkeeping.
+test('mixed address-book and settings writes use one storage commit and preserve state on failure', async () => {
+	const { setStorageHooks } = installBrowserMock()
+	clearStorageHooks = () => { setStorageHooks({}) }
+	const writes: unknown[] = []
+	setStorageHooks({ beforeSet: async (items) => { writes.push(items) } })
+	const addressBookWrite = userAddressBookEntriesStorageWrite([])
+	const settingsWrite = useTabsInsteadOfPopupStorageWrite(true)
+	const expected = { ...addressBookWrite, ...settingsWrite }
+	const result = await runSettingsStorageTransaction(async () => ({ writes: [addressBookWrite, settingsWrite], result: 'committed' }))
+	assert.equal(result, 'committed')
+	assert.deepEqual(writes, [expected])
+	assert.deepEqual(await browser.storage.local.get(Object.keys(expected)), expected)
+	const failure = new Error('Atomic storage write failed')
+	setStorageHooks({ beforeSet: async () => { throw failure } })
+	await assert.rejects(runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite([]), useTabsInsteadOfPopupStorageWrite(false)], result: 'not committed' })), (error) => error === failure)
+	assert.deepEqual(await browser.storage.local.get(Object.keys(expected)), expected)
+})
+
+test('settings transactions serialize plans and release the lock after a failed commit', async () => {
+	const { setStorageHooks } = installBrowserMock()
+	clearStorageHooks = () => { setStorageHooks({}) }
 	const events: string[] = []
-	let releaseFirstCommit: () => void = () => { throw new Error('Missing commit release') }
-	const firstCommit = new Promise<void>((resolve) => { releaseFirstCommit = resolve })
-	browser.storage.local.set = async () => {
+	const firstCommit = new Promise<void>((resolve) => { releasePendingCommit = resolve })
+	setStorageHooks({ beforeSet: async () => {
 		events.push('commit started')
 		await firstCommit
 		throw new Error('First commit failed')
-	}
-	try {
-		const first = runSettingsStorageTransaction(async () => {
-			events.push('first plan')
-			return { writes: [{ useTabsInsteadOfPopup: true }], result: undefined }
-		})
-		// Attach a rejection handler before releasing the commit.
-		const firstRejected = assert.rejects(first, /First commit failed/u)
-		const second = runSettingsStorageTransaction(async () => {
-			events.push('second plan')
-			return { writes: [], result: 'second result' }
-		})
-		await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
-		assert.deepEqual(events, ['first plan', 'commit started'])
-		releaseFirstCommit()
-		await firstRejected
-		assert.equal(await second, 'second result')
-		assert.deepEqual(events, ['first plan', 'commit started', 'second plan'])
-	} finally {
-		releaseFirstCommit()
-		browser.storage.local.set = originalSet
-	}
+	} })
+	const first = runSettingsStorageTransaction(async () => {
+		events.push('first plan')
+		return { writes: [useTabsInsteadOfPopupStorageWrite(true)], result: undefined }
+	})
+	// Attach the rejection handler before releasing the commit.
+	const firstRejected = assert.rejects(first, /First commit failed/u)
+	const second = runSettingsStorageTransaction(async () => {
+		events.push('second plan')
+		return { writes: [], result: 'second result' }
+	})
+	await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+	assert.deepEqual(events, ['first plan', 'commit started'])
+	releasePendingCommit?.()
+	await firstRejected
+	assert.equal(await second, 'second result')
+	assert.deepEqual(events, ['first plan', 'commit started', 'second plan'])
 })
