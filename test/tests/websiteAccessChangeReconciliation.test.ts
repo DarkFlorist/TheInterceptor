@@ -91,7 +91,7 @@ const importAccessManagement = async () => await import('../../app/ts/background
 
 const makeReconciliationReject = async (reconcileError: Error) => {
 	const accessManagement = await importAccessManagement()
-	spyOn(accessManagement, 'reconcileCommittedWebsiteAccessOrFailClosed').mockImplementationOnce(async () => { throw reconcileError })
+	spyOn(accessManagement, 'reconcileCommittedAccessChangeOrFailClosed').mockImplementationOnce(async () => { throw reconcileError })
 }
 
 afterEach(() => {
@@ -147,8 +147,8 @@ describe('website access registration and reconciliation', () => {
 		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
-		const reconcileApprovals = accessManagement.reconcileCommittedWebsiteAccessOrFailClosed
-		spyOn(accessManagement, 'reconcileCommittedWebsiteAccessOrFailClosed').mockImplementation(async (...args) => {
+		const reconcileApprovals = accessManagement.reconcileCommittedAccessChangeOrFailClosed
+		spyOn(accessManagement, 'reconcileCommittedAccessChangeOrFailClosed').mockImplementation(async (...args) => {
 			sideEffectOrder.push('reconcile')
 			return await reconcileApprovals(...args)
 		})
@@ -175,7 +175,7 @@ describe('website access registration and reconciliation', () => {
 	test('does not run follow-ups when the initial storage write fails', async () => {
 		const { reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		const registration = mockContentScriptInjectionUpdate()
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 		const writeError = new Error('storage write failed')
 		spyOn(browser.storage.local, 'set').mockImplementation(async () => { throw writeError })
 
@@ -190,7 +190,7 @@ describe('website access registration and reconciliation', () => {
 	test('rolls back a failed registration and reconciles the restored permissions', async () => {
 		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
 
@@ -207,7 +207,7 @@ describe('website access registration and reconciliation', () => {
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
 		const reportingError = new Error('report failed')
 		spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingError })
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 
 		await assert.rejects(handlers[handler](), (error) => error === reportingError)
 
@@ -230,7 +230,7 @@ describe('website access registration and reconciliation', () => {
 		test(`${ handler } (disabled: ${ interceptorDisabled }) refreshes registration if needed and reconciles once`, async () => {
 			const { reloadedTabIds, connectedTabIds, handlers } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled })
 			const registration = mockContentScriptInjectionUpdate()
-			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedWebsiteAccessOrFailClosed')
+			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 
 			await handlers[handler]()
 
@@ -239,4 +239,60 @@ describe('website access registration and reconciliation', () => {
 			assert.equal(reconcile.mock.calls.length, 1)
 		})
 	}
+})
+
+
+for (const edit of ['approval', 'multi-approval', 'blocking', 'new-blocking-record', 'rolled-back-approval', 'unknown-outcome'] as const) test(`an unreadable post-write snapshot uses the committed authority scope for a ${ edit } edit`, async () => {
+	const { setStorageHooks } = installBrowserMock()
+	const modules = await loadModules()
+	const { applyWebsiteAccessUpdate } = await import('../../app/ts/background/applyWebsiteAccessUpdate.js')
+	const { waitForBackgroundTasks } = await import('./backgroundTasksTestHarness.js')
+	const origins = ['scope-a.test', 'scope-b.test']
+	await modules.updateWebsiteAccess(() => origins.filter((_, index) => edit !== 'new-blocking-record' || index !== 0).map((websiteOrigin) => ({ website: { websiteOrigin }, access: true })))
+	const connections = new Map(origins.map((websiteOrigin, index) => {
+		const tabId = index + 1
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
+	}))
+	let committed = false
+	setStorageHooks({
+		afterSet: async (items) => { if ('websiteAccess' in items) committed = true },
+		afterGet: async (keys) => { if (committed && Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('post-write settings unavailable') },
+	})
+	if (edit === 'rolled-back-approval') mockContentScriptInjectionUpdate(new Error('registration failed'))
+	if (edit === 'unknown-outcome') {
+		committed = true
+		spyOn(await import('../../app/ts/background/websiteAccessUpdating.js'), 'tryUpdateWebsiteAccessAndContentScriptInjectionStrategy').mockResolvedValueOnce({ status: 'completed', storage: 'written', reload: 'not-needed', transaction: undefined })
+	}
+	try {
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await withSilencedConsole(async () => {
+			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] && edit !== 'multi-approval' ? entry : edit === 'multi-approval' || edit === 'approval' || edit === 'rolled-back-approval' ? { ...entry, access: false, ...(edit === 'rolled-back-approval' ? { interceptorDisabled: true } : {}) } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
+			await waitForBackgroundTasks()
+		})
+		assert.equal(committed, true)
+		const approvalOf = (tabId: number) => Object.values(connections.get(tabId)?.connections ?? {})[0]?.approved
+		assert.equal(approvalOf(1), edit !== 'approval' && edit !== 'multi-approval' && edit !== 'unknown-outcome')
+		assert.equal(approvalOf(2), edit !== 'multi-approval' && edit !== 'unknown-outcome')
+	} finally {
+		await waitForBackgroundTasks()
+		setStorageHooks({})
+	}
+})
+
+test('unavailable RPC settings skip deferred access prompts without per-connection internal errors', async () => {
+	const { runtimeMessages } = installBrowserMock()
+	const modules = await loadModules()
+	const settings = await modules.getSettings()
+	await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	const connections = new Map([1, 2, 3].map((tabId) => {
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: `https://prompt-${ tabId }.test`, approved: false, wantsToConnect: true } } }] as const
+	}))
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	await withSilencedConsole(async () => await modules.updateWebsiteApprovalAccesses(simulationServicesOwner, connections, settings, true))
+	assert.equal(await modules.getLatestUnexpectedError(), undefined)
+	assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), false)
 })

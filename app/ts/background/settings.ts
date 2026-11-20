@@ -4,14 +4,19 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { type LocalStorageItems, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { getRpcConfigurationStateWithStorageSnapshot, rpcConfigurationIsReady } from './rpcConfigurationStorage.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
+
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import type { RpcConfigurationState } from './rpcConfigurationStorage.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -44,35 +49,197 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageVa
 	return await getStartupStorageValueOrDefault(await browser.storage.local.get(key), key, defaultValue)
 }
 
-export async function getSettings() : Promise<Settings> {
+const SETTINGS_STORAGE_KEYS = [
+	'independentActiveSimulationAddress',
+	'activeSigningSafeAddress',
+	'openedPageV2',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'simulationMode',
+] as const
+
+const getWebsiteAccessFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>) => sanitizeWebsiteAccess(await getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []))
+
+type SettingsStorageFields = Omit<Settings, 'activeRpcNetwork'>
+
+function getStartupSettingsStorageFields(): SettingsStorageFields {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
-	const defaultPage: Page = { page: 'Home' }
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
-		'independentActiveSimulationAddress',
-		'activeSigningSafeAddress',
-		'openedPageV2',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'simulationMode',
-		'activeRpcNetwork',
-	]))
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
-	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
-	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
-	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
-	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	return {
+		activeSimulationAddress: defaultActiveAddresses[0].address,
+		activeSigningSafeAddress: undefined,
+		openedPage: { page: 'Home' },
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess: [],
+		simulationMode: defaultSimulationMode,
+	}
+}
+
+// Settings are these stored fields on an active RPC network; this is the only place the two are combined.
+const withActiveRpcNetwork = (fields: SettingsStorageFields, activeRpcNetwork: RpcNetwork): Settings => ({
+	activeSimulationAddress: fields.activeSimulationAddress,
+	activeSigningSafeAddress: fields.activeSigningSafeAddress,
+	openedPage: fields.openedPage,
+	useSignersAddressAsActiveAddress: fields.useSignersAddressAsActiveAddress,
+	websiteAccess: fields.websiteAccess,
+	activeRpcNetwork,
+	simulationMode: fields.simulationMode,
+})
+
+// The single storage-to-settings-fields conversion. Fields missing from `storedItems` take their value from `missingFieldValues`.
+async function getSettingsFieldsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, missingFieldValues: SettingsStorageFields = getStartupSettingsStorageFields()): Promise<SettingsStorageFields> {
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'independentActiveSimulationAddress', missingFieldValues.activeSimulationAddress))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', missingFieldValues.activeSigningSafeAddress))
+	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', missingFieldValues.openedPage))
+	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', missingFieldValues.useSignersAddressAsActiveAddress))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', missingFieldValues.websiteAccess).then(sanitizeWebsiteAccess))
+	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', missingFieldValues.simulationMode))
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
 		websiteAccessPromise,
-		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode }
+}
+
+const getSettingsFromStorageItems = async (storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork, missingFieldValues?: SettingsStorageFields) => withActiveRpcNetwork(await getSettingsFieldsFromStorageItems(storedItems, missingFieldValues), activeRpcNetwork)
+
+// Website approvals are stored apart from the RPC configuration, so they stay readable while settings are unavailable; `unreadable` keeps the storage error for callers that must propagate it.
+export type WebsiteApprovalsSnapshot =
+	| { readonly status: 'readable', readonly websiteAccess: WebsiteAccessArray }
+	| { readonly status: 'unreadable', readonly error: unknown }
+
+// Settings and the RPC configuration come from one storage read and must travel together through an admitted operation. Settings need an active RPC network, so `unavailable` carries only the approvals' own availability. `available` means the settings fields are readable (the active network could be read), not that the RPC configuration is usable: `rpcConfiguration` says that separately (see settingsIfRpcConfigurationReady).
+export type SettingsSnapshot =
+	| { readonly status: 'available', readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }
+	| { readonly status: 'unavailable', readonly rpcConfiguration: RpcConfigurationState, readonly websiteApprovals: WebsiteApprovalsSnapshot }
+
+const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
+export type CapturedRpcNetwork = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly [capturedRpcNetworkMarker]: true
+}
+
+// Long-lived mutations use this token only when later settings fields may change but the admitted RPC network must remain pinned.
+export function captureRpcNetwork(settings: Pick<Settings, 'activeRpcNetwork'>): CapturedRpcNetwork {
+	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
+}
+
+// A re-read for an admitted operation: `storedFields` are the persisted settings fields and `admittedRpcNetwork` is the operation's own network, which can differ from the persisted RPC configuration, so it is carried separately and is never presented as live settings.
+export type AdmittedRpcNetworkSnapshot =
+	| { readonly status: 'available', readonly storedFields: SettingsStorageFields, readonly admittedRpcNetwork: CapturedRpcNetwork }
+	| { readonly status: 'unreadable', readonly error: unknown }
+
+const getStorageReadError = (rpcConfiguration: RpcConfigurationState) => rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed' ? { error: 'error' in rpcConfiguration ? rpcConfiguration.error : undefined } : undefined
+
+// The one storage read both settings reads share, so they always agree on what was stored and whether storage could be read.
+async function readSettingsStorage() {
+	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	return { storedItems, rpcConfiguration, storageReadError: getStorageReadError(rpcConfiguration) }
+}
+
+// The persisted settings, available only while the stored RPC configuration has an active RPC network.
+export async function getSettingsSnapshot(): Promise<SettingsSnapshot> {
+	const { storedItems, rpcConfiguration, storageReadError } = await readSettingsStorage()
+	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
+	if (activeRpcNetwork !== undefined) return { status: 'available', settings: await getSettingsFromStorageItems(storedItems, activeRpcNetwork), rpcConfiguration }
+	const websiteApprovals: WebsiteApprovalsSnapshot = storageReadError === undefined
+		? { status: 'readable', websiteAccess: await getWebsiteAccessFromStorageItems(storedItems) }
+		: { status: 'unreadable', error: storageReadError.error }
+	return { status: 'unavailable', rpcConfiguration, websiteApprovals }
+}
+
+// The re-read for an admitted operation: the persisted settings fields beside the operation's own admitted network, whatever the stored RPC configuration says; unreadable only when storage cannot be read. Project it with settingsOnAdmittedRpcNetwork or settingsForPublication.
+export async function getAdmittedRpcNetworkSnapshot(admittedRpcNetwork: CapturedRpcNetwork): Promise<AdmittedRpcNetworkSnapshot> {
+	const { storedItems, storageReadError } = await readSettingsStorage()
+	if (storageReadError !== undefined) return { status: 'unreadable', error: storageReadError.error }
+	return { status: 'available', storedFields: await getSettingsFieldsFromStorageItems(storedItems), admittedRpcNetwork }
+}
+
+// The approvals-only read, for paths that must not wait on the RPC configuration lock. `repairCorrupt` writes no approvals over a corrupt value (a failed write is unreadable); without it a corrupt value reads as no approvals and nothing is written.
+export async function getWebsiteApprovalsSnapshot(options: { readonly repairCorrupt: boolean }): Promise<WebsiteApprovalsSnapshot> {
+	try {
+		if (options.repairCorrupt) return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(await getParsedStorageValueOrDefault('websiteAccess', [])) }
+		const { websiteAccess: storedWebsiteAccess } = await browser.storage.local.get('websiteAccess')
+		if (storedWebsiteAccess === undefined) return { status: 'readable', websiteAccess: [] }
+		return { status: 'readable', websiteAccess: sanitizeWebsiteAccess(browserStorageLocalSafeParse({ websiteAccess: storedWebsiteAccess })?.websiteAccess ?? []) }
+	} catch (error: unknown) {
+		return { status: 'unreadable', error }
+	}
+}
+
+// The settings fields, required to be readable: throws the RPC-configuration-unavailable error when the active network itself cannot be read. Readable is all it proves; the RPC entries may still be corrupt, emptied or unwritable. A decision that needs a usable RPC configuration (granting, tab blocking, anything trusting the active chain) uses settingsIfRpcConfigurationReady instead.
+export function requireReadableSettings(snapshot: SettingsSnapshot): Settings {
+	if (snapshot.status === 'unavailable') throw createRpcConfigurationUnavailableError()
+	return snapshot.settings
+}
+
+// RPC editors can repair an unreadable active selection by treating it as absent. Storage/repair failures remain errors rather than being mistaken for an unselected network.
+export async function getActiveRpcNetworkForConfigurationEditing(): Promise<RpcNetwork | undefined> {
+	const snapshot = await getSettingsSnapshot()
+	const configuration = snapshot.rpcConfiguration
+	if (configuration.status === 'unavailable' && (configuration.reason === 'read-failed' || configuration.reason === 'write-failed')) throw configuration.error ?? createRpcConfigurationUnavailableError()
+	return settingsEvenIfRpcConfigurationUnusable(snapshot)?.activeRpcNetwork
+}
+
+// The weaker of the two settings projections, named so every call site shows it: settings whenever they are readable, even while the RPC configuration is unusable (corrupt, emptied or unwritable entries with a readable active network). Only for callers that branch on availability themselves and only need the settings fields; a decision that must fail closed on any unusable RPC configuration (granting access, choosing how tabs are blocked) uses settingsIfRpcConfigurationReady.
+export function settingsEvenIfRpcConfigurationUnusable(snapshot: SettingsSnapshot): Settings | undefined {
+	return snapshot.status === 'available' ? snapshot.settings : undefined
+}
+
+const readyRpcConfigurationMarker = Symbol('readyRpcConfiguration')
+// Settings read while the RPC configuration was ready. Reconciliation grants and request blocking require this branded projection; legacy verifyAccess/connectToPort still accept ordinary Settings until the successor admission migration.
+export type ReadyRpcSettings = Settings & { readonly [readyRpcConfigurationMarker]: true }
+
+// Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
+export function settingsIfRpcConfigurationReady(snapshot: SettingsSnapshot): ReadyRpcSettings | undefined {
+	if (!rpcConfigurationIsReady(snapshot.rpcConfiguration) || snapshot.status !== 'available') return undefined
+	return { ...snapshot.settings, [readyRpcConfigurationMarker]: true }
+}
+
+// Projection for granting access: unreadable approvals fail closed to none, which the name states. A path where a failed read must stop the caller instead uses requireReadableApprovals.
+export function approvalsOrNoneIfUnreadable(snapshot: SettingsSnapshot | WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (snapshot.status === 'available') return snapshot.settings.websiteAccess
+	const websiteApprovals = snapshot.status === 'unavailable' ? snapshot.websiteApprovals : snapshot
+	return websiteApprovals.status === 'readable' ? websiteApprovals.websiteAccess : []
+}
+
+// Projection for paths where a failed read must stop the caller (for example so applied request blocks stay in place): rethrows the storage error.
+export function requireReadableApprovals(websiteApprovals: WebsiteApprovalsSnapshot): WebsiteAccessArray {
+	if (websiteApprovals.status === 'unreadable') throw websiteApprovals.error
+	return websiteApprovals.websiteAccess
+}
+
+export type AdmittedRpcNetworkNoLongerLive = 'unavailable' | 'chain-changed' | 'endpoint-changed'
+
+export type LiveSettingsOnAdmittedRpcNetwork =
+	| { readonly kind: 'ready', readonly settings: ReadyRpcSettings }
+	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
+
+// Reconciliation re-reads one live snapshot immediately before its synchronous grant. Metadata-only changes retain the admitted endpoint; chain or endpoint changes invalidate its service pair. This helper is not yet used by legacy verifyAccess/connectToPort or general request admission.
+export async function getLiveSettingsOnAdmittedRpcNetwork(admitted: Settings | CapturedRpcNetwork): Promise<LiveSettingsOnAdmittedRpcNetwork> {
+	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
+	if (liveSettings === undefined) return { kind: 'unavailable' }
+	const rpcNetworkChange = getRpcNetworkChange(admitted.activeRpcNetwork, liveSettings.activeRpcNetwork)
+	if (rpcNetworkChange.chainChanged) return { kind: 'chain-changed' }
+	// Rejected rather than continued: the admitted service pair still talks to the deselected endpoint (which the user may have left for privacy or reliability), and a signer-only selection's fallback service may serve another chain.
+	if (rpcNetworkChange.endpointChanged) return { kind: 'endpoint-changed' }
+	return { kind: 'ready', settings: liveSettings }
+}
+
+// Projection for an admitted operation that continues on its own network: the persisted fields on the admitted RPC network, undefined when storage is unreadable.
+export function settingsOnAdmittedRpcNetwork(snapshot: AdmittedRpcNetworkSnapshot): Settings | undefined {
+	return snapshot.status === 'available' ? withActiveRpcNetwork(snapshot.storedFields, snapshot.admittedRpcNetwork.activeRpcNetwork) : undefined
+}
+
+// Settings a committing operation publishes when it cannot read them back: without website approvals, so revoked approvals are never republished. This limits only the publication; access reconciliation decides with its own read inside its lock, and only when that read also fails does it use these settings, revoke-only (see reconcileWebsiteApprovalAccessesCollectingFailures in accessManagement.ts).
+export const settingsWithoutApprovals = (settings: Settings): Settings => ({ ...settings, websiteAccess: [] })
+
+// Projection for settings that must still be published when they cannot be read back: `fallback` without website approvals.
+export function settingsForPublication(snapshot: AdmittedRpcNetworkSnapshot, fallback: Settings): Settings {
+	return settingsOnAdmittedRpcNetwork(snapshot) ?? settingsWithoutApprovals(fallback)
 }
 
 export const pageStorageWrite = (openedPageV2: Page): StorageWrite => ({ openedPageV2 })
@@ -153,10 +320,13 @@ export const useSignersAddressAsActiveAddressStorageWrite = (useSignersAddressAs
 })
 
 export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsActiveAddress: boolean, currentSignerAddress: bigint | undefined = undefined) {
-	return await browserStorageLocalSet(useSignersAddressAsActiveAddressStorageWrite(useSignersAddressAsActiveAddress, currentSignerAddress))
+	const storageUpdate = useSignersAddressAsActiveAddressStorageWrite(useSignersAddressAsActiveAddress, currentSignerAddress)
+	await browserStorageLocalSet(storageUpdate)
+	return storageUpdate
+
 }
 
-type SimulationModeChanges = {
+export type SimulationModeChanges = {
 	readonly simulationMode: boolean
 	readonly rpcNetwork?: RpcNetwork
 	readonly activeSimulationAddress?: EthereumAddress
@@ -174,8 +344,10 @@ export function simulationModeStorageWrite(changes: SimulationModeChanges): Stor
 	}
 }
 
-export async function changeSimulationMode(changes: SimulationModeChanges) {
-	return await browserStorageLocalSet(simulationModeStorageWrite(changes))
+export async function changeSimulationMode(changes: SimulationModeChanges): Promise<LocalStorageItems> {
+	const storageUpdate = simulationModeStorageWrite(changes)
+	await browserStorageLocalSet(storageUpdate)
+	return storageUpdate
 }
 
 async function getNormalizedWebsiteAccessFromStorage() {
@@ -193,6 +365,7 @@ export const websiteAccessStorageWrite = (websiteAccess: WebsiteAccessArray): St
 // Returns the stored value before and after the update so rollback transactions can restore only what this update changed.
 export async function updateWebsiteAccessWithSnapshots(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	return await runSettingsStorageTransaction(async () => {
+
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		const changed = nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess
@@ -231,10 +404,11 @@ export const getSafeAppsCompatibilityMode = async() => (await browserStorageLoca
 export const safeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(safeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
 
+// A backup requires a real selected network. Configuration repair remains available through the RPC editor and import; exporting must never invent an active selection.
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences] = await Promise.all([getSettingsSnapshot().then(requireReadableSettings), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.6' as const,
@@ -258,3 +432,21 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
 export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
+
+// The required reader uses the same RPC resolution, repairs and semaphore as snapshots. It never invents a different active network.
+export async function getSettings(): Promise<Settings> {
+	return requireReadableSettings(await getSettingsSnapshot())
+}
+
+// Comparison fields have no websiteAccess member: absence of authority is represented in the type, never as a fictitious revocation of every approval.
+export type ConfigurationComparisonSettings = Omit<Settings, 'websiteAccess'>
+const configurationComparisonSettings = ({ websiteAccess: _websiteAccess, ...fields }: Settings): ConfigurationComparisonSettings => fields
+
+// Configuration editors may compare an unavailable selection with the installed dormant client. This never establishes an active selection or grants provider authority.
+export async function getSettingsForConfigurationChange(installedNetwork: RpcNetwork): Promise<{ readonly settings: ConfigurationComparisonSettings, readonly hasReadableActiveNetwork: boolean }> {
+	const snapshot = await getSettingsSnapshot()
+	if (snapshot.status === 'available') return { settings: configurationComparisonSettings(snapshot.settings), hasReadableActiveNetwork: true }
+	const admitted = await getAdmittedRpcNetworkSnapshot(captureRpcNetwork({ activeRpcNetwork: installedNetwork }))
+	if (admitted.status === 'unreadable') throw admitted.error
+	return { settings: configurationComparisonSettings(withActiveRpcNetwork(admitted.storedFields, installedNetwork)), hasReadableActiveNetwork: false }
+}

@@ -300,7 +300,7 @@ describe('UI mutation completion', () => {
 			if (failure === 'tab read' && keys === 'tabState_2') { readStarted.resolve(); await releaseRead.promise }
 			return await originalGet(keys)
 		} })
-		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw error } })
+		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getSessionRules', { configurable: true, value: async () => { throw error } })
 		let settled = false
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = mode === 'bulk'
@@ -328,7 +328,7 @@ describe('UI mutation completion', () => {
 		}
 	})
 
-	test.each(['bulk', 'disable', 'remove'] as const)('%s access change fails closed if content-script setup and reconciliation reject after saving permissions', async operation => {
+	test.each(['bulk', 'disable', 'remove'] as const)('%s access change preserves restored authority when registration rolls back and reconciliation cannot read settings', async operation => {
 		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
@@ -353,10 +353,10 @@ describe('UI mutation completion', () => {
 				? handlers.disableInterceptor(owner, connections, { method: 'popup_disableInterceptor', data: { website, interceptorDisabled: true } })
 				: handlers.removeWebsiteAccess(owner, connections, { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: website.websiteOrigin } })
 			await assert.rejects(request, caught => caught === error)
-			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, false)
+			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, true)
 			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed' || message.method === 'popup_interceptor_access_changed' || message.method === 'popup_setDisableInterceptorReply'), false)
 		} finally { restoreStorage() }
-		// The failed content-script setup rolls the saved change back; the approval stays cleared because reconciliation could not read the restored permissions.
+		// Registration rolled back the edit. Its committed before/after authority is unchanged, so an unreadable reconciliation must not revoke that restored approval.
 		const byOrigin = (accesses: typeof entries) => [...accesses].sort((first, second) => first.website.websiteOrigin.localeCompare(second.website.websiteOrigin))
 		assert.deepEqual(byOrigin((await modules.getSettings()).websiteAccess), byOrigin(entries))
 	})
@@ -370,7 +370,9 @@ describe('UI mutation completion', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const connection = { port: createPort(1).port, socket, websiteOrigin: 'blocked-removal.test', approved: true, wantsToConnect: true }
 		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
-		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile removed account access') } })
+		// The existing rule remains enforced if its replacement fails; the icon queries actual applied rules.
+		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => [{ id: 1, action: { type: 'block' }, condition: { initiatorDomains: ['blocked-removal.test'], domainType: 'thirdParty' } }] })
+		Object.defineProperty(browser.declarativeNetRequest, 'updateDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile removed account access') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		await modules.removeAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
 			method: 'popup_removeAddressBookEntry', data: { address, addressBookCategory, chainId: 1n },
@@ -392,7 +394,7 @@ describe('UI mutation completion', () => {
 		const connection = { port: createPort(1).port, socket, websiteOrigin: 'https://blocked.invalid', approved: true, wantsToConnect: true }
 		const connections: WebsiteTabConnections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
 		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://blocked.invalid' }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
-		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
+		Object.defineProperty(browser.declarativeNetRequest, 'updateDynamicRules', { configurable: true, value: async () => { throw new Error('Cannot reconcile request blocking rules') } })
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await addOrModifyAddressBookEntry(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), connections, {
 			method: 'popup_addOrModifyAddressBookEntry', data: { type: 'contact', address: 42n, name: 'Saved account', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },

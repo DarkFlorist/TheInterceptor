@@ -1,5 +1,5 @@
 import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import type { PopupMessage, Settings } from '../types/interceptor-messages.js'
+import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
@@ -8,7 +8,6 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
 	simulationServicesOwner: SimulationServicesOwner
-	settings: Settings
 	publishRpcConnectionStatus: PublishRpcConnectionStatus
 	simulationAbortController: AbortController
 	confirmTransactionAbortController: AbortController

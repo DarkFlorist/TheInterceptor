@@ -1,6 +1,6 @@
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getSettings } from './settings.js'
+import { getSettings, getSettingsForConfigurationChange } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { Future } from '../utils/future.js'
 import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
@@ -93,11 +93,14 @@ export type RpcSwitchRequest =
 
 // One command owns routing, Safe network restrictions, local promotion and correlated wallet dispatch.
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
-	const settings = await getSettings()
+	const { settings, hasReadableActiveNetwork } = request.source === 'popup'
+		? await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+		: { settings: await getSettings(), hasReadableActiveNetwork: true }
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
-	const route = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
+	// Restoring an unreadable selection is local configuration repair, not a wallet switch from the dormant comparison network.
+	const route = hasReadableActiveNetwork ? getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode) : 'local'
 	if (route !== 'wallet') {
-		if (route === 'local') {
+		if (route === 'local' || !hasReadableActiveNetwork) {
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
 		}
 		await promoteRpcAsPrimary(rpcNetwork)

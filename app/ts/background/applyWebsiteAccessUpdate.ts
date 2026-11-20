@@ -1,7 +1,8 @@
+import { sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { createWorkflowStepsError, type WorkflowStepFailure } from '../utils/errors.js'
-import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
+import { reconcileCommittedAccessChangeOrFailClosed, type CommittedAccessChange } from './accessManagement.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import type { WebsiteAccessMutation } from './websiteAccessMutations.js'
 import { tryUpdateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
@@ -30,11 +31,10 @@ const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): 
 })
 
 // Call this once a website-access change is saved. Steps run in order and a failing step does not stop the later ones, so the saved change always reaches open connections. Reload before reconciling so outgoing pages drop their connections before reconciliation can re-prompt them. One failure is rethrown as is; several are thrown together in step order so none hides another.
-async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: WorkflowStepFailure[] = []) {
+async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: WorkflowStepFailure[], change: CommittedAccessChange) {
 	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
 		code: 'website_access_approval_reconciliation_failed',
-		// Awaits only the stored authority; prompts and icons follow in the background, also after an earlier step failed, so the toolbar matches what was committed.
-		run: async () => { startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, await reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections), true) },
+		run: async () => { await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, notifyWebsiteAccessChanged: false, uiCompletion: 'background' }) },
 	}
 	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
 		try {
@@ -51,10 +51,12 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 
 // Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
-	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, mutation)
+	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previous) => sanitizeWebsiteAccess(mutation(previous)))
+	const committedChange = outcome.transaction?.committedChange
+	const change: CommittedAccessChange = { kind: 'website-access', committedChange }
 	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error
 	const failures: WorkflowStepFailure[] = outcome.status === 'failed' ? [{ code: 'website_access_injection_update_failed', error: outcome.error }] : []
 	// The injection owner reports whether it already handled the reload, including failed attempts. Only an unchanged configuration may need an additional reload.
 	const steps = reloadPolicy === 'alsoWhenInjectionUnchanged' && outcome.reload === 'not-needed' ? [reloadConnectedTabsStep(websiteTabConnections)] : []
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures)
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures, change)
 }

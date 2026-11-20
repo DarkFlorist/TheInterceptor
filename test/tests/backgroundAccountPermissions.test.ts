@@ -1,3 +1,4 @@
+import { withSilencedConsole } from './consoleSilence.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -2689,6 +2690,42 @@ describe('background eth_accounts', () => {
 		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 	})
+
+	test('wallet_revokePermissions clears its live approval if the post-write settings read fails', async () => {
+		const { setStorageHooks } = installBrowserMock()
+		const modules = await loadModules()
+		const websiteOrigin = 'https://revocation-failure.test'
+		const website = { websiteOrigin }
+		const account = 0x1111111111111111111111111111111111111111n
+		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: account })
+		await modules.setUseSignersAddressAsActiveAddress(false)
+		await modules.updateWebsiteAccess(() => [websiteOrigin, 'https://unrelated.test'].map((websiteOrigin) => ({ website: { websiteOrigin }, access: true, addressAccess: [{ address: account, access: true }] })))
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const key = modules.websiteSocketToString(socket)
+		const otherSocket = { tabId: 2, connectionName: 0n }
+		const connections = new Map([
+			[1, { ...confirmedSignerOwnership(socket), connections: { [key]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }],
+			[2, { connections: { [modules.websiteSocketToString(otherSocket)]: { port: createPort(2).port, socket: otherSocket, websiteOrigin: 'https://unrelated.test', approved: true, wantsToConnect: true } } }],
+		])
+		const readFailure = new Error('settings read after revocation failed')
+		let committed = false
+		setStorageHooks({
+			afterSet: async (items) => { if ('websiteAccess' in items) committed = true },
+			afterGet: async (keys) => { if (committed && Array.isArray(keys) && keys.includes('openedPageV2')) throw readFailure },
+		})
+		try {
+			await withSilencedConsole(async () => {
+				await assert.rejects(modules.handleInterceptedRequest(port, websiteOrigin, website, createEthereumWithGetBlockCounter({ count: 0 }).simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 10, requestSocket: socket }, method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] }, connections, noopPublishRpcConnectionStatus), (error) => error === readFailure)
+				await waitForBackgroundTasks()
+			})
+			assert.equal(committed, true)
+			assert.equal(connections.get(1)?.connections[key]?.approved, false)
+			assert.equal(Object.values(connections.get(2)?.connections ?? {})[0]?.approved, true)
+			assert.equal(messages.some((message) => message.method === 'wallet_revokePermissions' && message.result === null), false)
+		} finally { setStorageHooks({}) }
+	})
+
 
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
 		installBrowserMock()

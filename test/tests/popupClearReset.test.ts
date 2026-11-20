@@ -848,7 +848,6 @@ describe('popup clear reset', () => {
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }),
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			await modules.getSettings(),
 			async () => undefined,
 		)
 
