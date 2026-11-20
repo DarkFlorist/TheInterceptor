@@ -14,7 +14,7 @@ import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import type { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { useRuntimeMessageListener } from '../hooks/useRuntimeMessageListener.js'
 import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
@@ -399,21 +399,19 @@ export function AddNewAddress(param: AddAddressParam) {
 	const { value: saveEntryState, waitFor: waitForSaveEntry } = useAsyncState<void>()
 	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
-				if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return false
-				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
-					errorState: mergeAddressWindowErrorState(param.modifyAddressWindowState.value.errorState, parsed.data.errorState)
-				})
-			}
-			return false
+	const popupMessageListener = (msg: unknown): false => {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return false // not a message we are interested in
+		const parsed = maybeParsed.value
+		if (parsed.method === 'popup_addOrModifyAddressWindowStateInformation') {
+			if (parsed.data.windowStateId !== param.modifyAddressWindowState.value.windowStateId) return false
+			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+				errorState: mergeAddressWindowErrorState(param.modifyAddressWindowState.value.errorState, parsed.data.errorState)
+			})
 		}
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	}, [])
+		return false
+	}
+	useRuntimeMessageListener(popupMessageListener)
 
 	useSignalEffect(() => {
 		safeSignerRefreshGeneration.value

@@ -4,7 +4,7 @@ import { MessageToPopup, SimulateExecutionReply } from '../../../types/intercept
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { SafeSignatureRequirement } from '../../../types/safeTypes.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { useRuntimeMessageListener } from '../../hooks/useRuntimeMessageListener.js'
 import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
@@ -132,22 +132,20 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 
 	const isReplyForCurrentMessage = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentMessageIdentifier.current
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return false
-			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const { role: _role, ...popupSimulateExecutionReply } = parsed
-			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (!isReplyForCurrentMessage(reply)) return false
-			resetGnosisSimulationRequest()
-			simulateExecutionReply.value = reply
-			return false
-		}
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	}, [])
+	const popupMessageListener = (msg: unknown): false => {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return false // not a message we are interested in
+		const parsed = maybeParsed.value
+		if (parsed.method === 'popup_new_block_arrived') return false
+		if (parsed.method !== 'popup_simulateExecutionReply') return false
+		const { role: _role, ...popupSimulateExecutionReply } = parsed
+		const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
+		if (!isReplyForCurrentMessage(reply)) return false
+		resetGnosisSimulationRequest()
+		simulateExecutionReply.value = reply
+		return false
+	}
+	useRuntimeMessageListener(popupMessageListener)
 
 	const requestToSimulate = () => {
 		if (gnosisSimulationRequest.value.state === 'pending') return

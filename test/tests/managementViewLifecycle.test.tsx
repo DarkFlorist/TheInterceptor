@@ -13,7 +13,7 @@ function replaceGlobal(name: string, value: unknown) {
 	}
 }
 
-test('management tabs reveal clipped selection, reload Diagnostics, and release hidden website listeners', async () => {
+function installManagementShellMocks() {
 	const dom = installDomMock()
 	const hashListeners = new Set<EventListenerOrEventListenerObject>()
 	const runtimeListeners = new Set<(message: unknown) => unknown>()
@@ -63,7 +63,21 @@ test('management tabs reveal clipped selection, reload Diagnostics, and release 
 				removeListener(listener: (message: unknown) => unknown) { runtimeListeners.delete(listener) },
 			},
 		},
+		storage: { local: { async get() { return {} } } },
 	})
+
+	const restore = () => {
+		restoreBrowser()
+		restoreRemoveEventListener()
+		restoreAddEventListener()
+		restoreLocation()
+		dom.restore()
+	}
+	return { dom, runtimeListeners, tabListLayout, getDiagnosticsLoads: () => diagnosticsLoads, getWebsiteLoads: () => websiteLoads, restore }
+}
+
+test('management tabs reveal clipped selection, reload Diagnostics, and release hidden website listeners', async () => {
+	const { dom, runtimeListeners, tabListLayout, getDiagnosticsLoads, getWebsiteLoads, restore } = installManagementShellMocks()
 
 	try {
 		const { ManagementView } = await import('../../app/ts/components/pages/ManagementView.js')
@@ -76,27 +90,56 @@ test('management tabs reveal clipped selection, reload Diagnostics, and release 
 		}
 
 		await selectTab('Diagnostics')
-		assert.equal(diagnosticsLoads, 1)
+		assert.equal(getDiagnosticsLoads(), 1)
 		assert.equal(tabListLayout.scrollLeft, 50)
 		await selectTab('Home')
 		await selectTab('Diagnostics')
-		assert.equal(diagnosticsLoads, 2)
+		assert.equal(getDiagnosticsLoads(), 2)
 
 		await selectTab('Websites')
-		assert.equal(websiteLoads > 0, true)
+		assert.equal(getWebsiteLoads() > 0, true)
 		assert.equal(runtimeListeners.size > 0, true)
 		await selectTab('Home')
 		assert.equal(dom.document.body.textContent.includes('Manage Websites'), false)
 		assert.equal(runtimeListeners.size, 0)
-		const loadsAfterLeaving = websiteLoads
+		const loadsAfterLeaving = getWebsiteLoads()
 		for (const listener of [...runtimeListeners]) listener({ role: 'all', method: 'popup_websiteAccess_changed' })
-		assert.equal(websiteLoads, loadsAfterLeaving)
+		assert.equal(getWebsiteLoads(), loadsAfterLeaving)
 	} finally {
 		await act(() => { render(null, dom.document.body) })
-		restoreBrowser()
-		restoreRemoveEventListener()
-		restoreAddEventListener()
-		restoreLocation()
-		dom.restore()
+		restore()
+	}
+})
+
+test('every management panel releases its runtime message listeners when it is hidden or the shell unmounts', async () => {
+	const { dom, runtimeListeners, restore } = installManagementShellMocks()
+	const { managementPages } = await import('../../app/ts/utils/managementPages.js')
+	const panelLabels: Readonly<Record<string, string>> = { websites: 'Websites', 'address-book': 'Address Book', 'simulation-stack': 'Simulation Stack', diagnostics: 'Diagnostics', settings: 'Settings' }
+
+	try {
+		const { ManagementView } = await import('../../app/ts/components/pages/ManagementView.js')
+		await act(() => { render(h(ManagementView, {}), dom.document.body) })
+		const selectTab = async (label: string) => {
+			const tab = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.getAttribute('role') === 'tab' && node.textContent === label)
+			assert.ok(tab, `Missing ${ label } tab`)
+			await act(async () => { await clickRenderedElement(tab) })
+		}
+		assert.equal(runtimeListeners.size, 0, 'the home panel should not subscribe to runtime messages')
+
+		for (const page of managementPages.filter((managementPage) => managementPage !== 'home')) {
+			const label = panelLabels[page]
+			assert.ok(label, `Missing tab label for ${ page }`)
+			await selectTab(label)
+			await selectTab('Home')
+			assert.equal(runtimeListeners.size, 0, `${ label } left runtime message listeners registered after it was hidden`)
+		}
+
+		await selectTab('Settings')
+		assert.equal(runtimeListeners.size > 0, true)
+		await act(() => { render(null, dom.document.body) })
+		assert.equal(runtimeListeners.size, 0, 'unmounting the shell left runtime message listeners registered')
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		restore()
 	}
 })

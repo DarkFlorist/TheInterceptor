@@ -16,7 +16,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import type { RpcEntries } from '../../types/rpc.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { useRuntimeMessageListener } from '../hooks/useRuntimeMessageListener.js'
 import { addressEditEntry } from '../ui-utils.js'
 import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
@@ -49,8 +49,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 		retrieveWebsiteAccess({ query: searchQuery.value })
 	}
 
-  const listenForPopupMessages = () => {
-		const popupMessageListener = (msg: unknown): false => {
+	const popupMessageListener = (msg: unknown): false => {
 			const maybeParsed = MessageToPopup.safeParse(msg)
 			if (!maybeParsed.success) return false// not a message we are interested in
 			const parsed = maybeParsed.value
@@ -70,9 +69,6 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			return false
 		}
 
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	}
-
 	const listenForWindowHashChanges = () => {
 		const handleHashChange = () => {
 			selectedDomain.value = getWebsiteOriginFromHash(window.location.hash)
@@ -85,7 +81,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 	}
 
 	useSignalEffect(updateListOnSearch)
-	useEffect(listenForPopupMessages, [])
+	useRuntimeMessageListener(popupMessageListener)
 	useEffect(listenForWindowHashChanges, [])
 	useEffect(retrieveWebsiteAccess, [])
 
@@ -268,23 +264,21 @@ const WebsiteSettingsDetail = () => {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
-	useEffect(() => {
-		function popupMessageListener(msg: unknown): false {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_settingsUpdated') {
-				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
-				return false
-			}
-			if (parsed.method === 'popup_requestSettingsReply') {
-				rpcEntries.value = parsed.data.rpcEntries
-				return false
-			}
+	function popupMessageListener(msg: unknown): false {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return false // not a message we are interested in
+		const parsed = maybeParsed.value
+		if (parsed.method === 'popup_settingsUpdated') {
+			sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 			return false
 		}
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	})
+		if (parsed.method === 'popup_requestSettingsReply') {
+			rpcEntries.value = parsed.data.rpcEntries
+			return false
+		}
+		return false
+	}
+	useRuntimeMessageListener(popupMessageListener)
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])
 

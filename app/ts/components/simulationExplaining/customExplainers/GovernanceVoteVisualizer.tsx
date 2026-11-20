@@ -5,7 +5,7 @@ import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionRe
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
 import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { useRuntimeMessageListener } from '../../hooks/useRuntimeMessageListener.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
@@ -197,22 +197,20 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 
 	const isReplyForCurrentTransaction = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentTransactionIdentifier.current
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return false
-			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const { role: _role, ...popupSimulateExecutionReply } = parsed
-			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (!isReplyForCurrentTransaction(reply)) return false
-			resetGovernanceSimulationRequest()
-			simulateExecutionReply.value = reply
-			return false
-		}
-		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-	}, [])
+	const popupMessageListener = (msg: unknown): false => {
+		const maybeParsed = MessageToPopup.safeParse(msg)
+		if (!maybeParsed.success) return false // not a message we are interested in
+		const parsed = maybeParsed.value
+		if (parsed.method === 'popup_new_block_arrived') return false
+		if (parsed.method !== 'popup_simulateExecutionReply') return false
+		const { role: _role, ...popupSimulateExecutionReply } = parsed
+		const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
+		if (!isReplyForCurrentTransaction(reply)) return false
+		resetGovernanceSimulationRequest()
+		simulateExecutionReply.value = reply
+		return false
+	}
+	useRuntimeMessageListener(popupMessageListener)
 
 	useEffect(() => {
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters
