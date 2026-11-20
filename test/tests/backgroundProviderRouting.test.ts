@@ -1,11 +1,11 @@
-// The test left here resolves an access prompt through the website-access API that the background access rework replaces; it moves to backgroundProviderMethodRouting.test.ts with that change, which deletes this file.
+// This suite covers access-prompt resolution through the current website-access API; other provider routing cases live in backgroundProviderMethodRouting.test.ts.
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { createTestSimulationServicesOwner, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
 	test('resolves an access prompt with the services installed after it opened', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { requestAccessFromUser, resolveInterceptorAccess, getPendingAccessRequests, getSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const website = { websiteOrigin: 'https://access-reset.example', icon: undefined, title: undefined }

@@ -4,7 +4,7 @@ import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-ty
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { hasMessageMethod } from './runtimeMessageMatchers.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 const isVisualizerOpenRequest = (message: unknown) => hasMessageMethod(message, 'popup_isSimulationVisualizerOpen')
 
@@ -13,7 +13,7 @@ const replyVisualizerClosed = (message: unknown) => isVisualizerOpenRequest(mess
 
 describe('background active address switching', () => {
 	test('confirms a persisted popup address before slow permission work completes', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { runtimeMessages } = browserMock
 		const { changeActiveAddress, changeSimulationMode, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
@@ -54,7 +54,7 @@ describe('background active address switching', () => {
 	})
 
 	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
-		const { runtimeMessages } = installBrowserMock({ handlers: { runtimeMessage: replyVisualizerClosed } })
+		const { runtimeMessages } = installBackgroundBrowserMockForTest({ handlers: { runtimeMessage: replyVisualizerClosed } })
 		const { changeActiveAddressAndChain, changeSimulationMode, getSettings } = await loadModules()
 		const firstSafe = 0x1010101010101010101010101010101010101010n
 		const secondSafe = 0x2020202020202020202020202020202020202020n
@@ -73,7 +73,7 @@ describe('background active address switching', () => {
 	})
 
 	test('refreshes the cached signing visualization when the active Safe context changes chain', async () => {
-		const { runtimeMessages } = installBrowserMock({ handlers: { runtimeMessage: replyVisualizerClosed } })
+		const { runtimeMessages } = installBackgroundBrowserMockForTest({ handlers: { runtimeMessage: replyVisualizerClosed } })
 		const { changeActiveAddressAndChain, changeSimulationMode, getSettings } = await loadModules()
 		const safeAddress = 0x3030303030303030303030303030303030303030n
 		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: safeAddress })
@@ -98,7 +98,7 @@ describe('background active address switching', () => {
 	})
 
 	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
-		const { readStoredValue } = installBrowserMock()
+		const { readStoredValue } = installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -165,7 +165,7 @@ describe('background active address switching', () => {
 	})
 
 	test('rejects a wrong-chain Safe selected through a simulation-mode popup bypass', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -201,7 +201,7 @@ describe('background active address switching', () => {
 	})
 
 	test('does not classify a signer EOA as a Safe from another chain', async () => {
-		const { readStoredValue } = installBrowserMock()
+		const { readStoredValue } = installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddressAndChain,
 			activateAddressSelection,
@@ -253,7 +253,7 @@ describe('background active address switching', () => {
 	})
 
 	test('clears a stale signing-mode Safe when the popup selects a disconnected signer', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -293,7 +293,7 @@ describe('background active address switching', () => {
 	})
 
 	test('remembers whether a signer account last selected its Safe or the external EOA', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -333,7 +333,7 @@ describe('background active address switching', () => {
 	})
 
 	test('delivers accountsChanged before an approved active-address switch resolves', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { changeActiveAddressAndChain, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://app.safe.global'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -366,7 +366,7 @@ describe('background active address switching', () => {
 
 	test('advertises the signer account when switching from a Safe to the MetaMask address', async () => {
 		// The signer refresh only reaches website tabs that still exist, so this test opens its tab 173.
-		installBrowserMock({ tabs: [{ id: 173 }] })
+		installBackgroundBrowserMockForTest({ tabs: [{ id: 173 }] })
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -444,7 +444,7 @@ describe('background active address switching', () => {
 	})
 
 	test('clears dapp accounts and finishes opening access approval when the active address is unapproved', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddressAndChain,
 			websiteSocketToString,
@@ -501,7 +501,7 @@ describe('background active address switching', () => {
 	})
 
 	test('preserves the configured simulation address across a signing-mode round trip', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
@@ -545,7 +545,7 @@ describe('background active address switching', () => {
 	})
 
 	test('restores the simulation signer after selecting a Safe in signing mode', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -601,7 +601,7 @@ describe('background active address switching', () => {
 	})
 
 	test('keeps simulation and Safe signing addresses independent across mode switches', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
@@ -703,7 +703,7 @@ describe('background active address switching', () => {
 	})
 
 	test('switching a Safe to signing mode refreshes only the current signer tab', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
