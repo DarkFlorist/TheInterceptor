@@ -403,13 +403,17 @@ describe('popup settings changes', () => {
 		assert.equal(refreshRequests(), refreshedCount)
 	})
 
-	for (const storedState of ['failed', 'done'] as const) test(`rich changes report a simulation that was already unavailable before the refresh started (${ storedState })`, async () => {
-		installBrowserMock()
+	for (const refreshOutcome of ['unavailable', 'available'] as const) test(`rich changes reply from the awaited refresh outcome (${ refreshOutcome })`, async () => {
+		const { runtimeMessages } = installBrowserMock()
 		const { getSettings } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const { getMakeCurrentAddressRich } = await import('../../app/ts/background/settings.js')
 		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
-		await setPopupVisualisationState({ ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: storedState })
+		// No simulation view is open, so the refresh observes the stored visualisation as its outcome.
+		await setPopupVisualisationState(refreshOutcome === 'unavailable'
+			? { ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: 'failed' }
+			: createPassthroughCompleteVisualizedSimulation(5, 'done'))
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const context = {
 			...services, settings: await getSettings(), websiteTabConnections: new Map(),
@@ -418,11 +422,10 @@ describe('popup settings changes', () => {
 			resetSimulationState: async () => undefined,
 		}
 		const reply = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
-		await waitForBackgroundTasks()
-		assert.deepEqual(reply, storedState === 'failed'
+		assert.ok(runtimeMessages.some(message => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'), 'the reply must wait for the refresh')
+		assert.deepEqual(reply, refreshOutcome === 'unavailable'
 			? { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
 			: { type: 'PopupSettingsChangeReply', ok: true })
-		const { getMakeCurrentAddressRich } = await import('../../app/ts/background/settings.js')
 		assert.equal(await getMakeCurrentAddressRich(), true)
 	})
 

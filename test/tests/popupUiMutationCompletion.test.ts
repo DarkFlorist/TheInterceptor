@@ -47,7 +47,7 @@ async function completesPromptly<T>(result: Promise<T>) {
 }
 
 describe('UI mutation completion', () => {
-	test.each(['rich', 'reset', 'remove', 'time', 'transaction time', 'gas', 'network', 'mode', 'safe'] as const)('%s edit completes while its simulation refresh is pending', async operation => {
+	test.each(['reset', 'remove', 'time', 'transaction time', 'gas', 'network', 'mode', 'safe'] as const)('%s edit completes while its simulation refresh is pending', async operation => {
 		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers.js')
@@ -77,8 +77,7 @@ describe('UI mutation completion', () => {
 		} })
 		const time = { type: 'AddToTimestamp', deltaToAdd: 60n, deltaUnit: 'Seconds' } as const
 		try {
-			const edit = operation === 'rich' ? dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
-				: operation === 'reset' ? modules.resetSimulationStateFromConfig(owner)
+			const edit = operation === 'reset' ? modules.resetSimulationStateFromConfig(owner)
 				: operation === 'remove' ? handlers.removeTransactionOrSignedMessage(ethereum, tokenPriceService, { method: 'popup_removeTransactionOrSignedMessage', data: { type: 'Transaction', transactionIdentifier: transaction.transactionIdentifier } })
 				: operation === 'time' ? handlers.changePreSimulationBlockTimeManipulation(ethereum, tokenPriceService, { method: 'popup_changePreSimulationBlockTimeManipulation', data: { blockTimeManipulation: time } })
 				: operation === 'transaction time' ? handlers.setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, { method: 'popup_setTransactionOrMessageBlockTimeManipulator', data: { transactionOrMessageIdentifier: { type: 'Transaction', transactionIdentifier: transaction.transactionIdentifier }, blockTimeManipulation: time } })
@@ -91,7 +90,6 @@ describe('UI mutation completion', () => {
 			const state = await modules.getPopupVisualisationState()
 			assert.equal(state.simulationUpdatingState, 'updating')
 			assert.equal(state.simulationResultState, 'invalid')
-			if (operation === 'rich') assert.equal(await modules.getMakeCurrentAddressRich(), true)
 			if (operation === 'reset' || operation === 'remove') assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 0)
 			if (operation === 'gas') {
 				const saved = (await modules.getInterceptorTransactionStack()).operations[0]
@@ -99,8 +97,8 @@ describe('UI mutation completion', () => {
 				assert.equal(saved.preSimulationTransaction.signedTransaction.gas, 30_000n)
 				assert.equal(runtimeMessages.some(message => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions'), false, 'Stack-only gas edits must not broadcast an empty confirmation list')
 			}
-			// The settings coordinator must be available even while the earlier refresh is blocked.
-			const next = await completesPromptly(dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: false } }))
+			// The settings coordinator must be available even while the earlier refresh is blocked; rich edits are not used here because they await their refresh to report its outcome.
+			const next = await completesPromptly(dispatchPopupMessage(context, { method: 'popup_enableSimulationMode', data: (await modules.getSettings()).simulationMode }))
 			assert.equal(next?.type, 'PopupSettingsChangeReply')
 			assert.ok(next !== undefined && 'ok' in next && next.ok)
 		} finally {
