@@ -1,5 +1,6 @@
-// Claims this document for the first provider, as the first statement, so the provider runs once even when two content script registrations match the page while the background swaps them, or when a registration has already marked the page's origin as disabled. contentScriptsUpdating.ts writes the same key.
-const isFirstInterceptorProviderInDocument = !Reflect.has(window, Symbol.for('TheInterceptor.pageProvider')) && Reflect.defineProperty(window, Symbol.for('TheInterceptor.pageProvider'), { value: true, configurable: true })
+// Runs the provider once per document, as the first statements. A Firefox disabled-host registration's origin check marks a disabled origin for this copy only, which consumes the mark and skips without claiming the document, so another registration that matches the page still provides. Otherwise the first copy claims the document. The keys repeat app/ts/utils/contentScriptDocumentMarkers.ts, which this classic script cannot import.
+const interceptorProviderSkipsDisabledOrigin = Reflect.has(window, Symbol.for('TheInterceptor.pageProviderOnDisabledOrigin')) && Reflect.deleteProperty(window, Symbol.for('TheInterceptor.pageProviderOnDisabledOrigin'))
+const isFirstInterceptorProviderInDocument = !interceptorProviderSkipsDisabledOrigin && !Reflect.has(window, Symbol.for('TheInterceptor.pageProvider')) && Reflect.defineProperty(window, Symbol.for('TheInterceptor.pageProvider'), { value: true, configurable: true })
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 

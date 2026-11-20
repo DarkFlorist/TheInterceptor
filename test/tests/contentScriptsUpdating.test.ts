@@ -4,6 +4,7 @@ import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
 import { getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
+import { contentScriptDocumentMarkers, type ContentScriptWorld } from '../../app/ts/utils/contentScriptDocumentMarkers.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -42,9 +43,10 @@ type RegisteredContentScript = {
 	readonly matchOriginAsFallback?: boolean
 }
 
+// The registrations that would run in a new document at one moment: the scripting registrations (one per world) and Firefox's disabled-host registrations.
 type RegistrationSnapshot = {
-	readonly provider: { readonly excludeMatches: readonly string[] } | undefined
-	readonly disabledHostProviders: readonly FirefoxContentScriptOptions[]
+	readonly registered: readonly { readonly world: string | undefined, readonly excludeMatches: readonly string[] }[]
+	readonly disabledHostRegistrations: readonly FirefoxContentScriptOptions[]
 }
 
 type FirefoxContentScriptOptions = {
@@ -79,10 +81,9 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 	// The scripts that would run in a new document after each registration change, so a test can check every moment of an update.
 	const registrationSnapshots: RegistrationSnapshot[] = []
 	const recordRegistrationSnapshot = () => {
-		const provider = registeredContentScripts.get('inpage')
 		registrationSnapshots.push({
-			provider: provider === undefined ? undefined : { excludeMatches: [...provider.excludeMatches ?? []] },
-			disabledHostProviders: [...activeFirefoxContentScripts].filter(({ world }) => world === 'MAIN'),
+			registered: [...registeredContentScripts.values()].map(({ world, excludeMatches }) => ({ world, excludeMatches: [...excludeMatches ?? []] })),
+			disabledHostRegistrations: [...activeFirefoxContentScripts],
 		})
 	}
 	let firefoxContentScriptRegistrations = 0
@@ -236,8 +237,6 @@ function createDeferred() {
 	}
 }
 
-const pageProviderMarker = Symbol.for('TheInterceptor.pageProvider')
-
 // Firefox matches a pattern against the URL's scheme and host, ignoring its port and credentials.
 function matchesFirefoxPattern(pattern: string, url: string) {
 	const { protocol, hostname } = new URL(url)
@@ -249,30 +248,43 @@ function getOrders<T>(items: readonly T[]): T[][] {
 	return items.flatMap((item, index) => getOrders([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]))
 }
 
-// Runs a new document's MAIN world against the registrations of a snapshot, in every order Firefox could run them in. Each disabled host registration runs its origin check first, and the provider claims the document as its first statement, as inpage.ts does. Returns the distinct provider counts.
-function getProviderCountsInFirefoxDocument(snapshot: RegistrationSnapshot, url: string) {
+// The real once-per-document guard of each world's script: the leading statements of inpage.ts and listenContentScriptBootstrap.ts, run against a fake global that returns whether this copy runs.
+const guardedScriptSources = { MAIN: 'app/inpage/ts/inpage.ts', ISOLATED: 'app/inpage/ts/listenContentScriptBootstrap.ts' } as const
+function getDocumentGuard(world: ContentScriptWorld) {
+	const guardStatements = fs.readFileSync(guardedScriptSources[world], 'utf8').split('\n').filter((line) => line.startsWith('const interceptor') || line.startsWith('const isFirstInterceptor'))
+	const resultName = guardStatements.at(-1)?.match(/^const (\w+)/)?.[1]
+	if (guardStatements.length !== 2 || resultName === undefined) throw new Error(`Could not find the document guard of ${ guardedScriptSources[world] }`)
+	return (documentGlobal: object): boolean => new Function(contentScriptDocumentMarkers[world].global, `${ guardStatements.join('\n') }\nreturn ${ resultName }`)(documentGlobal)
+}
+
+// Runs a new document's world against the registrations of a snapshot, in every order Firefox could run them in; one registration's scripts run back to back. Each disabled-host registration runs its origin check before its guarded script. Returns the distinct counts of the world's script that ran.
+function getScriptCountsInFirefoxDocument(snapshot: RegistrationSnapshot, url: string, world: ContentScriptWorld = 'MAIN') {
+	const runsGuardedScript = getDocumentGuard(world)
 	const matchingRegistrations: (readonly string[])[] = []
-	if (snapshot.provider !== undefined && !snapshot.provider.excludeMatches.some((pattern) => matchesFirefoxPattern(pattern, url))) matchingRegistrations.push([])
-	for (const registration of snapshot.disabledHostProviders) {
-		if (registration.matches.some((pattern) => matchesFirefoxPattern(pattern, url))) matchingRegistrations.push((registration.js ?? []).flatMap(({ code }) => code === undefined ? [] : [code]))
+	for (const registration of snapshot.registered) {
+		if ((registration.world ?? 'ISOLATED') === world && !registration.excludeMatches.some((pattern) => matchesFirefoxPattern(pattern, url))) matchingRegistrations.push([])
 	}
-	const providerCounts = new Set<number>()
+	for (const registration of snapshot.disabledHostRegistrations) {
+		if (registration.world === world && registration.matches.some((pattern) => matchesFirefoxPattern(pattern, url))) matchingRegistrations.push((registration.js ?? []).flatMap(({ code }) => code === undefined ? [] : [code]))
+	}
+	const scriptCounts = new Set<number>()
 	for (const order of getOrders(matchingRegistrations)) {
-		const documentWindow = { origin: new URL(url).origin }
-		let providers = 0
+		const documentGlobal = { origin: new URL(url).origin }
+		let scripts = 0
 		for (const codes of order) {
-			for (const code of codes) new Function('window', code)(documentWindow)
-			if (!Reflect.has(documentWindow, pageProviderMarker) && Reflect.defineProperty(documentWindow, pageProviderMarker, { value: true, configurable: true })) providers += 1
+			for (const code of codes) new Function('window', 'globalThis', code)(documentGlobal, documentGlobal)
+			if (runsGuardedScript(documentGlobal)) scripts += 1
 		}
-		providerCounts.add(providers)
+		scriptCounts.add(scripts)
 	}
-	return [...providerCounts].sort()
+	return [...scriptCounts].sort()
 }
 
 function disabledWebsiteAccessEntry(websiteOrigin: string): WebsiteAccessArray[number] {
 	return { website: { websiteOrigin, title: undefined, icon: undefined }, addressAccess: [], access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled' }
 }
 
+// Each call gets its own owner of Firefox's disabled-host registrations, so tests never share them.
 async function loadModules() {
 	const modules = {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
@@ -280,23 +292,10 @@ async function loadModules() {
 		...await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
+	const firefoxContentScriptRegistrations = modules.createFirefoxContentScriptRegistrations()
 	return {
 		...modules,
-		updateContentScriptInjectionStrategy: async () => await modules.updateContentScriptInjectionStrategy(await modules.getContentScriptInjectionConfiguration()),
-	}
-}
-
-// Firefox keeps its disabled-host registrations in module state, so a test that makes them gets its own copy of the registration module.
-let firefoxModuleLoadId = 0
-async function loadFreshFirefoxRegistrationModules() {
-	firefoxModuleLoadId += 1
-	const contentScriptsUpdating = await import(`../../app/ts/utils/contentScriptsUpdating.js?firefox-${ firefoxModuleLoadId }`)
-	const { getContentScriptInjectionConfiguration } = await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js')
-	const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
-	return {
-		...contentScriptsUpdating,
-		getLatestUnexpectedError,
-		updateContentScriptInjectionStrategy: async () => await contentScriptsUpdating.updateContentScriptInjectionStrategy(await getContentScriptInjectionConfiguration()),
+		updateContentScriptInjectionStrategy: async () => await modules.updateContentScriptInjectionStrategy(await modules.getContentScriptInjectionConfiguration(), firefoxContentScriptRegistrations),
 	}
 }
 
@@ -971,14 +970,16 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getFirefoxContentScriptExclusions([]), { excludeMatches: [], disabledHosts: [] })
 	})
 
-	test('marks exactly the disabled origins and opaque origins in the disabled-origin check', async () => {
+	test('marks exactly the disabled origins and opaque origins in the disabled-origin check, without claiming the document', async () => {
 		installBrowserMock()
 		const { getDisabledOriginCheckCode } = await loadModules()
-		const code = getDisabledOriginCheckCode(['http://localhost:3000', 'https://localhost:3000'], { global: 'window', key: 'TheInterceptor.pageProvider' })
+		const markers = contentScriptDocumentMarkers.MAIN
+		const code = getDisabledOriginCheckCode(['http://localhost:3000', 'https://localhost:3000'], markers)
 		const isMarked = (origin: string) => {
 			const fakeWindow = { origin }
 			new Function('window', code)(fakeWindow)
-			return Reflect.has(fakeWindow, Symbol.for('TheInterceptor.pageProvider'))
+			assert.equal(Reflect.has(fakeWindow, Symbol.for(markers.claimedKey)), false, origin)
+			return Reflect.has(fakeWindow, Symbol.for(markers.disabledOriginKey))
 		}
 
 		assert.equal(isMarked('http://localhost:3000'), true)
@@ -1001,50 +1002,86 @@ describe('content script injection strategy', () => {
 		]
 		for (const disabledUrl of urls) {
 			const { excludeMatches, disabledHosts } = getFirefoxContentScriptExclusions(getContentScriptExcludeMatches([getHostWithPort(disabledUrl)]))
-			const snapshot: RegistrationSnapshot = {
-				provider: { excludeMatches },
-				disabledHostProviders: disabledHosts.map(({ matches, disabledOrigins }) => ({ matches, world: 'MAIN', js: [{ code: getDisabledOriginCheckCode(disabledOrigins, { global: 'window', key: 'TheInterceptor.pageProvider' }) }, { file: '/inpage/js/inpage.js' }] })),
-			}
-			for (const url of urls) {
-				const providerCounts = getProviderCountsInFirefoxDocument(snapshot, url)
-				assert.deepEqual(providerCounts, [getHostWithPort(url) === getHostWithPort(disabledUrl) ? 0 : 1], `${ url } with ${ disabledUrl } disabled`)
+			for (const world of ['MAIN', 'ISOLATED'] as const) {
+				const snapshot: RegistrationSnapshot = {
+					registered: [{ world, excludeMatches }],
+					disabledHostRegistrations: disabledHosts.map(({ matches, disabledOrigins }) => ({ matches, world, js: [{ code: getDisabledOriginCheckCode(disabledOrigins, contentScriptDocumentMarkers[world]) }, { file: 'guarded script' }] })),
+				}
+				for (const url of urls) {
+					assert.deepEqual(getScriptCountsInFirefoxDocument(snapshot, url, world), [getHostWithPort(url) === getHostWithPort(disabledUrl) ? 0 : 1], `${ world } on ${ url } with ${ disabledUrl } disabled`)
+				}
 			}
 		}
 	})
 
-	test('keeps every Firefox page at one provider at each step of disabling and re-enabling a site', async () => {
+	test('keeps every Firefox page at one provider and one bridge at each step of disabling and re-enabling a site', async () => {
 		const { getRegistrationSnapshots, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2 })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 		const otherOriginUrls = ['http://localhost:8545/', 'http://localhost/', 'https://example.com/']
 		const toggledUrl = 'http://localhost:3000/'
-		const settledProviderCounts = async (expectedToggledCount: number) => {
+		const worlds = ['MAIN', 'ISOLATED'] as const
+		const assertSettledCounts = (expectedToggledCount: number) => {
 			const settled = getRegistrationSnapshots().at(-1)
 			if (settled === undefined) throw new Error('no registration was made')
-			for (const url of otherOriginUrls) assert.deepEqual(getProviderCountsInFirefoxDocument(settled, url), [1], url)
-			assert.deepEqual(getProviderCountsInFirefoxDocument(settled, toggledUrl), [expectedToggledCount], toggledUrl)
+			for (const world of worlds) {
+				for (const url of otherOriginUrls) assert.deepEqual(getScriptCountsInFirefoxDocument(settled, url, world), [1], `${ world } on ${ url }`)
+				assert.deepEqual(getScriptCountsInFirefoxDocument(settled, toggledUrl, world), [expectedToggledCount], `${ world } on ${ toggledUrl }`)
+			}
 		}
 
 		await updateContentScriptInjectionStrategy()
-		await settledProviderCounts(1)
+		assertSettledCounts(1)
 		const stepsBefore = getRegistrationSnapshots().length
-		for (const websiteAccess of [[disabledWebsiteAccessEntry('localhost:3000')], [disabledWebsiteAccessEntry('localhost:3000'), disabledWebsiteAccessEntry('localhost:8080')], []]) {
+		for (const websiteAccess of [[disabledWebsiteAccessEntry('localhost:3000')], [disabledWebsiteAccessEntry('localhost:3000'), disabledWebsiteAccessEntry('localhost:8080')], [], [disabledWebsiteAccessEntry('localhost:3000')], []]) {
 			setWebsiteAccess(websiteAccess)
 			await updateContentScriptInjectionStrategy()
-			await settledProviderCounts(websiteAccess.length === 0 ? 1 : 0)
+			assertSettledCounts(websiteAccess.length === 0 ? 1 : 0)
 		}
 
 		const transitionSnapshots = getRegistrationSnapshots().slice(stepsBefore)
-		assert.equal(transitionSnapshots.length > 3, true)
+		assert.equal(transitionSnapshots.length > 5, true)
 		for (const [step, snapshot] of transitionSnapshots.entries()) {
-			// The other origins keep exactly one provider at every step; the origin being toggled has the old or the new behavior, never two providers.
-			for (const url of otherOriginUrls) assert.deepEqual(getProviderCountsInFirefoxDocument(snapshot, url), [1], `${ url } at step ${ step }`)
-			assert.equal(getProviderCountsInFirefoxDocument(snapshot, toggledUrl).every((count) => count <= 1), true, `${ toggledUrl } at step ${ step }`)
+			for (const world of worlds) {
+				// The other origins keep exactly one script at every step, in every order Firefox could run the registrations in.
+				for (const url of otherOriginUrls) assert.deepEqual(getScriptCountsInFirefoxDocument(snapshot, url, world), [1], `${ world } on ${ url } at step ${ step }`)
+				// The origin being toggled behaves as before or after the change, the same in every order, and gets its script as soon as the general registration matches it again, even while a stale disabled-host registration is still there.
+				const toggledCounts = getScriptCountsInFirefoxDocument(snapshot, toggledUrl, world)
+				const generalRegistrationMatches = snapshot.registered.some((registration) => (registration.world ?? 'ISOLATED') === world && !registration.excludeMatches.some((pattern) => matchesFirefoxPattern(pattern, toggledUrl)))
+				assert.deepEqual(toggledCounts, generalRegistrationMatches ? [1] : [0], `${ world } on ${ toggledUrl } at step ${ step }`)
+			}
 		}
+	})
+
+	test('a stale disabled-host registration never suppresses the general registration once a site is enabled again', async () => {
+		installBrowserMock()
+		const { getDisabledOriginCheckCode } = await loadModules()
+		const toggledUrl = 'http://localhost:3000/'
+		const hostMatches = ['http://localhost/*', 'https://localhost/*']
+		for (const world of ['MAIN', 'ISOLATED'] as const) {
+			const disabledHostRegistration: FirefoxContentScriptOptions = { matches: hostMatches, world, js: [{ code: getDisabledOriginCheckCode(['http://localhost:3000'], contentScriptDocumentMarkers[world]) }, { file: 'guarded script' }] }
+			// Both registrations match while a site is enabled again (the general registration matches the host before the host's registration is removed) and while it is disabled (the host's registration is added before the general one stops matching the host); the origin has exactly one script in every order.
+			assert.deepEqual(getScriptCountsInFirefoxDocument({ registered: [{ world, excludeMatches: [] }], disabledHostRegistrations: [disabledHostRegistration] }, toggledUrl, world), [1], `${ world } while both match`)
+			assert.deepEqual(getScriptCountsInFirefoxDocument({ registered: [{ world, excludeMatches: hostMatches }], disabledHostRegistrations: [disabledHostRegistration] }, toggledUrl, world), [0], `${ world } once disabled`)
+		}
+	})
+
+	test('gives a re-enabled Firefox origin its provider and bridge even when the stale disabled-host registration cannot be removed', async () => {
+		const { getRegistrationSnapshots, getActiveFirefoxContentScripts, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxUnregistrations: [1, 2] })
+		const { updateContentScriptInjectionStrategy } = await loadModules()
+
+		await updateContentScriptInjectionStrategy()
+		setWebsiteAccess([])
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategy())
+
+		assert.equal(getActiveFirefoxContentScripts().length, 2)
+		const settled = getRegistrationSnapshots().at(-1)
+		if (settled === undefined) throw new Error('no registration was made')
+		for (const world of ['MAIN', 'ISOLATED'] as const) assert.deepEqual(getScriptCountsInFirefoxDocument(settled, 'http://localhost:3000/', world), [1], world)
 	})
 
 	test('registers a disabled Firefox host until the site is enabled again', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')] })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 
@@ -1054,8 +1091,8 @@ describe('content script injection strategy', () => {
 			{ files: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'], firstIsCode: true, world: 'ISOLATED', runAt: 'document_start', allFrames: true, matchOriginAsFallback: true, matches: ['http://localhost/*', 'https://localhost/*'] },
 			{ files: ['/inpage/js/inpage.js'], firstIsCode: true, world: 'MAIN', runAt: 'document_start', allFrames: true, matchOriginAsFallback: true, matches: ['http://localhost/*', 'https://localhost/*'] },
 		])
-		assert.match(disabledHostContentScripts[0]?.js?.[0]?.code ?? '', /globalThis, Symbol\.for\("TheInterceptor\.contentScriptBridge"\)/)
-		assert.match(disabledHostContentScripts[1]?.js?.[0]?.code ?? '', /window, Symbol\.for\("TheInterceptor\.pageProvider"\)/)
+		assert.equal(disabledHostContentScripts[0]?.js?.[0]?.code?.includes(`Reflect.defineProperty(globalThis, Symbol.for(${ JSON.stringify(contentScriptDocumentMarkers.ISOLATED.disabledOriginKey) })`), true)
+		assert.equal(disabledHostContentScripts[1]?.js?.[0]?.code?.includes(`Reflect.defineProperty(window, Symbol.for(${ JSON.stringify(contentScriptDocumentMarkers.MAIN.disabledOriginKey) })`), true)
 
 		setWebsiteAccess([])
 		await updateContentScriptInjectionStrategy()
@@ -1066,7 +1103,7 @@ describe('content script injection strategy', () => {
 
 	test('keeps an unchanged disabled Firefox host registered while another host changes', async () => {
 		const { getFirefoxContentScriptOperations, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')] })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 		setWebsiteAccess([disabledWebsiteAccessEntry('localhost:3000'), disabledWebsiteAccessEntry('example.com')])
@@ -1085,7 +1122,7 @@ describe('content script injection strategy', () => {
 
 		assert.equal(getActiveFirefoxContentScripts().length, 2)
 		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2'])
-		// The shared registration module keeps this host's registration, so enabling the site again leaves no state for later tests.
+		// The strategy module owns the one background registration owner, which keeps this host registered, so enabling the site again leaves no registrations for later tests.
 		setWebsiteAccess([])
 		await refreshContentScriptInjectionStrategy()
 		assert.deepEqual(getActiveFirefoxContentScripts(), [])
@@ -1093,7 +1130,7 @@ describe('content script injection strategy', () => {
 
 	test('still excludes a disabled Firefox host whose own registration failed, and registers it on the next update', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxRegistration: 2 })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 
 		await assert.rejects(updateContentScriptInjectionStrategy(), /contentScripts\.register failed/)
 
@@ -1107,7 +1144,7 @@ describe('content script injection strategy', () => {
 
 	test('registers a disabled Firefox host again with the other provider before retiring it when compatibility mode changes', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setStoredMetamaskCompatibilityMode } = installBrowserMock({ manifestVersion: 2, metamaskCompatibilityMode: false, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')] })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 		setStoredMetamaskCompatibilityMode(true)
@@ -1121,7 +1158,7 @@ describe('content script injection strategy', () => {
 
 	test('keeps only the previous disabled Firefox hosts registered when the registered scripts roll back', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], updateError: new Error('update failed') })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 		setWebsiteAccess([disabledWebsiteAccessEntry('example.com')])
@@ -1135,7 +1172,7 @@ describe('content script injection strategy', () => {
 
 	test('keeps only the previous compatibility mode\'s disabled Firefox host registrations when a mode change rolls back', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setStoredMetamaskCompatibilityMode } = installBrowserMock({ manifestVersion: 2, metamaskCompatibilityMode: false, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], registerErrors: [undefined, new Error('registration failed')] })
-		const { updateContentScriptInjectionStrategy } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 		setStoredMetamaskCompatibilityMode(true)
@@ -1150,7 +1187,7 @@ describe('content script injection strategy', () => {
 
 	test('keeps a half-registered Firefox host pending removal when its cleanup fails, and removes it on the next update', async () => {
 		const { getActiveFirefoxContentScripts, getFirefoxContentScriptOperations } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxRegistration: 2, failingFirefoxUnregistrations: [1] })
-		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadModules()
 
 		// The registration error is the one the caller sees; the failed cleanup is reported on its own.
 		await withSilencedConsole(async () => await assert.rejects(updateContentScriptInjectionStrategy(), /contentScripts\.register failed/))
@@ -1165,7 +1202,7 @@ describe('content script injection strategy', () => {
 
 	test('keeps a Firefox host registration pending removal when a rollback cannot remove it, and removes it on the next update', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setStoredMetamaskCompatibilityMode } = installBrowserMock({ manifestVersion: 2, metamaskCompatibilityMode: false, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], registerErrors: [undefined, new Error('registration failed')], failingFirefoxUnregistrations: [3] })
-		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 		setStoredMetamaskCompatibilityMode(true)
@@ -1184,7 +1221,7 @@ describe('content script injection strategy', () => {
 
 	test('registers a disabled Firefox host completely again after an earlier removal of it failed half way', async () => {
 		const { getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxUnregistrations: [2] })
-		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadFreshFirefoxRegistrationModules()
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadModules()
 
 		await updateContentScriptInjectionStrategy()
 		setWebsiteAccess([])

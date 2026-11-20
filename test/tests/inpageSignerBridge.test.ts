@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
+import { contentScriptDocumentMarkers } from '../../app/ts/utils/contentScriptDocumentMarkers.js'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown, stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
@@ -4533,16 +4534,24 @@ describe('inpage provider once per document', () => {
 		assert.equal(fakeWindow.ethereum, providerFromFirstInjection)
 	})
 
-	test('does not run the provider in a document whose origin a registration marked as disabled', async () => {
+	test('skips only the provider of the registration that marked its document origin as disabled', async () => {
 		let connections = 0
 		const { fakeWindow } = createFakeWindow({ onConnectedToSignerRequest: () => { connections += 1 } })
 		const signerBeforeInjection = fakeWindow.ethereum
-		Reflect.defineProperty(fakeWindow, Symbol.for('TheInterceptor.pageProvider'), { value: true })
+		const disabledOriginMarker = Symbol.for(contentScriptDocumentMarkers.MAIN.disabledOriginKey)
+		Reflect.defineProperty(fakeWindow, disabledOriginMarker, { value: true, configurable: true })
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?marked-disabled-origin', async () => {
 			await new Promise((resolve) => setTimeout(resolve, 50))
 		})
 
 		assert.equal(connections, 0)
 		assert.equal(fakeWindow.ethereum, signerBeforeInjection)
+		// The skipping provider consumed the mark and did not claim the document, so another registration's provider that matches the page, such as the general one after the site is enabled again, still runs.
+		assert.equal(Reflect.has(fakeWindow, disabledOriginMarker), false)
+		assert.equal(Reflect.has(fakeWindow, Symbol.for(contentScriptDocumentMarkers.MAIN.claimedKey)), false)
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?after-disabled-origin-skip', async () => {
+			await waitFor(() => connections === 1)
+		})
+		assert.equal(connections, 1)
 	})
 })

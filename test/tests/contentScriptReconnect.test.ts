@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { contentScriptDocumentMarkers } from '../../app/ts/utils/contentScriptDocumentMarkers.js'
 import { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../app/ts/utils/requests.js'
 
 type ContentScriptMockState = {
@@ -17,7 +18,8 @@ type ContentScriptMockState = {
 
 let contentScriptMockImportId = 0
 const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentScript')
-const contentScriptBridgeMarkerKey = Symbol.for('TheInterceptor.contentScriptBridge')
+const contentScriptBridgeMarkerKey = Symbol.for(contentScriptDocumentMarkers.ISOLATED.claimedKey)
+const contentScriptBridgeDisabledOriginMarkerKey = Symbol.for(contentScriptDocumentMarkers.ISOLATED.disabledOriginKey)
 
 async function withContentScriptMock(run: (state: ContentScriptMockState) => Promise<void>, legacyListenerDescriptor: PropertyDescriptor | undefined = undefined, documentMarkedAsDisabled = false) {
 	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
@@ -61,9 +63,10 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
-	// Each scenario stands for a new document, whose isolated world has no bridge yet unless a registration marked its origin as disabled.
+	// Each scenario stands for a new document, whose isolated world has no bridge yet; a disabled-host registration's origin check may have marked its origin as disabled for its own bridge.
 	Reflect.deleteProperty(globalThis, contentScriptBridgeMarkerKey)
-	if (documentMarkedAsDisabled) Reflect.defineProperty(globalThis, contentScriptBridgeMarkerKey, { value: true, configurable: true })
+	Reflect.deleteProperty(globalThis, contentScriptBridgeDisabledOriginMarkerKey)
+	if (documentMarkedAsDisabled) Reflect.defineProperty(globalThis, contentScriptBridgeDisabledOriginMarkerKey, { value: true, configurable: true })
 
 	try {
 		contentScriptMockImportId += 1
@@ -78,6 +81,7 @@ async function withContentScriptMock(run: (state: ContentScriptMockState) => Pro
 		if (contentScriptListenerDescriptor === undefined) Reflect.deleteProperty(globalThis, contentScriptListenerGlobalKey)
 		else Object.defineProperty(globalThis, contentScriptListenerGlobalKey, contentScriptListenerDescriptor)
 		Reflect.deleteProperty(globalThis, contentScriptBridgeMarkerKey)
+		Reflect.deleteProperty(globalThis, contentScriptBridgeDisabledOriginMarkerKey)
 	}
 }
 
@@ -461,9 +465,15 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		})
 	})
 
-	test('does not connect the content script bridge in a document whose origin a registration marked as disabled', async () => {
+	test('skips only the bridge of the registration that marked its document origin as disabled', async () => {
 		await withContentScriptMock(async ({ getConnectionCount }) => {
 			assert.equal(getConnectionCount(), 0)
+			// The skipping bridge consumed the mark and did not claim the document, so another registration's bridge that matches the page, such as the general one after the site is enabled again, still connects.
+			assert.equal(Reflect.has(globalThis, contentScriptBridgeDisabledOriginMarkerKey), false)
+			assert.equal(Reflect.has(globalThis, contentScriptBridgeMarkerKey), false)
+			await import(`../../app/inpage/ts/listenContentScript.js?after-disabled-origin-skip-${ contentScriptMockImportId }`)
+			await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?after-disabled-origin-skip-${ contentScriptMockImportId }`)
+			assert.equal(getConnectionCount(), 1)
 		}, undefined, true)
 	})
 

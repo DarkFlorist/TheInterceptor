@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { contentScriptDocumentMarkers } from '../../app/ts/utils/contentScriptDocumentMarkers.js'
 import { metamaskCompatibilityModeAtPageLoadMarker } from '../../scripts/content-script-injection-markers.mts'
 import { generatePageWorldProviders, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/generate-page-world-providers.mts'
 
@@ -33,11 +34,13 @@ test('the generated artifacts are exactly the registered compatibility-mode prov
 	}
 })
 
-test('both compatibility-mode providers claim the same once-per-document marker first', async () => {
+test('both compatibility-mode providers check the same once-per-document markers first', async () => {
 	const compiledInpage = await compileClassicScript('../../app/inpage/ts/inpage.ts')
+	const { disabledOriginKey, claimedKey } = contentScriptDocumentMarkers.MAIN
 	for (const artifact of generatePageWorldProviders(compiledInpage)) {
-		const firstStatement = artifact.source.trimStart().split('\n').find((line) => line.trim() !== '' && !line.trim().startsWith('//'))
-		assert.equal(firstStatement?.includes(`Symbol.for('TheInterceptor.pageProvider')`), true, `${ artifact.path } does not claim the document marker first`)
+		const [firstStatement, secondStatement] = artifact.source.trimStart().split('\n').filter((line) => line.trim() !== '' && !line.trim().startsWith('//'))
+		assert.equal(firstStatement?.includes(`Symbol.for('${ disabledOriginKey }')`), true, `${ artifact.path } does not check the disabled-origin marker first`)
+		assert.equal(secondStatement?.includes(`Symbol.for('${ claimedKey }')`), true, `${ artifact.path } does not claim the document right after`)
 	}
 })
 

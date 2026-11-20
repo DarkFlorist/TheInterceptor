@@ -1,7 +1,7 @@
 import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { createFirefoxContentScriptRegistrations, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { hasSameContentScriptInjectionSitesConfiguration, hasSameContentScriptRegistrationConfiguration, hasSamePageWorldProviderConfiguration, type ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
@@ -10,6 +10,8 @@ import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js
 import { getMetamaskCompatibilityMode } from './settings.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
+// The background's one owner of Firefox's disabled-host registrations, which live as long as this background; it is used only under the semaphore above, like every registration update.
+const firefoxContentScriptRegistrations = createFirefoxContentScriptRegistrations()
 
 type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<StorageTransactionOutcome>
 
@@ -20,7 +22,7 @@ type ContentScriptInjectionStrategyRefresh =
 // Callers must hold contentScriptInjectionConfigurationSemaphore, which serializes every registration update.
 async function applyContentScriptInjectionStrategy(refresh: ContentScriptInjectionStrategyRefresh) {
 	const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
-	await updateContentScriptInjectionStrategy(configuration)
+	await updateContentScriptInjectionStrategy(configuration, firefoxContentScriptRegistrations)
 }
 
 // Each exported entry point below is the one place that reports a refresh failure, once and with the code of its context; the scripting layer only throws.
