@@ -1,4 +1,4 @@
-export const interceptorAppStylesheetPaths = [
+const interceptorAppStylesheetPaths = [
 	'app/css/interceptor-framework.css',
 	'app/css/interceptor-controls.css',
 	'app/css/interceptor-theme.css',

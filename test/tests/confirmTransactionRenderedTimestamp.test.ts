@@ -3,7 +3,8 @@ import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { clickRenderedElement, findRenderedElement, installDateMock, installDomMock } from './domMock.js'
+import { installDateMock, installDomMock } from './domMock.js'
+import { clickElement, findElement } from './domQueries.js'
 import { createSafeTx, getSafeTxSigningHashes } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
@@ -340,7 +341,7 @@ describe('ConfirmTransaction', () => {
 		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'), 1_250_000_000_000_000_000n)
 		const proposal = makeSafeProposal(pending)
 		const safeTx = proposal.safeTransaction.safeTx
-		const findSigningRequestCardHeader = () => findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
+		const findSigningRequestCardHeader = () => findElement(dom.document.body, (element) => element.tagName === 'HEADER' && element.textContent.includes(SAFE_SIGNING_REQUEST_CARD_TITLE))
 
 		await act(() => {
 			render(h(ConfirmTransaction, {}), dom.document.body)
@@ -366,7 +367,7 @@ describe('ConfirmTransaction', () => {
 		const { domainHash, messageHash } = getSafeTxSigningHashes(safeTx)
 		assert.equal(dom.document.body.textContent?.includes(domainHash), false, 'the hashes are collapsed until the card is opened')
 
-		await act(async () => { await clickRenderedElement(cardHeader) })
+		await act(async () => { await clickElement(cardHeader) })
 		const renderedText = dom.document.body.textContent ?? ''
 		assert.equal(renderedText.includes('Domain Hash'), true)
 		assert.equal(renderedText.includes(domainHash), true)
@@ -412,10 +413,10 @@ describe('ConfirmTransaction', () => {
 				}),
 			})
 		})
-		const cardHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes(SAFE_SIGNING_REQUEST_CARD_TITLE) === true)
+		const cardHeader = findElement(dom.document.body, (element) => element.tagName === 'HEADER' && element.textContent.includes(SAFE_SIGNING_REQUEST_CARD_TITLE))
 		assert.notEqual(cardHeader, undefined, 'expected the Safe signing request card below the simulated transaction')
 		if (cardHeader === undefined) throw new Error('unreachable')
-		await act(async () => { await clickRenderedElement(cardHeader) })
+		await act(async () => { await clickElement(cardHeader) })
 
 		const renderedText = dom.document.body.textContent ?? ''
 		assert.equal(renderedText.includes(domainHash), true)

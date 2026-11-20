@@ -1,23 +1,12 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
 import { installDomMock } from './domMock.js'
+import { collectElements } from './domQueries.js'
 import { readInterceptorAppCss } from './cssTestUtils.js'
-
-type TestNode = {
-	readonly childNodes?: readonly TestNode[]
-	readonly getAttribute?: (name: string) => string | null
-	readonly tagName?: string
-}
-
-function collectElements(node: TestNode | undefined, tagName: string, results: TestNode[] = []) {
-	if (node?.tagName === tagName.toUpperCase()) results.push(node)
-	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
-	return results
-}
 
 function luminance(hex: string) {
 	const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
@@ -32,14 +21,14 @@ function contrastRatio(first: string, second: string) {
 	return (Math.max(firstLuminance, secondLuminance) + 0.05) / (Math.min(firstLuminance, secondLuminance) + 0.05)
 }
 
-describe('UI audit fixes', () => {
+describe('UI accessibility and responsive layout', () => {
 	test('keeps action colors readable with white text in default and hover states', async () => {
 		const css = await Bun.file('app/css/interceptor-theme.css').text()
 		const actionColors = ['primary-action-color', 'highlighted-primary-action-color', 'destructive-action-color', 'highlighted-destructive-action-color']
 		for (const variable of actionColors) {
 			const color = new RegExp(`--${ variable }:\\s*(#[0-9a-fA-F]{6})`).exec(css)?.[1]
-			assert.notEqual(color, undefined)
-			assert.ok(contrastRatio(color ?? '#ffffff', '#ffffff') >= 4.5, `${ variable } must have at least 4.5:1 contrast with white`)
+			assert.ok(color !== undefined, `Expected --${ variable } in the theme`)
+			assert.ok(contrastRatio(color, '#ffffff') >= 4.5, `${ variable } must have at least 4.5:1 contrast with white`)
 		}
 		const appCss = await readInterceptorAppCss()
 		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
@@ -120,16 +109,16 @@ describe('UI audit fixes', () => {
 
 			const buttons = collectElements(dom.document.body, 'button')
 			assert.equal(buttons.length, 1)
-			assert.equal(buttons[0]?.getAttribute?.('tabindex'), null)
+			assert.equal(buttons[0]?.getAttribute('tabindex'), null)
 			const spans = collectElements(dom.document.body, 'span')
-			const actionOverlays = spans.filter((element) => element.getAttribute?.('class') === 'inline-card-actions')
+			const actionOverlays = spans.filter((element) => element.getAttribute('class') === 'inline-card-actions')
 			assert.equal(actionOverlays.length, 2)
-			const actionGroups = spans.filter((element) => element.getAttribute?.('role') === 'group')
+			const actionGroups = spans.filter((element) => element.getAttribute('role') === 'group')
 			assert.equal(actionGroups.length, 1)
-			assert.equal(actionGroups[0]?.getAttribute?.('aria-label'), 'Spell-out actions')
-			const staticOverlays = actionOverlays.filter((element) => element.getAttribute?.('role') === null)
+			assert.equal(actionGroups[0]?.getAttribute('aria-label'), 'Spell-out actions')
+			const staticOverlays = actionOverlays.filter((element) => element.getAttribute('role') === null)
 			assert.equal(staticOverlays.length, 1)
-			assert.equal(staticOverlays[0]?.getAttribute?.('aria-hidden'), true)
+			assert.equal(staticOverlays[0]?.getAttribute('aria-hidden'), 'true')
 			const renderedText = dom.document.body.textContent
 			assert.equal(renderedText.split('Static label').length - 1, 1)
 			assert.equal(renderedText.split('Static note').length - 1, 1)
@@ -137,7 +126,7 @@ describe('UI audit fixes', () => {
 			assert.match(css, /> \.inline-card-actions\s*\{[\s\S]*?display:\s*inline-grid;/)
 			assert.match(css, /&:not\(:has\(\+ :is\(:disabled, \.multiline-card-static-action\)\)\)\s*\{/)
 		} finally {
-			render(null, dom.document.body)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})
