@@ -5,7 +5,7 @@ import { updateAddressBookAndReconcileRichMode } from './richModeSettings.js'
 
 // Writes an address-book edit that can remove or change a funded token, reconciles rich-mode funding with it, and refreshes the popup simulation when the funding changed. Shared by the address-book editor and watch-asset approvals so both keep the simulation current.
 export async function updateAddressBookAndRefreshChangedFunding(simulationServicesOwner: SimulationServicesOwner, update: (entries: AddressBookEntries) => AddressBookEntries) {
-	const fundingChanged = await updateAddressBookAndReconcileRichMode(update)
-	if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
-	return fundingChanged
+	const result = await updateAddressBookAndReconcileRichMode(update)
+	if (result.ok && result.fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	return result
 }

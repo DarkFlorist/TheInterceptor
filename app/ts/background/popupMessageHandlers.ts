@@ -1,5 +1,5 @@
-import type { PopupSimulationRefreshOutcome } from './popupSimulationRefreshQueue.js'
-import { applyRichTokenChange, type RichTokenChangeResult } from './richModeTokens.js'
+import { applyRichTokenChange } from './richModeTokens.js'
+import { richFundingRejected, richFundingSaved, type RichFundingResult } from '../types/richMode.js'
 import { getRichModeState, mutateRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
 import { updateAddressBookAndRefreshChangedFunding } from './addressBookFundingEdits.js'
 import { buildRichModePresentation } from '../utils/richModeDerivation.js'
@@ -44,7 +44,7 @@ import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-mess
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, prepareSafeExecutionsForRpc, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
-import type { ImportSimulationStackReply, ModifyRichTokenRequest, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, RichTokenSimulationRefresh, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
+import type { ImportSimulationStackReply, ModifyRichTokenRequest, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
@@ -271,10 +271,10 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 	return { type: 'ChangeActiveAddressReply', ok: true } as const
 }
 
-export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
+export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich): Promise<RichFundingResult> {
 	if ('nativeAmount' in makeMeRichChange.data) {
 		if (makeMeRichChange.data.nativeAmount <= 0n || makeMeRichChange.data.nativeAmount > MAX_RICH_TOKEN_AMOUNT) {
-			return { error: 'Native amount must be greater than zero and fit within uint256.' }
+			return richFundingRejected('Native amount must be greater than zero and fit within uint256.')
 		}
 		const { nativeAmount, address } = makeMeRichChange.data
 		const chainId = (await getSettings()).activeRpcNetwork.chainId
@@ -286,7 +286,7 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 				changed = true
 				return { ...profile, nativeAmount }
 			}))
-			return changed
+			return richFundingSaved(changed)
 		})
 	}
 	const { add, address } = makeMeRichChange.data
@@ -300,15 +300,15 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	))
 }
 
-// Maps a popup rich-token request to its reply; the dispatcher adds the simulation refresh outcome to a committed change.
+// Applies a popup rich-token request and reports unexpected failures; the dispatcher completes the result into a reply.
 export async function modifyRichToken(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	request: ModifyRichTokenRequest,
-): Promise<{ readonly method: 'popup_modifyRichToken', readonly result: RichTokenChangeResult }> {
+): Promise<RichFundingResult> {
 	const chainId = ethereum.getChainId()
 	try {
-		return { method: 'popup_modifyRichToken', result: await applyRichTokenChange(ethereum, requestAbortController, chainId, request.data) }
+		return await applyRichTokenChange(ethereum, requestAbortController, chainId, request.data)
 	} catch (error: unknown) {
 		const errorMessage = formatCaughtErrorMessage(error)
 		if (!isExpectedInfrastructureError(error)) {
@@ -318,23 +318,7 @@ export async function modifyRichToken(
 				details: { chainId, tokenAddress: checksummedAddress(request.data.tokenAddress), action: request.data.action },
 			})
 		}
-		return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: `Failed to configure token funding: ${ errorMessage }` } }
-	}
-}
-
-// The rich-token change is already committed when this runs, so a refresh failure is reported and returned as an outcome instead of being thrown past the popup reply.
-export async function refreshSimulationAfterRichTokenChange(refresh: () => Promise<PopupSimulationRefreshOutcome>): Promise<RichTokenSimulationRefresh> {
-	try {
-		const outcome = await refresh()
-		// The queue settles a superseded request before its replacement runs, so the replacement's result is unknown here and is not reported as a completed refresh.
-		if (outcome.status === 'superseded') return 'Superseded'
-		return outcome.available ? 'Refreshed' : 'Unavailable'
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, {
-			displayMessage: `Token funding was saved, but refreshing the simulation failed: ${ formatCaughtErrorMessage(error) }`,
-			code: 'rich_token_simulation_refresh_failed',
-		})
-		return 'Unavailable'
+		return richFundingRejected(`Failed to configure token funding: ${ errorMessage }`)
 	}
 }
 

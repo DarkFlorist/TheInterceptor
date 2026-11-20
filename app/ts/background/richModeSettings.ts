@@ -1,5 +1,5 @@
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
-import type { RichAccountBalance, RichListElement, RichModeState, RichToken } from '../types/richMode.js'
+import { richFundingSaved, type RichAccountBalance, type RichFundingResult, type RichListElement, type RichModeState, type RichToken } from '../types/richMode.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
@@ -32,8 +32,8 @@ export async function mutateRichMode<Result>(operation: (store: ReturnType<typeo
 	})
 }
 
-// For address-book edits that can remove or change a funded token (removing, editing or replacing an entry); returns whether any account funding changed. Writes that cannot affect token entries, such as adding a missing entry or updating a Safe, use updateUserAddressBookEntries and never touch rich-mode state.
-export const updateAddressBookAndReconcileRichMode = async (update: (entries: AddressBookEntries) => AddressBookEntries) => await mutateRichMode(async (store) => await store.updateAddressBook(update))
+// For address-book edits that can remove or change a funded token (removing, editing or replacing an entry); fundingChanged says whether any account's funded balances changed. Writes that cannot affect token entries, such as adding a missing entry or updating a Safe, use updateUserAddressBookEntries and never touch rich-mode state.
+export const updateAddressBookAndReconcileRichMode = async (update: (entries: AddressBookEntries) => AddressBookEntries): Promise<RichFundingResult> => await mutateRichMode(async (store) => richFundingSaved(await store.updateAddressBook(update)))
 
 // The settings import replaces funding state and the address book in its own storage transaction, so it composes these writes instead of taking the lock again.
 export async function getImportedRichModeStorageWrites(state: RichModeState, entries: AddressBookEntries) {
@@ -50,6 +50,7 @@ function createRichModeTransaction(initial: RichModeState) {
 	const replace = (next: RichModeState) => { state = next; changed = true }
 	const transaction = {
 		getState: () => state,
+		isChanged: () => changed,
 		replace,
 		getRichTokens: async () => richTokensForPresentation(state),
 		ensureRichAccountBalances: async (chainId: bigint, addresses: readonly bigint[]) => {
@@ -99,13 +100,13 @@ export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean)
 export const setRichNativeAmount = async (defaultNativeAmount: bigint) => { await mutateRichMode(async (store) => { store.replace({ ...store.getState(), defaultNativeAmount }) }) }
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => { await updateFixedMakeMeRichList(() => fixedAddressRichList) }
 
-export async function updateMakeCurrentAddressRich(update: (enabled: boolean) => boolean) {
+export async function updateMakeCurrentAddressRich(update: (enabled: boolean) => boolean): Promise<RichFundingResult> {
 	return await mutateRichMode(async (store) => {
 		const previous = store.getState()
 		const makeCurrentAddressRich = update(previous.makeCurrentAddressRich)
-		if (makeCurrentAddressRich === previous.makeCurrentAddressRich) return false
+		if (makeCurrentAddressRich === previous.makeCurrentAddressRich) return richFundingSaved(false)
 		store.replace({ ...previous, makeCurrentAddressRich })
-		return true
+		return richFundingSaved(true)
 	})
 }
 
@@ -127,16 +128,16 @@ function richListElementsEqual(first: RichListElement, second: RichListElement) 
 	return firstValues.length === secondValues.length && firstValues.every((value, index) => value === secondValues[index])
 }
 
-export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: readonly RichListElement[]) => readonly RichListElement[]) {
+export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: readonly RichListElement[]) => readonly RichListElement[]): Promise<RichFundingResult> {
 	return await mutateRichMode(async (store) => {
 		const previous = store.getState().fixedAddressRichList
 		const next = update(previous)
 		if (previous.length === next.length && previous.every((element, index) => {
 			const nextElement = next[index]
 			return nextElement !== undefined && richListElementsEqual(element, nextElement)
-		})) return false
+		})) return richFundingSaved(false)
 		store.replace({ ...store.getState(), fixedAddressRichList: next })
-		return true
+		return richFundingSaved(true)
 	})
 }
 

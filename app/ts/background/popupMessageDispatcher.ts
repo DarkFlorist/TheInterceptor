@@ -5,7 +5,8 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { modifyRichToken, refreshSimulationAfterRichTokenChange, changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
+import { completeRichFundingMutation, toModifyRichTokenReply } from './richFundingReplies.js'
+import { modifyRichToken, changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
 import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
@@ -16,11 +17,8 @@ export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistr
 
 const popupMessageHandlers = {
 	popup_modifyRichToken: popupSnapshotMessageHandler('popup_modifyRichToken', async (context, request) => {
-		const reply = await modifyRichToken(context.services.ethereum, context.simulationAbortController, request)
-		const { result } = reply
-		if (!result.success) return { method: reply.method, result }
-		const simulationRefresh = await refreshSimulationAfterRichTokenChange(async () => await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true }))
-		return { method: reply.method, result: { ...result, simulationRefresh } }
+		const result = await modifyRichToken(context.services.ethereum, context.simulationAbortController, request)
+		return toModifyRichTokenReply(await completeRichFundingMutation(result, async () => await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true })))
 	}),
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),

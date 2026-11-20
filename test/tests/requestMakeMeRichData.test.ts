@@ -80,6 +80,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/richModeSettings.js'),
 		...await import('../../app/ts/background/richModeTokens.js'),
 		...await import('../../app/ts/background/richModeMigration.js'),
+		...await import('../../app/ts/background/richFundingReplies.js'),
 		...await import('../../app/ts/background/windows/watchAsset.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
@@ -137,27 +138,27 @@ describe('requestMakeMeRichList resilience', () => {
 
 		await setFixedMakeMeRichList(initialList)
 		fixedRichListWriteCount = 0
-		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element) => ({ ...element }))), false)
+		assert.deepEqual(await updateFixedMakeMeRichList((currentList) => currentList.map((element) => ({ ...element }))), { ok: true, fundingChanged: false, richToken: undefined })
 		assert.equal(fixedRichListWriteCount, 0)
 
 		await setFixedMakeMeRichList(initialList)
 		fixedRichListWriteCount = 0
-		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, address: otherAddress } : element)), true)
+		assert.deepEqual(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, address: otherAddress } : element)), { ok: true, fundingChanged: true, richToken: undefined })
 		assert.equal(fixedRichListWriteCount, 1)
 
 		await setFixedMakeMeRichList(initialList)
 		fixedRichListWriteCount = 0
-		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, makingRich: false } : element)), true)
+		assert.deepEqual(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, makingRich: false } : element)), { ok: true, fundingChanged: true, richToken: undefined })
 		assert.equal(fixedRichListWriteCount, 1)
 
 		await setFixedMakeMeRichList(initialList)
 		fixedRichListWriteCount = 0
-		assert.equal(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, type: 'PreviousActiveAddress' as const } : element)), true)
+		assert.deepEqual(await updateFixedMakeMeRichList((currentList) => currentList.map((element, index) => index === 0 ? { ...element, type: 'PreviousActiveAddress' as const } : element)), { ok: true, fundingChanged: true, richToken: undefined })
 		assert.equal(fixedRichListWriteCount, 1)
 
 		await setFixedMakeMeRichList(initialList)
 		fixedRichListWriteCount = 0
-		assert.equal(await updateFixedMakeMeRichList((currentList) => [...currentList].reverse()), true)
+		assert.deepEqual(await updateFixedMakeMeRichList((currentList) => [...currentList].reverse()), { ok: true, fundingChanged: true, richToken: undefined })
 		assert.equal(fixedRichListWriteCount, 1)
 	})
 
@@ -361,13 +362,13 @@ describe('requestMakeMeRichList resilience', () => {
 		let probeCount = 0
 		Object.defineProperty(ethereum, 'ethSimulateV1', { value: async () => { probeCount += 1; throw new Error('A cached layout should not need another storage probe') } })
 		const reply = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { action: 'Add', address: secondAccount, tokenAddress } })
-		assert.equal(reply.result.success, true)
-		if (!reply.result.success) throw new Error(reply.result.error)
-		assert.equal(reply.result.richToken?.name, 'USD Coin')
-		assert.equal(reply.result.richToken?.symbol, 'USDC')
-		assert.equal(reply.result.richToken?.decimals, 6n)
-		assert.equal(reply.result.richToken?.balanceSlot, 9n)
-		assert.equal(reply.result.richToken?.amount, 200_000_000_000n)
+		assert.equal(reply.ok, true)
+		if (!reply.ok) throw new Error(reply.error)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.name, 'USD Coin')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.symbol, 'USDC')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.decimals, 6n)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.balanceSlot, 9n)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.amount, 200_000_000_000n)
 		assert.equal(probeCount, 0)
 		const saved = await getRichModeState()
 		assert.equal(saved.accountBalances.find((profile) => profile.address === secondAccount)?.tokenBalances[0]?.amount, 200_000_000_000n)
@@ -501,7 +502,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.deepEqual(presented.richAccountBalances?.find((profile) => profile.address === richAccountAddress)?.tokenBalances, [])
 		assert.equal(presented.richTokenOptions?.find((option) => option.tokenAddress === tokenAddress)?.enabled, false)
 
-		assert.equal(await updateAddressBookAndReconcileRichMode((entries) => entries), true)
+		assert.deepEqual(await updateAddressBookAndReconcileRichMode((entries) => entries), { ok: true, fundingChanged: true, richToken: undefined })
 		assert.deepEqual((await getRichModeState()).accountBalances[0]?.tokenBalances, [])
 	})
 
@@ -643,28 +644,50 @@ describe('requestMakeMeRichList resilience', () => {
 			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
 		}))
 
-		assert.equal(reply.result.success, false)
+		assert.equal(reply.ok, false)
 		assert.equal((await getLatestUnexpectedError())?.data.code, 'rich_token_config_failed')
 		assert.ok((await getLatestUnexpectedError())?.data.message.includes('probe exploded'))
 	})
 
+	test('every rich-funding mutation completes through one result contract and one reply mapping', async () => {
+		installBrowserMock()
+		const { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply, modifyMakeMeRich } = await loadModules()
+		let refreshCount = 0
+		const refresh = async () => { refreshCount += 1; return { status: 'observed' as const, available: false } }
+		const rejected = await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { address: richAccountAddress, nativeAmount: 0n } })
+		assert.deepEqual(rejected, { ok: false, error: 'Native amount must be greater than zero and fit within uint256.' })
+		const rejectedOutcome = await completeRichFundingMutation(rejected, refresh)
+		assert.deepEqual(toRichSettingsChangeReply(rejectedOutcome), { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount must be greater than zero and fit within uint256.' })
+		assert.deepEqual(toModifyRichTokenReply(rejectedOutcome), { method: 'popup_modifyRichToken', result: { success: false, error: 'Native amount must be greater than zero and fit within uint256.' } })
+
+		const unchanged = await completeRichFundingMutation({ ok: true, fundingChanged: false, richToken: undefined }, refresh)
+		assert.deepEqual(unchanged, { ok: true, richToken: undefined, simulationRefresh: 'Refreshed' })
+		assert.equal(refreshCount, 0)
+
+		const changed = await completeRichFundingMutation(await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { address: richAccountAddress, nativeAmount: 5n } }), refresh)
+		assert.equal(refreshCount, 1)
+		assert.deepEqual(changed, { ok: true, richToken: undefined, simulationRefresh: 'Unavailable' })
+		assert.equal(toRichSettingsChangeReply(changed).ok, false)
+		assert.deepEqual(toModifyRichTokenReply(changed), { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined, simulationRefresh: 'Unavailable' } })
+	})
+
 	test('replies with an explicit outcome and reports the error when the refresh after a saved token change rejects', async () => {
 		installBrowserMock()
-		const { refreshSimulationAfterRichTokenChange, getLatestUnexpectedError } = await loadModules()
-		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'observed', available: true })), 'Refreshed')
-		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'observed', available: false })), 'Unavailable')
+		const { refreshSimulationAfterRichFundingChange, getLatestUnexpectedError } = await loadModules()
+		assert.equal(await refreshSimulationAfterRichFundingChange(async () => ({ status: 'observed', available: true })), 'Refreshed')
+		assert.equal(await refreshSimulationAfterRichFundingChange(async () => ({ status: 'observed', available: false })), 'Unavailable')
 		assert.equal(await getLatestUnexpectedError(), undefined)
 
-		const outcome = await withSilencedConsole(async () => await refreshSimulationAfterRichTokenChange(async () => { throw new Error('refresh exploded') }))
+		const outcome = await withSilencedConsole(async () => await refreshSimulationAfterRichFundingChange(async () => { throw new Error('refresh exploded') }))
 		assert.equal(outcome, 'Unavailable')
 		const reported = await getLatestUnexpectedError()
-		assert.equal(reported?.data.code, 'rich_token_simulation_refresh_failed')
-		assert.equal(reported?.data.message, 'Token funding was saved, but refreshing the simulation failed: refresh exploded')
+		assert.equal(reported?.data.code, 'rich_funding_simulation_refresh_failed')
+		assert.equal(reported?.data.message, 'Rich-mode funding was saved, but refreshing the simulation failed: refresh exploded')
 	})
 
 	test('does not report a refresh as completed when it was superseded by a replacement that then fails', async () => {
 		installBrowserMock()
-		const { refreshSimulationAfterRichTokenChange } = await loadModules()
+		const { refreshSimulationAfterRichFundingChange } = await loadModules()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const requestHandler = new MockRequestHandler()
 		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
@@ -683,7 +706,7 @@ describe('requestMakeMeRichList resilience', () => {
 		const activeRefresh = refresh({ ethereum, tokenPriceService, revision: 'active' })
 		await Promise.resolve()
 		await Promise.resolve()
-		const tokenChangeOutcome = refreshSimulationAfterRichTokenChange(async () => await refresh({ ethereum, tokenPriceService, revision: 'token change' }))
+		const tokenChangeOutcome = refreshSimulationAfterRichFundingChange(async () => await refresh({ ethereum, tokenPriceService, revision: 'token change' }))
 		const replacementRefresh = refresh({ ethereum, tokenPriceService, revision: 'replacement' })
 		assert.equal(await tokenChangeOutcome, 'Superseded')
 		releaseActiveRefresh()
@@ -777,10 +800,7 @@ describe('requestMakeMeRichList resilience', () => {
 			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
 		})
 
-		assert.deepEqual(reply, {
-			method: 'popup_modifyRichToken',
-			result: { success: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' },
-		})
+		assert.deepEqual(reply, { ok: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' })
 		assert.equal(probeCount, 0)
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.deepEqual(await getRichTokens(), [])
@@ -826,10 +846,7 @@ describe('requestMakeMeRichList resilience', () => {
 			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0x3333333333333333333333333333333333333333n },
 		})
 
-		assert.deepEqual(reply, {
-			method: 'popup_modifyRichToken',
-			result: { success: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' },
-		})
+		assert.deepEqual(reply, { ok: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' })
 		assert.equal(probeCount, 0)
 	})
 
@@ -886,12 +903,12 @@ describe('requestMakeMeRichList resilience', () => {
 			data: { action: 'Add', address: richAccountAddress, tokenAddress },
 		})
 
-		assert.equal(reply.result.success, true)
-		if (reply.result.success === false) throw new Error(reply.result.error)
-		assert.equal(reply.result.richToken?.name, 'USD Coin')
-		assert.equal(reply.result.richToken?.symbol, 'USDC')
-		assert.equal(reply.result.richToken?.decimals, 6n)
-		assert.equal(reply.result.richToken?.balanceSlot, 9n)
+		assert.equal(reply.ok, true)
+		if (!reply.ok) throw new Error(reply.error)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.name, 'USD Coin')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.symbol, 'USDC')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.decimals, 6n)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.balanceSlot, 9n)
 	})
 
 	test('configures a watched ERC-1155 token ID through nested balance discovery', async () => {
@@ -948,13 +965,13 @@ describe('requestMakeMeRichList resilience', () => {
 			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
 		})
 
-		assert.equal(reply.result.success, true)
-		if (reply.result.success === false) throw new Error(reply.result.error)
-		assert.equal(reply.result.richToken?.tokenType, 'ERC1155')
-		assert.equal(reply.result.richToken?.tokenId, 42n)
-		assert.equal(reply.result.richToken?.name, 'Exact Game Items')
-		assert.equal(reply.result.richToken?.balanceSlot, 3n)
-		assert.equal(reply.result.richToken?.erc1155StorageOrder, 'TokenIdThenOwner')
+		assert.equal(reply.ok, true)
+		if (!reply.ok) throw new Error(reply.error)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.tokenType, 'ERC1155')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.tokenId, 42n)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.name, 'Exact Game Items')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.balanceSlot, 3n)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.erc1155StorageOrder, 'TokenIdThenOwner')
 	})
 
 	test('verifies and reuses a configured ERC-1155 contract layout for another watched ID', async () => {
@@ -1012,11 +1029,11 @@ describe('requestMakeMeRichList resilience', () => {
 			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
 		})
 
-		assert.equal(reply.result.success, true)
-		if (reply.result.success === false) throw new Error(reply.result.error)
+		assert.equal(reply.ok, true)
+		if (!reply.ok) throw new Error(reply.error)
 		assert.equal(simulationCalls, 1)
-		assert.equal(reply.result.richToken?.balanceSlot, 3n)
-		assert.equal(reply.result.richToken?.erc1155StorageOrder, 'TokenIdThenOwner')
+		assert.equal((reply.ok ? reply.richToken : undefined)?.balanceSlot, 3n)
+		assert.equal((reply.ok ? reply.richToken : undefined)?.erc1155StorageOrder, 'TokenIdThenOwner')
 		assert.deepEqual((await getRichTokens()).map((token) => token.tokenId), [7n, 42n])
 	})
 
@@ -1208,7 +1225,7 @@ describe('requestMakeMeRichList resilience', () => {
 			clearTimeout(timeout)
 			releaseProbe()
 		}
-		assert.equal((await addPromise).result.success, false)
+		assert.equal((await addPromise).ok, false)
 
 		assert.deepEqual(await getRichTokens(), [])
 	})

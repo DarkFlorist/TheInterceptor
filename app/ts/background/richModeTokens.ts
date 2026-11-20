@@ -1,13 +1,12 @@
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ModifyRichTokenRequest } from '../types/interceptor-reply-messages.js'
-import type { RichToken } from '../types/richMode.js'
+import { richFundingRejected, richFundingSaved, type RichFundingResult, type RichToken } from '../types/richMode.js'
 import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenEligibility, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
 import { getUserAddressBookEntries } from './addressBookStorage.js'
 import { getRichModeState, mutateRichMode } from './richModeSettings.js'
 import { richTokensForPresentation } from '../utils/richModeDerivation.js'
 
 export type RichTokenChange = ModifyRichTokenRequest['data']
-export type RichTokenChangeResult = { readonly success: true, readonly richToken: RichToken | undefined } | { readonly success: false, readonly error: string }
 type RichTokenStorageClient = Pick<IEthereumClientService, 'ethSimulateV1'>
 
 // The active-chain eligibility of a token, by the shared rule in utils/richTokens.
@@ -55,7 +54,7 @@ export async function discoverRichTokenStorage(ethereum: RichTokenStorageClient,
 }
 
 // Applies a rich-token change for one account on chainId and commits it under the rich-mode mutation lock.
-export async function applyRichTokenChange(ethereum: RichTokenStorageClient, requestAbortController: AbortController | undefined, chainId: bigint, change: RichTokenChange): Promise<RichTokenChangeResult> {
+export async function applyRichTokenChange(ethereum: RichTokenStorageClient, requestAbortController: AbortController | undefined, chainId: bigint, change: RichTokenChange): Promise<RichFundingResult> {
 	const identity = { tokenAddress: change.tokenAddress, tokenId: change.tokenId }
 	// RPC probes must not block address-book edits; eligibility and cached layouts are reread under the mutation lock before commit.
 	const discoveredStorage = await discoverRichTokenStorage(ethereum, requestAbortController, chainId, change)
@@ -64,23 +63,23 @@ export async function applyRichTokenChange(ethereum: RichTokenStorageClient, req
 			await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === change.address
 				? { ...profile, tokenBalances: profile.tokenBalances.filter((balance) => !sameRichTokenIdentity(balance, identity)) }
 				: profile))
-			return { success: true as const, richToken: undefined }
+			return richFundingSaved(store.isChanged())
 		}
 		if (change.action === 'SetAmount') {
-			if (change.amount <= 0n) return { success: false as const, error: 'Token amount must be greater than zero.' }
-			if (change.amount > MAX_RICH_TOKEN_AMOUNT) return { success: false as const, error: 'Token amount cannot exceed the maximum uint256 value.' }
+			if (change.amount <= 0n) return richFundingRejected('Token amount must be greater than zero.')
+			if (change.amount > MAX_RICH_TOKEN_AMOUNT) return richFundingRejected('Token amount cannot exceed the maximum uint256 value.')
 			const amount = change.amount
 			const richToken = (await store.getRichTokens()).find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
-			if (richToken === undefined) return { success: false as const, error: 'Add the token before changing its amount.' }
+			if (richToken === undefined) return richFundingRejected('Add the token before changing its amount.')
 			const profiles = await store.ensureRichAccountBalances(chainId, [change.address])
 			const profile = profiles.find((candidate) => candidate.chainId === chainId && candidate.address === change.address)
 			if (profile?.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity)) !== true) {
-				return { success: false as const, error: 'Add the token to this account before changing its amount.' }
+				return richFundingRejected('Add the token to this account before changing its amount.')
 			}
 			await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === change.address
 				? { ...profile, tokenBalances: profile.tokenBalances.map((balance) => sameRichTokenIdentity(balance, identity) ? { ...balance, amount } : balance) }
 				: profile))
-			return { success: true as const, richToken }
+			return richFundingSaved(store.isChanged(), richToken)
 		}
 
 		const addTokenToAccount = async (richToken: RichToken) => {
@@ -94,20 +93,20 @@ export async function applyRichTokenChange(ethereum: RichTokenStorageClient, req
 
 		const eligibility = await getRichTokenEligibilityFromAddressBook(chainId, identity)
 		if (!eligibility.eligible) {
-			if (eligibility.reason === 'UnsupportedDecimals') return { success: false as const, error: `ERC-20 decimals cannot exceed ${ MAX_SUPPORTED_RICH_TOKEN_DECIMALS.toString() } in rich mode.` }
+			if (eligibility.reason === 'UnsupportedDecimals') return richFundingRejected(`ERC-20 decimals cannot exceed ${ MAX_SUPPORTED_RICH_TOKEN_DECIMALS.toString() } in rich mode.`)
 			await store.updateRichTokens((tokens) => tokens.filter((token) => token.chainId !== chainId || !sameRichTokenIdentity(token, identity)))
-			return { success: false as const, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' }
+			return richFundingRejected('Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.')
 		}
 		const addressBookToken = eligibility.metadataEntry
 		const current = await store.getRichTokens()
 		const existing = current.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
 		if (existing !== undefined) {
 			await addTokenToAccount(existing)
-			return { success: true as const, richToken: existing }
+			return richFundingSaved(store.isChanged(), existing)
 		}
 
 		if (discoveredStorage === undefined || discoveredStorage.balanceSlot === undefined) {
-			return { success: false as const, error: 'The token uses an unsupported balance storage layout. No verified balance slot was found in the first 64 storage positions.' }
+			return richFundingRejected('The token uses an unsupported balance storage layout. No verified balance slot was found in the first 64 storage positions.')
 		}
 		const richToken = {
 			chainId,
@@ -123,6 +122,6 @@ export async function applyRichTokenChange(ethereum: RichTokenStorageClient, req
 		}
 		await store.updateRichTokens((tokens) => tokens.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity)) ? tokens : [...tokens, richToken])
 		await addTokenToAccount(richToken)
-		return { success: true as const, richToken }
+		return richFundingSaved(store.isChanged(), richToken)
 	})
 }

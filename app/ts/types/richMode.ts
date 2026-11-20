@@ -75,3 +75,8 @@ export const RichModeState = funtypes.ReadonlyObject({
 	tokenLayouts: funtypes.ReadonlyArray(RichTokenLayout),
 	accountBalances: RichAccountBalances,
 })
+
+// The result of every rich-funding mutation. ok: false means the requested change was not made. fundingChanged says whether saved funding differs from before, which is exactly when the simulation needs a refresh.
+export type RichFundingResult = { readonly ok: true, readonly fundingChanged: boolean, readonly richToken: RichToken | undefined } | { readonly ok: false, readonly error: string }
+export const richFundingSaved = (fundingChanged: boolean, richToken: RichToken | undefined = undefined): RichFundingResult => ({ ok: true, fundingChanged, richToken })
+export const richFundingRejected = (error: string): RichFundingResult => ({ ok: false, error })
