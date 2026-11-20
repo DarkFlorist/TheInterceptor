@@ -1,6 +1,6 @@
 // Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { stringifyJSONWithBigInts } from '../utils/bigint.js'
+import type { ActiveStackContext } from '../utils/activeStackContext.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
@@ -147,23 +147,19 @@ async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, ge
 	if (generation === publicationGeneration) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: pending } })
 }
 
-// Opaque to the queue: it coalesces requests with equal keys and runs execute with the invalidation it merged across them. Services, snapshot and the publication generation stay in the closure, so the queue cannot bypass the generation guard.
-export type PopupVisualisationRefreshRequest = {
-	readonly coalescingKey: string | symbol
-	readonly execute: (invalidateOldState: boolean) => Promise<boolean>
+// What a prepared refresh would compute, as plain data; the queue in popupSimulationRefreshQueue.ts decides from it which requests are equivalent.
+export type PopupVisualisationRefreshTarget = {
+	readonly visualisationFingerprint: string
+	readonly blockHash: bigint
+	readonly numberOfAddressesMadeRich: number
+	readonly activeStackContext: ActiveStackContext
+	readonly publicationGeneration: number
 }
 
-const servicesIdentities = new WeakMap<EthereumClientService, WeakMap<TokenPriceService, number>>()
-let nextServicesIdentity = 0
-// Numbers each installed service pair, so a coalescing key can name the pair without exposing it.
-function getServicesIdentity({ ethereum, tokenPriceService }: SimulationServices): number {
-	const byTokenPriceService = servicesIdentities.get(ethereum) ?? new WeakMap<TokenPriceService, number>()
-	servicesIdentities.set(ethereum, byTokenPriceService)
-	const existing = byTokenPriceService.get(tokenPriceService)
-	if (existing !== undefined) return existing
-	nextServicesIdentity += 1
-	byTokenPriceService.set(tokenPriceService, nextServicesIdentity)
-	return nextServicesIdentity
+// A target of undefined cannot be proven equivalent to any other request. Services, snapshot and the publication generation guard stay in the execute closure, so the queue cannot bypass the guard.
+export type PopupVisualisationRefreshRequest = {
+	readonly target: PopupVisualisationRefreshTarget | undefined
+	readonly execute: (invalidateOldState: boolean) => Promise<boolean>
 }
 
 // Captures the snapshot and, for background edits, publishes the updating state; the caller decides invalidation once and passes it to the queue, which hands it to execute.
@@ -176,16 +172,15 @@ export async function preparePopupVisualisationRefresh(services: SimulationServi
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = publishUpdatingState ? undefined : provider?.getCachedBlock()
 	// Without a cached head we cannot prove equivalence; keep the follow-up refresh.
-	const coalescingKey = publishUpdatingState || block === undefined ? Symbol('UI simulation refresh') : stringifyJSONWithBigInts([
-		getServicesIdentity(services),
-		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
-		block.hash,
-		snapshot.numberOfAddressesMadeRich,
-		snapshot.activeStackContext,
-		generation,
-	])
+	const target = block === undefined ? undefined : {
+		visualisationFingerprint: getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
+		blockHash: block.hash,
+		numberOfAddressesMadeRich: snapshot.numberOfAddressesMadeRich,
+		activeStackContext: snapshot.activeStackContext,
+		publicationGeneration: generation,
+	}
 	return {
-		coalescingKey,
+		target,
 		execute: async invalidateOldState => {
 			const result = await executePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, {
 				// Scheduled edits already published their invalidation before acknowledgement.
