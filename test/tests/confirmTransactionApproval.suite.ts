@@ -8,6 +8,7 @@ import { CONFIRMATION_RUN_OF_NO_LIFETIME, type ConfirmationRunId, PendingTransac
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
 import { showWithCurrentNetworkRefusals } from '../../app/ts/background/transactionNetwork.js'
+import { captureSimulationModeGuard, refuseSignerForwardGuard } from '../../app/ts/utils/simulationModeGuard.js'
 import { SendRawTransactionParams, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { PersonalSignParams } from '../../app/ts/types/jsonRpc-signing-types.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../app/ts/utils/constants.js'
@@ -384,25 +385,23 @@ test('selecting another endpoint of the stored network after a settings import i
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
-test('an RPC list change that installs the client of the stored network tells the window once it is installed, and the queue then shows no refusal', async () => {
+test('an RPC list edit of the stored network installs its client and tells the window once it is installed, and the queue then shows no refusal', async () => {
 	const { postedMessages, simulationServicesOwner } = await refuseAndImportRequestedNetwork()
+	const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+	// The list edit reconciles only a selection that belonged to the previous list.
+	await setRpcList([fakeRpcNetwork])
 	const told = recordInstalledChainWhenWindowIsTold(simulationServicesOwner, ['popup_update_rpc_list'])
-	const networkWrites: unknown[] = []
-	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
-		if ('activeRpcNetwork' in items || 'pendingTransactionsAndMessages' in items) networkWrites.push(items)
-		writeStoredItems()
-	})
+	const pendingWrites = recordPendingRequestWrites()
 
 	const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const { getSettings } = await import('../../app/ts/background/settings.js')
-	await setNewRpcList(simulationServicesOwner, { method: 'popup_set_rpc_list', data: [fakeRpcNetwork, { ...otherNetwork, primary: true }] }, await getSettings())
-	browserMock.setStorageSetHandler(undefined)
+	await setNewRpcList(simulationServicesOwner, new Map(), { method: 'popup_set_rpc_list', data: [fakeRpcNetwork, { ...otherNetwork, primary: true }] })
+	pendingWrites.restore()
 	told.restore()
 
 	assert.deepEqual(told.recorded, [fakeRpcNetwork.chainId])
 	await publishQueueAsAskedByTheWindow(simulationServicesOwner.getCurrent)
 	assert.equal(getLastShownNetworkRefusal(), undefined)
-	assert.deepEqual(networkWrites, [])
+	assert.deepEqual(pendingWrites.writes, [])
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
@@ -568,7 +567,7 @@ test('a network switch during the slow work of a message metadata refresh does n
 
 	// The user switches back to the requested network while the lookups run.
 	await modules.browserStorageLocalSet({ activeRpcNetwork: fakeRpcNetwork })
-	simulationServicesOwner.reset(fakeRpcNetwork)
+	simulationServicesOwner.ensureNetwork(fakeRpcNetwork)
 	browserMock.sentMessages.length = 0
 	releaseLookups.resolve(undefined)
 	await refresh
@@ -2084,9 +2083,9 @@ test('every guarded write and delivery starts in the same synchronous step as it
 	let postedAfterCheckWork: boolean | undefined
 	const port = createWebsitePort(socket, 0, [], () => { postedAfterCheckWork = checkWorkRan })
 	const websiteTabConnections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: true, wantsToConnect: true } } }]])
-	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingWithWorkAfterCheck(async () => { checkWorkRan = true }), { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingWithWorkAfterCheck(async () => { checkWorkRan = true }), { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection, captureSimulationModeGuard())
 	await workAfterCheck
-	assert.deepEqual(forwarding, { committed: true, result: true })
+	assert.deepEqual(forwarding, { outcome: 'attempted', delivered: true })
 	assert.equal(postedAfterCheckWork, false)
 })
 
@@ -2126,9 +2125,19 @@ test('a network switch right after the network was read keeps the first delivery
 	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/requestedNetworkForwarding.js')
 
 	await switchNetworkAfterNetworkRead(1)
-	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection, captureSimulationModeGuard())
 
-	assert.equal(forwarding.committed ? undefined : typeof forwarding.refusal.message, 'string')
+	assert.equal(forwarding.outcome === 'networkRefusal' ? typeof forwarding.refusal.message : undefined, 'string')
+	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
+})
+
+test('a simulation-mode guard that refuses keeps the delivery to the signer from being posted, and says so', async () => {
+	const { postedMessages, websiteTabConnections } = await setUpTransactionApprovalTest(false)
+	const { forwardToSignerOnRequestedNetwork } = await import('../../app/ts/background/requestedNetworkForwarding.js')
+
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection, refuseSignerForwardGuard)
+
+	assert.deepEqual(forwarding, { outcome: 'simulationModeEnabled' })
 	assert.deepEqual(getForwardedSignerRequests(postedMessages), [])
 })
 
@@ -2148,10 +2157,10 @@ test('a network switch right after the network was read keeps the retried delive
 
 	// The first attempt reads the network once and fails on the disconnected port; the retry after the reconnect reads it again.
 	await switchNetworkAfterNetworkRead(2)
-	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection)
+	const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, simulator.ethereum, pendingTransaction, { ...pendingTransaction.originalRequestParameters, type: 'forwardToSigner', uniqueRequestIdentifier }, commitWithoutRejection, captureSimulationModeGuard())
 
 	assert.equal(disconnectedPort.getPostAttempts(), 1)
-	assert.equal(forwarding.committed ? undefined : typeof forwarding.refusal.message, 'string')
+	assert.equal(forwarding.outcome === 'networkRefusal' ? typeof forwarding.refusal.message : undefined, 'string')
 	assert.deepEqual(getForwardedSignerRequests(replacementPortMessages), [])
 })
 

@@ -1,15 +1,23 @@
+import { classifyRequestId, type RawInterceptedRequest } from '../utils/requests.js'
+
 export const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 
 export function acknowledgeAndTrackBridgeRequest(
 	latestReceivedRequestIds: Map<string, number>,
 	socketIdentifier: string,
-	requestId: number,
+	request: Pick<RawInterceptedRequest, 'requestId' | 'method'>,
 	acknowledge: () => void,
-): boolean {
+): 'handle' | 'duplicate' | 'invalid' {
+	const idKind = classifyRequestId(request)
 	const latestReceivedRequestId = latestReceivedRequestIds.get(socketIdentifier)
-	const requestWasAlreadyReceived = requestId >= 0 && latestReceivedRequestId !== undefined && requestId <= latestReceivedRequestId
 	acknowledge()
-	if (requestWasAlreadyReceived) return false
-	if (requestId >= 0) latestReceivedRequestIds.set(socketIdentifier, requestId)
-	return true
+	switch (idKind) {
+		case 'invalid': return 'invalid'
+		case 'diagnostic': return 'handle'
+		case 'ordered': {
+			if (latestReceivedRequestId !== undefined && request.requestId <= latestReceivedRequestId) return 'duplicate'
+			latestReceivedRequestIds.set(socketIdentifier, request.requestId)
+			return 'handle'
+		}
+	}
 }

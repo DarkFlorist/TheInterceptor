@@ -12,6 +12,8 @@ const settingsModule = path.join(appRoot, 'ts', 'background', 'settings.ts')
 const activeNetworkStorageModule = path.join(appRoot, 'ts', 'background', 'activeNetworkStorage.ts')
 const pageSafeSettingsModule = path.join(appRoot, 'ts', 'utils', 'pageSafeSettings.ts')
 const storageUtilsModule = path.join(appRoot, 'ts', 'utils', 'storageUtils.ts')
+const localStorageWritesModule = path.join(appRoot, 'ts', 'utils', 'localStorageWrites.ts')
+const largeStateStoreModule = path.join(appRoot, 'ts', 'utils', 'largeStateStore.ts')
 
 // Which names page-reachable code may import from a module that page contexts must not use freely.
 type ImportRules = ReadonlyMap<string, (name: string, importer: string) => boolean>
@@ -77,18 +79,28 @@ describe('page contexts and the active network', () => {
 		assert.deepEqual([settingsModule, activeNetworkStorageModule].filter((module) => reached.has(module)).map((module) => path.relative(repositoryRoot, module)), [])
 	})
 
-	// A raw browser.storage write bypasses the typed setters, and with them the active network write counts in activeNetworkStorage.ts, whatever key it writes. Of the modules that write browser storage directly, storageUtils.ts writes only through its typed setters, whose types exclude the active network, and names the key only in its storage schema and those types; largeStateStore.ts writes only its LargeStateStorageKey values and their marker keys, and storageVariables.ts removes only tabState_ keys. A new direct writer has to be listed here after checking that it can never write the active network.
+	// A raw browser.storage write bypasses the typed setters, and with them the active network write counts in activeNetworkStorage.ts, whatever key it writes. Of the modules that write browser storage directly, storageUtils.ts writes only through its typed setters, whose types exclude the active network, and names the key only in its storage schema and those types; localStorageWrites.ts is the tracked transport every local-storage set goes through, which stores whatever its callers pass, so its callers are checked by the next test; largeStateStore.ts writes only its LargeStateStorageKey values and their marker keys, and storageVariables.ts removes only tabState_ keys. A new direct writer has to be listed here after checking that it can never write the active network.
 	test('browser storage is written directly only by the counted writer and reviewed writers of other keys', () => {
 		const rawStorageAccess: ReadonlyMap<string, RawStorageAccess> = new Map([
 			[activeNetworkStorageModule, 'counted writer'],
 			[storageUtilsModule, 'typed writer'],
-			[path.join(appRoot, 'ts', 'utils', 'largeStateStore.ts'), 'reviewed writer of other keys'],
+			[localStorageWritesModule, 'storage transport'],
+			[largeStateStoreModule, 'reviewed writer of other keys'],
 			[path.join(appRoot, 'ts', 'background', 'storageVariables.ts'), 'reviewed writer of other keys'],
 		])
 		// iconHandler.ts passes browser to runTabIconUpdate only as the scope of its locks, which createScopedKeyedSerialExecutor in semaphore.ts uses solely as a WeakMap key.
 		const identityKeyCallees = new Set(['runTabIconUpdate'])
 		const violations = getApplicationSourceFiles().flatMap((file) => findUncountedStorageAccess(file, fs.readFileSync(file, 'utf8'), rawStorageAccess.get(file) ?? 'reads only', identityKeyCallees).map((violation) => `${ path.relative(repositoryRoot, file) } ${ violation }`))
 		assert.deepEqual(violations, [])
+	})
+
+	// The storage transport stores any items it is given, so only the writers listed above, whose own checks keep the active network out of everything but the counted writer, may hand it items.
+	test('only the listed storage writers hand items to the storage transport', () => {
+		const transportCallers = getApplicationSourceFiles()
+			.filter((file) => getRuntimeDependencies(file).some((dependency) => dependency.module === localStorageWritesModule && (dependency.names === 'whole module' || dependency.names.includes('writeLocalStorage'))))
+			.map((file) => path.relative(repositoryRoot, file))
+			.sort()
+		assert.deepEqual(transportCallers, [activeNetworkStorageModule, largeStateStoreModule, storageUtilsModule].map((file) => path.relative(repositoryRoot, file)).sort())
 	})
 })
 

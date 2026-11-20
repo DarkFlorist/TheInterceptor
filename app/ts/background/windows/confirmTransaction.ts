@@ -5,7 +5,7 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../../utils/constants.js'
 import type { TransactionConfirmation } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -19,7 +19,6 @@ import { getHtmlFile, getWebsiteSocketRequestOrigin } from '../backgroundUtils.j
 import { publishConfirmationQueue, reportFailedWindowUpdate, updateConfirmationSimulationView, updateConfirmTransactionView } from '../confirmationWindowPublication.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { forwardToSignerOnRequestedNetwork } from '../requestedNetworkForwarding.js'
 import { cancelPendingTransactionOrMessage, type CommitToStoredRequest, createTerminalReply, formRejectMessage, getPendingTransactionOrMessageByidentifier, queueTerminalReplyAndRemovePendingRequest, resolveSerially, type TerminalReplyContent } from '../pendingRequestLocks.js'
 import { attemptQueuedTerminalReplyDelivery } from '../terminalReplyDelivery.js'
@@ -33,6 +32,8 @@ import type { InterceptedRequestForward } from '../../types/interceptor-messages
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
+import { getSettings } from '../settings.js'
+import { captureSimulationModeGuard, type SimulationModeGuard } from '../../utils/simulationModeGuard.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import { simulateGnosisSafeTransactionOnPass } from '../popupMessageHandlers.js'
 import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.js'
@@ -42,7 +43,7 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
-import { identifyAddress } from '../metadataUtils.js'
+import { identifyAddress, identifyAddressWith } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation, type SafeTransactionConfirmationPreparation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
@@ -61,6 +62,12 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 // Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Safe nonce against the pending proposals stored before it (createSafeSigningRequestForTransaction).
 export const runWithPendingConfirmationLock = async <T>(work: () => Promise<T>) => await pendingConfirmationSemaphore.execute(work)
 const pendingNoResponseRetries = new Map<string, ReturnType<typeof createBackoffRetryScheduler>>()
+
+// A request created in signing mode is not forwarded once the Interceptor has switched to simulation mode; it stays pending so the user can reject it.
+const SIMULATION_MODE_ENABLED_AFTER_REQUEST: PendingTransactionOrSignableMessage['approvalStatus'] = {
+	status: 'SignerError',
+	...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error,
+}
 
 // Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
 async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
@@ -296,20 +303,26 @@ export type ResolutionOptions = {
 	readonly safeRebuildRun?: ConfirmationRunId
 }
 
+// Direct resolutions capture the simulation-mode guard at entry. A caller with asynchronous preparation, such as confirmDialog's Gnosis Safe signer refresh, begins a resolution first and invokes its bound resolver after that preparation, so a switch into simulation mode during it still refuses the signer forward.
+export const resolvePendingTransactionOrMessage = (...args: Parameters<ReturnType<typeof beginPendingTransactionResolution>>) => beginPendingTransactionResolution()(...args)
+
 // Forwarding to the signer only posts the request, so neither lock is held while the user decides in the wallet. The signer's reply is resolved later as a separate signerIncluded resolution. A caller that refreshed the Gnosis Safe signer selection before calling passes the run it reserved when it started, as confirmDialog does; otherwise the run is reserved here, before anything is awaited. The resolution prepares and checks with the services installed when it starts, as an approval acts on the network the user approved on, and shows the window what the services installed at each later moment give, which getInstalledServices reads.
-export async function resolvePendingTransactionOrMessage(getInstalledServices: GetInstalledServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, { refreshedSafeSignerSelection, safeRebuildRun }: ResolutionOptions = {}) {
-	if (refreshedSafeSignerSelection === undefined) return await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, undefined)
-	if (safeRebuildRun !== undefined) return await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun })
-	return await withConfirmationRun(confirmation.data.uniqueRequestIdentifier, async (confirmationRun) => await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, { selection: refreshedSafeSignerSelection, confirmationRun }))
+export function beginPendingTransactionResolution() {
+	const simulationModeGuard = captureSimulationModeGuard()
+	return async (getInstalledServices: GetInstalledServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, { refreshedSafeSignerSelection, safeRebuildRun }: ResolutionOptions = {}) => {
+		if (refreshedSafeSignerSelection === undefined) return await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, simulationModeGuard, undefined)
+		if (safeRebuildRun !== undefined) return await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, simulationModeGuard, { selection: refreshedSafeSignerSelection, confirmationRun: safeRebuildRun })
+		return await withConfirmationRun(confirmation.data.uniqueRequestIdentifier, async (confirmationRun) => await resolveWithServices(getInstalledServices, websiteTabConnections, confirmation, simulationModeGuard, { selection: refreshedSafeSignerSelection, confirmationRun }))
+	}
 }
 
-async function resolveWithServices(getInstalledServices: GetInstalledServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, safeSignerRefresh: SafeSignerRefreshAtApproval | undefined) {
+async function resolveWithServices(getInstalledServices: GetInstalledServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, simulationModeGuard: SimulationModeGuard, safeSignerRefresh: SafeSignerRefreshAtApproval | undefined) {
 	const preparationServices = getInstalledServices()
 	// The window work after a request leaves the queue needs an RPC, so it runs once the resolution lock is released.
 	const stepsAfterResolution: (() => Promise<void>)[] = []
 	try {
 		if (confirmation.data.action === 'reject' || confirmation.data.action === 'noResponse') return await cancelPendingTransactionOrMessage(websiteTabConnections, confirmation.data.uniqueRequestIdentifier, confirmation.data.action, (removed) => stepsAfterResolution.push(async () => await updateViewAfterPendingRequestRemoved(getInstalledServices, removed, 'unchanged')))
-		return await resolveSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage, commit) => await resolveStoredPendingTransactionOrMessage(getInstalledServices, preparationServices, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, commit, stepsAfterResolution, safeSignerRefresh))
+		return await resolveSerially(confirmation.data.uniqueRequestIdentifier, async (storedPendingTransactionOrMessage, commit) => await resolveStoredPendingTransactionOrMessage(getInstalledServices, preparationServices, websiteTabConnections, confirmation, storedPendingTransactionOrMessage, commit, stepsAfterResolution, simulationModeGuard, safeSignerRefresh))
 	} finally {
 		for (const step of stepsAfterResolution) await step()
 	}
@@ -317,7 +330,7 @@ async function resolveWithServices(getInstalledServices: GetInstalledServices, w
 
 const isAwaitingSignerReply = (pending: PendingTransactionOrSignableMessage) => pending.approvalStatus.status === 'WaitingForSigner'
 
-async function resolveStoredPendingTransactionOrMessage(getInstalledServices: GetInstalledServices, preparationServices: SimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, commit: CommitToStoredRequest, stepsAfterResolution: (() => Promise<void>)[], safeSignerRefresh?: SafeSignerRefreshAtApproval) {
+async function resolveStoredPendingTransactionOrMessage(getInstalledServices: GetInstalledServices, preparationServices: SimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, storedPendingTransactionOrMessage: PendingTransactionOrSignableMessage, commit: CommitToStoredRequest, stepsAfterResolution: (() => Promise<void>)[], simulationModeGuard: SimulationModeGuard, safeSignerRefresh?: SafeSignerRefreshAtApproval) {
 	const { ethereum, tokenPriceService } = preparationServices
 	let pendingTransactionOrMessage = storedPendingTransactionOrMessage
 	// A signer reply only completes a request that was forwarded to the signer, so a reply for a request no signer was asked about, such as one still awaiting the user's approval, changes nothing; the commits below check this again on the stored request.
@@ -395,10 +408,6 @@ async function resolveStoredPendingTransactionOrMessage(getInstalledServices: Ge
 		?? pendingTransactionOrMessage.originalRequestParameters
 	const uniqueRequestIdentifier = confirmation.data.uniqueRequestIdentifier
 	const afterPendingRequestRemoved = (simulationStack: SimulationStackChange) => stepsAfterResolution.push(async () => await updateViewAfterPendingRequestRemoved(getInstalledServices, pendingTransactionOrMessage, simulationStack))
-	const removePendingRequestAndUpdateView = async () => {
-		await removePendingTransactionOrMessage(uniqueRequestIdentifier)
-		afterPendingRequestRemoved('unchanged')
-	}
 	// The window is updated after the resolution even when delivery throws, and the delivery error reaches the caller once it is.
 	const commitTerminalReply = async (terminalReply: InterceptedRequestForward, simulationStack: SimulationStackChange) => {
 		await queueTerminalReplyAndRemovePendingRequest(terminalReply, uniqueRequestIdentifier)
@@ -436,23 +445,6 @@ async function resolveStoredPendingTransactionOrMessage(getInstalledServices: Ge
 		if (safeReply.status === 'success') return await deliverCommittedSafeResolution(safeReply.result)
 		return false
 	}
-	// claimAcceptedRequest above accepted only a Simulated request, so only a preview the Interceptor produced is approved; this also keeps the raw-transaction chain check, which the requested-network rule applies to a Simulated preview, on this path. A signing-mode claim already stored WaitingForSigner.
-	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
-		await showStoredStateAndRefreshView(getInstalledServices)
-		// The forwarded parameters carry no chain id, so the network is checked once more right before every attempt to post the request to the wallet.
-		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }, commit)
-		if (!forwarding.committed) return await showNetworkRefusal(getInstalledServices, confirmation.data.uniqueRequestIdentifier)
-		if (forwarding.result) return true
-		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
-			approvalStatus: {
-				status: 'SignerError',
-				code: METAMASK_ERROR_BLANKET_ERROR,
-				message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
-			}
-		}))
-		await showStoredStateAndRefreshView(getInstalledServices)
-		return false
-	}
 	if (pendingTransactionOrMessage === undefined || pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') return await reply(formRejectMessage(METAMASK_ERROR_BLANKET_ERROR, 'The Interceptor failed to process the transaction'))
 	if (!pendingTransactionOrMessage.simulationMode) {
 		if (confirmation.data.action === 'signerIncluded') {
@@ -469,8 +461,35 @@ async function resolveStoredPendingTransactionOrMessage(getInstalledServices: Ge
 			if (safeReply.status === 'success') return await deliverCommittedSafeResolution(safeReply.result)
 			return await reply({ type: 'result', result: confirmation.data.signerReply })
 		}
-		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		// The only popup approval that forwards a request to the signer. claimAcceptedRequest above accepted only a Simulated request, which keeps the raw-transaction chain check that the requested-network rule applies to a Simulated preview on this path, and already stored WaitingForSigner. A request created in signing mode is refused if the Interceptor has since switched to simulation mode.
+		const setApprovalStatusAndShow = async (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => {
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus }))
+			await showStoredStateAndRefreshView(getInstalledServices)
+		}
+		if ((await getSettings()).simulationMode || !simulationModeGuard.allowsSignerForward()) {
+			await setApprovalStatusAndShow(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
+			return false
+		}
+		await showStoredStateAndRefreshView(getInstalledServices)
+		// The forwarded parameters carry no chain id, so the network and the mode are checked once more right before every attempt to post the request to the wallet, including the retry after a Manifest V2 content script reconnect.
+		const forwarding = await forwardToSignerOnRequestedNetwork(websiteTabConnections, ethereum, pendingTransactionOrMessage, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier }, commit, simulationModeGuard)
+		switch (forwarding.outcome) {
+			case 'networkRefusal': return await showNetworkRefusal(getInstalledServices, uniqueRequestIdentifier)
+			case 'simulationModeEnabled': {
+				await setApprovalStatusAndShow(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
+				return false
+			}
+			case 'attempted': {
+				if (forwarding.delivered) return true
+				await setApprovalStatusAndShow({
+					status: 'SignerError',
+					code: METAMASK_ERROR_BLANKET_ERROR,
+					message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+				})
+				return false
+			}
+			default: assertNever(forwarding)
+		}
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 
@@ -722,8 +741,40 @@ const getPendingTransactionWindow = async (getInstalledServices: GetInstalledSer
 	return await openPopupOrTab({ url: getHtmlFile('confirmTransaction'), type: 'popup', height: 800, width: 600 })
 }
 
+// An internal operation identity belongs to this request instance, even when the page reuses its RPC id.
+const createRequestIdentity = (uniqueRequestIdentifier: UniqueRequestIdentifier) => EthereumQuantity.parse(keccak256(stringToBytes(`${ getUniqueRequestIdentifierString(uniqueRequestIdentifier) }-${ crypto.randomUUID() }`)))
+
+type ConfirmationOpeningResult = { readonly type: 'doNotReply' } | { readonly type: 'result', readonly error: { readonly code: number, readonly message: string } }
+const confirmationOpenings = new Map<string, Promise<ConfirmationOpeningResult>>()
+
+// Bridge deduplication tracks deliveries; this admission owns one confirmation per logical request, including direct callers and a pending request restored after restart. Coalesce concurrent opens before any preparation, and leave an existing pending request to answer its own page promise.
+function openPendingConfirmationOnce(identifier: UniqueRequestIdentifier, open: () => Promise<ConfirmationOpeningResult>): Promise<ConfirmationOpeningResult> {
+	const key = getUniqueRequestIdentifierString(identifier)
+	const existing = confirmationOpenings.get(key)
+	if (existing !== undefined) return existing
+	const opening = Promise.resolve().then(async (): Promise<ConfirmationOpeningResult> => {
+		if (await getPendingTransactionOrMessageByidentifier(identifier) !== undefined) return { type: 'doNotReply' }
+		return await open()
+	})
+	const completed = opening.finally(() => {
+		if (confirmationOpenings.get(key) === completed) confirmationOpenings.delete(key)
+	})
+	confirmationOpenings.set(key, completed)
+	return completed
+}
+
 // The request is prepared and simulated with the services its handler selected when it arrived; the window is shown what the services installed at each later moment give, which getInstalledServices reads.
-export async function openConfirmTransactionDialogForMessage(
+export async function openConfirmTransactionDialogForMessage(...args: Parameters<typeof createConfirmationForMessage>) {
+	const [, , , request] = args
+	return await openPendingConfirmationOnce(request.uniqueRequestIdentifier, async () => await createConfirmationForMessage(...args))
+}
+
+export async function openConfirmTransactionDialogForTransaction(...args: Parameters<typeof createConfirmationForTransaction>) {
+	const [, , , request] = args
+	return await openPendingConfirmationOnce(request.uniqueRequestIdentifier, async () => await createConfirmationForTransaction(...args))
+}
+
+async function createConfirmationForMessage(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	getInstalledServices: GetInstalledServices,
@@ -747,8 +798,7 @@ export async function openConfirmTransactionDialogForMessage(
 			? 'Select a Gnosis Safe signer for simulation before signing a message.'
 			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
 	}
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const messageIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
 		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
@@ -766,7 +816,7 @@ export async function openConfirmTransactionDialogForMessage(
 		...(requestOrigin === undefined ? {} : { requestOrigin }),
 	}
 	try {
-		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
+		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(identifyAddressWith(ethereumClientService, undefined), signedMessageTransaction, ethereumClientService.getRpcEntry())
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
@@ -886,8 +936,7 @@ export async function prepareUnformedSafeProposalAgain(
 	return { transactionToSimulate, preparedSafeProposal: { safeFlow, approvalStatus: approvalStatus ?? { status: 'WaitingForUser' as const } } }
 }
 
-// The request is prepared and simulated with the services its handler selected when it arrived; the window is shown what the services installed at each later moment give, which getInstalledServices reads.
-export async function openConfirmTransactionDialogForTransaction(
+async function createConfirmationForTransaction(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	getInstalledServices: GetInstalledServices,
@@ -898,8 +947,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
-	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
-	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
+	const transactionIdentifier = createRequestIdentity(request.uniqueRequestIdentifier)
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	// Reserved before anything is awaited, so the first simulation of this request is ordered before any refresh requested after it, and released afterwards if the request was never stored or left the queue meanwhile.

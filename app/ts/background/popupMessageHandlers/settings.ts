@@ -1,15 +1,17 @@
-import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import { createImportSettingsFailureReply, type ImportSettings, type ImportSettingsReply, type SetRpcList } from '../../types/popupSettingsRequests.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings } from '../settings.js'
+import { getRpcList, setRpcList } from '../storageVariables.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, changeSimulationMode } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { getUseTabsInsteadOfPopup } from '../../utils/pageSafeSettings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
+import { runActiveSettingsTransition } from '../activeSettings.js'
 import { updateAllContentScriptConfigurationAfterSettingsImport } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
@@ -33,18 +35,27 @@ export async function settingsOpened() {
 
 export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
+		return createImportSettingsFailureReply('Failed to read the file. It is not a valid JSON file.')
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
+		return createImportSettingsFailureReply('Failed to read the file. It is not a valid interceptor settings file')
 	}
 	try {
 		await updateAllContentScriptConfigurationAfterSettingsImport(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
 	} catch (error: unknown) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to import settings.' } }
+		return createImportSettingsFailureReply(error instanceof Error ? error.message : 'Failed to import settings.')
 	}
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
+}
+
+// The popup command boundary owns admission; this workflow shares the active-settings commit and post-commit effects.
+export async function importSettingsAndRefresh(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: ImportSettings) {
+	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+		const reply = await importSettings(request, websiteTabConnections)
+		await sendPopupMessageToOpenWindows(reply)
+		return reply.data.success
+	}, { refreshAlways: true })
 }
 
 export async function exportSettings() {
@@ -55,10 +66,18 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
-	await setRpcList(request.data)
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) simulationServicesOwner.reset(primary)
-	// Sent once the client is replaced, as the confirmation window asks for its queue again on this message and shows what the installed client allows.
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList) {
+	try {
+		await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+			const [settings, previousEntries] = await Promise.all([getSettings(), getRpcList()])
+			await setRpcList(request.data)
+			const network = resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, previousEntries, request.data)
+			if (network === undefined) return false
+			await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
+			return true
+		}, { updateNetworkMetadata: true })
+	} finally {
+		// Sent once the transition has installed the client, as the confirmation window asks for its queue again on this message and shows what the installed client allows.
+		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
+	}
 }

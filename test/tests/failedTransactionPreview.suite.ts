@@ -1,3 +1,4 @@
+import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { setSystemTime, test as testWithDefaultNetwork } from 'bun:test'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
@@ -659,7 +660,7 @@ test('keeps a website-chosen calldata address in the address book only as the un
 
 	// getMetadataForSimulation names a successful simulation's addresses this way, with the confirmed transaction appended to the simulated block.
 	await useInvoiceAddressBook()
-	const simulationViewEntries = await getAddressBookEntriesForVisualiserFromTransactions(simulator.ethereum, undefined, [], [await parseInputData(signedTransaction, simulator.ethereum, undefined)], [{
+	const simulationViewEntries = await getAddressBookEntriesForVisualiserFromTransactions(identifyAddressWith(simulator.ethereum, undefined), [], [await parseInputData(signedTransaction, identifyAddressWith(simulator.ethereum, undefined))], [{
 		stateOverrides: {},
 		signedMessages: [],
 		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },

@@ -3,6 +3,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { type LocalStorageItems, serializeLocalStorageItems } from '../utils/storageUtils.js'
 import { getActiveRpcNetwork, parseStoredActiveRpcNetwork } from '../utils/pageSafeSettings.js'
 import { hasOwnKey } from '../utils/typescript.js'
+import { writeLocalStorage } from '../utils/localStorageWrites.js'
 
 // The one owner of the stored active network's freshness protocol: its writer, the counters that writer keeps, the storage.onChanged observer, and actOnStoredActiveNetwork, the bounded read through which every reader that must act on the network that is stored when it acts does so. Nothing outside this module reads the counters or compares them.
 
@@ -27,16 +28,16 @@ export function startObservingActiveNetworkChanges() {
 export async function writeActiveNetwork(items: LocalStorageItems & { readonly activeRpcNetwork: RpcNetwork }) {
 	activeNetworkWritesStarted += 1
 	try {
-		await browser.storage.local.set(serializeLocalStorageItems(items))
+		await writeLocalStorage(serializeLocalStorageItems(items))
 	} finally {
 		activeNetworkWritesFinished += 1
 	}
 }
 
-// Writes the items of one storage update, through writeActiveNetwork when the update includes the active network, so an update that composes several owners' writes, such as a settings import, counts a network write too.
+// Writes the items of one storage update, through writeActiveNetwork when the update includes the active network, so an update that composes several owners' writes, such as a settings import, counts a network write too. Both paths store through the tracked local-storage writer, so a simulation mode change in the update is seen by the signer-forward guard.
 export async function writeLocalStorageItems(items: LocalStorageItems) {
 	const { activeRpcNetwork } = items
-	if (activeRpcNetwork === undefined) return await browser.storage.local.set(serializeLocalStorageItems(items))
+	if (activeRpcNetwork === undefined) return await writeLocalStorage(serializeLocalStorageItems(items))
 	return await writeActiveNetwork({ ...items, activeRpcNetwork })
 }
 

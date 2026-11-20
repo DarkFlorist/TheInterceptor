@@ -1,7 +1,7 @@
 import * as ts from 'typescript'
 
-// How a module may use the browser storage API directly. Every module may read through a direct browser.storage.local.get call and listen through browser.storage.onChanged. Only the counted writer of the active network, activeNetworkStorage.ts, the typed writer, storageUtils.ts, whose setter types exclude the active network, and reviewed writers of other keys may call browser.storage.local.set or remove directly, and a reviewed writer must never name the active network.
-export type RawStorageAccess = 'counted writer' | 'typed writer' | 'reviewed writer of other keys' | 'reads only'
+// How a module may use the browser storage API directly. Every module may read through a direct browser.storage.local.get call and listen through browser.storage.onChanged. Only the counted writer of the active network, activeNetworkStorage.ts, the typed writer, storageUtils.ts, whose setter types exclude the active network, the storage transport, localStorageWrites.ts, which stores only what its reviewed callers pass it, and reviewed writers of other keys may call browser.storage.local.set or remove directly, and neither a reviewed writer nor the transport may name the active network.
+export type RawStorageAccess = 'counted writer' | 'typed writer' | 'storage transport' | 'reviewed writer of other keys' | 'reads only'
 
 const browserApiNames = new Set(['browser', 'chrome'])
 const allowedStorageCalls: ReadonlyMap<string, ReadonlySet<string>> = new Map([
@@ -59,6 +59,6 @@ export function findUncountedStorageAccess(fileName: string, sourceText: string,
 		ts.forEachChild(node, visit)
 	}
 	visit(sourceFile)
-	if (access === 'reviewed writer of other keys' && /\bactiveRpcNetwork\b/u.test(sourceText)) violations.push('names activeRpcNetwork although it writes browser storage directly, outside the counted writer')
+	if ((access === 'reviewed writer of other keys' || access === 'storage transport') && /\bactiveRpcNetwork\b/u.test(sourceText)) violations.push('names activeRpcNetwork although it writes browser storage directly, outside the counted writer')
 	return violations
 }
