@@ -2,25 +2,7 @@ import type { Website, WebsiteAccess, WebsiteAccessArray } from '../types/websit
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 import { findWebsiteAccessEntryForOrigin } from './websiteAccessPolicy.js'
-
-export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, interceptorDisabled: boolean): WebsiteAccessArray {
-	let foundExactEntry = false
-	const updatedWebsiteAccess = previousWebsiteAccess.map((entry) => {
-		if (entry.website.websiteOrigin === website.websiteOrigin) {
-			foundExactEntry = true
-			return { ...entry, interceptorDisabled }
-		}
-		// Only re-enabling clears scheme-ambiguous legacy disables; disabling must leave them in place so the other scheme they alias stays disabled.
-		if (!interceptorDisabled && entry.interceptorDisabled === true && isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin)) {
-			return { ...entry, interceptorDisabled: false }
-		}
-		return entry
-	})
-	if (foundExactEntry) return updatedWebsiteAccess
-	return [...updatedWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
-}
 
 export function applyWebsiteAccessDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, access: boolean, address: bigint | undefined): WebsiteAccessArray {
 	const exactEntryIndex = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)

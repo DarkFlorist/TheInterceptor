@@ -2,7 +2,8 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
-import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from '../../app/ts/background/websiteAccessDecision.js'
+import { applyWebsiteAccessDecision } from '../../app/ts/background/websiteAccessDecision.js'
+import { withInterceptorDisabledForWebsite } from '../../app/ts/background/websiteAccessMutations.js'
 import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from '../../app/ts/background/websiteAccessPolicy.js'
 
 const firstAddress = 0x1111111111111111111111111111111111111111n
@@ -18,11 +19,11 @@ describe('website access legacy rebinding', () => {
 		}]
 		assert.equal(isInterceptorDisabledForWebsiteOrigin(legacyAccess, 'https://example.test'), true)
 
-		const updated = applyInterceptorDisabledDecision(legacyAccess, {
+		const updated = withInterceptorDisabledForWebsite({
 			websiteOrigin: 'https://example.test',
 			icon: undefined,
 			title: 'Current site',
-		}, false)
+		}, false)(legacyAccess)
 
 		assert.equal(updated[0]?.website.websiteOrigin, 'example.test')
 		assert.equal(updated[0]?.access, true)
@@ -173,7 +174,7 @@ describe('website access legacy rebinding', () => {
 		const previousAccess = ['example.test', 'example.test:443', 'example.test:80', 'example.test:8443'].map((websiteOrigin) => ({
 			website: { websiteOrigin }, interceptorDisabled: true,
 		}))
-		const updated = applyInterceptorDisabledDecision(previousAccess, { websiteOrigin: 'https://example.test' }, false)
+		const updated = withInterceptorDisabledForWebsite({ websiteOrigin: 'https://example.test' }, false)(previousAccess)
 		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), false)
 		assert.equal(updated.find((entry) => entry.website.websiteOrigin === 'example.test:80')?.interceptorDisabled, true)
 		assert.equal(updated.find((entry) => entry.website.websiteOrigin === 'example.test:8443')?.interceptorDisabled, true)
@@ -183,7 +184,7 @@ describe('website access legacy rebinding', () => {
 		const previousAccess = ['example.test', 'example.test:443', 'example.test:80'].map((websiteOrigin) => ({
 			website: { websiteOrigin }, interceptorDisabled: true,
 		}))
-		const updated = applyInterceptorDisabledDecision(previousAccess, { websiteOrigin: 'https://example.test' }, true)
+		const updated = withInterceptorDisabledForWebsite({ websiteOrigin: 'https://example.test' }, true)(previousAccess)
 		assert.deepEqual(updated.slice(0, 3), previousAccess)
 		assert.deepEqual(updated[3], { website: { websiteOrigin: 'https://example.test' }, addressAccess: [], interceptorDisabled: true })
 		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), true)

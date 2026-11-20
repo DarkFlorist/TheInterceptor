@@ -1,12 +1,27 @@
 import type { Website, WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { modifyObject } from '../utils/typescript.js'
-import { applyInterceptorDisabledDecision } from './websiteAccessDecision.js'
+import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 
 // Pure changes to website-access data live here. The handler-level workflow in applyWebsiteAccessUpdate.ts owns persistence, injection refresh, reloads and approval reconciliation.
 export type WebsiteAccessMutation = (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray
 
-export const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => applyInterceptorDisabledDecision(previousWebsiteAccess, website, interceptorDisabled)
+export const withInterceptorDisabledForWebsite = (website: Website, interceptorDisabled: boolean): WebsiteAccessMutation => (previousWebsiteAccess) => {
+	let foundExactEntry = false
+	const updatedWebsiteAccess = previousWebsiteAccess.map((entry) => {
+		if (entry.website.websiteOrigin === website.websiteOrigin) {
+			foundExactEntry = true
+			return { ...entry, interceptorDisabled }
+		}
+		// Only re-enabling clears scheme-ambiguous legacy disables; disabling must leave them in place so the other scheme they alias stays disabled.
+		if (!interceptorDisabled && entry.interceptorDisabled === true && isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin)) {
+			return { ...entry, interceptorDisabled: false }
+		}
+		return entry
+	})
+	if (foundExactEntry) return updatedWebsiteAccess
+	return [...updatedWebsiteAccess, { website, addressAccess: [], interceptorDisabled }]
+}
 
 export const withExternalRequestsBlockedOrAllowed = (website: Website, shouldBlock: boolean): WebsiteAccessMutation => (previousAccessList) => previousAccessList.map((access) => {
 	if (access.website.websiteOrigin !== website.websiteOrigin) return access
