@@ -115,6 +115,30 @@ The wallet-response deadline and a later dapp request on the same signer connect
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.
 
+The communication check also registers an IPv6 Safe Apps host through real Chrome, stores an invalid hosting origin and verifies it is ignored (the host is removed and base provider injection restored without a registration error), stores a hosting selection that is not a list and verifies base provider injection is restored and the registration error is recorded, then completes the ordinary approval flow.
+
+## Request Finance Safe discovery
+
+After `bun run setup-chrome`, run:
+
+```bash
+bun run test:chrome-request-finance-discovery
+```
+
+This scenario reuses the Safe co-signing harness with a test signer, a configured Safe, and a local RPC fixture. CDP serves a local HTML fixture at the Request Finance HTTPS origin so the extension injects its real Safe host shim. The page reproduces the SDK's parent-message checks and the site's 200 ms discovery race. The test explicitly opts into this origin, keeps the real access popup open for 11 seconds, and verifies that the site's own 200 ms discovery deadline fires unchanged. After approval, the Settings authorize-and-reload action prepares the connection; the reloaded page receives the expected address, chain, owner, and threshold with no repeated signer prompt. Its 200 ms discovery race may still time out during extension initialization; the fixture checks that a late SDK reply does not undo that outcome.
+
+By default, the browser starts with a temporary profile. This check does not load the live Request Finance app or use a real wallet. `CHROME_BIN` selects the browser binary as described above.
+
+## Safe Apps hosting on selected websites
+
+Run `bun run test:chrome-safe-apps-host` after `bun run setup-chrome`. The existing Safe co-signing harness serves a bundled fixture containing Safe Apps SDK 9.1.0 and Wagmi's Safe connector on HTTP and HTTPS origins. It checks real extension access approvals, the Settings “Authorize and reload open tab” action using bundled page scripts targeted to a verified document, independent authorization and preparation cancellation on the second origin, unapproved cross-origin iframe requests to both the fake parent and top window, and isolation of unselected origins and ports. The signer and RPC are local test doubles.
+
+In Settings, enable Safe Apps compatibility and add the website URL. Hosting applies to its exact HTTP(S) origin, including scheme and port; refresh an already open page to install or remove it. No websites are hosted by default; add Request Finance explicitly if needed. Select a Safe in signing mode, open the app, and authorize and reload its tab before connecting. Preparation has a 30-second deadline and a Cancel connection action; cancellation releases the pending page probe without reloading. Website access still requires the ordinary Interceptor approval.
+
+The shared host supports parent-based SDK discovery and leaves every website timer and discovery deadline unchanged. Authorize the Safe and reload before connecting. Short probes such as Request Finance's 200 ms race can still time out after approval; preparation removes the interactive approval delay but does not guarantee a response within the site's deadline. Wagmi's default 10 ms deadline can be too short for extension communication, so the browser fixture uses its documented `unstable_getInfoTimeout` option with 5 seconds. Apps with such deadlines need connector configuration or a discovery change in the app. Web3-Onboard's stricter `self !== top` iframe check and trusted parent-origin requirements are intentionally preserved; a real iframe launcher is a separate extension of this design.
+
+On a selected origin the host deliberately replaces `window.parent` for the whole page with a hidden same-origin frame, so every script on that page sees an apparent parent: framing checks such as `parent !== window`, parent-based `postMessage` routing and analytics can behave as if the page were embedded. `self` and `top` are unchanged, so `self === top` stays true. The emulation is observable: the host sets a read-only, non-enumerable `window.__interceptorSafeAppsHostEmulatedParent === true` and logs one `console.info` line naming the origin. It is removed, and the original `window.parent` restored, on `pagehide` (unless the page itself made `parent` non-configurable, in which case the page's own value is left in place); a page restored from the back/forward cache is hosted again. This is an accepted trade-off of parent-based hosting. It is enabled only for origins the user selects in Settings, through the one content-script registration built from that selection, and the host itself refuses any origin Settings cannot select.
+
 ## Firefox provider injection check
 
 `bun run test:firefox-provider-injection` loads the Firefox build (`bun run setup-firefox` first) through geckodriver and opens local pages with and without a CSP that blocks inline scripts. On a page without such a CSP, the provider must already be defined when the page observes its inline script element being added. On a page with that CSP, the inline provider must be blocked and the extension-URL fallback must still install the provider. The MV2 injection starts after a `webNavigation` round trip to the background, so on a page that loads this fast it can land after the page's first script; the check accepts either order. Set `FIREFOX_BIN` or `GECKODRIVER_BIN` to use other binaries.

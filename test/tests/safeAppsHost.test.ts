@@ -1,0 +1,187 @@
+import * as assert from 'assert'
+import { test } from 'bun:test'
+import * as fs from 'node:fs'
+import SafeAppsSDK from '@safe-global/safe-apps-sdk'
+import { safe } from '@wagmi/connectors/safe'
+import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
+import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
+import { getSafeAppsHostMatchPatterns } from '../../app/ts/utils/safeAppsHosting.js'
+import { SafeAppsHostOrigins, parseSafeAppsHostOrigin } from '../../app/ts/types/safeAppsHosting.js'
+
+const safeInfo = { safeAddress: '0x1234567890123456789012345678901234567890', chainId: 1, owners: [], threshold: 1, isReadOnly: false }
+
+for (const origin of ['https://app.example.com', 'https://another.example:8443']) {
+	test(`shared host supports the real Safe SDK and Wagmi on ${ origin } without changing timers`, async () => {
+		const { fakeWindow, postMessage, restoreGlobals } = createSafeHostHarness({ origin })
+		const timer = Reflect.get(fakeWindow, 'setTimeout')
+		try {
+			installSafeAppsHost()
+			assert.equal(Reflect.get(fakeWindow, 'setTimeout'), timer)
+			const parent = Reflect.get(fakeWindow, 'parent')
+			installSafeAppsHost()
+			assert.equal(Reflect.get(fakeWindow, 'parent'), parent)
+			fakeWindow.addEventListener('message', (event) => {
+				if (!('source' in event) || event.source !== fakeWindow || !('data' in event)) return
+				const request: unknown = event.data
+				if (typeof request !== 'object' || request === null || !('method' in request) || request.method !== 'getSafeInfo' || !('id' in request) || !('bridgeToken' in request)) return
+				postMessage({ id: request.id, success: true, data: safeInfo, version: '9.1.0', bridgeToken: request.bridgeToken }, origin)
+			})
+			const sdk = new SafeAppsSDK()
+			assert.deepEqual(await sdk.safe.getInfo(), safeInfo)
+			const connector = safe()({ chains: [], emitter: { emit: () => undefined } })
+			assert.deepEqual(await connector.getAccounts(), [safeInfo.safeAddress])
+			assert.equal(await connector.getChainId(), 1)
+		} finally { restoreGlobals() }
+	})
+}
+
+test('shared host leaves existing embedded Safe apps untouched', () => {
+	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness({ embedded: true })
+	const parent = Reflect.get(fakeWindow, 'parent')
+	try {
+		installSafeAppsHost()
+		assert.equal(frameWasAppended(), false)
+		assert.equal(Reflect.get(fakeWindow, 'parent'), parent)
+	} finally { restoreGlobals() }
+})
+
+test('shared host leaves origins that Settings cannot select untouched', () => {
+	for (const origin of ['null', 'file://', 'chrome-extension://interceptor-id', 'data:']) {
+		const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness({ origin })
+		const parent = Reflect.get(fakeWindow, 'parent')
+		try {
+			assert.equal(installSafeAppsHost(), undefined)
+			assert.deepEqual({ origin, frameAppended: frameWasAppended(), parentUnchanged: Reflect.get(fakeWindow, 'parent') === parent }, { origin, frameAppended: false, parentUnchanged: true })
+		} finally { restoreGlobals() }
+	}
+	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness({ origin: 'http://localhost:3000' })
+	const parent = Reflect.get(fakeWindow, 'parent')
+	try {
+		installSafeAppsHost()?.dispose()
+		assert.equal(Reflect.get(fakeWindow, 'parent'), parent)
+		const host = installSafeAppsHost()
+		assert.equal(frameWasAppended(), true)
+		assert.notEqual(Reflect.get(fakeWindow, 'parent'), parent)
+		host?.dispose()
+	} finally { restoreGlobals() }
+})
+
+// The host cannot read the Settings selection itself, so its only injection path must be the registration built from the selected origins.
+test('the Safe Apps host bootstrap is injected only by the selected-origin registration', () => {
+	const sourceFiles = [...['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'build/**/*.mts', 'scripts/**/*.mts'].flatMap((pattern) => [...new Bun.Glob(pattern).scanSync('.')]), 'app/manifestV2.json', 'app/manifestV3.json']
+	const referencingFiles = sourceFiles.filter((file) => {
+		const source = fs.readFileSync(file, 'utf8')
+		return source.includes('safeAppsHostBootstrap') || source.includes('INPAGE_SCRIPTS.safeAppsHost')
+	}).sort()
+	assert.deepEqual(referencingFiles, ['app/ts/background/safeAppsHostRegistration.ts', 'app/ts/config/injectedScripts.ts'])
+	const registrationSource = fs.readFileSync('app/ts/background/safeAppsHostRegistration.ts', 'utf8')
+	assert.equal(registrationSource.match(/INPAGE_SCRIPTS\.safeAppsHost\b/g)?.length, 1)
+	assert.match(registrationSource, /const matches = getSafeAppsHostMatchPatterns\(origins\)\n/)
+	assert.match(registrationSource, /\tmatches,\n/)
+	// Injected sources are bundled per entrypoint, so an import from the provider or another bootstrap would install the host wherever that script runs.
+	const injectedSourceFiles = [...new Bun.Glob('app/inpage/ts/**/*.ts').scanSync('.')]
+	const hostUsers = injectedSourceFiles.filter((file) => {
+		const source = fs.readFileSync(file, 'utf8')
+		return source.includes('safeAppsHostBootstrap') || /['"]\.\/safeAppsHost\.js['"]/.test(source) || /\b(?:installSafeAppsHost|hostSafeAppsForPageLifetime)\b/.test(source)
+	}).sort()
+	assert.deepEqual(hostUsers, ['app/inpage/ts/safeAppsHost.ts', 'app/inpage/ts/safeAppsHostBootstrap.ts'])
+	assert.equal(fs.readFileSync('app/inpage/ts/safeAppsHostBootstrap.ts', 'utf8'), `import { hostSafeAppsForPageLifetime } from './safeAppsHost.js'\n\nhostSafeAppsForPageLifetime()\n`)
+})
+
+test('hosting accepts canonical exact HTTP(S) origins and rejects malformed or overly broad configuration', () => {
+	assert.equal(parseSafeAppsHostOrigin('https://EXAMPLE.com/path?query#hash'), 'https://example.com')
+	// Real Chrome IPv6 registration is also covered by test:chrome-communication.
+	assert.deepEqual(getSafeAppsHostMatchPatterns(['https://example.com', 'http://localhost:1234', 'https://[::1]:8443']), ['https://example.com:443/*', 'http://localhost:1234/*', 'https://[::1]:8443/*'])
+	for (const origin of ['https://*.example.com', 'https://*', 'https://%2a.example.com', 'https://%2A', '*://*.example.com', 'file:///tmp/app', 'https://user:password@example.com', 'https://example.com/path', 'https://example.com/', 'https://EXAMPLE.com']) assert.equal(SafeAppsHostOrigins.safeParse([origin]).success, false)
+	for (const wildcard of ['https://*.example.com', 'https://*', 'https://%2a.example.com', 'https://%2A']) {
+		assert.throws(() => parseSafeAppsHostOrigin(wildcard), /wildcard hosts/)
+		assert.throws(() => getSafeAppsHostMatchPatterns([wildcard]))
+	}
+	assert.equal(SafeAppsHostOrigins.safeParse(['https://example.com', 'https://example.com']).success, false)
+	assert.equal(SafeAppsHostOrigins.safeParse(Array.from({ length: 33 }, (_, index) => `https://app${ index }.example`)).success, false)
+})
+
+test('shared SDK transport waits for authorization, ignores unrelated responses, and surfaces rejection', async () => {
+	const { fakeWindow, origin, emitMessage, restoreGlobals } = createSafeHostHarness({ origin: 'https://safe-app.example' })
+	try {
+		installSafeAppsHost()
+		let requestId: string | undefined
+		let bridgeToken: string | undefined
+		fakeWindow.addEventListener('message', (event) => {
+			if (!('source' in event) || event.source !== fakeWindow || !('data' in event)) return
+			const request: unknown = event.data
+			if (typeof request !== 'object' || request === null || !('method' in request) || request.method !== 'getSafeInfo' || !('id' in request) || typeof request.id !== 'string') return
+			requestId = request.id
+			if ('bridgeToken' in request && typeof request.bridgeToken === 'string') bridgeToken = request.bridgeToken
+		})
+		const sdk = new SafeAppsSDK()
+		let settled = false
+		const result = sdk.safe.getInfo()
+		void result.then(() => { settled = true }, () => { settled = true })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.notEqual(requestId, undefined)
+		const response = { id: requestId, success: true, data: safeInfo, version: '9.1.0', bridgeToken }
+		emitMessage(response, 'https://unrelated.example')
+		emitMessage(response, origin, new EventTarget())
+		await Promise.resolve()
+		assert.equal(settled, false)
+		emitMessage({ id: requestId, success: false, error: 'User rejected access.', version: '9.1.0', bridgeToken })
+		await assert.rejects(result, /User rejected access/)
+	} finally { restoreGlobals() }
+})
+
+test('native parent messaging rejects embedded callers before re-posting under the hosted origin', async () => {
+	const { fakeWindow, origin, emitParentMessage, restoreGlobals } = createSafeHostHarness()
+	try {
+		installSafeAppsHost()
+		const forwarded: string[] = []
+		fakeWindow.addEventListener('message', (event) => {
+			if ('source' in event && event.source === fakeWindow && 'data' in event && typeof event.data === 'object' && event.data !== null && 'method' in event.data && 'id' in event.data && typeof event.data.id === 'string') forwarded.push(event.data.id)
+		})
+		for (const method of ['getSafeInfo', 'getChainInfo', 'rpcCall', 'sendTransactions', 'signMessage']) {
+			const request = { id: method, method, env: { sdkVersion: '9.1.0' } }
+			emitParentMessage(request, 'https://unapproved.example', new EventTarget())
+			emitParentMessage(request, origin, new EventTarget())
+		}
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(forwarded, [])
+		emitParentMessage({ id: 'top-discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(forwarded, ['top-discovery'])
+	} finally { restoreGlobals() }
+})
+
+test('host answers malformed SDK requests from its own page without forwarding them', async () => {
+	const { fakeWindow, emitParentMessage, restoreGlobals } = createSafeHostHarness()
+	try {
+		installSafeAppsHost()
+		const responses: unknown[] = []
+		const forwarded: unknown[] = []
+		fakeWindow.addEventListener('message', (event) => {
+			if (!('data' in event)) return
+			if ('source' in event && event.source === fakeWindow) forwarded.push(event.data)
+			else responses.push(event.data)
+		})
+		emitParentMessage({ id: 'bad-version', method: 'getSafeInfo', env: { sdkVersion: 'invalid' } })
+		emitParentMessage({ id: 'bad-method', env: { sdkVersion: '9.1.0' } })
+		emitParentMessage({ id: 'other-origin', method: 'getSafeInfo', env: { sdkVersion: 'invalid' } }, 'https://unapproved.example')
+		emitParentMessage({ id: 'unrelated' })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(forwarded, [])
+		assert.deepEqual(responses, [
+			{ id: 'bad-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+			{ id: 'bad-method', success: false, error: 'Safe Apps method must be a string.', version: '9.1.0' },
+		])
+	} finally { restoreGlobals() }
+})
+
+
+test('Safe SDK test dependencies cannot enter production application or build imports', async () => {
+	const projectRoot = new URL('../..', import.meta.url).pathname
+	const testOnlyImports = /\b(?:from\s*|import\s*(?:\(\s*)?|require\s*\(\s*)['"](@safe-global\/safe-apps-(?:sdk|provider)|@wagmi\/connectors|viem|ox)(?:\/[^'"]*)?['"]/u
+	for (const pattern of ['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'app/inpage/ts/**/*.ts', 'build/*.mts']) {
+		for await (const file of new Bun.Glob(pattern).scan({ cwd: projectRoot, absolute: true })) {
+			assert.equal(testOnlyImports.test(await Bun.file(file).text()), false, `Test-only SDK dependency imported by ${ file }`)
+		}
+	}
+})

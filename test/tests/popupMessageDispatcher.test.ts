@@ -431,6 +431,78 @@ describe('popup message dispatcher seams', () => {
 		})
 	})
 
+	test('routes Safe App preparation to background policy and returns an actionable rejection', async () => {
+		assert.deepEqual(await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_prepareSafeApp',
+			data: { origin: 'https://safe-app.example' },
+		}), {
+			method: 'popup_prepareSafeApp',
+			data: { success: false, errorMessage: 'Enable Safe Apps compatibility and add this website first.' },
+		})
+	})
+
+	test('routes idempotent Safe App preparation cancellation through the typed Safe protocol', async () => {
+		assert.deepEqual(await dispatchPopupMessage(createDispatcherContext(async () => undefined), { method: 'popup_cancelPrepareSafeApp', data: { origin: 'https://safe-app.example' } }), { method: 'popup_cancelPrepareSafeApp', data: { success: true } })
+	})
+
+	test('a content script sender cannot change Safe Apps hosting or compatibility settings or register the Safe Apps host', async () => {
+		const [{ getPopupMessageSenderKind, isPopupMessageAllowedFromSender }, { popupMessageHandler }, { contentScriptRegistration }, { exportSettingsAndAddressBook }, { CURRENT_EXPORTED_SETTINGS_VERSION, CurrentExportedSettings, createSettingsExport }, { serialize }] = await Promise.all([
+			import('../../app/ts/background/popupMessageSenderPolicy.js'),
+			import('../../app/ts/background/popupMessageRouting.js'),
+			import('../../app/ts/background/contentScriptRegistration.js'),
+			import('../../app/ts/background/settings.js'),
+			import('../../app/ts/types/exportedSettingsTypes.js'),
+			import('../../app/ts/types/wire-types.js'),
+		])
+		// Mirrors the runtime.onMessage boundary in background-startup.ts, which popupMessageSenderPolicy.test.ts pins to this call shape.
+		const deliverRuntimeMessage = async (message: unknown, senderUrl: string) => {
+			const sender = { id: 'test-extension', url: senderUrl, tab: { id: 1 } }
+			if (!isPopupMessageAllowedFromSender(message, getPopupMessageSenderKind(sender, 'test-extension', 'chrome-extension://test-extension/'))) return 'rejected'
+			await popupMessageHandler(new Map(), createDispatcherContext(async () => undefined).simulationServicesOwner, message, settings, async () => undefined)
+			return 'delivered'
+		}
+		const attackerOrigin = 'https://attacker.example'
+		storageState.safeAppsCompatibilityMode = true
+		storageState.safeAppsHostOrigins = []
+		const exported = await exportSettingsAndAddressBook()
+		if (exported.version !== CURRENT_EXPORTED_SETTINGS_VERSION) throw new Error('Expected the settings export to use the current format.')
+		const importWithAttackerOrigin = JSON.stringify(serialize(CurrentExportedSettings, createSettingsExport({ ...exported.settings, safeAppsHostOrigins: [attackerOrigin] }, exported.exportedDate)))
+		const setOrigins = { method: 'popup_setSafeAppsHostOrigins', data: { origins: [attackerOrigin] } }
+		const importSettings = { method: 'popup_import_settings', data: { fileContents: importWithAttackerOrigin } }
+		const outcomes = []
+		for (const message of [setOrigins, importSettings]) outcomes.push(await withSilencedConsole(async () => await deliverRuntimeMessage(message, `${ attackerOrigin }/`)))
+		assert.deepEqual(outcomes, ['rejected', 'rejected'])
+		await contentScriptRegistration.update()
+		assert.deepEqual(storageState.safeAppsHostOrigins, [])
+		assert.equal(registeredContentScripts.has('safe-apps-host'), false)
+
+		// The same messages from the Settings page do change the allowlist, so the rejections above come from the sender policy.
+		const settingsPage = 'chrome-extension://test-extension/html3/settingsView.html'
+		for (const message of [importSettings, setOrigins]) {
+			storageState.safeAppsHostOrigins = []
+			assert.equal(await withSilencedConsole(async () => await deliverRuntimeMessage(message, settingsPage)), 'delivered')
+			await contentScriptRegistration.update()
+			assert.deepEqual({ method: message.method, origins: storageState.safeAppsHostOrigins, hostRegistered: registeredContentScripts.has('safe-apps-host') }, { method: message.method, origins: [attackerOrigin], hostRegistered: true })
+		}
+
+		// With a saved allowlist, turning compatibility mode back on registers the host, so a content script must not be able to toggle it.
+		storageState.safeAppsCompatibilityMode = false
+		storageState.metamaskCompatibilityMode = false
+		await contentScriptRegistration.update()
+		assert.equal(registeredContentScripts.has('safe-apps-host'), false)
+		const enableSafeApps = { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: true } }
+		const enableMetamask = { method: 'popup_ChangeSettings', data: { metamaskCompatibilityMode: true } }
+		const compatibilityOutcomes = []
+		for (const message of [enableSafeApps, enableMetamask]) compatibilityOutcomes.push(await withSilencedConsole(async () => await deliverRuntimeMessage(message, `${ attackerOrigin }/`)))
+		assert.deepEqual(compatibilityOutcomes, ['rejected', 'rejected'])
+		await contentScriptRegistration.update()
+		assert.deepEqual({ safeApps: storageState.safeAppsCompatibilityMode, metamask: storageState.metamaskCompatibilityMode, hostRegistered: registeredContentScripts.has('safe-apps-host') }, { safeApps: false, metamask: false, hostRegistered: false })
+
+		assert.equal(await withSilencedConsole(async () => await deliverRuntimeMessage(enableSafeApps, settingsPage)), 'delivered')
+		await contentScriptRegistration.update()
+		assert.deepEqual({ safeApps: storageState.safeAppsCompatibilityMode, origins: storageState.safeAppsHostOrigins, hostRegistered: registeredContentScripts.has('safe-apps-host') }, { safeApps: true, origins: [attackerOrigin], hostRegistered: true })
+	})
+
 	test('routes Safe contract state through its dedicated protocol', async () => {
 		const context = createDispatcherContext(async () => undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, {

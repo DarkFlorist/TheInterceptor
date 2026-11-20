@@ -217,14 +217,17 @@ const committedDetails: browser.webNavigation._OnCommittedDetails = {
 
 async function loadModules() {
 	const modules = {
-		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
+		...await import('../../app/ts/background/contentScriptRegistration.js'),
+		...await import('../../app/ts/background/manifestV2ContentScriptInjection.js'),
 		...await import('../../app/ts/background/contentScriptInjectionStrategy.js'),
 		...await import('../../app/ts/background/contentScriptInjectionConfigurationLoader.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		getManifestV3ExcludeMatches: (await import('../../app/ts/utils/chromeMatchPatterns.js')).getChromeSiteMatchPatterns,
 	}
 	return {
 		...modules,
-		updateContentScriptInjectionStrategyManifestV3: async () => await modules.updateContentScriptInjectionStrategyManifestV3(await modules.getContentScriptInjectionConfiguration()),
+		// A fresh registration service applies the stored configuration the way a configuration workflow does.
+		updateContentScriptInjectionStrategyManifestV3: async () => await modules.createContentScriptRegistrationService().reconcile(await modules.getContentScriptInjectionConfiguration()),
 		updateContentScriptInjectionStrategyManifestV2: async () => await modules.updateContentScriptInjectionStrategyManifestV2(modules.getContentScriptInjectionConfiguration),
 	}
 }

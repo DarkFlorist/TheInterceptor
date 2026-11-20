@@ -1,6 +1,7 @@
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList, ImportSettingsReply } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
+import { SafeAppsHostOrigins } from './safeAppsHosting.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
@@ -748,6 +749,13 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	})
 })
 
+// Separate from ChangeSettings because saving the allowlist needs no home-page refresh; popupMessageProtocol restricts both to extension pages.
+export type SetSafeAppsHostOrigins = funtypes.Static<typeof SetSafeAppsHostOrigins>
+export const SetSafeAppsHostOrigins = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setSafeAppsHostOrigins'),
+	data: funtypes.ReadonlyObject({ origins: SafeAppsHostOrigins }),
+})
+
 export { ImportSettings, ImportSettingsReply } from './popupSettingsRequests.js'
 
 export { SetRpcList } from './popupSettingsRequests.js'
@@ -853,6 +861,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
+		safeAppsHostOrigins: SafeAppsHostOrigins,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})
@@ -1097,6 +1106,7 @@ const PopupMessageRuntype = funtypes.Union(
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),
 	ChangeSettings,
+	SetSafeAppsHostOrigins,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,
 	OpenWebPage,

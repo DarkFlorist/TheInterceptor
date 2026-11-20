@@ -1,0 +1,118 @@
+import { createSafeAppsErrorResponse, createSafeAppsCancellation, isSafeAppsDiscoveryMethod, parseSafeAppsRequest, isSafeAppsResponse, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
+import { createSafeAppsTransport } from './safeAppsTransport.js'
+
+// Settings accepts only HTTP(S) origins (parseSafeAppsHostOrigin), so an opaque, file or extension origin means the host was injected outside its registration.
+const isSelectableSafeAppsHostOrigin = (origin: string) => origin.startsWith('https://') || origin.startsWith('http://')
+
+// Read-only and non-enumerable; page scripts and developers can check it to tell the emulated parent from real framing.
+export const SAFE_APPS_HOST_MARKER = '__interceptorSafeAppsHostEmulatedParent'
+
+// Accepted trade-off: on a selected origin the host deliberately replaces window.parent for the whole page, so framing checks such as parent !== window, parent-based postMessage routing and analytics see an apparent parent frame, while self === top stays true; window.__interceptorSafeAppsHostEmulatedParent === true and a console.info line make the emulation observable. Chrome registers only files, so this script cannot embed the user's Settings selection; safeAppsHostRegistration.ts registers it only for selected origins, safeAppsHost.test.ts pins that it has no other injection path, and the guard below refuses any origin Settings could not have selected. The emulated parent lets any script on that origin use the Safe Apps API; background RPC admission still checks website access and signing mode for each request.
+export function installSafeAppsHost() {
+	const windowObject = window
+	if (!isSelectableSafeAppsHostOrigin(windowObject.location.origin)) return undefined
+	// Leave existing parent emulation intact if this bootstrap is loaded again.
+	if (windowObject.top !== windowObject || windowObject.parent !== windowObject) return undefined
+	const container = document.documentElement
+	if (container === null) return undefined
+	const originalParent = Object.getOwnPropertyDescriptor(windowObject, 'parent')
+	const frame = document.createElement('iframe')
+	frame.style.display = 'none'
+	frame.setAttribute('aria-hidden', 'true')
+	frame.tabIndex = -1
+	container.append(frame)
+	const apparentParent = frame.contentWindow
+	if (apparentParent === null) {
+		frame.remove()
+		return undefined
+	}
+	// Fail atomically if the page made its parent property non-configurable.
+	try { Object.defineProperty(windowObject, 'parent', { configurable: true, value: apparentParent }) } catch (error: unknown) {
+		frame.remove()
+		throw error
+	}
+	Object.defineProperty(windowObject, SAFE_APPS_HOST_MARKER, { configurable: true, enumerable: false, writable: false, value: true })
+	console.info(`Interceptor: window.parent is emulated on ${ windowObject.location.origin } by The Interceptor's Safe Apps hosting (window.${ SAFE_APPS_HOST_MARKER }).`)
+	const transport = createSafeAppsTransport(windowObject)
+	let disposed = false
+	const deliver = (data: unknown) => {
+		// The token belongs to the bridge; SDK callbacks receive their ordinary response shape.
+		const sdkData = typeof data === 'object' && data !== null && 'bridgeToken' in data ? { ...data } : data
+		if (typeof sdkData === 'object' && sdkData !== null) Reflect.deleteProperty(sdkData, 'bridgeToken')
+		windowObject.dispatchEvent(new MessageEvent('message', { data: sdkData, origin: windowObject.location.origin, source: apparentParent }))
+	}
+	const pendingRequests = createSafeAppsRequestQueue<SafeAppsRequest & { readonly bridgeToken: string }>({
+		replaceOldestSafeInfo: true,
+		timers: { setTimeout: windowObject.setTimeout.bind(windowObject), clearTimeout: windowObject.clearTimeout.bind(windowObject) },
+		// A cancellation only stops discovery in the provider; an operation such as sendTransactions or signMessage is already in the background and can still be approved after any deadline. Reporting a timeout for it would invite a duplicate retry, so operations stay pending until the provider answers.
+		expires: ({ method }) => isSafeAppsDiscoveryMethod(method),
+		onRejected: (request, error, reason) => {
+			if (reason === 'expired' || reason === 'superseded') transport.post(createSafeAppsCancellation(request.id, request.bridgeToken))
+			const reject = () => { if (!disposed) deliver(createSafeAppsErrorResponse(request, error)) }
+			// Let the SDK install its response listener after posting a request.
+			if (reason === 'expired') reject()
+			else queueMicrotask(reject)
+		},
+	})
+	// Listen on the real frame: native postMessage supplies the actual caller's source and origin.
+	const onRequest = (event: MessageEvent<unknown>) => {
+		if (disposed || event.source !== windowObject || event.origin !== windowObject.location.origin) return
+		const parsed = parseSafeAppsRequest(event.data)
+		if (parsed === undefined) return
+		if ('error' in parsed) {
+			// The caller installs its response listener after posting the request.
+			queueMicrotask(() => { if (!disposed) deliver(createSafeAppsErrorResponse(parsed, parsed.error)) })
+			return
+		}
+		// Distinguish reused IDs with a token that works on HTTP origins too.
+		const bridgeToken = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+		const request = { ...parsed.request, bridgeToken }
+		if (!pendingRequests.add(request)) return
+		transport.post(request)
+	}
+	apparentParent.addEventListener('message', onRequest)
+	const unsubscribe = transport.subscribe(({ data }) => {
+		if (disposed || !isSafeAppsResponse(data)) return
+		// The provider echoes the assigned token on every reply, so an untokened or mismatched reply is spoofed or stale (for example, for a reused SDK ID).
+		const pending = pendingRequests.values().find((request) => request.id === data.id && request.bridgeToken === data.bridgeToken)
+		if (pending === undefined) return
+		pendingRequests.take(pending.id)
+		deliver(data)
+	})
+	return {
+		// Call before replacing the host or opting out in the current document; installing again restores hosting.
+		dispose() {
+			if (disposed) return
+			disposed = true
+			apparentParent.removeEventListener('message', onRequest)
+			unsubscribe()
+			const requests = pendingRequests.drain()
+			for (const request of requests) {
+				transport.post(createSafeAppsCancellation(request.id, request.bridgeToken))
+				deliver(createSafeAppsErrorResponse(request, 'Safe Apps hosting was disconnected.'))
+			}
+			// The SDK checks response.source against the current parent, so reject before restoring it. The real parent is restored even over a later page replacement, which only ever saw the emulation; Reflect leaves a parent the page made non-configurable in place instead of throwing during pagehide.
+			const restored = originalParent === undefined
+				? Reflect.deleteProperty(windowObject, 'parent')
+				: Reflect.defineProperty(windowObject, 'parent', originalParent)
+			if (!restored) console.warn('Interceptor: Safe Apps hosting stopped, but this page made window.parent non-configurable. Reload the page to restore normal framing.')
+			// Keep the marker truthful when the page froze the emulated parent itself.
+			if (windowObject.parent !== apparentParent) Reflect.deleteProperty(windowObject, SAFE_APPS_HOST_MARKER)
+			frame.remove()
+		},
+	}
+}
+
+// Hosts the page for its lifetime: pagehide disposes the host (also before the back/forward cache stores the page), and a page restored from that cache is hosted again.
+export function hostSafeAppsForPageLifetime() {
+	let host = installSafeAppsHost()
+	if (host === undefined) return
+	window.addEventListener('pagehide', () => {
+		host?.dispose()
+		host = undefined
+	})
+	window.addEventListener('pageshow', (event) => {
+		if (host === undefined && 'persisted' in event && event.persisted === true) host = installSafeAppsHost()
+	})
+}

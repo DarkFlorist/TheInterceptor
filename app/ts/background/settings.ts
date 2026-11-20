@@ -1,4 +1,4 @@
-import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
+import { createSettingsExport, type ExportedSettings, type Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
@@ -12,6 +12,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins, recoverStoredSafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -44,6 +45,10 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageVa
 	return await getStartupStorageValueOrDefault(await browser.storage.local.get(key), key, defaultValue)
 }
 
+export async function getWebsiteAccessFromStoredItems(storedItems: Readonly<Record<string, unknown>>): Promise<WebsiteAccessArray> {
+	return sanitizeWebsiteAccess(await getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []))
+}
+
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
@@ -60,7 +65,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'useSignersAddressAsActiveAddress', false))
-	const websiteAccessPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
+	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccessFromStoredItems(storedItems))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
 	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
@@ -231,29 +236,35 @@ export const getSafeAppsCompatibilityMode = async() => (await browserStorageLoca
 export const safeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(safeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
 
+// Reads never write back: persisting a recovered snapshot could overwrite a newer selection, so the cleaned list is stored on the next setSafeAppsHostOrigins write.
+export const getSafeAppsHostOrigins = async () => recoverStoredSafeAppsHostOrigins(await browser.storage.local.get('safeAppsHostOrigins')) ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
+
+export const safeAppsHostOriginsStorageWrite = (origins: readonly string[]): StorageWrite => ({ safeAppsHostOrigins: SafeAppsHostOrigins.parse(origins) })
+export const setSafeAppsHostOrigins = async (origins: readonly string[]) => await browserStorageLocalSet(safeAppsHostOriginsStorageWrite(origins))
+
+export async function getEnabledSafeAppsHostOrigins() {
+	return await getSafeAppsCompatibilityMode() ? await getSafeAppsHostOrigins() : DEFAULT_SAFE_APPS_HOST_ORIGINS
+}
+
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
 	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
-	return {
-		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.6' as const,
-		exportedDate: exportDate,
-		settings: {
-			activeSimulationAddress: settings.activeSimulationAddress,
-			activeSigningSafeAddress: settings.activeSigningSafeAddress,
-			signingAddressPreferences,
-			openedPage: settings.openedPage,
-			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
-			websiteAccess: settings.websiteAccess,
-			rpcNetwork: settings.activeRpcNetwork,
-			simulationMode: settings.simulationMode,
-			addressBookEntries: await getUserAddressBookEntries(),
-			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
-			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
-		}
-	}
+	return createSettingsExport({
+		activeSimulationAddress: settings.activeSimulationAddress,
+		activeSigningSafeAddress: settings.activeSigningSafeAddress,
+		signingAddressPreferences,
+		openedPage: settings.openedPage,
+		useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
+		websiteAccess: settings.websiteAccess,
+		rpcNetwork: settings.activeRpcNetwork,
+		simulationMode: settings.simulationMode,
+		addressBookEntries: await getUserAddressBookEntries(),
+		useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
+		metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+		safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
+		safeAppsHostOrigins: await getSafeAppsHostOrigins(),
+	}, exportDate)
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

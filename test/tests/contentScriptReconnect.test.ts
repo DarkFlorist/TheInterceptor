@@ -4,7 +4,7 @@ import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
 import { getManifestV2DocumentStartScriptPath } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../app/ts/utils/requests.js'
-import { generateInpageArtifacts } from '../../scripts/inline-inpage-document-start.mts'
+import { generateInpageArtifacts, inlineMetamaskCompatibilityModeAtPageLoad } from '../../scripts/inline-inpage-document-start.mts'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
@@ -103,7 +103,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 			const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
 				compilerOptions,
 			}).outputText
-			const generatedDocumentStart = generateInpageArtifacts(compiledDocumentStart, stubPageWorldProviderSource).find(({ path }) => path === getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode))
+			const generatedDocumentStart = generateInpageArtifacts(compiledDocumentStart, (mode) => inlineMetamaskCompatibilityModeAtPageLoad(stubPageWorldProviderSource, mode)).find(({ path }) => path === getManifestV2DocumentStartScriptPath(metamaskCompatibilityMode))
 			if (generatedDocumentStart === undefined) throw new Error('Missing generated document-start script')
 			Function(generatedDocumentStart.source)()
 		}

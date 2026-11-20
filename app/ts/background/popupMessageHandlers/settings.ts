@@ -6,7 +6,7 @@ import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, changeSimulationMode } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings, getUseTabsInsteadOfPopup, changeSimulationMode } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
@@ -26,6 +26,7 @@ export async function settingsOpened() {
 			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
 			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
 			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
+			safeAppsHostOrigins: await getSafeAppsHostOrigins(),
 			rpcEntries: await rpcEntriesPromise,
 			activeRpcNetwork: (await settingsPromise).activeRpcNetwork
 		}

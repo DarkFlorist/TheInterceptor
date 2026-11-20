@@ -19,6 +19,7 @@ const dependencies = getRecordProperty(project, 'dependencies')
 const patches = getRecordProperty(project, 'patchedDependencies')
 const microVersion = getRecordProperty(micro, 'version')
 const curveVersion = getRecordProperty(curve, 'version')
+// This is the shipped recovery/vendor graph, not every dev-only installation. Real SDK test fixtures require Noble 1.x; safeAppsHost tests enforce that those SDKs cannot be imported by production app/build code.
 const vendorCurveDirectory = join(projectRoot, 'node_modules', '@noble', 'curves')
 const vendorCurve = await readManifest(vendorCurveDirectory)
 const [recoveryCurvePath, vendorCurvePath] = await Promise.all([realpath(curveDirectory), realpath(vendorCurveDirectory)])
