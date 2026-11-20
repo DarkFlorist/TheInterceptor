@@ -104,9 +104,17 @@ function snapshotContextValue(value: unknown, seen: WeakSet<object>, budget: Err
 	// Captures own enumerable string keys, matching JSON and main's diagnostics; non-enumerable and symbol keys are intentionally not captured.
 	const keys = Object.keys(value)
 	const entries: [string, unknown][] = keys.slice(0, MAX_CONTEXT_ENTRIES).map((key) => [key, snapshotOwnProperty(value, key, seen, budget, depth + 1)])
-	if (keys.length > MAX_CONTEXT_ENTRIES) entries.push(['[omitted]', `${ keys.length - MAX_CONTEXT_ENTRIES } more properties omitted`])
+	if (keys.length > MAX_CONTEXT_ENTRIES) entries.push([unusedMarkerKey(keys, '[omitted]'), `${ keys.length - MAX_CONTEXT_ENTRIES } more properties omitted`])
 	// Object.fromEntries defines own properties, so a caller key such as __proto__ is kept instead of hitting the inherited prototype setter.
 	return Object.fromEntries(entries)
+}
+
+// Appends a numeric suffix until the marker no longer collides with any caller key, so truncation metadata never overwrites caller data.
+function unusedMarkerKey(callerKeys: readonly string[], marker: string) {
+	const usedKeys = new Set(callerKeys)
+	let candidate = marker
+	for (let suffix = 2; usedKeys.has(candidate); suffix++) candidate = `${ marker }${ suffix }`
+	return candidate
 }
 
 // Native prototype methods are called directly so a Date with overridden getTime or toISOString cannot run caller code.

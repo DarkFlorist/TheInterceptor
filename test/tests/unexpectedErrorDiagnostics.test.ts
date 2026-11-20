@@ -805,6 +805,18 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(stringifyDiagnosticDetails({ debugId: undefined, params: [undefined, 1] }), '{"debugId":"[undefined]","params":["[undefined]",1]}')
 	})
 
+	test('keeps a caller property named like the truncation marker when an object exceeds the entry limit', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const context: Record<string, unknown> = { '[omitted]': 'caller value', '[omitted]2': 'second caller value' }
+		for (let index = 0; index < 50; index++) context[`field${ index }`] = index
+
+		const diagnostic = JSON.parse(stringifyDiagnosticDetails(context) ?? '')
+
+		assert.equal(diagnostic['[omitted]'], 'caller value')
+		assert.equal(diagnostic['[omitted]2'], 'second caller value')
+		assert.equal(diagnostic['[omitted]3'], '2 more properties omitted')
+	})
+
 	test('keeps a caller-supplied __proto__ field instead of dropping it through the prototype setter', async () => {
 		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
 
