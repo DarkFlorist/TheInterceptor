@@ -21,8 +21,8 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
-import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getWebsiteHostWithPortFromStoredOrigin, getWebsiteOrigin } from '../utils/websiteOrigin.js'
-import { applyWebsiteAccessDecision } from './websiteAccessDecision.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getWebsiteBlockingHostname, getWebsiteOrigin } from '../utils/websiteOrigin.js'
+import { applyWebsiteAccessDecision } from './websiteAccessMutations.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -232,7 +232,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 		.map((access) => access.website.websiteOrigin)
 	// Blocking matches the initiating page's host, as declarative net request rules do, so a block-all origin also covers its host's other scheme. A file page has no host, so only the origin match below can cover it, and only the MV2 webRequest listener can block it.
 	const initiatorHostsToBlock = originsToBlock.flatMap((origin) => {
-		const host = getWebsiteHostWithPortFromStoredOrigin(origin)
+		const host = getWebsiteBlockingHostname(origin)
 		return host === undefined ? [] : [host]
 	})
 	return {
@@ -244,7 +244,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 
 // A page is blocked when its host is blocked or its origin is a block-all origin, which for a legacy record includes the origins it stands for, such as every file page for the legacy empty file origin.
 function isWebsiteOriginBlocked(blocked: { readonly originsToBlock: readonly string[], readonly initiatorHostsToBlock: readonly string[] }, websiteOrigin: string) {
-	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
+	const websiteHost = getWebsiteBlockingHostname(websiteOrigin)
 	if (websiteHost !== undefined && blocked.initiatorHostsToBlock.includes(websiteHost)) return true
 	return blocked.originsToBlock.some((blockedOrigin) => doesStoredWebsiteOriginApplyTo(blockedOrigin, websiteOrigin))
 }

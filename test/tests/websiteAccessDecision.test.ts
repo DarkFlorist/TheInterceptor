@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
-import { applyWebsiteAccessDecision } from '../../app/ts/background/websiteAccessDecision.js'
+import { applyWebsiteAccessDecision } from '../../app/ts/background/websiteAccessMutations.js'
 import { withInterceptorDisabledForWebsite } from '../../app/ts/background/websiteAccessMutations.js'
 import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, isInterceptorDisabledForWebsiteOrigin } from '../../app/ts/background/websiteAccessPolicy.js'
 
@@ -239,8 +239,8 @@ describe('stored website details lookup', () => {
 	test('reads an exact record first and otherwise the legacy record an access decision would rebind', () => {
 		const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: true, addressAccess: [{ address: firstAddress, access: true }] }
 		const exact = { website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Exact' }, access: true, addressAccess: undefined }
-		assert.equal(findWebsiteAccessEntryForOrigin([legacy], 'https://example.test'), legacy)
-		assert.equal(findWebsiteAccessEntryForOrigin([legacy, exact], 'https://example.test'), exact)
+		assert.deepEqual(findWebsiteAccessEntryForOrigin([legacy], 'https://example.test'), { kind: 'legacy', entry: legacy, index: 0 })
+		assert.deepEqual(findWebsiteAccessEntryForOrigin([legacy, exact], 'https://example.test'), { kind: 'exact', entry: exact, index: 1 })
 		assert.equal(findWebsiteAccessEntryForOrigin([legacy], 'https://other.test'), undefined)
 		// Reading a legacy record's details never grants access: only an exact record can.
 		assert.equal(hasAccess([legacy], 'https://example.test'), 'askAccess')

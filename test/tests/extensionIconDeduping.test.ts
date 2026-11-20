@@ -214,7 +214,7 @@ describe('extension icon deduping', () => {
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
 	})
 
-	test.each(['example.test', 'example.test:8080'])('refreshes blocking icons for persisted legacy tab origin %s without requiring a reload', async (websiteOrigin) => {
+	test.each(['example.test', 'example.test:8080', 'example.test:443', 'example.test:80'])('refreshes blocking icons for persisted legacy tab origin %s without requiring a reload', async (websiteOrigin) => {
 		const { setTitleCalls } = installBrowserMock([{ id: 1, url: `https://${ websiteOrigin }`, status: 'complete' }])
 		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: false, declarativeNetRequestBlockMode: 'block-all' }])
@@ -222,6 +222,14 @@ describe('extension icon deduping', () => {
 
 		await updateExtensionIcon(new Map(), 1, websiteOrigin, 0)
 
+		assert.match(setTitleCalls.at(-1)?.title ?? '', /blocking external requests/u)
+	})
+
+	for (const storedOrigin of ['example.test:443', 'example.test:80']) test(`default-port legacy blocking covers the canonical origin for ${ storedOrigin }`, async () => {
+		const { setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { updateExtensionIcon, updateWebsiteAccess } = await loadModules()
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: storedOrigin }, access: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await updateExtensionIcon(new Map(), 1, 'https://example.test', 0)
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /blocking external requests/u)
 	})
 

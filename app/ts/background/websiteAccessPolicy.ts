@@ -5,15 +5,20 @@ import { doesStoredWebsiteOriginApplyTo, isLegacyWebsiteOriginForCanonicalOrigin
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
 function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
-	const exactAccess = websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+	const match = findWebsiteAccessEntryForOrigin(websiteAccess, websiteOrigin)
+	const exactAccess = match?.kind === 'exact' ? match.entry : undefined
 	const legacyAccessEntries = websiteAccess.filter((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin))
 	return { exactAccess, legacyAccessEntries }
 }
 
-// The record that represents an origin's stored website details: its exact record, or before the user has rebound it, the legacy record that an access decision for the origin would rebind (see applyWebsiteAccessDecision). Use it to read details, never to decide access, which only an exact record can grant.
+// Lookup preserves whether the details belong to this exact origin or require explicit legacy rebinding; only exact records can grant access.
 export function findWebsiteAccessEntryForOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
-	return websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
-		?? websiteAccess.find((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin))
+	const exactIndex = websiteAccess.findIndex((entry) => entry.website.websiteOrigin === websiteOrigin)
+	const exact = websiteAccess[exactIndex]
+	if (exact !== undefined) return { kind: 'exact' as const, entry: exact, index: exactIndex }
+	const legacyIndex = websiteAccess.findIndex((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin))
+	const legacy = websiteAccess[legacyIndex]
+	return legacy === undefined ? undefined : { kind: 'legacy' as const, entry: legacy, index: legacyIndex }
 }
 
 // The Interceptor stays disabled for an origin while any exact or scheme-ambiguous legacy record for it is disabled, matching content-script injection, which excludes the origin of every disabled record.

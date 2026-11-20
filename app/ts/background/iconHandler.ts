@@ -47,7 +47,7 @@ async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 		const currentIcon = sanitizeStoredWebsiteIcon(currentWebsite.icon)
 		if (currentIcon !== undefined) return { cachedIcon: currentIcon, hasStoredWebsiteAccess: true as const }
 	}
-	return { cachedIcon: sanitizeStoredWebsiteIcon(storedWebsite.website.icon), hasStoredWebsiteAccess: true as const }
+	return { cachedIcon: sanitizeStoredWebsiteIcon(storedWebsite.entry.website.icon), hasStoredWebsiteAccess: true as const }
 }
 
 async function setInterceptorIcon(tabId: number, icon: TabIcon, iconReason: string, popupRefreshGeneration: number) {
