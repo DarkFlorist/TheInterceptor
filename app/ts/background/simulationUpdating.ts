@@ -211,7 +211,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const vote = decodeGovernanceVote(pendingTransaction.transactionToSimulate.transaction.input)
 		if (vote === undefined) return returnError('Could not identify the transaction as a vote')
 		// The stack's preparation, the preview and the visualisation all work on one parent block, whatever blocks arrive meanwhile.
-		const pinnedPreview = await pinGovernancePreviewToLatestBlock(liveEthereum, undefined)
+		const pinnedPreview = await pinGovernancePreviewToLatestBlock(liveEthereum, prepareSafeExecutionsOnParentBlock, undefined)
 		const stack = await pinnedPreview.prepareStack(await getCurrentSimulationInput())
 		const execution = await stack.simulateProposalExecution(governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
 		if (!execution.success) return returnError(execution.errorMessage)
@@ -329,7 +329,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview. The governance execution preview prepares it with prepareSafeExecutionsOnParentBlock, as this does, on the block it pins (pinGovernancePreviewToLatestBlock). EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview. The governance execution preview is handed prepareSafeExecutionsOnParentBlock, which this calls too, and runs it on the block it pins (pinGovernancePreviewToLatestBlock). EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
 export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)

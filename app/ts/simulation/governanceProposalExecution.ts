@@ -11,7 +11,6 @@ import type { EthereumClientService } from './services/EthereumClientService.js'
 import { createSimulationState } from './services/SimulationModeEthereumClientService.js'
 import { getGovernorProposalForwarder } from '../utils/ethereumByteCodes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
-import { prepareSafeExecutionsOnParentBlock } from '../safe/safeExecutionSimulation.js'
 
 type EthereumBlockHeader = NonNullable<MaybeEthereumBlockHeader>
 
@@ -496,6 +495,9 @@ export type PreparedGovernanceStack = {
 	readonly simulateProposalExecution: (governor: bigint, proposalId: bigint, website: Website) => Promise<GovernanceExecutionPreview>
 }
 
+// Prepares the user's stack for the node on top of parentBlock with the pinned client, Gnosis Safe executions included. The orchestration layer supplies it (prepareSafeExecutionsOnParentBlock), so this module does not depend on the Safe layer.
+export type GovernanceStackPreparer = (stack: SimulationStateInput, ethereum: EthereumClientService, parentBlock: EthereumBlockHeader) => Promise<SimulationStateInput>
+
 // A governance preview pinned to one parent block, the latest when it was made. ethereum and parentBlock are there to read, for example to visualise the outcome on the same block; prepareStack prepares with the client and block its closure holds, never these fields.
 export type PinnedGovernancePreview = {
 	readonly ethereum: EthereumClientService
@@ -503,12 +505,12 @@ export type PinnedGovernancePreview = {
 	readonly prepareStack: (stack: SimulationStateInput) => Promise<PreparedGovernanceStack>
 }
 
-export const pinGovernancePreviewToLatestBlock = async (liveEthereum: EthereumClientService, requestAbortController: AbortController | undefined): Promise<PinnedGovernancePreview> => {
+export const pinGovernancePreviewToLatestBlock = async (liveEthereum: EthereumClientService, prepareStackForNode: GovernanceStackPreparer, requestAbortController: AbortController | undefined): Promise<PinnedGovernancePreview> => {
 	const parentBlock = await liveEthereum.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const ethereum = liveEthereum.pinnedToBlock(parentBlock)
 	const prepareStack = async (stack: SimulationStateInput): Promise<PreparedGovernanceStack> => {
-		const preparedStack = await prepareSafeExecutionsOnParentBlock(stack, ethereum, parentBlock)
+		const preparedStack = await prepareStackForNode(stack, ethereum, parentBlock)
 		return {
 			preparedStack,
 			simulateProposalExecution: async (governor, proposalId, website) => await simulateGovernanceProposalExecutionOnPinnedBlock(ethereum, parentBlock, preparedStack, governor, proposalId, website),

@@ -3,7 +3,7 @@ import { pinGovernancePreviewToLatestBlock } from '../app/ts/simulation/governan
 import { EthereumJSONRpcRequestHandler } from '../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EXAMPLE_STACKS, createRecordingEthereumClientService, isExampleStackName } from '../test/governanceFixtures.js'
 import { loadGovernanceFixtures, writeGovernanceFixtures, type GovernanceFixture } from '../test/governanceFixtureFiles.js'
-import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
+import { prepareSafeExecutionsOnParentBlock, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
 import { addressString } from '../app/ts/utils/bigint.js'
 
 const [name, rpcUrl, governor, proposalId, description, stackOption] = process.argv.slice(2)
@@ -12,7 +12,7 @@ if (name === undefined || rpcUrl === undefined || governor === undefined || prop
 const stackName = stackOption?.replace('--stack=', '')
 if (stackName !== undefined && !isExampleStackName(stackName)) throw new Error(`Unknown stack ${ stackName }`)
 const { ethereum, exchanges } = createRecordingEthereumClientService(new EthereumJSONRpcRequestHandler(rpcUrl))
-const stack = await (await pinGovernancePreviewToLatestBlock(ethereum, undefined)).prepareStack(stackName === undefined ? [] : EXAMPLE_STACKS[stackName](BigInt(governor)))
+const stack = await (await pinGovernancePreviewToLatestBlock(ethereum, prepareSafeExecutionsOnParentBlock, undefined)).prepareStack(stackName === undefined ? [] : EXAMPLE_STACKS[stackName](BigInt(governor)))
 const preview = await stack.simulateProposalExecution(BigInt(governor), BigInt(proposalId), { websiteOrigin: 'https://governance.fixture', icon: undefined, title: undefined })
 console.log(preview.success ? `${ name }: simulated ${ preview.simulationState.simulatedBlocks[0]?.simulatedTransactions.length ?? 0 } execution transactions` : `${ name }: ${ preview.errorMessage }`)
 

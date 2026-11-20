@@ -1,7 +1,7 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { findGovernorCodeProblem, GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, pinGovernancePreviewToLatestBlock, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, splitIntoLogQueries, type GovernanceExecutionPreview } from '../../app/ts/simulation/governanceProposalExecution.js'
-import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
+import { prepareSafeExecutionsOnParentBlock, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { describeGovernanceExecutionBlockNumber } from '../../app/ts/utils/governanceExecutionBlock.js'
@@ -112,7 +112,7 @@ const previewFixture = async (name: string, options: Parameters<typeof createRep
 	const fixture = await loadGovernanceFixture(name)
 	if (fixture.stack !== undefined && !isExampleStackName(fixture.stack)) throw new Error(`Unknown stack ${ fixture.stack }`)
 	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture, options)
-	const pinnedPreview = await pinGovernancePreviewToLatestBlock(ethereum, undefined)
+	const pinnedPreview = await pinGovernancePreviewToLatestBlock(ethereum, prepareSafeExecutionsOnParentBlock, undefined)
 	const parentBlock = pinnedPreview.parentBlock
 	const preparedStack = await pinnedPreview.prepareStack(fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack](BigInt(fixture.governor)))
 	const stack = preparedStack.preparedStack
@@ -248,7 +248,7 @@ describe('governance proposal execution preview of real governors', () => {
 		const fixture = await loadGovernanceFixture('uniswap-bravo-queued-after-safeExecution')
 		const governor = BigInt(fixture.governor)
 		const { ethereum: liveEthereum, requests } = createReplayingEthereumClientService(fixture, { answer: answerWithLaterLatestBlock })
-		const pinnedPreview = await pinGovernancePreviewToLatestBlock(liveEthereum, undefined)
+		const pinnedPreview = await pinGovernancePreviewToLatestBlock(liveEthereum, prepareSafeExecutionsOnParentBlock, undefined)
 		// The live client would read the later block, and the forged parent block names it; neither reaches the preparation.
 		const forgedPinnedPreview = { ...pinnedPreview, ethereum: liveEthereum, parentBlock: { ...pinnedPreview.parentBlock, number: pinnedPreview.parentBlock.number + 1n, hash: 0x1a7e5en } }
 		const preparedStack = await forgedPinnedPreview.prepareStack(EXAMPLE_STACKS.safeExecution(governor))
