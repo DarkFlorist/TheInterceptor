@@ -403,6 +403,29 @@ describe('popup settings changes', () => {
 		assert.equal(refreshRequests(), refreshedCount)
 	})
 
+	for (const storedState of ['failed', 'done'] as const) test(`rich changes report a simulation that was already unavailable before the refresh started (${ storedState })`, async () => {
+		installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		await setPopupVisualisationState({ ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: storedState })
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const context = {
+			...services, settings: await getSettings(), websiteTabConnections: new Map(),
+			publishRpcConnectionStatus: async () => undefined,
+			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
+			resetSimulationState: async () => undefined,
+		}
+		const reply = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
+		await waitForBackgroundTasks()
+		assert.deepEqual(reply, storedState === 'failed'
+			? { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
+			: { type: 'PopupSettingsChangeReply', ok: true })
+		const { getMakeCurrentAddressRich } = await import('../../app/ts/background/settings.js')
+		assert.equal(await getMakeCurrentAddressRich(), true)
+	})
+
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()

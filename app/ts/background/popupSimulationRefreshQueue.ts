@@ -56,13 +56,14 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 
 const refreshRevision = createPopupSimulationRefresher<PopupVisualisationRefreshRequest>(async request => await request.execute(request.invalidateOldState ?? false))
 
-export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
+// Awaits the refresh and returns its outcome; failures reject to the caller. Use startPopupSimulationRefreshInBackground when the caller must not wait for RPC work.
+export async function runPopupSimulationRefresh(services: PopupSimulationRefresh): Promise<PopupSimulationRefreshOutcome> {
 	const request = await preparePopupVisualisationRefresh(services)
 	return request === undefined ? { status: 'superseded' } as const : await refreshRevision(request)
 }
 
-// Await local invalidation and capture; the executor owns validity after acknowledgement.
-export async function schedulePopupSimulationRefresh(services: PopupSimulationRefresh) {
+// Awaits only local invalidation and capture, then returns without an outcome; the refresh runs as a background task that reports its own failures. Callers that need the outcome use runPopupSimulationRefresh.
+export async function startPopupSimulationRefreshInBackground(services: PopupSimulationRefresh): Promise<void> {
 	const request = await preparePopupVisualisationRefresh(services, true)
 	if (request === undefined) return
 	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshRevision(request))

@@ -5,8 +5,9 @@ import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { getSettings } from './settings.js'
+import { getPopupVisualisationState } from './storageVariables.js'
 import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
-import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
@@ -40,10 +41,12 @@ export const popupSettingsCommandHandlers = {
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
-		if (await modifyMakeMeRich(request)) {
-			await schedulePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
-		}
-		// This reply confirms the saved rich setting and simulation invalidation; the visualization publishes follow-up simulation success or failure separately.
+		if (!await modifyMakeMeRich(request)) return { type: 'PopupSettingsChangeReply', ok: true }
+		// Read before starting the refresh, which replaces the stored state with an updating one. A failed state means the last refresh, or the provider preparation, failed and no newer one has succeeded.
+		const simulationUnavailable = (await getPopupVisualisationState()).simulationUpdatingState === 'failed'
+		await startPopupSimulationRefreshInBackground({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
+		if (simulationUnavailable) return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
+		// This reply confirms the saved rich setting and simulation invalidation; the visualization publishes the outcome of the background refresh separately.
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 } satisfies Pick<PopupMessageHandlerMap, PopupSettingsAdmittedRequest['method'] | 'popup_requestSettingsChangeStatus'>

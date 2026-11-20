@@ -1,5 +1,5 @@
 import { backgroundTaskSupervisor } from './backgroundTasks.js'
-import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
 import { identifyAddressWith, lookUpMetadataOnChain } from './metadataUtils.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimulationRefresh, refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
@@ -489,7 +489,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 					},
 				}
 			})
-			await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+			await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 			return
 		}
 	}
@@ -539,7 +539,7 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 		}
 	})
 
-	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 type ConfirmTransactionMetadataDependencies = {
@@ -1093,13 +1093,13 @@ export async function forceSetGasLimitForTransaction(ethereum: EthereumClientSer
 		}
 		await sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction')
 	}
-	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 	backgroundTaskSupervisor.start({ source: 'popup_forceSetGasLimitForTransaction', details: parsedRequest.data }, async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
 }
 
 export async function changePreSimulationBlockTimeManipulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: ChangePreSimulationBlockTimeManipulation) {
 	await setPreSimulationBlockTimeManipulation(parsedRequest.data.blockTimeManipulation)
-	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 export async function setTransactionOrMessageBlockTimeManipulator(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, parsedRequest: SetTransactionOrMessageBlockTimeManipulator) {
@@ -1129,7 +1129,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 		const newManipulator = { type: 'TimeManipulation', blockTimeManipulation: parsedRequest.data.blockTimeManipulation } as const
 		return { operations: normalizeConsecutiveTimeManipulations([...normalizedPrevStack.operations.slice(0, indexOfMaybeManipulator), newManipulator, ...normalizedPrevStack.operations.slice(indexOfMaybeManipulator)]) }
 	})
-	await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
@@ -1347,7 +1347,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 	console.info(`[simulation-stack import] persisted transaction stack at ${ formatEstimatedBytes(updatedStackBytes) }.`)
 
 	try {
-		await schedulePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
+		await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 	} catch (error) {
 		return importSimulationStackFailure(`Imported stack was stored (${ formatEstimatedBytes(updatedStackBytes) }), but publishing the pending simulation failed: ${ formatCaughtErrorMessage(error) }`)
 	}

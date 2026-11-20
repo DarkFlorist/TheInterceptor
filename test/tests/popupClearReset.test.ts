@@ -448,7 +448,7 @@ describe('popup clear reset', () => {
 	test.each(['scheduled', 'direct consumer'] as const)('a later UI edit invalidates an in-flight %s RPC refresh', async entryPoint => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: false, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
-		const { schedulePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { startPopupSimulationRefreshInBackground } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { createDeferredSignal } = await import('./backgroundEthAccountsTestHarness.js')
 		const modules = await modulesPromise
 		const entered = createDeferredSignal()
@@ -462,11 +462,11 @@ describe('popup clear reset', () => {
 		const nextTime = { type: 'AddToTimestamp', deltaToAdd: 600n, deltaUnit: 'Seconds' } as const
 		let directRefresh: Promise<unknown> | undefined
 		try {
-			if (entryPoint === 'scheduled') await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+			if (entryPoint === 'scheduled') await startPopupSimulationRefreshInBackground({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
 			else directRefresh = (await import('../../app/ts/background/popupVisualisationUpdater.js')).refreshPopupVisualisationForOpenConsumer(fakeEthereum, fakeTokenPriceService)
 			await entered.promise
 			await modules.setPreSimulationBlockTimeManipulation(nextTime)
-			await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+			await startPopupSimulationRefreshInBackground({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
 			release.resolve()
 			await directRefresh
 			await waitForBackgroundTasks()
@@ -491,7 +491,7 @@ describe('popup clear reset', () => {
 	test('a UI edit retires an explicit refresh paused before execution', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: false, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
-		const { queuePopupSimulationRefresh, schedulePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { runPopupSimulationRefresh, startPopupSimulationRefreshInBackground } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { createDeferredSignal } = await import('./backgroundEthAccountsTestHarness.js')
 		const entered = createDeferredSignal()
 		const release = createDeferredSignal()
@@ -505,11 +505,11 @@ describe('popup clear reset', () => {
 			}
 			return await originalSend(message)
 		}
-		const explicit = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
+		const explicit = runPopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
 		try {
 			await entered.promise
 			await (await modulesPromise).setPreSimulationBlockTimeManipulation({ type: 'AddToTimestamp', deltaToAdd: 600n, deltaUnit: 'Seconds' })
-			await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+			await startPopupSimulationRefreshInBackground({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
 			release.resolve()
 			await explicit
 			await waitForBackgroundTasks()
@@ -530,8 +530,8 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
 		await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService)
-		const { schedulePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
-		await schedulePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
+		const { startPopupSimulationRefreshInBackground } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		await startPopupSimulationRefreshInBackground({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService })
 		await waitForBackgroundTasks()
 		const result = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(result)
@@ -542,7 +542,7 @@ describe('popup clear reset', () => {
 	test('complete visualization requests do not join a held interactive queue entry', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
-		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { runPopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const { requestCompleteVisualizedSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { Future } = await import('../../app/ts/utils/future.js')
 		const started = new Future<void>()
@@ -557,7 +557,7 @@ describe('popup clear reset', () => {
 			}
 			return await originalSend(message)
 		}
-		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
+		const queued = runPopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await started

@@ -1,5 +1,5 @@
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
-import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner, SimulationNetworkReconciliation } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
@@ -49,7 +49,7 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
 	await clearSimulationStateFromConfig()
-	await schedulePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	await startPopupSimulationRefreshInBackground({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -116,7 +116,7 @@ export async function runActiveSettingsTransition(
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
 			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (options.refreshAlways || networkOutcome !== 'unchanged' || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await schedulePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+				await startPopupSimulationRefreshInBackground(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})

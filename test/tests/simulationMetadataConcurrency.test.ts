@@ -6,7 +6,7 @@ import { pendingTransaction } from './confirmTransactionTestHarness.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from '../../app/ts/background/storageVariables.js'
 import { updateSimulationMetadata } from '../../app/ts/background/simulationUpdating.js'
-import { schedulePopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+import { startPopupSimulationRefreshInBackground } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
 afterEach(waitForBackgroundTasks)
 
@@ -45,7 +45,7 @@ describe('simulation metadata concurrency', () => {
 		try {
 			await started.promise
 			localUpdate = update === 'pending invalidation'
-				? schedulePopupSimulationRefresh({ ...services, invalidateOldState: true })
+				? startPopupSimulationRefreshInBackground({ ...services, invalidateOldState: true })
 				: setPopupVisualisationState({ ...capturedVisualisation, simulationState: { kind: 'simulated', value: { ...pendingTransaction.popupVisualisation.data.simulationState, blockNumber: 124n } } })
 			await completesPromptly(localUpdate)
 			committed = await getPopupVisualisationState()
