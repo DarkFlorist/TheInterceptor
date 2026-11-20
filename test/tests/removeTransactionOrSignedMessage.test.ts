@@ -1,80 +1,13 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import type { RemoveTransaction } from '../../app/ts/types/interceptor-messages.js'
+import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
+import { createStubEthereumClient } from './stubEthereumClient.js'
 
-type RuntimeMessage = {
-	method?: string
-	data?: unknown
-}
-
-const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
-
-function createBrowserMock() {
-	const storageState: Record<string, unknown> = {}
-
-	const browserMock = {
-		runtime: {
-			lastError: null as unknown,
-			async sendMessage(message: RuntimeMessage) {
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-				}
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	}
-	defineGlobal('browser', browserMock)
-	defineGlobal('chrome', { runtime: { id: 'test-extension' } })
-
-	return {
-		reset() {
-			for (const key of Object.keys(storageState)) delete storageState[key]
-			browserMock.runtime.lastError = undefined
-		},
-	}
-}
+const { installBrowserMockForTest } = createPerTestRestorer()
 
 async function loadModules() {
 	const [
@@ -82,22 +15,24 @@ async function loadModules() {
 		simulationModeEthereumClientService,
 		storageVariables,
 	] = await Promise.all([
-		importAllPopupMessageHandlers(),
+		import('../../app/ts/background/popupMessageHandlers/simulation.js'),
 		import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js'),
 		import('../../app/ts/background/storageVariables.js'),
 	])
 
 	return {
-		removeTransactionOrSignedMessage: popupMessageHandlers.removeTransactionOrSignedMessage,
+		// The handler only needs a client and price cache for popup refreshes, so it runs against a stub client that rejects every RPC request.
+		removeTransactionOrSignedMessage: async (params: RemoveTransaction) => {
+			const ethereum = createStubEthereumClient()
+			await popupMessageHandlers.removeTransactionOrSignedMessage(ethereum, new TokenPriceService(ethereum, 60_000), params)
+		},
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
 	}
 }
 
-const browserMock = createBrowserMock()
-
-function makeBaseUnsignedTransaction() {
+function makeBaseUnsignedTransaction(): EthereumUnsignedTransaction {
 	return {
 		type: '1559' as const,
 		from: 0x1111111111111111111111111111111111111111n,
@@ -113,12 +48,12 @@ function makeBaseUnsignedTransaction() {
 	}
 }
 
-function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnType<typeof makeBaseUnsignedTransaction>) => unknown, params: {
+function makePreSimulationTransaction(mockSignTransaction: (transaction: EthereumUnsignedTransaction) => EthereumSendableSignedTransaction, params: {
 	transactionIdentifier: bigint
 	nonce: bigint
 	from?: bigint
 	method?: 'eth_sendTransaction' | 'eth_sendRawTransaction'
-}) {
+}): PreSimulationTransaction {
 	const method = params.method ?? 'eth_sendTransaction'
 	const signedTransaction = mockSignTransaction({
 		...makeBaseUnsignedTransaction(),
@@ -131,8 +66,8 @@ function makePreSimulationTransaction(mockSignTransaction: (transaction: ReturnT
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		created: new Date('2024-01-01T00:00:00.000Z'),
 		originalRequestParameters: method === 'eth_sendTransaction'
-			? { method: 'eth_sendTransaction' as const, params: [{}] }
-			: { method: 'eth_sendRawTransaction' as const, params: [new Uint8Array([Number(params.transactionIdentifier)])] },
+			? { method: 'eth_sendTransaction', params: [{}] }
+			: { method: 'eth_sendRawTransaction', params: [new Uint8Array([Number(params.transactionIdentifier)])] },
 		transactionIdentifier: params.transactionIdentifier,
 	}
 }
@@ -165,8 +100,8 @@ function makeTimeManipulationOperation(deltaToAdd: bigint) {
 
 describe('removeTransactionOrSignedMessage', () => {
 	test('removes the time manipulation of a removed message instead of leaving two in a row', async () => {
+		installBrowserMockForTest()
 		const modules = await loadModules()
-		browserMock.reset()
 		// Each time manipulation applies after the operation before it: 5 seconds after message 1, 7 seconds after message 2.
 		await modules.updateInterceptorTransactionStack(() => ({
 			operations: [
@@ -178,7 +113,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage({
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Message', messageIdentifier: 2n },
 		})
@@ -189,9 +124,10 @@ describe('removeTransactionOrSignedMessage', () => {
 		assert.equal(remainingTimeManipulation?.type === 'TimeManipulation' && remainingTimeManipulation.blockTimeManipulation.type === 'AddToTimestamp' ? remainingTimeManipulation.blockTimeManipulation.deltaToAdd : undefined, 5n)
 	})
 
+
 	test('keeps later raw transactions unchanged when removing an earlier same-sender transaction', async () => {
+		installBrowserMockForTest()
 		const modules = await loadModules()
-		browserMock.reset()
 		await modules.updateInterceptorTransactionStack(() => ({
 			operations: [
 				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n, method: 'eth_sendTransaction' }) },
@@ -199,7 +135,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage({
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -212,8 +148,8 @@ describe('removeTransactionOrSignedMessage', () => {
 	})
 
 	test('decrements later interceptor-assigned transactions from the same sender', async () => {
+		installBrowserMockForTest()
 		const modules = await loadModules()
-		browserMock.reset()
 		await modules.updateInterceptorTransactionStack(() => ({
 			operations: [
 				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n }) },
@@ -221,7 +157,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage({
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -234,8 +170,8 @@ describe('removeTransactionOrSignedMessage', () => {
 	})
 
 	test('does not rewrite later transactions from a different sender', async () => {
+		installBrowserMockForTest()
 		const modules = await loadModules()
-		browserMock.reset()
 		await modules.updateInterceptorTransactionStack(() => ({
 			operations: [
 				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n, from: 0x1111111111111111111111111111111111111111n }) },
@@ -243,7 +179,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage({
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})
@@ -256,8 +192,8 @@ describe('removeTransactionOrSignedMessage', () => {
 	})
 
 	test('does not rewrite later same-sender transactions with the same nonce', async () => {
+		installBrowserMockForTest()
 		const modules = await loadModules()
-		browserMock.reset()
 		await modules.updateInterceptorTransactionStack(() => ({
 			operations: [
 				{ type: 'Transaction' as const, preSimulationTransaction: makePreSimulationTransaction(modules.mockSignTransaction, { transactionIdentifier: 1n, nonce: 0n }) },
@@ -265,7 +201,7 @@ describe('removeTransactionOrSignedMessage', () => {
 			],
 		}))
 
-		await modules.removeTransactionOrSignedMessage({}, undefined, {
+		await modules.removeTransactionOrSignedMessage({
 			method: 'popup_removeTransactionOrSignedMessage',
 			data: { type: 'Transaction', transactionIdentifier: 1n },
 		})

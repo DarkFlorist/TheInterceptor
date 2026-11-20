@@ -1,72 +1,25 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
+import { installBrowserMock } from '../harness/browserMock.js'
+import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import { getMessageMethod } from './runtimeMessageMatchers.js'
+import { createStubEthereumClient } from './stubEthereumClient.js'
 
-type StorageState = Record<string, unknown>
-
-const makeMockBrowser = () => {
-	const storage: StorageState = {}
-
-	const get = async (keys: string | readonly string[]) => {
-		const requested = Array.isArray(keys) ? keys : [keys]
-		return Object.fromEntries(requested.filter((key) => key in storage).map((key) => [key, storage[key]]))
-	}
-	const set = async (items: Record<string, unknown>) => {
-		Object.assign(storage, items)
-	}
-	const remove = async (keys: string | readonly string[]) => {
-		const requested = Array.isArray(keys) ? keys : [keys]
-		for (const key of requested) delete storage[key]
-	}
-
-	return {
-		storage: {
-			local: {
-				get,
-				set,
-				remove,
-			},
-		},
-		runtime: {
-			lastError: undefined,
-			getManifest: () => ({ manifest_version: 3 }),
-			sendMessage: async (message: { method?: string }) => {
-				if (message.method === 'popup_isMainPopupWindowOpen') {
-					return { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } }
-				}
-				return undefined
-			},
-		},
-		tabs: {
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-			query: async () => [],
-			get: async () => undefined,
-			update: async () => undefined,
-			reload: async () => undefined,
-			create: async () => undefined,
-			remove: async () => undefined,
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			get: async () => undefined,
-			update: async () => undefined,
-		},
-		__storage: storage,
-	}
-}
-
-const mockBrowser = makeMockBrowser()
-Object.defineProperty(globalThis, 'browser', { value: mockBrowser, configurable: true, writable: true })
-Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
+const browserMock = installBrowserMock({
+	handlers: {
+		runtimeMessage: async (message) => getMessageMethod(message) === 'popup_isMainPopupWindowOpen' ? { method: 'popup_isMainPopupWindowOpen', data: { isOpen: false } } : undefined,
+	},
+})
 
 const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
-const { setTransactionOrMessageBlockTimeManipulator } = await importAllPopupMessageHandlers()
+const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers/simulation.js')
 const { mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
 const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 
 const baseTransaction = {
-	type: '1559',
+	type: '1559' as const,
 	from: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
 	nonce: 0n,
 	maxFeePerGas: 1n,
@@ -76,14 +29,14 @@ const baseTransaction = {
 	value: 10n,
 	input: new Uint8Array(0),
 	chainId: 1n,
-} as const
+}
 
-const makePreSimulationTransaction = (transactionIdentifier: bigint) => ({
+const makePreSimulationTransaction = (transactionIdentifier: bigint): PreSimulationTransaction => ({
 	signedTransaction: mockSignTransaction(baseTransaction),
 	website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 	created: new Date('2024-01-01T00:00:00.000Z'),
 	originalRequestParameters: {
-		method: 'eth_sendTransaction' as const,
+		method: 'eth_sendTransaction',
 		params: [{
 			from: baseTransaction.from,
 			to: baseTransaction.to,
@@ -101,10 +54,9 @@ const tx1 = makePreSimulationTransaction(1n)
 const tx2 = makePreSimulationTransaction(2n)
 const newDelay = { type: 'AddToTimestamp', deltaToAdd: 11n, deltaUnit: 'Seconds' } as const
 
-const ethereum = {
-	getBlock: async () => ({ timestamp: new Date('2024-01-01T00:00:00.000Z') }),
-} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[0]
-const tokenPriceService = {} as never as Parameters<typeof setTransactionOrMessageBlockTimeManipulator>[1]
+// The popup visualisation refresh stops before touching the client because no popup reports itself open, so every RPC request may reject.
+const ethereum = createStubEthereumClient()
+const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 const resetStack = async () => {
 	await updateInterceptorTransactionStack(() => ({
@@ -115,13 +67,15 @@ const resetStack = async () => {
 			{ type: 'Transaction', preSimulationTransaction: tx2 },
 		],
 	}))
-	delete mockBrowser.__storage.popupVisualisation
-	delete mockBrowser.__storage.preSimulationBlockTimeManipulation
-	delete mockBrowser.__storage.makeCurrentAddressRich
-	delete mockBrowser.__storage.fixedAddressRichList
-	delete mockBrowser.__storage.simulationMode
-	delete mockBrowser.__storage.independentActiveSimulationAddress
-	delete mockBrowser.__storage.activeRpcNetwork
+	await browserMock.browser.storage.local.remove([
+		'popupVisualisation',
+		'preSimulationBlockTimeManipulation',
+		'makeCurrentAddressRich',
+		'fixedAddressRichList',
+		'simulationMode',
+		'independentActiveSimulationAddress',
+		'activeRpcNetwork',
+	])
 }
 
 describe('simulate delay editor', () => {

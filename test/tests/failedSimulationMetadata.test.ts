@@ -1,84 +1,26 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
+import type { SimulationState } from '../../app/ts/types/visualizer-types.js'
+import { withSilencedConsole } from './consoleSilence.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
+import { createStubEthereumClient, rejectRpcRequest, stubRpcNetwork } from './stubEthereumClient.js'
 
-function installBrowserMock() {
-	const storageState: Record<string, unknown> = {}
-	const browser = {
-		runtime: {
-			lastError: null,
-			async sendMessage() { return undefined },
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return { [keys]: storageState[keys] }
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items) { Object.assign(storageState, items) },
-				async remove(keys) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get() { return undefined },
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-	}
-	Object.defineProperty(globalThis, 'browser', { value: browser, configurable: true, writable: true })
-	Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-extension' } }, configurable: true, writable: true })
-}
-
-installBrowserMock()
+const { installBrowserMockForTest } = createPerTestRestorer()
 
 const { ETHEREUM_LOGS_LOGGER_ADDRESS, NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 const { visualizeSimulatorState } = await import('../../app/ts/background/simulationUpdating.js')
-const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 const { getLatestUnexpectedError } = await import('../../app/ts/utils/unexpectedErrorStorage.js')
 const { identifyAddress } = await import('../../app/ts/background/metadataUtils.js')
 const { JsonRpcResponseError } = await import('../../app/ts/utils/errors.js')
 
 describe('visualizeSimulatorState failed simulations', () => {
 	test('recovers JSON-RPC metadata probe failures without hiding unexpected metadata errors', async () => {
-		installBrowserMock()
-		const rpcNetwork = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-			minimized: true,
-		}
-		const baseEthereum = new EthereumClientService({
-			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest() { throw new Error('Unexpected direct RPC request') },
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		installBrowserMockForTest()
+		const rpcNetwork = stubRpcNetwork
+		const baseEthereum = createStubEthereumClient(async () => { throw new Error('Unexpected direct RPC request') }, rpcNetwork)
+		// The simulation has no token transfers, so price estimation never queries the node.
+		const tokenPriceService = new TokenPriceService(baseEthereum, 0)
 		const ethereum = new Proxy(baseEthereum, {
 			get(target, property, receiver) {
 				if (property === 'getCode') return async () => new Uint8Array([1])
@@ -109,16 +51,16 @@ describe('visualizeSimulatorState failed simulations', () => {
 			},
 			website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 			created,
-			originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ from: 0n, to: targetAddress }] },
+			originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ from: 0n, to: targetAddress }] as const },
 			transactionIdentifier: 1n,
 		}
-		const simulationState = {
-			success: true as const,
+		const simulationState: SimulationState = {
+			success: true,
 			simulationStateInput: [{
 				stateOverrides: {},
 				transactions: [transaction],
 				signedMessages: [],
-				blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 0n, deltaUnit: 'Seconds' as const },
+				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}],
 			simulatedBlocks: [],
@@ -128,19 +70,10 @@ describe('visualizeSimulatorState failed simulations', () => {
 			simulationConductedTimestamp: created,
 			rpcNetwork,
 		}
-		const originalConsoleWarn = console.warn
-		const originalConsoleError = console.error
-		console.warn = () => undefined
-		console.error = () => undefined
-		let visualized: Awaited<ReturnType<typeof visualizeSimulatorState>>
-		let directlyIdentifiedEntry: Awaited<ReturnType<typeof identifyAddress>>
-		try {
-			directlyIdentifiedEntry = await identifyAddress(ethereum, undefined, targetAddress)
-			visualized = await visualizeSimulatorState(simulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
-		} finally {
-			console.warn = originalConsoleWarn
-			console.error = originalConsoleError
-		}
+		const { directlyIdentifiedEntry, visualized } = await withSilencedConsole(async () => ({
+			directlyIdentifiedEntry: await identifyAddress(ethereum, undefined, targetAddress),
+			visualized: await visualizeSimulatorState(simulationState, ethereum, tokenPriceService, undefined),
+		}))
 
 		const targetEntry = visualized.addressBookEntries.find((entry) => entry.address === targetAddress)
 		assert.equal(directlyIdentifiedEntry.entrySource, 'FilledIn')
@@ -157,35 +90,23 @@ describe('visualizeSimulatorState failed simulations', () => {
 		})
 		await assert.rejects(async () => await identifyAddress(unexpectedEthereum, undefined, targetAddress), /unexpected metadata defect/)
 		await assert.rejects(
-			async () => await visualizeSimulatorState(simulationState, unexpectedEthereum, { estimateEthereumPricesForTokens: async () => [] }, undefined),
+			async () => await visualizeSimulatorState(simulationState, unexpectedEthereum, tokenPriceService, undefined),
 			/unexpected metadata defect/,
 		)
 	})
 
 	test('keeps fetched address metadata instead of returning an empty address book', async () => {
-		installBrowserMock()
+		installBrowserMockForTest()
 
-		const rpcNetwork = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-			minimized: true,
-		}
+		const rpcNetwork = stubRpcNetwork
 
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method === 'eth_getCode') return '0x'
-				throw new Error(`Unexpected RPC method: ${ request.method }`)
-			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		const ethereum = createStubEthereumClient(async (request) => {
+			if (request.method === 'eth_getCode') return '0x'
+			return await rejectRpcRequest(request)
+		}, rpcNetwork)
 
 		const created = new Date('2024-01-01T00:00:00.000Z')
-		const failedSimulationState = {
+		const failedSimulationState: SimulationState = {
 			success: false,
 			simulationStateInput: [{
 				stateOverrides: {},
@@ -223,7 +144,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 			rpcNetwork,
 		}
 
-		const visualized = await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined)
+		const visualized = await visualizeSimulatorState(failedSimulationState, ethereum, new TokenPriceService(ethereum, 0), undefined)
 
 		assert.equal(visualized.addressBookEntries.length, 2)
 		assert.equal(visualized.addressBookEntries.some((entry) => entry.address === 0n), true)
@@ -234,29 +155,17 @@ describe('visualizeSimulatorState failed simulations', () => {
 	})
 
 	test('propagates new-block aborts during delegation lookup without recording an unexpected error', async () => {
-		installBrowserMock()
+		installBrowserMockForTest()
 
-		const rpcNetwork = {
-			name: 'Test Chain',
-			chainId: 1337n,
-			httpsRpc: 'https://example.invalid',
-			currencyName: 'Ether',
-			currencyTicker: 'ETH',
-			primary: true,
-			minimized: true,
-		}
+		const rpcNetwork = stubRpcNetwork
 
-		const ethereum = new EthereumClientService({
-			rpcUrl: rpcNetwork.httpsRpc,
-			clearCache() { return undefined },
-			async jsonRpcRequest(request) {
-				if (request.method === 'eth_getCode') throw NEW_BLOCK_ABORT
-				throw new Error(`Unexpected RPC method: ${ request.method }`)
-			},
-		}, async () => undefined, async () => undefined, rpcNetwork)
+		const ethereum = createStubEthereumClient(async (request) => {
+			if (request.method === 'eth_getCode') throw NEW_BLOCK_ABORT
+			return await rejectRpcRequest(request)
+		}, rpcNetwork)
 
 		const created = new Date('2024-01-01T00:00:00.000Z')
-		const failedSimulationState = {
+		const failedSimulationState: SimulationState = {
 			success: false,
 			simulationStateInput: [{
 				stateOverrides: {},
@@ -295,7 +204,7 @@ describe('visualizeSimulatorState failed simulations', () => {
 		}
 
 		await assert.rejects(
-			async () => await visualizeSimulatorState(failedSimulationState, ethereum, { estimateEthereumPricesForTokens: async () => [] }, undefined),
+			async () => await visualizeSimulatorState(failedSimulationState, ethereum, new TokenPriceService(ethereum, 0), undefined),
 			(error) => error === NEW_BLOCK_ABORT,
 		)
 		assert.equal(await getLatestUnexpectedError(), undefined)
