@@ -5,11 +5,11 @@ import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 import { flushMicrotasks, settleWithin, waitFor } from '../harness/async.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, getWalletSwitchRequestId, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 describe('background signer lifecycle and chain switching', () => {
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -56,7 +56,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('does not wait for retry-state publishing before replying to eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -99,7 +99,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('refresh signer accounts for approved eth_accounts requests when the tab cache is empty', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -148,7 +148,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('refreshes an approved signer account before forwarding wallet_getCapabilities', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -203,7 +203,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			refreshSignerAccountsFromApprovedWebsitePorts,
@@ -272,7 +272,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('uses an unapproved signer owner for tab-wide refresh when a sibling frame is approved', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -327,7 +327,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('does not send a callback when a recreated connection reuses the expected generations', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { sendCallbackToExpectedConfirmedSignerOwner, websiteSocketToString } = await loadModules()
 		const expectedSocket = { tabId: 1, connectionName: 0n }
 		const currentSocket = { tabId: 1, connectionName: 1n }
@@ -352,7 +352,7 @@ describe('background signer lifecycle and chain switching', () => {
 
 	test('settles a pending chain switch when its exact signer owner disconnects', async () => {
 		// Popup window 9 shows the pending chain-change dialog that the test stores below.
-		installBrowserMock({ windows: [{ id: 1, focused: true }, { id: 9, type: 'popup' }] })
+		installBackgroundBrowserMockForTest({ windows: [{ id: 1, focused: true }, { id: 9, type: 'popup' }] })
 		const {
 			changeSimulationMode,
 			removeWebsiteTabConnection,
@@ -421,7 +421,7 @@ describe('background signer lifecycle and chain switching', () => {
 
 	test('accepts the exact solicited chain reply after the approving sibling disconnects', async () => {
 		// Popup window 10 shows the pending chain-change dialog that the test stores below.
-		installBrowserMock({ windows: [{ id: 1, focused: true }, { id: 10, type: 'popup' }] })
+		installBackgroundBrowserMockForTest({ windows: [{ id: 1, focused: true }, { id: 10, type: 'popup' }] })
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -502,7 +502,7 @@ describe('background signer lifecycle and chain switching', () => {
 
 	test('rejects a conflicting popup switch and ignores another tab reply while a dapp switch is pending', async () => {
 		// Popup window 11 shows the pending chain-change dialog that the test stores below.
-		installBrowserMock({ windows: [{ id: 1, focused: true }, { id: 11, type: 'popup' }] })
+		installBackgroundBrowserMockForTest({ windows: [{ id: 1, focused: true }, { id: 11, type: 'popup' }] })
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -612,7 +612,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('keeps the production chain dialog guarded while signer resolution starts', async () => {
-		const { waitForDeferredChainChangeRemoval, releaseDeferredChainChangeRemoval } = installBrowserMock({ deferFirstChainChangeRemoval: true })
+		const { waitForDeferredChainChangeRemoval, releaseDeferredChainChangeRemoval } = installBackgroundBrowserMockForTest({ deferFirstChainChangeRemoval: true })
 		const {
 			changeSimulationMode,
 			getChainChangeConfirmationPromise,
@@ -714,7 +714,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('resolves approved eth_requestAccounts after signer account state is refreshed', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -790,7 +790,7 @@ describe('background signer lifecycle and chain switching', () => {
 	})
 
 	test('suppresses unscoped connect events for requester during signer refresh with page-level access', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -857,7 +857,7 @@ describe('background signer lifecycle and chain switching', () => {
 	const manifestVersions: readonly (2 | 3)[] = [2, 3]
 	for (const manifestVersion of manifestVersions) {
 		test(`replays only accountsChanged before wallet_requestPermissions resolves for manifest v${ manifestVersion }`, async () => {
-			const browserMock = installBrowserMock({ manifestVersion })
+			const browserMock = installBackgroundBrowserMockForTest({ manifestVersion })
 			const {
 				handleInterceptedRequest,
 				websiteSocketToString,

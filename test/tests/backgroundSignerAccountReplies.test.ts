@@ -3,11 +3,11 @@ import { describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus, waitForInternalWindowMessageDelivery, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 describe('background signer account replies and account exposure', () => {
 	test('falls back to the wallet account when a stored signing Safe is no longer owned', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -63,7 +63,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('replays account state after already-approved eth_requestAccounts with cached active signer address', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -107,7 +107,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('replays account state for already-approved eth_requestAccounts on signer-only networks', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -165,7 +165,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('does not connect an unapproved port when signer rejects site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -214,7 +214,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('does not connect an unapproved port when signer returns empty accounts for site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -263,7 +263,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('preserves the signer account-access rejection for approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -316,7 +316,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('maps unavailable signer errors only for interactive account connection methods', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -391,7 +391,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('ignores a provider-disconnected completion from a sibling socket', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			sendInternalWindowMessage,
@@ -456,7 +456,7 @@ describe('background signer account replies and account exposure', () => {
 	})
 
 	test('does not apply the passive reply timeout to interactive signer approval', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getTabState,
