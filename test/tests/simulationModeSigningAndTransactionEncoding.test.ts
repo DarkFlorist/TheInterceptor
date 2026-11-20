@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
@@ -9,7 +9,8 @@ import { EthTransactionReceiptResponse, EthereumJsonRpcRequest } from '../../app
 import { d2ArrayFixed } from './data/eip712Data.js'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, example7702Transaction, exampleTransaction, testBytes32, zeroBytes256 } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { ethereum } = createSimulationModeTestContext()
+const { ethereum, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 
 describe('SimulationModeEthereumClientService', () => {
 	test('preserves the 20-byte sender width when deriving contract addresses', () => {

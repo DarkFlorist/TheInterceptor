@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { afterAll, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -7,8 +7,9 @@ import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.j
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { installBrowserMock } from '../harness/browserMock.js'
 
-// simulationModeHandlers.ts still imports background.ts, whose module setup needs the extension globals, so install them before loading it.
-installBrowserMock({ extensionId: 'test-extension' })
+// simulationModeHandlers.ts still imports background.ts, whose module setup needs the extension globals, so install them before loading it. The imported background graph captures these globals, so keep one file-lifetime install and restore it after this isolated suite.
+const moduleBrowserMock = installBrowserMock({ extensionId: 'test-extension' })
+afterAll(moduleBrowserMock.restore)
 
 const { getStorageAt } = await import('../../app/ts/background/simulationModeHandlers.js')
 

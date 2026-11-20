@@ -12,7 +12,7 @@ import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { EthereumBlockHeader, EthereumQuantity } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { createPerTestBrowserMockInstaller } from '../harness/perTest.js'
-import { isObjectWithOptionalProperties } from '../harness/assertions.js'
+import { canReadObjectProperties } from '../harness/assertions.js'
 import { hasMessageMethod } from './runtimeMessageMatchers.js'
 
 const isUnknownArray = (value: unknown): value is readonly unknown[] => Array.isArray(value)
@@ -135,9 +135,9 @@ function assertWireSafe(value: unknown, seen = new Set<unknown>()) {
 
 function getPendingTransactionsUpdateMessage(sentMessages: readonly unknown[]) {
 	const message = sentMessages.find((entry) => hasMessageMethod(entry, 'popup_update_confirm_transaction_dialog_pending_transactions'))
-	if (!isObjectWithOptionalProperties<'role' | 'data'>(message)) throw new Error('Expected confirm transaction update message')
+	if (!canReadObjectProperties<'role' | 'data'>(message)) throw new Error('Expected confirm transaction update message')
 	const { data } = message
-	if (!isObjectWithOptionalProperties<'pendingTransactionAndSignableMessages'>(data)) throw new Error('Expected confirm transaction message data')
+	if (!canReadObjectProperties<'pendingTransactionAndSignableMessages'>(data)) throw new Error('Expected confirm transaction message data')
 	assert.equal(message.role, 'confirmTransaction')
 	return { message, data }
 }
@@ -151,7 +151,7 @@ function getPendingTransactionsUpdate(sentMessages: readonly unknown[]) {
 function getFirstSignablePendingMessage(sentMessages: readonly unknown[]) {
 	const pendingTransactions = getPendingTransactionsUpdate(sentMessages)
 	const firstPendingMessage = pendingTransactions[0]
-	if (!isObjectWithOptionalProperties<PopupPendingMessageField>(firstPendingMessage)) throw new Error('Expected first pending message object')
+	if (!canReadObjectProperties<PopupPendingMessageField>(firstPendingMessage)) throw new Error('Expected first pending message object')
 	assert.equal(firstPendingMessage.type, 'SignableMessage')
 	return firstPendingMessage
 }
@@ -288,7 +288,7 @@ function assertPopupPendingSafeTxShape(sentMessages: readonly unknown[]) {
 	assert.equal(firstPendingMessage.originalRequestParameters !== undefined, true)
 
 	const visualizedPersonalSignRequest = firstPendingMessage.visualizedPersonalSignRequest
-	if (!isObjectWithOptionalProperties<PopupVisualizedSignRequestField>(visualizedPersonalSignRequest)) throw new Error('Expected visualized personal sign request')
+	if (!canReadObjectProperties<PopupVisualizedSignRequestField>(visualizedPersonalSignRequest)) throw new Error('Expected visualized personal sign request')
 	assert.equal('request' in visualizedPersonalSignRequest, false)
 	assert.equal(visualizedPersonalSignRequest.type, 'SafeTx')
 	assert.equal(visualizedPersonalSignRequest.signerName, 'NoSignerDetected')
@@ -353,9 +353,9 @@ describe('SafeTx confirm transaction metadata', () => {
 		})
 
 		const dialogUpdate = browserMock.calls.runtimeSendMessage.find((message) => hasMessageMethod(message, 'popup_update_confirm_transaction_dialog'))
-		if (!isObjectWithOptionalProperties<'data'>(dialogUpdate) || !isObjectWithOptionalProperties<'visualizedSimulatorState'>(dialogUpdate.data)) throw new Error('Missing confirm transaction dialog update')
+		if (!canReadObjectProperties<'data'>(dialogUpdate) || !canReadObjectProperties<'visualizedSimulatorState'>(dialogUpdate.data)) throw new Error('Missing confirm transaction dialog update')
 		const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
-		if (!isObjectWithOptionalProperties<'simulationId'>(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
+		if (!canReadObjectProperties<'simulationId'>(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
 		assert.equal(visualizedSimulatorState.simulationId, 77)
 		assert.equal(reportedError, refreshError)
 		assert.equal(reportCalls, 1)

@@ -4,7 +4,7 @@ import * as vm from 'node:vm'
 import { describe, test } from 'bun:test'
 import ts from 'typescript'
 import { flushMicrotasks, waitFor } from '../harness/async.js'
-import { isObjectWithOptionalProperties, type PropertiesOf } from '../harness/assertions.js'
+import { canReadObjectProperties, type PropertiesOf } from '../harness/assertions.js'
 
 const inpageSourcePath = path.resolve('app/inpage/ts/inpage.ts')
 // Names that live inside the provider's function scope and that a dapp might plausibly declare itself.
@@ -12,7 +12,7 @@ const INPAGE_INTERNAL_NAMES = ['isRecord', 'inpageWindow', 'injectInterceptor', 
 
 type Listener = (event: unknown) => void
 
-const isPageMessageCandidate = (value: unknown): value is PropertiesOf<'type' | 'method' | 'requestId'> => isObjectWithOptionalProperties(value)
+const isPageMessageCandidate = (value: unknown): value is PropertiesOf<'type' | 'method' | 'requestId'> => canReadObjectProperties(value)
 
 // MV3 registers the Bun-bundled app/inpage/js/inpage.js as a MAIN world content script.
 async function buildManifestV3Inpage() {

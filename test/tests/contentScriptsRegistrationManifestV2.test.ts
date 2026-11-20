@@ -168,6 +168,19 @@ describe('manifest v2 content script registration', () => {
 		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [['http://example.com/*', 'https://example.com/*']])
 	})
 
+	test('a direct settings import refreshes exclusions only when the disabled sites change', async () => {
+		const { registrations, activeRegistrations } = installManifestV2BrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2, importSettingsAndAddressBook } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV2()
+		const beforeImportCount = registrations.length
+		const imported = buildExportWithDisabledSite('direct-import.test')
+		await importSettingsAndAddressBook(imported)
+		assert.equal(registrations.length, beforeImportCount + 1)
+		assert.deepEqual(activeRegistrations().map(({ options }) => options.excludeGlobs), [['http://direct-import.test/*', 'https://direct-import.test/*']])
+		await importSettingsAndAddressBook(imported)
+		assert.equal(registrations.length, beforeImportCount + 1)
+	})
+
 	test('applies overlapping updates in order, so the newest disabled-site list stays registered', async () => {
 		const { registrations, activeRegistrations, holdRegistrations, releaseHeldRegistration, heldRegistrationCount } = installManifestV2BrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2, updateWebsiteAccess } = await loadModules()
