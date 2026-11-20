@@ -42,7 +42,7 @@ function createSignerConnection() {
 type AcceptConfirmation = Awaited<ReturnType<typeof createAcceptConfirmation>>
 const resolveAccept = async (websiteTabConnections: ReturnType<typeof createSignerConnection>['websiteTabConnections'], accept: AcceptConfirmation, selectedSigner?: bigint) => {
 	const refreshedSafeSignerSelection = selectedSigner === undefined ? undefined : { selectedSigner, verificationError: undefined }
-	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, accept, refreshedSafeSignerSelection)
+	return await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, accept, refreshedSafeSignerSelection === undefined ? {} : { refreshedSafeSignerSelection })
 }
 
 function prepareSafeWithTwoOwners(reviewedOwner: bigint, selectedOwner: bigint) {
@@ -60,7 +60,7 @@ async function getStoredRequest() {
 	return stored
 }
 
-const refreshConfirmMetadata = async () => await modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
+const refreshConfirmMetadata = async () => await modules.refreshPopupConfirmTransactionMetadata(() => simulator, undefined)
 const getConfirmDialogUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog' || message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
 
 // Refreshes once as a control, then again with the request resolved right after the refresh persists its result, which is during its awaits and before it reads the queue back.
@@ -91,7 +91,7 @@ test('a metadata refresh sends nothing when the signature request is resolved du
 	const { websiteTabConnections } = createSignerConnection()
 	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	browserMock.sentMessages.length = 0
 	await assertMetadataRefreshSendsNothingOnceRequestIsResolved()
 })
@@ -113,7 +113,7 @@ test('the reviewed-result id binds signing inputs even while the displayed visua
 	const signRequest = { method: 'personal_sign' as const, params: ['0x6869', activeAddress] as const }
 	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const pending = await getStoredRequest()
 	if (pending.type !== 'SignableMessage') throw new Error('Expected a signature request')
 	const signedMessageTransaction = pending.signedMessageTransaction
@@ -149,7 +149,7 @@ test('the background stamps the reviewed-result id of the stored request on the 
 	const { websiteTabConnections } = createSignerConnection()
 	const personalSign = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...personalSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: personalSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, { ...personalSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: personalSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const signatureRequest = await getStoredRequest()
 	assert.equal(signatureRequest.type, 'SignableMessage')
 	assertPopupCopyCarriesStoredId(signatureRequest, 'signature request')
@@ -159,7 +159,7 @@ test('the background stamps the reviewed-result id of the stored request on the 
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [recipientAddress], activeSigningAddress: recipientAddress, signerChain: fakeRpcNetwork.chainId }))
 	const coSign = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, { ...coSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: coSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, { ...coSign, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }, { kind: 'message', parameters: coSign }, false, activeAddress, pendingTransaction.website, websiteTabConnections)
 	const coSignRequest = await getStoredRequest()
 	assert.notEqual(coSignRequest.type === 'SignableMessage' ? coSignRequest.safeMessageCoSignSnapshot : undefined, undefined, 'the stored request is a Safe co-signing request')
 	assertPopupCopyCarriesStoredId(coSignRequest, 'Safe co-signing request')
@@ -293,7 +293,7 @@ test('requires the send-anyway override for a quarantined signature request', as
 	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', activeAddress] as const }
 	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
 	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => {
 		if (pending.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a simulated signature request')
 		return { ...pending, visualizedPersonalSignRequest: { ...pending.visualizedPersonalSignRequest, quarantine: true, quarantineReasons: ['The message targets a known scam contract.'] } }
@@ -350,7 +350,7 @@ test('refuses a Safe co-signing accept when the signer refresh during resolution
 	const { websiteTabConnections, wasForwardedToSigner, getForwardedSigner } = createSignerConnection()
 	const signRequest = { method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const }
 	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
-	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'message', parameters: signRequest }, false, activeAddress, pendingTransaction.website, websiteTabConnections), { type: 'doNotReply' })
 	const reviewed = await getStoredRequest()
 	assert.equal(reviewed.type === 'SignableMessage' ? reviewed.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, reviewedOwner)
 	const acceptForReviewedOwner = await createAcceptConfirmation()

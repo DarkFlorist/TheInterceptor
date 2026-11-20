@@ -36,6 +36,7 @@ async function openTransactionConfirmation() {
 	return await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -95,7 +96,7 @@ for (const { cause, error } of [
 			assert.equal(interrupted.popupVisualisation.statusCode, 'failed')
 
 			failSimulation = false
-			await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+			await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 			const [refreshed] = await modules.getPendingTransactionsAndMessages()
 			if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed confirmation to stay simulated')
 			assert.equal(refreshed.popupVisualisation.statusCode, 'success')

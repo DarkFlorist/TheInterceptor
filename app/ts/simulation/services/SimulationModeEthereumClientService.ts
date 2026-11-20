@@ -1,4 +1,3 @@
-import type { Settings } from '../../types/interceptor-messages.js'
 import { type EthereumClientService, getExecutedTransaction, getNextBlockTimeStampOverride, getTotalExecutedGasLimit, type RpcTransaction } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
@@ -13,7 +12,6 @@ import { assertNever, modifyObject } from '../../utils/typescript.js'
 import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
 import type { BlockCalls as SimulateBlockCalls } from '../../types/ethSimulate-types.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
-import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { deduplicateByFunction, last } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
@@ -435,12 +433,6 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		if (error instanceof JsonRpcResponseError) return jsonRpcErrorToGasEstimate(error)
 		throw error
 	}
-}
-
-export const getAddressToMakeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
-	if (!settings.simulationMode) return undefined
-	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
 }
 
 export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimulateV1Input, result: EthSimulateV1Result): GroupedEthSimulateV1Result => {

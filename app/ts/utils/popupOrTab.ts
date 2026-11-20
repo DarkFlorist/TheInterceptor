@@ -1,4 +1,4 @@
-import { getUseTabsInsteadOfPopup } from '../background/settings.js'
+import { getUseTabsInsteadOfPopup } from './pageSafeSettings.js'
 import { assertNever } from './typescript.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, getTabIfExists, getWindowIfExists, isMissingBrowserTargetError, updateTabIfExists, updateWindowIfExists } from './requests.js'

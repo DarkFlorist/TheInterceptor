@@ -8,7 +8,7 @@ import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { last } from '../utils/array.js'
-import { NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
+import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
 import type { UniqueRequestIdentifier } from '../utils/requests.js'
@@ -17,21 +17,11 @@ import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
-
-let confirmTransactionAbortController = new AbortController()
-export const getConfirmTransactionAbortController = () => confirmTransactionAbortController
-
-// Every confirmation simulation run gets an id no other run ever has, which refreshPopupConfirmTransactionMetadata uses to tell the run whose metadata it refreshed from any other. The sequence numbers the runs of this background lifetime and starts over after a restart, and the random lifetime keeps a run of this lifetime from taking the id of a run stored before the restart. The id reads neither the clock nor storage. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md for how this id, the simulation timestamp and the metadata refresh counter divide the work.
-const confirmationRunLifetime = crypto.randomUUID()
-let latestConfirmationRunSequence = 0
-
-function getNextConfirmationRunId(): ConfirmationRunId {
-	latestConfirmationRunSequence += 1
-	return { lifetime: confirmationRunLifetime, sequence: latestConfirmationRunSequence }
-}
+import { confirmationRuns } from './confirmationRunTracker.js'
 
 // The result stored for a confirmation's first simulation when the run ended without one (refreshConfirmTransactionSimulation returned undefined because it was aborted or its RPC fetch failed). A failed result is what confirmation refreshes simulate again, and the window shows it as "Failed to simulate. Retrying...".
 export function createInterruptedConfirmTransactionSimulation(
+	confirmationRunId: ConfirmationRunId,
 	activeAddress: bigint,
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
@@ -46,7 +36,7 @@ export function createInterruptedConfirmTransactionSimulation(
 		simulationMode,
 		activeAddress,
 		signerName,
-		confirmationRunId: getNextConfirmationRunId(),
+		confirmationRunId,
 		simulationStartedTimestamp,
 		error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message, decodedErrorMessage: message },
 		simulationState: {
@@ -57,6 +47,7 @@ export function createInterruptedConfirmTransactionSimulation(
 }
 
 export async function refreshConfirmTransactionSimulation(
+	confirmationRunId: ConfirmationRunId,
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	activeAddress: bigint,
@@ -65,10 +56,6 @@ export async function refreshConfirmTransactionSimulation(
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
-	// Replace the controller before the first await so an older run resuming late can never abort a newer run's simulation
-	confirmTransactionAbortController.abort(NEW_BLOCK_ABORT)
-	confirmTransactionAbortController = new AbortController()
-	const thisConfirmTransactionAbortController = confirmTransactionAbortController
 	const info = {
 		uniqueRequestIdentifier,
 		transactionToSimulate,
@@ -76,8 +63,29 @@ export async function refreshConfirmTransactionSimulation(
 		activeAddress,
 		signerName: (await getTabState(uniqueRequestIdentifier.requestSocket.tabId)).signerName,
 		tabIdOpenedFrom: uniqueRequestIdentifier.requestSocket.tabId,
-		confirmationRunId: getNextConfirmationRunId(),
+		confirmationRunId,
 	}
+	const abortController = confirmationRuns.startRun(uniqueRequestIdentifier, confirmationRunId)
+	if (abortController === undefined) return undefined
+	try {
+		return await simulateConfirmationRun(ethereum, tokenPriceService, info, abortController, safeSigningRequest)
+	} finally {
+		confirmationRuns.finishRun(uniqueRequestIdentifier, abortController)
+	}
+}
+
+type ConfirmationRunInfo = {
+	readonly uniqueRequestIdentifier: UniqueRequestIdentifier
+	readonly transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed
+	readonly simulationMode: boolean
+	readonly activeAddress: bigint
+	readonly signerName: SignerName
+	readonly tabIdOpenedFrom: number
+	readonly confirmationRunId: ConfirmationRunId
+}
+
+async function simulateConfirmationRun(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, info: ConfirmationRunInfo, thisConfirmTransactionAbortController: AbortController, safeSigningRequest: SafeTransactionSigningRequest | undefined): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
+	const { transactionToSimulate } = info
 	sendPopupMessageToOpenWindows({ method: 'popup_confirm_transaction_simulation_started' }, 'confirmTransaction')
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = safeSigningRequest === undefined

@@ -70,12 +70,15 @@ const startupStorageCodecs = {
 export type StartupStorageValues = { [Key in keyof typeof startupStorageCodecs]: funtypes.Static<typeof startupStorageCodecs[Key]> }
 const startupStorageValueCodecs: { [Key in keyof StartupStorageValues]: funtypes.Codec<StartupStorageValues[Key]> } = startupStorageCodecs
 
+// The active network is read through getActiveRpcNetworkFromItems in pageSafeSettings.ts, which never writes, and only writeActiveNetwork in the background writes it, so it has no startup read that repairs it here.
+export type StartupStorageKeyOtherThanActiveNetwork = Exclude<keyof StartupStorageValues, 'activeRpcNetwork'>
+
 // Tracked keys have one write owner: the tracked local-storage facade. Other storage schemas and read-time repair exclude them, so a stale read cannot overwrite an explicit mode change.
 type TrackedLocalStorageValues = Pick<StartupStorageValues, 'simulationMode'>
 type TrackedLocalStorageKey = keyof TrackedLocalStorageValues
-type StartupStorageRepairWriters = { [Key in keyof StartupStorageValues]: ((value: StartupStorageValues[Key]) => Promise<void>) | undefined }
-type RequiredStartupStorageRepairs = { [Key in Exclude<keyof StartupStorageValues, TrackedLocalStorageKey>]: (value: StartupStorageValues[Key]) => Promise<void> } & { readonly [Key in TrackedLocalStorageKey]: undefined }
-// Every startup key declares its repair policy; only tracked keys may explicitly decline repair.
+type StartupStorageRepairWriters = { [Key in StartupStorageKeyOtherThanActiveNetwork]: ((value: StartupStorageValues[Key]) => Promise<void>) | undefined }
+type RequiredStartupStorageRepairs = { [Key in Exclude<StartupStorageKeyOtherThanActiveNetwork, TrackedLocalStorageKey>]: (value: StartupStorageValues[Key]) => Promise<void> } & { readonly [Key in TrackedLocalStorageKey]: undefined }
+// Every startup key other than the active network declares its repair policy; only tracked keys may explicitly decline repair.
 const startupStorageDefaultWriters: StartupStorageRepairWriters = {
 	simulationMode: undefined,
 	independentActiveSimulationAddress: async (value) => await browserStorageLocalSet({ independentActiveSimulationAddress: value }),
@@ -83,13 +86,12 @@ const startupStorageDefaultWriters: StartupStorageRepairWriters = {
 	openedPageV2: async (value) => await browserStorageLocalSet({ openedPageV2: value }),
 	useSignersAddressAsActiveAddress: async (value) => await browserStorageLocalSet({ useSignersAddressAsActiveAddress: value }),
 	websiteAccess: async (value) => await browserStorageLocalSet({ websiteAccess: value }),
-	activeRpcNetwork: async (value) => await browserStorageLocalSet({ activeRpcNetwork: value }),
 	makeCurrentAddressRich: async (value) => await browserStorageLocalSet({ makeCurrentAddressRich: value }),
 	fixedAddressRichList: async (value) => await browserStorageLocalSet({ fixedAddressRichList: value }),
 	signingAddressPreferences: async (value) => await browserStorageLocalSet({ signingAddressPreferences: value }),
 } satisfies RequiredStartupStorageRepairs
 
-export async function getStartupStorageValueOrDefault<Key extends keyof StartupStorageValues>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
+export async function getStartupStorageValueOrDefault<Key extends StartupStorageKeyOtherThanActiveNetwork>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageValues[Key]): Promise<StartupStorageValues[Key]> {
 	const rawValue = storedItems[key]
 	// Check presence before decoding: the stored 'missing' marker decodes to undefined, but represents an explicitly cleared address and must not select the default.
 	if (!hasOwnKey(storedItems, key) || rawValue === undefined) return defaultValue
@@ -233,15 +235,20 @@ export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | Lo
 	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
-export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {
+// The active network is left out of the generic setter and remover, so writeActiveNetwork in the background-only activeNetworkStorage.ts, which counts its writes, is the only typed way to write it.
+type RemovableLocalStorageKey = Exclude<LocalStorageKey, 'activeRpcNetwork'>
+export type WritableLocalStorageItems = LocalStorageItems & { readonly activeRpcNetwork?: never }
+
+export async function browserStorageLocalRemove(keys: RemovableLocalStorageKey | RemovableLocalStorageKey[]) {
 	return await browser.storage.local.remove(Array.isArray(keys) ? keys : [keys])
 }
+export const serializeLocalStorageItems = (items: LocalStorageItems) => serialize(LocalStorageItems, items)
+
 // One storage owner records all writes. Higher-level consumers capture only the typed key/value relevant to their decision; the writer knows no domain-specific policy.
 export const captureLocalStorageWritesTo = <Key extends TrackedLocalStorageKey>(key: Key, value: TrackedLocalStorageValues[Key] & StorageWriteValue) => captureStorageWritesTo(key, value)
 
-export async function browserStorageLocalSet(items: LocalStorageItems) {
-	const serialized = serialize(LocalStorageItems, items)
-	return await writeLocalStorage(serialized)
+export async function browserStorageLocalSet(items: WritableLocalStorageItems) {
+	return await writeLocalStorage(serializeLocalStorageItems(items))
 }
 
 const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ tabId }`

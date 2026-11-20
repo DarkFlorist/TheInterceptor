@@ -440,6 +440,7 @@ async function openSigningModeSafeConfirmation(simulator: ReturnType<typeof crea
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
 		{ kind: 'transaction', parameters: transactionParams, ...(safeRequestContext === undefined ? {} : { safeTransaction: safeRequestContext }) },
 		false,
@@ -465,7 +466,7 @@ async function assertSafeFailureKeptThroughRefresh(transactionParams: SendTransa
 		assertPending(pending, stage)
 	}
 	await assertFailure('when the confirmation opens')
-	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier))
 	await assertFailure('after a refresh')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
@@ -500,7 +501,7 @@ for (const { description, outcome } of safeProposalFormationFailures) {
 		const simulator = createRecordingSimulator('fake-node', () => executorCall.outcome)
 		// Without a gas limit, so forming the transaction estimates its gas.
 		await openSigningModeSafeConfirmation(simulator, await createTransferParams({ from: addressString(SAFE_ADDRESS) }), { operation: 0 })
-		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+		const refresh = async () => await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier))
 		const assertProposalRetried = async (stage: string) => {
 			const pending = await getFirstPendingTransaction(stage)
 			assert.equal(pending.transactionOrMessageCreationStatus, 'FailedToSimulate', stage)
@@ -531,7 +532,7 @@ test('keeps a Gnosis Safe proposal whose transaction did not form as it is when 
 	assert.deepEqual(opened.safeFlow, { kind: 'proposal', state: 'formationFailed' })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 	const simulatedCallCount = simulator.simulatedCalls.length
-	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService))
+	await withSilencedConsole(async () => await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier))
 	assert.deepEqual(await getFirstPendingTransaction('after the refresh'), opened)
 	assert.equal(simulator.simulatedCalls.length, simulatedCallCount, 'nothing is formed or simulated')
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -853,6 +854,7 @@ async function openSimulationModeConfirmation(simulator: ReturnType<typeof creat
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
 		{ kind: 'transaction', parameters: transactionParams },
 		true,
@@ -891,12 +893,12 @@ test('simulates a configured Gnosis Safe\'s transaction in simulation mode as th
 	const visualizedTransaction = pending.popupVisualisation.data.visualizedSimulationState.visualizedBlocks.at(-1)?.simulatedAndVisualizedTransactions.at(-1)
 	assert.deepEqual(visualizedTransaction?.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.deepEqual(refreshedPending.transactionToSimulate.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS, 'a refresh forms the transaction as a Safe execution again')
 
-	await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation())
+	await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation())
 	const [stackedOperation] = (await modules.getInterceptorTransactionStack()).operations
 	if (stackedOperation?.type !== 'Transaction') throw new Error('Expected the Safe transaction on the simulation stack')
 	assert.deepEqual(stackedOperation.preSimulationTransaction.simulationOptions, SAFE_EXECUTION_SIMULATION_OPTIONS)
@@ -1009,7 +1011,7 @@ test('simulates a configured Gnosis Safe that the page names as the sender, whil
 	assert.equal(pending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined)
 	assert.equal(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR), false, 'no executor calls the Safe\'s execTransaction')
 
-	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+	await modules.refreshPopupConfirmTransactionSimulation(() => simulator, uniqueRequestIdentifier)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	if (refreshedPending?.type !== 'Transaction' || refreshedPending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed transaction to stay simulated')
 	assert.equal(refreshedPending.transactionToSimulate.simulationOptions?.executeThroughSafe, undefined, 'a refresh keeps the ordinary simulation')

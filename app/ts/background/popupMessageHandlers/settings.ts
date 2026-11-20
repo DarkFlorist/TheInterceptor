@@ -6,8 +6,9 @@ import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, changeSimulationMode } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, changeSimulationMode } from '../settings.js'
 import { importSettingsAndAddressBook } from '../settingsImport.js'
+import { getUseTabsInsteadOfPopup } from '../../utils/pageSafeSettings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
 import { runActiveSettingsTransition } from '../activeSettings.js'
@@ -66,13 +67,17 @@ export async function exportSettings() {
 }
 
 export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList) {
-	await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
-		const [settings, previousEntries] = await Promise.all([getSettings(), getRpcList()])
-		await setRpcList(request.data)
+	try {
+		await runActiveSettingsTransition(simulationServicesOwner, websiteTabConnections, async () => {
+			const [settings, previousEntries] = await Promise.all([getSettings(), getRpcList()])
+			await setRpcList(request.data)
+			const network = resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, previousEntries, request.data)
+			if (network === undefined) return false
+			await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
+			return true
+		}, { updateNetworkMetadata: true })
+	} finally {
+		// Sent once the transition has installed the client, as the confirmation window asks for its queue again on this message and shows what the installed client allows.
 		await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-		const network = resolveRpcNetworkAfterListChange(settings.activeRpcNetwork, previousEntries, request.data)
-		if (network === undefined) return false
-		await changeSimulationMode({ simulationMode: settings.simulationMode, rpcNetwork: network })
-		return true
-	}, { updateNetworkMetadata: true })
+	}
 }

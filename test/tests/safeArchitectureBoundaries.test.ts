@@ -4,6 +4,7 @@ import { test } from 'bun:test'
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const confirmationWindowPublicationSource = await Bun.file(new URL('../../app/ts/background/confirmationWindowPublication.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
@@ -17,6 +18,58 @@ test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', 
 	assert.match(backgroundSource, /import \{ getSafeModeRpcPolicyReply \} from '\.\.\/safe\/safeRequestPolicy\.js'/u)
 	assert.doesNotMatch(backgroundSource, /SAFE_MESSAGE_SIGNING_METHODS|isSafeTransactionCoSignRequest|safeModeUnsupportedMethod/u)
 	assert.doesNotMatch(backgroundSource, /Gnosis Safe message signing is not supported|Gnosis Safe transaction proposals require/u)
+})
+
+// A pending request's two locks have one owner, which exposes only the ordered ways to take them: resolveSerially, whose commits take the commit lock inside the resolution lock, and commitOnly, which takes only the commit lock. No other module keeps a lock keyed on a pending request, so the order cannot be broken elsewhere. Whether a lock is held across an RPC is shown by the behaviour tests that hold an RPC while approving and rejecting.
+test('the locks of a pending request have one owner, which exposes only the ordered ways to take them', async () => {
+	const locks = await import('../../app/ts/background/pendingRequestLocks.js')
+	assert.equal(typeof locks.resolveSerially, 'function')
+	assert.equal(typeof locks.commitOnly, 'function')
+	for (const name of ['commitIfStillPending', 'runUnderResolutionLock', 'runUnderCommitLock']) assert.equal(name in locks, false, name)
+	const backgroundDirectory = new URL('../../app/ts/background/', import.meta.url).pathname
+	const keyedLockOwners: string[] = []
+	for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: backgroundDirectory })) {
+		if (/createScopedKeyedSerialExecutor</u.test(await Bun.file(`${ backgroundDirectory }${ file }`).text())) keyedLockOwners.push(file)
+	}
+	// The others serialize per tab or per website connection, not per pending request.
+	assert.deepEqual(keyedLockOwners.toSorted(), ['iconHandler.ts', 'pendingRequestLocks.ts', 'signerStateOwnership.ts', 'windows/interceptorAccess.ts'])
+})
+
+// Showing what is stored only reads it, so a status has one owner and not also every window update.
+test('the window updates only read what is stored', () => {
+	const getFunctionSource = (name: string) => {
+		const start = confirmationWindowPublicationSource.indexOf(`async function ${ name }(`)
+		assert.notEqual(start, -1, name)
+		return confirmationWindowPublicationSource.slice(start, confirmationWindowPublicationSource.indexOf('\n}\n', start))
+	}
+	for (const view of ['updateConfirmTransactionView', 'publishConfirmationView']) assert.doesNotMatch(getFunctionSource(view), /updatePendingTransactionOrMessage/u, view)
+})
+
+// The window's queue carries refusals derived from the active network and the installed client read together as the last step, so the push and the bootstrap reply share one projection, which derives them through showWithCurrentNetworkRefusals under the queue lock, and no other code builds a queue for the window. The installed client comes from the getCurrent of the services owner, passed as a parameter, so the dependency is in every signature and nothing has to be installed in a module slot first.
+test('the window queue is built only with the installed services passed in as a parameter, and no module keeps an installed-services slot', async () => {
+	const appDirectory = new URL('../../app/ts/', import.meta.url).pathname
+	const builders: string[] = []
+	const installedServicesSlots: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: appDirectory })) {
+		const source = await Bun.file(`${ appDirectory }${ file }`).text()
+		if (file !== 'utils/popupPendingRequest.ts' && /toPopupPendingTransactionOrSignableMessage\(/u.test(source)) builders.push(file)
+		if (/^(?:export )?let \w+: SimulationServicesOwner\b/mu.test(source) && file !== 'background/background-startup.ts') installedServicesSlots.push(file)
+		if (/installedSimulationServices|getInstalledSimulationServices|setInstalledSimulationServicesOwner/u.test(source)) installedServicesSlots.push(file)
+	}
+	assert.deepEqual(builders, ['background/confirmationWindowPublication.ts'])
+	assert.match(confirmationWindowPublicationSource, /export const readConfirmationQueue = async \(getInstalledServices: GetInstalledServices\) => await buildFromPendingTransactionsAndMessages\(async \(pending\) => await projectConfirmationQueue\(getInstalledServices, pending\)\)/u)
+	assert.match(popupMessageHandlersSource, /await readConfirmationQueue\(getInstalledServices\)/u)
+	for (const builder of builders) assert.match(await Bun.file(`${ appDirectory }${ builder }`).text(), /await showWithCurrentNetworkRefusals\(getInstalledServices, /u, builder)
+	assert.deepEqual(installedServicesSlots, [])
+	assert.equal(await Bun.file(`${ appDirectory }background/installedSimulationServices.ts`).exists(), false)
+	const transactionNetworkSource = await Bun.file(`${ appDirectory }background/transactionNetwork.ts`).text()
+	assert.match(transactionNetworkSource, /export async function showWithCurrentNetworkRefusals<T>\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmationWindowPublicationSource, /export async function publishConfirmationView\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmationWindowPublicationSource, /export const publishConfirmationQueue = async \(getInstalledServices: GetInstalledServices\)/u)
+	assert.match(confirmTransactionSource, /export const resolvePendingTransactionOrMessage = \(\.\.\.args: Parameters<ReturnType<typeof beginPendingTransactionResolution>>\) => beginPendingTransactionResolution\(\)\(\.\.\.args\)/u)
+	assert.match(confirmTransactionSource, /export function beginPendingTransactionResolution\(\) \{\n\tconst simulationModeGuard = captureSimulationModeGuard\(\)\n\treturn async \(getInstalledServices: GetInstalledServices, /u)
+	assert.match(confirmTransactionSource, /async function showNetworkRefusal\(getInstalledServices: GetInstalledServices, /u)
+	assert.match(popupMessageHandlersSource, /export async function popupReadyAndListening\(getInstalledServices: GetInstalledServices, /u)
 })
 
 test('the confirmation window delegates Gnosis Safe resolution, persistence, and preparation', () => {
@@ -136,7 +189,7 @@ test('a pending transaction records its flow once, as the safeFlow that the conf
 })
 
 test('a refresh creates a Gnosis Safe proposal whose transaction did not form under the lock that opening a confirmation holds, so it reserves its own Safe nonce', () => {
-	assert.match(confirmTransactionSource, /const outcome = await pendingConfirmationSemaphore\.execute\(async \(\) => \{\n\t\tconst finalizedSafePreparation = await safePreparation\.finalize\(/u)
+	assert.match(confirmTransactionSource, /const outcome = await pendingConfirmationSemaphore\.execute\(async \(\) => \{\n\t+const finalizedSafePreparation = await safePreparation\.finalize\(/u)
 	assert.match(confirmTransactionSource, /export const runWithPendingConfirmationLock = async <T>\(work: \(\) => Promise<T>\) => await pendingConfirmationSemaphore\.execute\(work\)/u)
 	assert.match(popupMessageHandlersSource, /case 'prepareSafeProposal': return await runWithPendingConfirmationLock\(async \(\) => \{\n\t\t\tconst prepared = await prepareUnformedSafeProposalAgain\(/u)
 })

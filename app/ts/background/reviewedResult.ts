@@ -21,6 +21,8 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	created: true,
 	safeFlow: true,
 	safeMessageCoSignSnapshot: true,
+	// The network the transaction was requested on, set once when the request arrives; the requested-network rule checks it on every approval instead.
+	requestedChainId: false,
 	// Identity and signer round-trip bookkeeping, which change without changing what the user reviewed.
 	type: false,
 	uniqueRequestIdentifier: false,

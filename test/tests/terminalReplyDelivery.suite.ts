@@ -110,7 +110,7 @@ test('popup-close rejection backs off persistent storage failures and delivers o
 			}
 			return readStoredItems()
 		})
-		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, connections)
+		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, () => simulator, connections)
 		assert.equal(await fireNext(), 50)
 		assert.equal(await fireNext(), 100)
 		assert.equal(await fireNext(), 200)
@@ -148,8 +148,13 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 			simulationMode: false,
 			approvalStatus: { status: 'WaitingForUser' },
 		}] })
+		// The status of the first request in each queue the window is sent.
+		const getStatusesToldToWindow = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions').map((message) => {
+			const first: unknown = isRecord(message.data) && Array.isArray(message.data.pendingTransactionAndSignableMessages) ? message.data.pendingTransactionAndSignableMessages[0] : undefined
+			return isRecord(first) && isRecord(first.approvalStatus) ? first.approvalStatus.status : undefined
+		})
 
-		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, await createAcceptConfirmation())
+		const delivered = await modules.resolvePendingTransactionOrMessage(() => simulator, connectionCase.connections, await createAcceptConfirmation())
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
 
@@ -158,13 +163,12 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		assert.equal(retainedRequest?.approvalStatus.status, 'SignerError')
 		if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing signer delivery error')
 		assert.match(retainedRequest.approvalStatus.message, /request reached your wallet/)
-		const pendingUpdates = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-		assert.equal(pendingUpdates.length, 2)
-		const finalUpdateData = pendingUpdates.at(-1)?.data
-		if (!isRecord(finalUpdateData) || !Array.isArray(finalUpdateData.pendingTransactionAndSignableMessages)) throw new Error('missing final pending transaction popup update')
-		const finalUpdatedRequest = finalUpdateData.pendingTransactionAndSignableMessages[0]
-		if (!isRecord(finalUpdatedRequest) || !isRecord(finalUpdatedRequest.approvalStatus)) throw new Error('missing approval status in final popup update')
-		assert.equal(finalUpdatedRequest.approvalStatus.status, 'SignerError')
+		// The window is sent the queue with the spinner and with the error without an RPC, and the simulation view updates that follow, which carry no queue, are not awaited.
+		assert.deepEqual(getStatusesToldToWindow(), ['WaitingForSigner', 'SignerError'])
+		const getViewUpdates = () => browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog')
+		for (let attempt = 0; attempt < 200 && getViewUpdates().length < 2; attempt++) await new Promise((resolve) => setTimeout(resolve, 1))
+		assert.equal(getViewUpdates().length, 2)
+		assert.deepEqual(getStatusesToldToWindow(), ['WaitingForSigner', 'SignerError'])
 		assert.equal(disconnectedPort.getPostAttempts(), connectionCase.expectedPostAttempts)
 	}
 })
@@ -184,13 +188,14 @@ test('reject and result replies remain durable after their pending request is re
 		{
 			name: 'result',
 			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
-			transaction: { ...pendingTransaction, simulationMode: false as const },
+			// The wallet's result completes only a request that was forwarded to it.
+			transaction: { ...pendingTransaction, simulationMode: false as const, approvalStatus: { status: 'WaitingForSigner' as const } },
 		},
 	]
 
 	for (const terminalReply of terminalReplies) {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [terminalReply.transaction] })
-		assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
+		assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, disconnectedConnections, terminalReply.confirmation), false, terminalReply.name)
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [], terminalReply.name)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1, terminalReply.name)
 
@@ -219,7 +224,8 @@ test('terminal replies are persisted before removing the pending rejection or re
 		{
 			name: 'result',
 			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
-			transaction: { ...pendingTransaction, simulationMode: false as const },
+			// The wallet's result completes only a request that was forwarded to it.
+			transaction: { ...pendingTransaction, simulationMode: false as const, approvalStatus: { status: 'WaitingForSigner' as const } },
 		},
 	]
 
@@ -239,7 +245,7 @@ test('terminal replies are persisted before removing the pending rejection or re
 				writeStoredItems()
 			})
 
-			const resolution = modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), terminalReply.confirmation)
+			const resolution = modules.resolvePendingTransactionOrMessage(() => simulator, new Map(), terminalReply.confirmation)
 			await persistenceStarted
 			assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1, terminalReply.name)
 			releasePersistence?.()
@@ -303,7 +309,7 @@ test('MV2 popup close rejects its captured requests without deleting a concurren
 	})
 
 	try {
-		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, () => simulator, websiteTabConnections)
 	} finally {
 		browserMock.setManifestVersion(3)
 		browserMock.setTabMessageHandler(undefined)
@@ -352,7 +358,7 @@ test('popup close keeps the pending request when durable rejection enqueue fails
 		return readStoredItems()
 	})
 
-	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, () => simulator, websiteTabConnections))
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	assert.equal(postedMessages.length, 0)
 	assert.equal(browserMock.storageState.pendingTerminalReplies, undefined)
@@ -403,7 +409,7 @@ test('popup close retries outbox cleanup without reposting after direct delivery
 		return readStoredItems()
 	})
 
-	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+	await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, () => simulator, websiteTabConnections))
 	assert.equal(postedMessages.length, 1)
 	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -467,7 +473,7 @@ test('MV2 reconnect cleanup failure retries without reposting the rejection', as
 	})
 
 	try {
-		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections))
+		await withSilencedConsole(async () => await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, () => simulator, websiteTabConnections))
 		assert.equal(postedMessages.length, 1)
 		assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -506,7 +512,7 @@ test('startup recovery rejects orphaned requests and preserves requests with liv
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction, livePendingTransaction] })
 	browserMock.setLiveWindowIds([livePopupId])
 
-	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(() => simulator, websiteTabConnections)
 	const remainingTransactions = await modules.getPendingTransactionsAndMessages()
 	assert.deepEqual(remainingTransactions.map((transaction) => transaction.uniqueRequestIdentifier.requestId), [livePendingTransaction.uniqueRequestIdentifier.requestId])
 	assert.equal(postedMessages.length, 1)
@@ -524,7 +530,7 @@ test('startup recovery removes the unreachable rejection created for an orphaned
 	browserMock.setLiveTabIds([])
 	browserMock.setLiveWindowIds([])
 
-	await modules.resolvePendingRequestsForMissingConfirmationWindows(simulator.ethereum, simulator.tokenPriceService, new Map())
+	await modules.resolvePendingRequestsForMissingConfirmationWindows(() => simulator, new Map())
 	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
 
@@ -556,7 +562,7 @@ test('popup-close rejection remains queued after reconnect timeout and flushes o
 	browserMock.setTabMessageHandler(async () => ({ reconnected: true }))
 
 	try {
-		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, simulator.ethereum, simulator.tokenPriceService, websiteTabConnections)
+		await modules.onCloseWindowOrTab({ type: 'popup', id: 1 }, () => simulator, websiteTabConnections)
 		await new Promise((resolve) => setTimeout(resolve, 1_050))
 		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
 		assert.equal((await modules.getPendingTerminalReplies()).length, 1)
@@ -868,7 +874,7 @@ test('approving a simulated transaction answers the website before the window cl
 	const { postedMessages, websiteTabConnections } = connectRequestingWebsite()
 	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation()))
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
@@ -891,7 +897,7 @@ test('rejecting a transaction answers the website before the window cleanup, who
 		throw new Error(TAB_DRAG_ERROR_MESSAGE)
 	})
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
 	}))
@@ -917,10 +923,10 @@ test('approving a simulated message signature answers the website before the win
 	const request = { method: 'personal_sign', params: [message, addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	const signRequest = { method: 'personal_sign' as const, params: [message, activeAddress] as const }
 	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
-	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'message', parameters: signRequest }, true, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
 	const repliesReceivedBeforeCleanup = failFocusingTheWebsiteTab(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()))
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation()))
 
 	assert.equal(delivered, true)
 	assert.deepEqual(repliesReceivedBeforeCleanup, [1])
@@ -956,10 +962,10 @@ test('a request the website sends while the previous window is still being clean
 	browserMock.setRuntimeSendMessageHandler(async (message) => {
 		if (message.method !== 'popup_isSimulationVisualizerOpen' || nextRequestOutcome !== undefined || getRepliesToWebsite(postedMessages).length !== 1) return
 		nextRequestOutcome = 'pending'
-		nextRequestOutcome = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)
+		nextRequestOutcome = await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, nextRequest, { kind: 'message', parameters: nextSignRequest }, true, activeAddress, pendingTransaction.website, websiteTabConnections)
 	})
 
-	const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation())
+	const delivered = await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation())
 
 	assert.equal(delivered, true)
 	assert.deepEqual(nextRequestOutcome, { type: 'doNotReply' })
@@ -1025,7 +1031,7 @@ test('adding a Gnosis Safe proposal to its stack answers the website with the pr
 	const { safeTxHash } = await storeSafeProposalRequest({ status: 'WaitingForUser' })
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
 	}))
@@ -1042,7 +1048,7 @@ test('a Gnosis Safe owner signature answers the website with the proposal hash b
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
 	}))
@@ -1069,7 +1075,7 @@ test('failing to open the stack window after a Gnosis Safe proposal is stored st
 	const repliesReceivedBeforeCleanup = failOpeningTheSimulationStackWindow(postedMessages)
 	const { focusedTabIds, removedWindowIds } = recordConfirmationWindowCleanup()
 
-	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const delivered = await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
 	}))
@@ -1093,7 +1099,7 @@ test('a terminal reply delivery that throws still focuses the website and closes
 	browserMock.setManifestVersion(2)
 	browserMock.setTabMessageHandler(async () => { throw reconnectError })
 
-	await assert.rejects(modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	await assert.rejects(modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier },
 	}), reconnectError)

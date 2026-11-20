@@ -14,7 +14,7 @@ for (const requestId of [-7, 7]) {
 		const first = await openConfirmation(requestId, SENDER, 1n, websiteTabConnections)
 		const accepted = await acceptConfirmation(first, websiteTabConnections, postedMessages)
 		const second = await openConfirmation(requestId, SENDER, 2n, websiteTabConnections)
-		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 			method: 'popup_confirmDialog',
 			data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: second },
 		}))
@@ -31,7 +31,7 @@ for (const requestId of [-7, 7]) {
 		const first = await openConfirmation(requestId, SENDER, 1n, websiteTabConnections)
 		await acceptConfirmation(first, websiteTabConnections, postedMessages)
 		const second = await openConfirmation(requestId, SENDER, 2n, websiteTabConnections)
-		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createReplayableAcceptConfirmation(second)))
+		await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createReplayableAcceptConfirmation(second)))
 		const stacked = await getStackedTransactions()
 		assert.equal(stacked.length, 2)
 		assert.deepEqual(getPageResponses(postedMessages, requestId), stacked.map((transaction) => ({ result: transaction.signedTransaction.hash })))
@@ -56,8 +56,8 @@ for (const kind of ['transaction', 'message'] as const) {
 		const parameters = await createTransferParams(1n)
 		const request = { interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: parameters.method, params: parameters.params }
 		return await withSilencedConsole(async () => kind === 'transaction'
-			? await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'transaction', parameters }, true, activeAddress, WEBSITE, websiteTabConnections)
-			: await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: { method: 'personal_sign', params: ['0x68656c6c6f', SENDER] } }, true, activeAddress, WEBSITE, websiteTabConnections))
+			? await modules.openConfirmTransactionDialogForTransaction(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'transaction', parameters }, true, activeAddress, WEBSITE, websiteTabConnections)
+			: await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'message', parameters: { method: 'personal_sign', params: ['0x68656c6c6f', SENDER] } }, true, activeAddress, WEBSITE, websiteTabConnections))
 	}
 
 	test(`an already pending ${ kind } bypasses preparation and window recovery`, async () => {

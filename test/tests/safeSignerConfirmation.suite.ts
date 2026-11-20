@@ -83,6 +83,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	assert.deepEqual(await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		request,
 		{ kind: 'transaction', parameters: transactionParams },
 		false,
@@ -97,11 +98,10 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	assert.equal(pendingProposal?.approvalStatus.status === 'SignerError' ? pendingProposal.approvalStatus.code : undefined, -32010)
 	assert.equal(getPendingSafeProposal(pendingProposal)?.safeSignerAddress, recipientAddress)
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
-		simulator.ethereum,
-		simulator.tokenPriceService,
+		() => simulator,
 		websiteTabConnections,
 		await createAcceptConfirmation(),
-		{ selectedSigner: recipientAddress, verificationError: undefined },
+		{ refreshedSafeSignerSelection: { selectedSigner: recipientAddress, verificationError: undefined } },
 	), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 
@@ -110,12 +110,12 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 		signerAccounts: [safeTestOwnerAddress],
 		activeSigningAddress: safeTestOwnerAddress,
 	}))
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	await modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 	const [recoveredProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(recoveredProposal?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(getPendingSafeProposal(recoveredProposal)?.safeSignerAddress, safeTestOwnerAddress)
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation()), true)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), true)
 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -184,7 +184,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 		signerAccounts: [safeTestOwnerAddress],
 		activeSigningAddress: safeTestOwnerAddress,
 	}))
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	await modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 	const [recoveredProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(recoveredProposal?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(recoveredProposal?.type === 'Transaction' ? getPendingSafeProposal(recoveredProposal)?.safeSignerAddress : undefined, safeTestOwnerAddress)
@@ -318,7 +318,7 @@ test('rebuilds an ordinary Safe proposal when the wallet switches between curren
 		signerAccounts: [selectedOwner],
 		activeSigningAddress: selectedOwner,
 	}))
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	await modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedPending?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(getPendingSafeProposal(refreshedPending)?.safeSignerAddress, selectedOwner)
@@ -368,7 +368,7 @@ test('does not overwrite a request forwarded while its Safe signer refresh is in
 	}
 
 	try {
-		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
 		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => ({
 			...current,
@@ -434,7 +434,7 @@ test('does not overwrite a newer Safe proposal while signer refresh is in flight
 	}
 
 	try {
-		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
 		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction' || current.safeFlow.kind !== 'proposal' || current.safeFlow.state !== 'created'
 			? current
@@ -503,7 +503,7 @@ test('does not overwrite an edited Safe proposal request while signer refresh is
 	}
 
 	try {
-		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
 		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction'
 			|| current.originalRequestParameters.method !== 'eth_sendTransaction'
@@ -564,7 +564,7 @@ test('blocks signer refresh when the reviewed Safe owner set changed', async () 
 		activeSigningAddress: selectedOwner,
 	}))
 
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	await modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 
 	const [blockedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(blockedPending?.approvalStatus.status, 'SignerError')
@@ -612,7 +612,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 		activeSigningAddress: selectedOwner,
 	}))
 
-	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	await modules.refreshPendingSafeSignerSelectionErrors(() => simulator, uniqueRequestIdentifier.requestSocket.tabId)
 
 	const [failedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(failedProposal?.approvalStatus.status, 'SignerError')
@@ -817,7 +817,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 		],
 	})
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, new Map(), {
 		method: 'popup_confirmDialog',
 		data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: firstIdentifier },
 	}), false)
@@ -836,18 +836,18 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 			},
 		},
 	}]])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(secondIdentifier)), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation(secondIdentifier)), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(getPendingSafeProposal(refreshedProposal)?.safeTx.message.nonce, 0n)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(secondIdentifier)), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation(secondIdentifier)), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing rebased Safe signer request')
 	const typedData = EIP712Message.parse(signerRequest.params[1])
 	assert.equal(typedData.message.nonce, 0n)
 
 	const signature = await ownerAccount.signTypedData(typedData)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier: secondIdentifier },
 	}), true)
@@ -903,7 +903,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	})
 	const staleSignature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(staleSafeTx)))
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, new Map(), {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: staleSignature, uniqueRequestIdentifier: requestIdentifier },
 	}), false)
@@ -927,11 +927,11 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 			},
 		},
 	}]])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(requestIdentifier)), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation(requestIdentifier)), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(getPendingSafeProposal(refreshedPending)?.safeTx.message.nonce, 0n)
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(requestIdentifier)), true)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createAcceptConfirmation(requestIdentifier)), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing retried Safe signer request')
 	assert.equal(EIP712Message.parse(signerRequest.params[1]).message.nonce, 0n)
@@ -994,7 +994,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	})
 
 	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: recipientAddress }])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
 	}), true)
@@ -1081,7 +1081,7 @@ test('adds an unsigned Safe proposal and merges a later owner signature into bot
 		pendingTransactionsAndMessages: [safePending],
 	})
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
 	}), true)
@@ -1135,7 +1135,7 @@ test('invalid Safe owner signatures retain the request as a signer error without
 		}],
 	})
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => simulator, new Map(), {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: '0x1234', uniqueRequestIdentifier },
 	}), false)
@@ -1214,6 +1214,24 @@ function createOtherChainSimulator(rpcNetwork = otherChainRpcNetwork) {
 	return { ethereum: otherChainEthereum, tokenPriceService: new modules.TokenPriceService(otherChainEthereum, 60_000) }
 }
 
+// What the requested-network rule shows the window for a stored request, with the services the user switched to installed. A transaction requested on one network is refused on another without storing the refusal, so it is never forwarded, signed, or stored there.
+async function getShownNetworkRefusal(services: ReturnType<typeof createOtherChainSimulator>) {
+	const { showWithCurrentNetworkRefusals } = await import('../../app/ts/background/transactionNetwork.js')
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	return await showWithCurrentNetworkRefusals(() => services, (getNetworkRefusalMessage) => pending?.type === 'Transaction' ? getNetworkRefusalMessage(pending) : undefined)
+}
+
+// The pending transaction as requested and previewed on the given chain, so the requested-network rule accepts it there.
+function previewedOnChain<Pending extends ReturnType<typeof withSimulatedTransactionResult<typeof pendingTransaction>>>(pending: Pending, chainId: bigint) {
+	const { data } = pending.popupVisualisation
+	return {
+		...pending,
+		requestedChainId: chainId,
+		transactionToSimulate: { ...pending.transactionToSimulate, transaction: { ...pending.transactionToSimulate.transaction, chainId } },
+		popupVisualisation: { ...pending.popupVisualisation, data: { ...data, simulationState: { ...data.simulationState, rpcNetwork: { ...data.simulationState.rpcNetwork, chainId } } } },
+	}
+}
+
 async function prepareSafeProposalFromFakeRpcNetwork(approvalStatus: { readonly status: 'WaitingForUser' } | { readonly status: 'WaitingForSigner' }, safeOwners: readonly bigint[] = [safeTestOwnerAddress], proposalChainId = fakeRpcNetwork.chainId) {
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [...safeOwners]
@@ -1234,7 +1252,7 @@ async function prepareSafeProposalFromFakeRpcNetwork(approvalStatus: { readonly 
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
-			...withSimulatedTransactionResult(pendingTransaction),
+			...previewedOnChain(withSimulatedTransactionResult(pendingTransaction), proposalChainId),
 			simulationMode: false,
 			approvalStatus,
 			safeFlow: { kind: 'proposal', state: 'created', safeTransaction: {
@@ -1269,13 +1287,12 @@ test('refuses to forward a Safe proposal prepared on another chain after the net
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' })
 	const otherChainSimulator = createOtherChainSimulator()
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => otherChainSimulator, websiteTabConnections, await createAcceptConfirmation()), false)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refusedProposal] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(refusedProposal?.approvalStatus.status, 'SignerError')
-	if (refusedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
-	assert.match(refusedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338\. Prepare it again on the current network\./u)
+	assert.equal(refusedProposal?.approvalStatus.status, 'WaitingForUser')
+	assert.match(await getShownNetworkRefusal(otherChainSimulator) ?? '', /The active network changed after this transaction was requested\./u)
 	assert.equal(getPendingSafeProposal(refusedProposal)?.safeTx.domain.chainId, fakeRpcNetwork.chainId)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
@@ -1285,7 +1302,7 @@ test('does not store a Safe proposal signed for another chain after the network 
 	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	const otherChainSimulator = createOtherChainSimulator()
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => otherChainSimulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
 	}), false)
@@ -1294,16 +1311,15 @@ test('does not store a Safe proposal signed for another chain after the network 
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
 	const [rejectedProposal] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(rejectedProposal?.approvalStatus.status, 'SignerError')
-	if (rejectedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
-	assert.match(rejectedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+	assert.equal(rejectedProposal?.approvalStatus.status, 'WaitingForUser')
+	assert.match(await getShownNetworkRefusal(otherChainSimulator) ?? '', /The active network changed after this transaction was requested\./u)
 })
 
 test('does not add an unsigned Safe proposal prepared on another chain to the Safe stack', async () => {
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' })
 	const otherChainSimulator = createOtherChainSimulator()
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, {
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => otherChainSimulator, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
 	}), false)
@@ -1312,9 +1328,8 @@ test('does not add an unsigned Safe proposal prepared on another chain to the Sa
 	assert.deepEqual((await modules.getInterceptorTransactionStack()).operations, [])
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message), false)
 	const [rejectedProposal] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(rejectedProposal?.approvalStatus.status, 'SignerError')
-	if (rejectedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
-	assert.match(rejectedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+	assert.equal(rejectedProposal?.approvalStatus.status, 'WaitingForUser')
+	assert.match(await getShownNetworkRefusal(otherChainSimulator) ?? '', /The active network changed after this transaction was requested\./u)
 })
 
 test('does not move a Safe proposal to the connected chain when the wallet switches owners after the network switches', async () => {
@@ -1324,22 +1339,24 @@ test('does not move a Safe proposal to the connected chain when the wallet switc
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(createSafeTx(otherChainRpcNetwork.chainId, activeAddress, { to: recipientAddress, value: 0n, input: new Uint8Array() }, 0n)))
 	const otherChainSimulator = createOtherChainSimulator()
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(otherChainSimulator.ethereum, otherChainSimulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation(), { selectedSigner: otherOwner, verificationError: undefined }), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => otherChainSimulator, websiteTabConnections, await createAcceptConfirmation(), { refreshedSafeSignerSelection: { selectedSigner: otherOwner, verificationError: undefined } }), false)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refusedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(getPendingSafeProposal(refusedProposal)?.safeTx.domain.chainId, fakeRpcNetwork.chainId)
-	assert.equal(refusedProposal?.approvalStatus.status, 'SignerError')
-	if (refusedProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe proposal chain mismatch error')
-	assert.match(refusedProposal.approvalStatus.message, /prepared for chain 1337, but the connected network is chain 1338/u)
+	assert.equal(refusedProposal?.approvalStatus.status, 'WaitingForUser')
+	assert.match(await getShownNetworkRefusal(otherChainSimulator) ?? '', /The active network changed after this transaction was requested\./u)
 })
 
 test('refuses a Safe proposal whose domain chain and connected chain are both the missing chain ID 0', async () => {
 	const missingChainIdRpcNetwork = { ...fakeRpcNetwork, name: 'Missing Chain ID', chainId: 0n }
 	const { postedMessages, websiteTabConnections } = await prepareSafeProposalFromFakeRpcNetwork({ status: 'WaitingForUser' }, [safeTestOwnerAddress], missingChainIdRpcNetwork.chainId)
 	const missingChainIdSimulator = createOtherChainSimulator(missingChainIdRpcNetwork)
+	// The request was made on that network, so the requested-network rule passes and the Gnosis Safe chain rule decides.
+	const { changeSimulationMode, getSettings } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: (await getSettings()).simulationMode, rpcNetwork: missingChainIdRpcNetwork })
 
-	assert.equal(await modules.resolvePendingTransactionOrMessage(missingChainIdSimulator.ethereum, missingChainIdSimulator.tokenPriceService, websiteTabConnections, await createAcceptConfirmation()), false)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(() => missingChainIdSimulator, websiteTabConnections, await createAcceptConfirmation()), false)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refusedProposal] = await modules.getPendingTransactionsAndMessages()

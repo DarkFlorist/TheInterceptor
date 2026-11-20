@@ -32,7 +32,7 @@ async function setUpSigningModeMessage() {
 	const parameters = { method: 'personal_sign' as const, params: ['0x48656c6c6f', activeAddress] as const }
 	const request = { method: parameters.method, params: ['0x48656c6c6f', addressString(activeAddress)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	const website = { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }
-	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters }, false, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, () => simulator, request, { kind: 'message', parameters }, false, activeAddress, website, websiteTabConnections), { type: 'doNotReply' })
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.simulationMode) throw new Error('missing signing-mode message review')
 	return { postedMessages, websiteTabConnections }
@@ -48,7 +48,7 @@ function acceptReviewedFixture() {
 
 async function resolve(websiteTabConnections: ReturnType<typeof connectWebsite>, action: 'accept' | 'reject') {
 	const data = action === 'accept' ? acceptReviewedFixture().data : { action, errorString: undefined, uniqueRequestIdentifier }
-	return await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, { method: 'popup_confirmDialog', data })
+	return await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, { method: 'popup_confirmDialog', data })
 }
 
 const isForwardToSigner = (message: unknown) => isRecord(message) && message.type === 'forwardToSigner'

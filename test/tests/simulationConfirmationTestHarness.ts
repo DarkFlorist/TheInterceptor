@@ -46,6 +46,7 @@ export async function openConfirmation(requestId: number, from: bigint, value: b
 	assert.deepEqual(await withSilencedConsole(async () => await modules.openConfirmTransactionDialogForTransaction(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		{ interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, method: transactionParams.method, params: transactionParams.params },
 		{ kind: 'transaction', parameters: transactionParams },
 		true,
@@ -59,7 +60,7 @@ export async function openConfirmation(requestId: number, from: bigint, value: b
 export async function acceptConfirmation(uniqueRequestIdentifier: Awaited<ReturnType<typeof openConfirmation>>, websiteTabConnections: ReturnType<typeof createWebsiteTabConnections>, postedMessages: unknown[]) {
 	const pending = (await modules.getPendingTransactionsAndMessages()).find((request) => request.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId)
 	if (pending?.type !== 'Transaction' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error(`Expected a simulated pending transaction, got ${ pending?.transactionOrMessageCreationStatus }`)
-	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, await createReplayableAcceptConfirmation(uniqueRequestIdentifier)))
+	await withSilencedConsole(async () => await modules.resolvePendingTransactionOrMessage(() => simulator, websiteTabConnections, await createReplayableAcceptConfirmation(uniqueRequestIdentifier)))
 	const stacked = (await modules.getInterceptorTransactionStack()).operations.find((operation) => operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pending.transactionIdentifier)
 	if (stacked?.type !== 'Transaction') throw new Error('Expected the accepted transaction on the simulation stack')
 	const reply = postedMessages.find((message) => isRecord(message) && message.requestId === uniqueRequestIdentifier.requestId && 'result' in message)

@@ -5,18 +5,26 @@ import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRe
 import type { SimulationStackChange } from '../types/visualizer-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
-import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
+import { getSafeTransactionStacks } from './storageVariables.js'
 import { assertSafeContractStateUnchanged, assertSafeProposalChainMatchesConnectedNetwork, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getTransactionNetworkApprovalError, type NetworkRefusal, updateTransactionStateOnRequestedNetwork } from './transactionNetwork.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
 	| { readonly status: 'success', readonly result: string, readonly simulationStack: SimulationStackChange }
 	| { readonly status: 'error', readonly approvalStatus: SafeSignerErrorStatus }
+	| { readonly status: 'networkRefusal', readonly refusal: NetworkRefusal }
+	| { readonly status: 'cancelled' }
+
+// Runs the last step of a resolution, which stores the result and needs no RPC, so the caller can serialize just that step against a rejection. Validation before it can take as long as an RPC does.
+export type SafeResolutionCommit = (write: () => Promise<SafeSignerReplyResolution>) => Promise<SafeSignerReplyResolution>
+
+const commitWithoutSerialization: SafeResolutionCommit = async (write) => await write()
 
 const signerError = (message: string): SafeSignerReplyResolution => ({
 	status: 'error',
@@ -27,10 +35,11 @@ export async function resolveSafeSignerReply(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
 	signerReply: unknown,
+	commit: SafeResolutionCommit = commitWithoutSerialization,
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind === 'proposal' && flow.pending.transactionOrMessageCreationStatus === 'Simulated') {
-		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, signerReply)
+		return await persistSignedSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, signerReply, commit)
 	}
 
 	if (
@@ -38,7 +47,8 @@ export async function resolveSafeSignerReply(
 		&& flow.pending.transactionOrMessageCreationStatus === 'Simulated'
 	) {
 		try {
-			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, flow.pending, signerReply), simulationStack: 'unchanged' }
+			const result = await validateSafeMessageCoSignature(ethereum, flow.pending, signerReply)
+			return await commit(async () => ({ status: 'success', result, simulationStack: 'unchanged' }))
 		} catch (error) {
 			if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isSafeSignerSelectionFailure(error)) throw error
 			return signerError(`Gnosis Safe co-signature was rejected: ${ getErrorMessage(error) ?? 'The signer returned an invalid Gnosis Safe signature.' }`)
@@ -55,7 +65,7 @@ async function prepareSafeProposalPersistence(
 	ethereum: EthereumClientService,
 	safeSigningRequest: SafeTransactionSigningRequest,
 ) {
-	// The proposal is stored in the stack of the connected chain, so its domain chain must be that chain.
+	// The proposal is stored in the stack of the connected chain, so its domain chain must be that chain. Its callers apply the requested-network rule first, so a proposal of a network the user switched away from is refused without a stored error, as every approval is, and this check stays the guard of the Gnosis Safe layer itself.
 	assertSafeProposalChainMatchesConnectedNetwork(ethereum, safeSigningRequest.safeTx)
 	if (safeSigningRequest.reviewedSafeState === undefined) {
 		throw createSafeContractValidationFailure('Review this Gnosis Safe proposal again so its current owners, threshold, and nonce can be verified.')
@@ -79,7 +89,10 @@ async function persistSignedSafeTransaction(
 	pendingTransaction: PendingSafeTransaction,
 	safeSigningRequest: SafeTransactionSigningRequest,
 	signerReply: unknown,
+	commit: SafeResolutionCommit,
 ): Promise<SafeSignerReplyResolution> {
+	const networkRefusal = await getTransactionNetworkApprovalError(ethereum, pendingTransaction)
+	if (networkRefusal !== undefined) return { status: 'networkRefusal', refusal: networkRefusal }
 	let ownerSignature: SafeOwnerSignature
 	let safeSnapshot: Awaited<ReturnType<typeof getSafeContractSnapshot>>
 	try {
@@ -99,7 +112,7 @@ async function persistSignedSafeTransaction(
 		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal or owner signature was rejected: ${ getErrorMessage(error) ?? 'The signer returned an invalid proposal signature.' }`)
 	}
-	return await persistSafeTransaction(ethereum, pendingTransaction, safeSigningRequest, safeSnapshot.state.nonce, [ownerSignature])
+	return await commit(async () => await persistSafeTransaction(ethereum, pendingTransaction, safeSigningRequest, safeSnapshot.state.nonce, [ownerSignature]))
 }
 
 async function persistSafeTransaction(
@@ -122,7 +135,8 @@ async function persistSafeTransaction(
 		safeTransaction: stackTransaction,
 	}
 	try {
-		await updateTransactionState((previousState) => {
+		// The proposal goes to the Gnosis Safe stack of this client's network, so the network check runs as the last step after the Gnosis Safe contract was validated, and also covers the proposal's signing domain.
+		const persistence = await updateTransactionStateOnRequestedNetwork(ethereum, pendingTransaction, (previousState) => {
 			const reconciledState = reconcileSafeTransactionState(
 				previousState,
 				ethereum.getChainId(),
@@ -179,6 +193,7 @@ async function persistSafeTransaction(
 				}] }
 			return { safeTransactionStacks, interceptorTransactionStack }
 		})
+		if (!persistence.committed) return { status: 'networkRefusal', refusal: persistence.refusal }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
@@ -189,12 +204,16 @@ async function persistSafeTransaction(
 export async function persistUnsignedSafeTransaction(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
+	commit: SafeResolutionCommit = commitWithoutSerialization,
 ): Promise<SafeSignerReplyResolution> {
 	const flow = getSafePendingFlow(pending)
 	if (flow?.kind !== 'proposal' || flow.pending.transactionOrMessageCreationStatus !== 'Simulated') return { status: 'not-safe' }
+	const proposal = flow.pending
+	const networkRefusal = await getTransactionNetworkApprovalError(ethereum, proposal)
+	if (networkRefusal !== undefined) return { status: 'networkRefusal', refusal: networkRefusal }
 	try {
-		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, flow.pending.safeFlow.safeTransaction)
-		return await persistSafeTransaction(ethereum, flow.pending, flow.pending.safeFlow.safeTransaction, safeSnapshot.state.nonce, [])
+		const safeSnapshot = await prepareSafeProposalPersistence(ethereum, proposal.safeFlow.safeTransaction)
+		return await commit(async () => await persistSafeTransaction(ethereum, proposal, proposal.safeFlow.safeTransaction, safeSnapshot.state.nonce, []))
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be added to the stack: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)

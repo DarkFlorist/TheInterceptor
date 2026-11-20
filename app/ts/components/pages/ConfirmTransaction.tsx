@@ -100,8 +100,14 @@ async function bootstrapConfirmTransactionDialog(
 	if (!isBootstrapDone()) giveUp()
 }
 
+// Asks the background for a push of the confirmation queue as it is stored then, with the refusals the network and the installed client give. Only the background's copies carry those refusals.
+const requestConfirmTransactionQueue = () => sendPopupMessageToBackgroundPage({ method: 'popup_requestConfirmTransactionQueue' })
+
 // Only the background's copies carry the reviewed-result id an accept needs; requests read directly from storage for the first paint do not.
 const isBackgroundCopy = (pending: ShownPendingTransactionOrSignableMessage | undefined): pending is BackgroundPendingTransactionOrSignableMessage => pending?.source === 'background'
+
+// What the requested-network rule said about the transaction when the background sent it. A transaction the rule refuses cannot be approved or added to a Gnosis Safe stack; the background refuses either anyway.
+const getNetworkRefusal = (pending: ShownPendingTransactionOrSignableMessage | undefined) => isBackgroundCopy(pending) && pending.type === 'Transaction' ? pending.networkRefusal : undefined
 
 const backgroundCopy = (pending: PopupPendingTransactionOrSignableMessage): BackgroundPendingTransactionOrSignableMessage => ({ ...pending, source: 'background' })
 
@@ -592,6 +598,12 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 		]
 		: []
 	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
+	const networkRefusal = getNetworkRefusal(current)
+	if (networkRefusal !== undefined) return <div style = 'display: grid'>
+		<div style = { margins }>
+			<ErrorComponent text = { networkRefusal } />
+		</div>
+	</div>
 	const overrideReason = getSendAnywayOverrideReason(current)
 	// A signer error keeps the request open for a retry, and a changed failure or quarantine reason during it clears the override, so the checkbox stays reachable.
 	const overrideCheckBox = overrideReason === undefined
@@ -770,7 +782,16 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 	</div>
 }
 
-export const shouldDisableConfirmForApprovalStatus = (approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
+// The one place the window decides from an approval status whether the request may be approved, so a new status fails typecheck here until it is decided.
+export function shouldDisableConfirmForApprovalStatus(approvalStatus: ShownPendingTransactionOrSignableMessage['approvalStatus']) {
+	const status = approvalStatus.status
+	switch (status) {
+		case 'WaitingForUser': return false
+		case 'SignerError': return false
+		case 'WaitingForSigner': return true
+		default: return assertNever(status)
+	}
+}
 
 function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
@@ -869,6 +890,12 @@ export function ConfirmTransaction() {
 
 			if (parsed.method === 'popup_settingsUpdated') {
 				sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
+				requestConfirmTransactionQueue()
+				return false
+			}
+			// The refusals shown with the queue depend on the network and the installed client, which these change.
+			if (parsed.method === 'popup_chain_update' || parsed.method === 'popup_update_rpc_list') {
+				requestConfirmTransactionQueue()
 				return false
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
@@ -908,7 +935,6 @@ export function ConfirmTransaction() {
 			if (parsed.method === 'popup_update_confirm_transaction_dialog_pending_transactions') {
 				const { role: _role, ...popupUpdateConfirmTransactionDialogPendingTransactions } = parsed
 				const updateConfirmTransactionDialogPendingTransactions = UpdateConfirmTransactionDialogPendingTransactions.parse(popupUpdateConfirmTransactionDialogPendingTransactions)
-				applyNetworkData(updateConfirmTransactionDialogPendingTransactions.data.currentBlockNumber, updateConfirmTransactionDialogPendingTransactions.data.rpcConnectionStatus, CONFIRM_TRANSACTION_DATA_PRIORITY.push)
 				const firstMessage = updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages[0]
 				if (firstMessage === undefined) throw new Error('message data was undefined')
 				applyPendingTransactions(updateConfirmTransactionDialogPendingTransactions.data.pendingTransactionAndSignableMessages.map(backgroundCopy), CONFIRM_TRANSACTION_DATA_PRIORITY.push)
@@ -933,6 +959,8 @@ export function ConfirmTransaction() {
 			if (cancelled || pendingTransactions.length === 0) return
 			applyPendingTransactions(pendingTransactions, CONFIRM_TRANSACTION_DATA_PRIORITY.storage)
 		})
+		// The queue arrives as a push, which needs no RPC, so the window shows the background's copy, with its network refusals, without waiting for the bootstrap reply, and a push sent before this window listened is not missed.
+		requestConfirmTransactionQueue()
 		// Keeps retrying while only the storage first paint is shown, since confirming needs the background's copy.
 		void bootstrapConfirmTransactionDialog(() => cancelled || isBackgroundCopy(currentPendingTransactionOrSignableMessage.value), applyBootstrapData, () => { bootstrapGaveUp.value = true })
 		sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
@@ -1013,9 +1041,11 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionMetadata'})
 	}
+	// Names the request the window shows, so the background orders this refresh among the runs of that request from the moment it is asked.
 	const refreshPopupVisualisationIfNeeded = async () => {
-		if (currentPendingTransactionOrSignableMessage.value === undefined) return
-		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
+		const current = currentPendingTransactionOrSignableMessage.value
+		if (current === undefined) return
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation', data: { uniqueRequestIdentifier: current.uniqueRequestIdentifier } })
 	}
 
 	const isConfirmDisabled = useComputed(() => {
@@ -1023,6 +1053,7 @@ export function ConfirmTransaction() {
 		if (!isBackgroundCopy(pending)) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
+		if (getNetworkRefusal(pending) !== undefined) return true
 		if (isRejectOnlyTransaction(pending)) return true
 		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
 		if (pending.type !== 'Transaction') {
@@ -1038,7 +1069,7 @@ export function ConfirmTransaction() {
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
-		if (pending.approvalStatus.status === 'WaitingForSigner') return true
+		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus) || getNetworkRefusal(pending) !== undefined) return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.
 		return isRejectOnlyTransaction(pending) || getSendAnywayOverrideReason(pending) !== undefined

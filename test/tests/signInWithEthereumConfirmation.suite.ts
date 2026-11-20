@@ -43,6 +43,7 @@ async function openSignInConfirmation(siweMessage: string, pageUrl: string, live
 	const reply = await modules.openConfirmTransactionDialogForMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,
+		() => simulator,
 		request,
 		{ kind: 'message', parameters: signRequest },
 		true,

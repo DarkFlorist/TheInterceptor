@@ -220,6 +220,7 @@ function makePendingTransaction(simulationConductedTimestamp: Date, value?: bigi
 		activeAddress,
 		created,
 		transactionIdentifier,
+		requestedChainId: 1n,
 		transactionToSimulate,
 		website,
 		approvalStatus: { status: 'WaitingForUser' as const },
@@ -361,12 +362,12 @@ function makeSimulatedPendingTransaction(value: bigint, outcome: SimulatedTransa
 	}
 }
 
-// A simulation client whose RPC answers every transaction as a successful 21,000 gas call at block 123.
-async function createFakeSimulator() {
+// A simulation client whose RPC answers every transaction as a successful 21,000 gas call at block 123. An approval is only accepted with the client of the network its request was made on, which is chainId.
+async function createFakeSimulator(chainId = 1337n) {
 	const { EthereumClientService } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 	const fakeRpcNetwork = {
 		name: 'Test Chain',
-		chainId: 1337n,
+		chainId,
 		httpsRpc: 'https://example.invalid',
 		currencyName: 'Ether',
 		currencyTicker: 'ETH',
@@ -496,7 +497,9 @@ const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../.
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction, CONFIRM_TRANSACTION_BOOTSTRAP_HANDSHAKE_TIMEOUT_MS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS, CONFIRM_TRANSACTION_BOOTSTRAP_MAX_RETRY_DELAY_MS, CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 // The background sends the popup its copies of stored requests, stamped with their reviewed-result ids.
-const { toPopupPendingTransactionOrSignableMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
+const { toPopupPendingTransactionOrSignableMessage: toPopupCopyWithRefusals } = await import('../../app/ts/utils/popupPendingRequest.js')
+// The popup copy as the background sends it on a network that does not refuse the request.
+const toPopupPendingTransactionOrSignableMessage = (pending: Parameters<typeof toPopupCopyWithRefusals>[0]) => toPopupCopyWithRefusals(pending, () => undefined)
 async function dispatchPendingTransactions(browser: ReturnType<typeof createBrowserMock>, pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[]) {
 	await act(() => {
 		browser.dispatch({
@@ -974,12 +977,12 @@ describe('ConfirmTransaction', () => {
 		const simulator = await createFakeSimulator()
 
 		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [olderPendingTransaction],
+			pendingTransactionsAndMessages: [{ ...olderPendingTransaction, requestedChainId: simulator.ethereum.getChainId() }],
 		})
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 		await act(async () => {
-			await refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService as never)
+			await refreshPopupConfirmTransactionSimulation(() => simulator, olderPendingTransaction.uniqueRequestIdentifier)
 		})
 
 		const [refreshedPendingTransaction] = await getPendingTransactionsAndMessages()
@@ -1236,7 +1239,7 @@ describe('ConfirmTransaction', () => {
 	test('the background honours the accept for the result the popup shows', { timeout: 15_000 }, async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const simulator = await createFakeSimulator()
+		const simulator = await createFakeSimulator(makeSimulatedPendingTransaction(0n).requestedChainId)
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
@@ -1246,7 +1249,7 @@ describe('ConfirmTransaction', () => {
 		await updateInterceptorTransactionStack(() => ({ operations: [] }))
 		const resolved = Promise.withResolvers<void>()
 		browser.setConfirmDialogHandler(async (message) => {
-			await resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), TransactionConfirmation.parse(message))
+			await resolvePendingTransactionOrMessage(() => ({ ethereum: simulator.ethereum, tokenPriceService: new TokenPriceService(simulator.ethereum, 60_000) }), new Map(), TransactionConfirmation.parse(message))
 			resolved.resolve()
 		})
 
@@ -1271,7 +1274,7 @@ describe('ConfirmTransaction', () => {
 	test('an approval in flight accepts only the result the user clicked on', { timeout: 15_000 }, async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()
-		const simulator = await createFakeSimulator()
+		const simulator = await createFakeSimulator(makeSimulatedPendingTransaction(0n).requestedChainId)
 		const { TokenPriceService } = await import('../../app/ts/simulation/services/priceEstimator.js')
 		const { TransactionConfirmation } = await import('../../app/ts/types/interceptor-messages.js')
 		const { resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')
@@ -1292,7 +1295,7 @@ describe('ConfirmTransaction', () => {
 		const acceptReachedBackground = Promise.withResolvers<{ accept: unknown, resolution: Promise<boolean | undefined> }>()
 		browser.setConfirmDialogHandler(async (message) => {
 			const accept = TransactionConfirmation.parse(message)
-			const resolution = resolvePendingTransactionOrMessage(simulator.ethereum, new TokenPriceService(simulator.ethereum, 60_000), new Map(), accept)
+			const resolution = resolvePendingTransactionOrMessage(() => ({ ethereum: simulator.ethereum, tokenPriceService: new TokenPriceService(simulator.ethereum, 60_000) }), new Map(), accept)
 			acceptReachedBackground.resolve({ accept, resolution })
 			await resolution
 		})

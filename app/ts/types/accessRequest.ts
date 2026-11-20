@@ -40,8 +40,11 @@ const FailedTransactionPreview = funtypes.ReadonlyObject({
 // Identifies the confirmation simulation run that produced a visualisation, across background restarts too: the random id of the background lifetime that ran it and the run's place among that lifetime's runs. A confirmation stored by a version without run ids decodes as a run of no lifetime, which no run's lifetime matches: a metadata refresh still refreshes such a confirmation, and its result never replaces a newer run.
 export type ConfirmationRunId = funtypes.Static<typeof ConfirmationRunIdWithoutStandIn>
 const ConfirmationRunIdWithoutStandIn = funtypes.ReadonlyObject({ lifetime: funtypes.String, sequence: funtypes.Number })
-const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
+export const CONFIRMATION_RUN_OF_NO_LIFETIME: ConfirmationRunId = { lifetime: '', sequence: 0 }
 const ConfirmationRunIdCodec = funtypes.Union(ConfirmationRunIdWithoutStandIn, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, ConfirmationRunId>(undefined, CONFIRMATION_RUN_OF_NO_LIFETIME)))
+
+// The network the website requested the transaction on. Its preview is only refreshed and approved on this network. A confirmation stored by a version that did not record it decodes as 'unknown', which equals no chain id, so it is never refreshed or approved.
+const RequestedChainId = funtypes.Union(EthereumQuantity, funtypes.Literal('unknown'), funtypes.Literal(undefined).withParser(LiteralConverterParserFactory<undefined, 'unknown'>(undefined, 'unknown')))
 
 type ConfirmTransactionSimulationBaseData = funtypes.Static<typeof ConfirmTransactionSimulationBaseData>
 const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
@@ -142,6 +145,7 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	approvalStatus: PendingTransactionApprovalStatus,
 	// Required, so a pending transaction stored by a version without it does not parse, and the corrupt-storage recovery of pendingTransactionsAndMessages (readPendingTransactionsAndMessagesWithRecovery) clears it instead of a refresh forming it as another kind of transaction.
 	safeFlow: PendingTransactionSafeFlow,
+	requestedChainId: RequestedChainId,
 })
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
@@ -201,8 +205,14 @@ const PendingSignableMessage = funtypes.Intersect(
 // Stamped by the background on each popup copy from the stored request (getReviewedResultId); the popup returns it unchanged with an accept and never computes it.
 const PopupReviewedResultId = funtypes.String
 
+// networkRefusal is what the requested-network rule says when the queue is sent, derived by showWithCurrentNetworkRefusals in transactionNetwork.ts and never stored.
+const PopupNetworkRefusal = funtypes.ReadonlyPartial({ networkRefusal: funtypes.String })
+
 export type PopupPendingTransaction = funtypes.Static<typeof PopupPendingTransaction>
-export const PopupPendingTransaction = funtypes.Intersect(PendingTransaction, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }))
+export const PopupPendingTransaction = funtypes.Intersect(PendingTransaction, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }), PopupNetworkRefusal)
+
+export type PopupSimulatedPendingTransaction = funtypes.Static<typeof PopupSimulatedPendingTransaction>
+export const PopupSimulatedPendingTransaction = funtypes.Intersect(SimulatedPendingTransaction, funtypes.ReadonlyObject({ reviewedResultId: PopupReviewedResultId }), PopupNetworkRefusal)
 
 type PopupPendingSignableMessageBase = funtypes.Static<typeof PopupPendingSignableMessageBase>
 const PopupPendingSignableMessageBase = funtypes.ReadonlyObject({

@@ -29,8 +29,8 @@ export const createCreatedSafeProposalSafeFlow = (safeTransaction: SafeTransacti
 // The Gnosis Safe transaction of a created Safe proposal, the one flow that has one.
 export const getCreatedSafeProposal = (safeFlow: PendingTransactionSafeFlow) => safeFlow.kind === 'proposal' && safeFlow.state === 'created' ? safeFlow.safeTransaction : undefined
 
-// The signing-mode flows, which sign, propose or execute with the user's signer. A simulation-mode Safe execution is not one: it only runs through the Safe in the simulation. Neither is a Safe proposal that was not created, which has nothing to sign.
-export function getSafeTransactionPendingFlow(pending: PendingTransaction): DirectSafeExecutionFlow | SafeProposalFlow | undefined {
+// The signing-mode flows, which sign, propose or execute with the user's signer. A simulation-mode Safe execution is not one: it only runs through the Safe in the simulation. Neither is a Safe proposal that was not created, which has nothing to sign. Generic over the transaction's form, so the confirmation window, which receives the transaction without background bookkeeping, reads the same flow as the background.
+export function getSafeTransactionPendingFlow<Transaction extends Pick<PendingTransaction, 'safeFlow'>>(pending: Transaction): { readonly kind: 'directExecution', readonly pending: Transaction & { readonly safeFlow: DirectSafeExecutionSafeFlow } } | { readonly kind: 'proposal', readonly pending: Transaction & { readonly safeFlow: CreatedSafeProposalSafeFlow } } | undefined {
 	const safeFlow = pending.safeFlow
 	if (safeFlow.kind === 'directExecution') return { kind: 'directExecution', pending: { ...pending, safeFlow } }
 	if (safeFlow.kind === 'proposal' && safeFlow.state === 'created') return { kind: 'proposal', pending: { ...pending, safeFlow } }

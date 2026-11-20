@@ -4,7 +4,9 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './storageVariables.js'
-import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
+import { runSettingsStorageTransactionWith } from './settingsStorageTransaction.js'
+import { writeLocalStorageItems } from './activeNetworkStorage.js'
+import type { LocalStorageItems } from '../utils/storageUtils.js'
 
 function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previousEntries: AddressBookEntries) {
 	if (exportedSettings.version === '1.4' || exportedSettings.version === '1.5' || exportedSettings.version === '1.6') return exportedSettings.settings.addressBookEntries
@@ -30,7 +32,8 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
 	const version = exportedSettings.version
-	await runSettingsStorageTransaction(async () => ({
+	// The import replaces the active network too, so its single storage set goes through writeLocalStorageItems, which counts that write.
+	await runSettingsStorageTransactionWith<LocalStorageItems, undefined>(writeLocalStorageItems, async () => ({
 		result: undefined,
 		writes: [
 			...version === '1.3' || version === '1.4' || version === '1.5' || version === '1.6' ? [pageStorageWrite(exportedSettings.settings.openedPage)] : [],

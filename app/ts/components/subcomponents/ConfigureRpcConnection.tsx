@@ -5,7 +5,7 @@ import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import type { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
-import { getSettings } from '../../background/settings.js'
+import { getActiveRpcNetwork } from '../../utils/pageSafeSettings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
 import { EthereumJSONRpcRequestHandler } from '../../simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -120,7 +120,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const cancelAndCloseModal = () => modalRef.current?.close()
 
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
-		const { activeRpcNetwork } = await getSettings()
+		const activeRpcNetwork = await getActiveRpcNetwork()
 		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcInfo, rpcEntries.value, activeRpcNetwork,
 			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
@@ -128,7 +128,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	}
 
 	const removeRpcEntry = async (entry: RpcEntry) => {
-		const { activeRpcNetwork } = await getSettings()
+		const activeRpcNetwork = await getActiveRpcNetwork()
 		await removeRpcEntryAndKeepActiveRpcConsistent(entry, rpcEntries.value, activeRpcNetwork,
 			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })

@@ -6,7 +6,6 @@ import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { isExpectedInfrastructureError } from '../utils/errors.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
-import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
 
 const simulationAbortController = new AbortController()
@@ -36,7 +35,6 @@ export async function popupMessageHandler(
 			settings,
 			publishRpcConnectionStatus,
 			simulationAbortController,
-			confirmTransactionAbortController: getConfirmTransactionAbortController(),
 			resetSimulationState: async () => await resetSimulationStateFromConfig(simulationServicesOwner),
 		}, maybeParsedRequest.value)
 		if (requestReply === undefined) return undefined
