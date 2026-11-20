@@ -1303,6 +1303,26 @@ describe('content script injection strategy', () => {
 		}
 	})
 
+	test('a failed Firefox refresh that disables a site leaves the registrations matching the rolled-back access', async () => {
+		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getRegistrationSnapshots, getStorageState } = installBrowserMock({ manifestVersion: 2, websiteAccess: [], failingFirefoxRegistration: 2 })
+		const { refreshContentScriptInjectionStrategy } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { tryUpdateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
+		const { getLatestUnexpectedError } = await loadModules()
+		await refreshContentScriptInjectionStrategy()
+
+		// The disabled host's own registration fails, after which the update has already excluded the whole host from the general registration, and the access change is rolled back.
+		await withSilencedConsole(async () => await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), () => [disabledWebsiteAccessEntry('localhost:3000')]))
+
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'website_access_content_script_refresh_failed')
+		assert.deepEqual(getStorageState().websiteAccess, [])
+		// Without any further refresh, the registrations match the restored access: nothing is excluded, and the origin gets its provider and bridge again.
+		assert.deepEqual(getRegisteredContentScripts().map(({ excludeMatches }) => excludeMatches), [[], []])
+		assert.deepEqual(getActiveFirefoxContentScripts(), [])
+		const settled = getRegistrationSnapshots().at(-1)
+		if (settled === undefined) throw new Error('no registration was made')
+		for (const world of ['MAIN', 'ISOLATED'] as const) assert.deepEqual(getScriptCountsInFirefoxDocument(settled, 'http://localhost:3000/', world), [1], world)
+	})
+
 	test('declares the Firefox permission and minimum version that MAIN-world registration needs', () => {
 		const manifestV2 = readManifest('app/manifestV2.json')
 		const manifestV3 = readManifest('app/manifestV3.json')

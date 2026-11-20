@@ -88,10 +88,19 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 					throw error
 				}
 			}
+			// A failed refresh can leave registrations changed for the configuration that was just rolled back, such as a Firefox host that stays excluded after its own registration failed. Applying the restored configuration again makes the registrations match the persisted settings; a failure of that is reported on its own, because the rethrown refresh error does not carry it.
+			const reapplyRestoredConfiguration = async () => {
+				try {
+					await applyContentScriptInjectionStrategy({ configurationSource: 'storage' })
+				} catch (restoreError: unknown) {
+					await reportUnexpectedError(restoreError, { code: 'content_script_registration_restore_failed' })
+				}
+			}
 			try {
 				if (update.onRefreshFailure === 'rollBackUpdate') {
 					const transaction = await update.runUpdateWithRefresh(refreshIfChanged)
 					storage = transaction.storage
+					if (transaction.status === 'failed' && transaction.storage === 'rolled-back' && refreshErrors.has(transaction.error)) await reapplyRestoredConfiguration()
 					if (transaction.status === 'failed') throw transaction.error
 				} else {
 					await update.runUpdate()
