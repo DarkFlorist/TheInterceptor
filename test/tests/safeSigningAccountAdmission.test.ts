@@ -1,7 +1,8 @@
 import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { createBrowserMock, resetConfirmTransactionTestState, createSafeAddressBookEntry, ethereum, fakeSafeContract, activeAddress } from './confirmTransactionTestHarness.js'
 import { getUserAddressBookEntries } from '../../app/ts/background/addressBookStore.js'
-import { saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings, getSigningWalletBinding } from '../../app/ts/background/signingAddressBookCoordinator.js'
+import { saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings } from '../../app/ts/background/signingAddressBookCoordinator.js'
+import { getSigningWalletBinding } from '../../app/ts/background/signingWalletStore.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 const { setSafeSigningAccounts } = await import('../../app/ts/background/safeSigningAccountHandler.js')
@@ -54,7 +55,7 @@ test('Safe account handler rejects a binding removed while the Safe state is loa
 })
 
 test('signing handler propagates unexpected storage failures to its diagnostic boundary', async () => {
-	const storage = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const storage = await import('../../app/ts/background/signingWalletStore.js')
 	const failure = new Error('Unexpected storage failure')
 	const read = spyOn(storage, 'getAddressBookAndSigningWalletBindings').mockRejectedValue(failure)
 	try {

@@ -2,6 +2,7 @@
 import 'webextension-polyfill'
 import { isSigningPageMessage, signingPageMessageHandler } from './signingRequestService.js'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
+import { pruneIneligibleSigningWalletBindings } from './signingAddressBookCoordinator.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -285,6 +286,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await pruneIneligibleSigningWalletBindings().catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()

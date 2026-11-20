@@ -1,6 +1,6 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
 import { getSavedSafeSigningAccount } from '../safeSigningAccount.js'
-import { getSigningWalletBinding } from '../signingAddressBookCoordinator.js'
+import { getSigningWalletBinding } from '../signingWalletStore.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'

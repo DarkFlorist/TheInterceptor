@@ -1,4 +1,4 @@
-import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal, type SafeEntry } from '../types/addressBookTypes.js'
+import { AddressBookEntry, LegacyErc20TokenEntry, doAddressBookChainIdsMatch, type AddressBookEntries, type ChainIdWithUniversal, type SafeEntry } from '../types/addressBookTypes.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -44,7 +44,16 @@ export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: Add
 // The fields of a saved Safe that do not identify it. Which entries exist, and their types and addresses, decide which ordinary addresses may keep a signing wallet, so this type leaves them out.
 export type SafeEntryDetails = Omit<SafeEntry, 'type' | 'address' | 'chainId'>
 
-/** The only address-book write outside signingAddressBookCoordinator: it changes details of one saved Safe and cannot add, remove or reclassify an entry, so signing wallet eligibility stays the same. Every other edit goes through updateAddressBookAndSigningWalletBindings. Returns the updated Safe, or undefined when it is no longer saved. */
+/** Caches an address identified from bundled or on-chain metadata unless the address book already has an entry for it on that chain. The entry cannot be a Safe, so it cannot exclude an address from signing; and stored bindings only belong to eligible addresses (see pruneIneligibleSigningWalletBindings), so no stored binding waits for a newly added address. The addition therefore leaves signing wallet eligibility unchanged and needs no signing storage. */
+export async function addAddressBookEntryIfMissing(newEntry: Exclude<AddressBookEntry, SafeEntry>) {
+	await runSettingsStorageTransaction(async () => {
+		const entries = await getUserAddressBookEntries()
+		if (entries.some((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))) return { writes: [], result: undefined }
+		return { writes: [userAddressBookEntriesStorageWrite([...entries, newEntry])], result: undefined }
+	})
+}
+
+/** The other address-book write outside signingAddressBookCoordinator: it changes details of one saved Safe and cannot add, remove or reclassify an entry, so signing wallet eligibility stays the same. Every other edit goes through updateAddressBookAndSigningWalletBindings. Returns the updated Safe, or undefined when it is no longer saved. */
 export async function updateSafeAddressBookEntryDetails(chainId: bigint, address: bigint, update: (details: SafeEntryDetails) => SafeEntryDetails) {
 	return await runSettingsStorageTransaction(async () => {
 		let updated: SafeEntry | undefined

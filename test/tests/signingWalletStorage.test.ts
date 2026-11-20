@@ -18,7 +18,8 @@ Object.defineProperty(globalThis, 'browser', { configurable: true, writable: tru
 		set: async (items: Record<string, unknown>) => { writes.push(items); Object.assign(stored, items) },
 	} },
 } })
-const { getSigningWalletBindings, saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+const { saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+const { getSigningWalletBindings } = await import('../../app/ts/background/signingWalletStore.js')
 const { getUserAddressBookEntries } = await import('../../app/ts/background/addressBookStore.js')
 const privateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
 const address = BigInt(privateKeyToAccount(privateKey).address)
@@ -101,10 +102,9 @@ test('removing the last chain-scoped entry prunes its binding while retaining an
 })
 
 test('converting or adding an address as a Safe removes its ordinary signing binding in the same write', async () => {
-	const { addUserAddressBookEntryIfItDoesNotExist } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
 	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
 	const safe = { type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true } satisfies import('../../app/ts/types/addressBookTypes.js').SafeEntry
-	await addUserAddressBookEntryIfItDoesNotExist(safe)
+	await updateAddressBookAndSigningWalletBindings((entries) => [...entries, safe])
 	expect(await getSigningWalletBindings()).toEqual([])
 	expect(writes.at(-1)).toHaveProperty('signingWalletBindings', [])
 	await updateAddressBookAndSigningWalletBindings((entries) => entries.filter((entry) => entry.type !== 'safe'))
@@ -114,7 +114,7 @@ test('converting or adding an address as a Safe removes its ordinary signing bin
 })
 
 test('lookups never return orphaned or Safe-address bindings even from stale persisted data', async () => {
-	const { getSigningWalletBinding } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { getSigningWalletBinding } = await import('../../app/ts/background/signingWalletStore.js')
 	await browserStorageLocalSet({ signingWalletBindings: [{ wallet: ledger, revision: crypto.randomUUID() }] })
 	expect(await getSigningWalletBinding(address)).toBeUndefined()
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [{ type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }] })
@@ -253,4 +253,18 @@ test('extension pages are told to request the bindings again after each binding 
 	await updateAddressBookAndSigningWalletBindings(() => [])
 	expect(bindingsChangedBroadcasts()).toBe(2)
 	expect(saved).toBeDefined()
+})
+
+test('stale bindings of addresses outside the address book are pruned, so caching an identified address cannot revive one', async () => {
+	const { pruneIneligibleSigningWalletBindings } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { addAddressBookEntryIfMissing } = await import('../../app/ts/background/addressBookStore.js')
+	const { getSigningWalletBinding } = await import('../../app/ts/background/signingWalletStore.js')
+	await browserStorageLocalSet({ signingWalletBindings: [{ wallet: ledger, revision: crypto.randomUUID() }] })
+	await pruneIneligibleSigningWalletBindings()
+	expect(stored.signingWalletBindings).toEqual([])
+	await addAddressBookEntryIfMissing({ type: 'contact', address, name: 'Identified on chain', entrySource: 'OnChain', chainId: 1n })
+	expect(await getSigningWalletBinding(address)).toBeUndefined()
+	expect((await getUserAddressBookEntries()).map((entry) => entry.name)).toEqual(['Identified on chain'])
+	await addAddressBookEntryIfMissing({ type: 'contact', address, name: 'Second identification', entrySource: 'OnChain', chainId: 1n })
+	expect((await getUserAddressBookEntries()).map((entry) => entry.name)).toEqual(['Identified on chain'])
 })

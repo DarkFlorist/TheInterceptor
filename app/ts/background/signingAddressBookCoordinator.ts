@@ -1,23 +1,12 @@
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStore.js'
 import { isSigningWalletBindingsStorageWrite, readSigningWalletBindings, signingWalletBindingsStorageWrite } from './signingWalletStore.js'
-import { SigningWallet, SigningWalletBindings, type SigningWalletBinding } from '../types/signingWallet.js'
-import { doAddressBookChainIdsMatch, type AddressBookEntry, type AddressBookEntries } from '../types/addressBookTypes.js'
+import { getOrdinarySigningAddresses, reconcileSigningWalletBindings } from '../utils/signingWalletEligibility.js'
+import { SigningWallet, SigningWalletBindings } from '../types/signingWallet.js'
+import type { AddressBookEntry, AddressBookEntries } from '../types/addressBookTypes.js'
 import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'
 import { signingOperationError } from '../signing/signingOperationError.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-
-// A binding is global to an ordinary address, retained while any chain-scoped entry remains. A Safe entry in any scope excludes the address from ordinary-account signing.
-function getOrdinarySigningAddresses(entries: AddressBookEntries) {
-	const ordinaryAddresses = new Set(entries.filter((entry) => entry.type !== 'safe').map((entry) => entry.address))
-	const safeAddresses = new Set(entries.filter((entry) => entry.type === 'safe').map((entry) => entry.address))
-	return new Set([...ordinaryAddresses].filter((address) => !safeAddresses.has(address)))
-}
-
-function reconcileSigningWalletBindings(entries: AddressBookEntries, bindings: SigningWalletBindings) {
-	const eligibleAddresses = getOrdinarySigningAddresses(entries)
-	return bindings.filter((binding) => eligibleAddresses.has(binding.wallet.address))
-}
 
 // All combined writes enforce address classification here; imports validate strictly before reaching this boundary. The settings storage transaction applies the returned writes in one storage set.
 function addressBookAndSigningWalletBindingsWrites(entries: AddressBookEntries, bindings?: SigningWalletBindings, previousBindings?: SigningWalletBindings): readonly StorageWrite[] {
@@ -38,21 +27,6 @@ async function runBindingsTransaction<Result>(plan: () => Promise<{ readonly wri
 	})
 	if (bindingsWritten) await sendPopupMessageToOpenWindows({ method: 'popup_signingWalletBindingsChanged' })
 	return result
-}
-
-export async function getAddressBookAndSigningWalletBindings() {
-	return await runSettingsStorageTransaction(async () => {
-		const [entries, bindings] = await Promise.all([getUserAddressBookEntries(), readSigningWalletBindings()])
-		return { writes: [], result: { addressBookEntries: entries, signingWalletBindings: reconcileSigningWalletBindings(entries, bindings) } }
-	})
-}
-
-export async function getSigningWalletBindings(): Promise<SigningWalletBindings> {
-	return (await getAddressBookAndSigningWalletBindings()).signingWalletBindings
-}
-
-export async function getSigningWalletBinding(address: bigint): Promise<SigningWalletBinding | undefined> {
-	return (await getSigningWalletBindings()).find((binding) => binding.wallet.address === address)
 }
 
 // The caller must present the revision it reviewed; onboarding uses undefined for an address with no binding. Address selection, mode, and website permissions are deliberately outside this mutation.
@@ -123,6 +97,15 @@ export async function updateAddressBookAndSigningWalletBindings(updateFunc: (pre
 	})
 }
 
+// Every write here keeps the stored bindings to eligible addresses, so an eligibility-neutral address-book addition cannot revive one. Startup removes any left by older or externally changed storage.
+export async function pruneIneligibleSigningWalletBindings() {
+	await runBindingsTransaction(async () => {
+		const [entries, bindings] = await Promise.all([getUserAddressBookEntries(), readSigningWalletBindings()])
+		const eligible = reconcileSigningWalletBindings(entries, bindings)
+		return { writes: eligible.length === bindings.length ? [] : [signingWalletBindingsStorageWrite(eligible)], result: undefined }
+	})
+}
+
 // A backup restore replaces the bindings with the imported ones; the settings import composes these writes into its single storage transaction, so an invalid backup throws before anything is written.
 export function addressBookAndSigningWalletBindingsImportWrites(entries: AddressBookEntries, bindings: SigningWalletBindings): readonly StorageWrite[] {
 	if (!SigningWalletBindings.safeSerialize(bindings).success) throw new Error('Invalid imported signing wallet bindings')
@@ -130,11 +113,4 @@ export function addressBookAndSigningWalletBindingsImportWrites(entries: Address
 	if (reconcileSigningWalletBindings(entries, bindings).length !== bindings.length) throw new Error('Imported signing wallets must belong to ordinary addresses in the imported address book')
 	// Restoring the same backup is still an explicit wallet change and must invalidate approvals pinned to any earlier revision.
 	return addressBookAndSigningWalletBindingsWrites(entries, bindings.map((binding) => ({ wallet: binding.wallet, revision: crypto.randomUUID() })))
-}
-
-export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await updateAddressBookAndSigningWalletBindings((entries) => {
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		return existingEntry !== undefined ? entries : entries.concat(newEntry)
-	})
 }

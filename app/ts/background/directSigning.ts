@@ -17,7 +17,7 @@ import { bytesFromHex, bytesToHex, ensureHex, keccak256 } from '../utils/ethereu
 import { parseTransaction, serializeTransaction } from '../utils/ethereumTransactions.js'
 import { DIRECT_SIGNING_CAPABILITY_ERROR, getSigningMethodError, prepareDirectPayload, verifyDirectResult } from '../signing/backend.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
+import { getSigningWalletBinding } from './signingWalletStore.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { withDirectSigningRecords, type DirectSigningRecordsTransaction } from './directSigningStore.js'
 import { getHtmlFile } from './backgroundUtils.js'
