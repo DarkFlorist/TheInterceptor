@@ -32,7 +32,7 @@ import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import type { RpcEntries } from '../../types/rpc.js'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -889,8 +889,8 @@ export function ConfirmTransaction() {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		// Still subscribes through the helper directly: #1683 moves this component onto usePopupMessage together with the rest of its hook changes.
+		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
 	}, [])
 
 	useEffect(() => {

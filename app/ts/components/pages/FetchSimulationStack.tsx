@@ -4,7 +4,7 @@ import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadat
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
-import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
@@ -111,8 +111,8 @@ export function FetchSimulationStack() {
 			changeRequest.value = parsed.data
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		// Still subscribes through the helper directly: #1683 moves this component onto usePopupMessage together with the rest of its hook changes.
+		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
 	}, [])
 
 	const updateSimulation = async () => {
