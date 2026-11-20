@@ -24,6 +24,7 @@ type RichModeBalanceEditorProps = {
 	richTokenErrorTarget: Signal<string | undefined>
 	richTokenPending: Signal<boolean>
 	richTokenPendingKey: Signal<string | undefined>
+	richTokenNotice: Signal<string | undefined>
 	richTokenPendingLabel: Signal<string | undefined>
 	saveNativeAmount: (amount: bigint) => Promise<void>
 	saveRichTokenAmount: (option: RichTokenOption, amount: bigint) => Promise<void>
@@ -35,7 +36,7 @@ type RichModeBalanceEditorProps = {
 }
 
 // The balance view of the rich-account dialog: the native amount and the funded tokens of one account.
-export function RichModeBalanceEditor({ accountName, addingRichTokens, availableRichTokens, clearRichTokenError, enabledRichTokens, failedAddedRichToken, nativeCurrencyTicker, newlyAddedRichTokenKeys, profile, removeFailedRichTokenSelection, retryFailedRichTokenSelection, richBalanceAssetStatusLabel, richNativeAmount, richTokenError, richTokenErrorTarget, richTokenPending, richTokenPendingKey, richTokenPendingLabel, saveNativeAmount, saveRichTokenAmount, selectRichTokensButtonRef, setNativeAmount, setRichTokenAmount, setRichTokenEnabled, showRichTokenSelection }: RichModeBalanceEditorProps) {
+export function RichModeBalanceEditor({ accountName, addingRichTokens, availableRichTokens, clearRichTokenError, enabledRichTokens, failedAddedRichToken, nativeCurrencyTicker, newlyAddedRichTokenKeys, profile, removeFailedRichTokenSelection, retryFailedRichTokenSelection, richBalanceAssetStatusLabel, richNativeAmount, richTokenError, richTokenErrorTarget, richTokenPending, richTokenPendingKey, richTokenNotice, richTokenPendingLabel, saveNativeAmount, saveRichTokenAmount, selectRichTokensButtonRef, setNativeAmount, setRichTokenAmount, setRichTokenEnabled, showRichTokenSelection }: RichModeBalanceEditorProps) {
 	return <div class = 'rich-mode-balance-page'>
 		<div class = 'rich-mode-modal-toolbar'>
 			<span class = 'rich-mode-count-badge'>{ richBalanceAssetStatusLabel.value }</span>
@@ -84,6 +85,7 @@ export function RichModeBalanceEditor({ accountName, addingRichTokens, available
 			</div>
 		</> }
 		{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
+		{ richTokenNotice.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenNotice.value }</p> }
 		{ richTokenError.value === undefined || richTokenErrorTarget.value !== undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 	</div>
 }

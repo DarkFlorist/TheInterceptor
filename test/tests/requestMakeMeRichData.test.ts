@@ -737,7 +737,6 @@ describe('requestMakeMeRichList resilience', () => {
 		installBrowserMock()
 		const { refreshSimulationAfterRichTokenChange, getLatestUnexpectedError } = await loadModules()
 		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'observed', available: true })), 'Refreshed')
-		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'superseded' })), 'Refreshed')
 		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'observed', available: false })), 'Unavailable')
 		assert.equal(await getLatestUnexpectedError(), undefined)
 
@@ -746,6 +745,35 @@ describe('requestMakeMeRichList resilience', () => {
 		const reported = await getLatestUnexpectedError()
 		assert.equal(reported?.data.code, 'rich_token_simulation_refresh_failed')
 		assert.equal(reported?.data.message, 'Token funding was saved, but refreshing the simulation failed: refresh exploded')
+	})
+
+	test('does not report a refresh as completed when it was superseded by a replacement that then fails', async () => {
+		installBrowserMock()
+		const { refreshSimulationAfterRichTokenChange } = await loadModules()
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+			name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true,
+		})
+		const tokenPriceService = new TokenPriceService(ethereum, 60_000)
+		let releaseActiveRefresh = () => undefined
+		const activeRefreshGate = new Promise<void>((resolve) => { releaseActiveRefresh = resolve })
+		const refresh = createPopupSimulationRefresher<{ ethereum: EthereumClientService, tokenPriceService: TokenPriceService, revision: string }>(async ({ revision }) => {
+			if (revision === 'active') {
+				await activeRefreshGate
+				return true
+			}
+			throw new Error('replacement refresh failed')
+		})
+		const activeRefresh = refresh({ ethereum, tokenPriceService, revision: 'active' })
+		await Promise.resolve()
+		await Promise.resolve()
+		const tokenChangeOutcome = refreshSimulationAfterRichTokenChange(async () => await refresh({ ethereum, tokenPriceService, revision: 'token change' }))
+		const replacementRefresh = refresh({ ethereum, tokenPriceService, revision: 'replacement' })
+		assert.equal(await tokenChangeOutcome, 'Superseded')
+		releaseActiveRefresh()
+		assert.deepEqual(await activeRefresh, { status: 'observed', available: true })
+		await assert.rejects(replacementRefresh, /replacement refresh failed/u)
 	})
 
 	test('requires rich tokens to come from the active-chain address book', async () => {

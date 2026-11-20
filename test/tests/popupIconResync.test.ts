@@ -1235,6 +1235,41 @@ describe('popup icon sync', () => {
 		}
 	})
 
+	test('keeps a saved token amount without claiming a completed refresh when a newer refresh superseded it', async () => {
+		const dom = installDomMock()
+		const account: AddressBookEntry = { type: 'contact', name: 'Refresh account', address: 1n, entrySource: 'User' }
+		const option = usdcOption(true)
+		const profiles = signal<readonly RichAccountBalance[]>([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5_000_000n }] }])
+		installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
+			const { enabled: _enabled, ...richToken } = option
+			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Superseded' } }
+		})
+		try {
+			await act(() => {
+				render(h(RichModeAccountManager, {
+					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
+					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
+					setRichState: async () => undefined,
+				}), dom.document.body)
+			})
+			await openBalanceEditor(dom, account.name)
+			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'USDC rich amount')
+			if (input === undefined) throw new Error('Expected token balance editor')
+			await act(async () => {
+				await changeElementValue(input, '7')
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(profiles.value[0]?.tokenBalances[0]?.amount, 7_000_000n)
+			assert.equal(dom.document.body.textContent.includes('A newer simulation refresh is in progress; its result will update the simulation.'), true)
+			assert.equal(dom.document.body.textContent.includes('latest simulation is unavailable'), false)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('renders configured balances and keeps unselected address-book tokens in the picker', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()

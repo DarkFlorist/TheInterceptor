@@ -34,6 +34,7 @@ type RichModeAccountManagerProps = {
 }
 
 const SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE = 'The token funding was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.'
+const SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE = 'The token funding was saved. A newer simulation refresh is in progress; its result will update the simulation.'
 
 // Owns rich-mode state and the background requests; the account list, balance editor and token picker views render it.
 export function RichModeAccountManager({ isSettingsChangePending, setRichState, makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, chainId, renameAddressCallBack, isInitialHomeDataLoaded }: RichModeAccountManagerProps) {
@@ -80,6 +81,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 	const richTokenPending = useSignal(false)
 	const richTokenPendingKey = useSignal<string | undefined>(undefined)
 	const richTokenPendingLabel = useSignal<string | undefined>(undefined)
+	const richTokenNotice = useSignal<string | undefined>(undefined)
 	const richTokenSaveConfirmedAddress = useSignal<bigint | undefined>(undefined)
 	const richTokenSearch = useSignal('')
 	const richTokenFilter = useSignal<RichTokenFilter>('All')
@@ -117,11 +119,22 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		newlyAddedRichTokenKeys.value = []
 		richTokenError.value = undefined
 		richTokenErrorTarget.value = undefined
+		richTokenNotice.value = undefined
 	}
 	const reportSimulationRefreshOutcome = (simulationRefresh: RichTokenSimulationRefresh) => {
-		if (simulationRefresh === 'Refreshed') return
-		richTokenError.value = SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE
-		richTokenErrorTarget.value = undefined
+		switch (simulationRefresh) {
+			case 'Refreshed': return
+			case 'Superseded': {
+				richTokenNotice.value = SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE
+				return
+			}
+			case 'Unavailable': {
+				richTokenError.value = SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE
+				richTokenErrorTarget.value = undefined
+				return
+			}
+			default: return assertNever(simulationRefresh)
+		}
 	}
 	const runRichOperation = async <Result,>(key: string, label: string, operation: () => Promise<Result>) => {
 		richTokenPending.value = true
@@ -130,6 +143,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		richTokenSaveConfirmedAddress.value = undefined
 		richTokenError.value = undefined
 		richTokenErrorTarget.value = undefined
+		richTokenNotice.value = undefined
 		try {
 			return await operation()
 		} finally {
@@ -497,6 +511,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 								richTokenErrorTarget = { richTokenErrorTarget }
 								richTokenPending = { richTokenPending }
 								richTokenPendingKey = { richTokenPendingKey }
+								richTokenNotice = { richTokenNotice }
 								richTokenPendingLabel = { richTokenPendingLabel }
 								saveNativeAmount = { saveNativeAmount }
 								saveRichTokenAmount = { saveRichTokenAmount }

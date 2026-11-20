@@ -442,7 +442,9 @@ export async function modifyRichToken(
 export async function refreshSimulationAfterRichTokenChange(refresh: () => Promise<PopupSimulationRefreshOutcome>): Promise<RichTokenSimulationRefresh> {
 	try {
 		const outcome = await refresh()
-		return outcome.status === 'observed' && !outcome.available ? 'Unavailable' : 'Refreshed'
+		// The queue settles a superseded request before its replacement runs, so the replacement's result is unknown here and is not reported as a completed refresh.
+		if (outcome.status === 'superseded') return 'Superseded'
+		return outcome.available ? 'Refreshed' : 'Unavailable'
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, {
 			displayMessage: `Token funding was saved, but refreshing the simulation failed: ${ formatCaughtErrorMessage(error) }`,
