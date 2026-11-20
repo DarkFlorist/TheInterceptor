@@ -1,16 +1,16 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import { type AdmittedRpcNetworkNoLongerLive, type CapturedRpcNetwork, getLiveSettingsOnAdmittedRpcNetwork, type ReadyRpcSettings } from './settings.js'
 
-// The connection-grant contract: the only way to obtain settings that may grant a connection, and the check that they are used only inside the grant they were read for. verifyAccess and connectToPort take LiveSettings, so granting policy depends on this module, while settings.ts only reads settings and checks them against the admitted network (getLiveSettingsOnAdmittedRpcNetwork, which request routing uses as well).
+// Reconciliation uses this live reread for its synchronous grant. Other entry points still accept ordinary Settings until the admission layer migrates their signatures.
 
 const liveSettingsMarker = Symbol('liveSettings')
-// Settings proven to come from a ready RPC configuration on the network the caller worked on, read just now. Granting a connection takes this type (see verifyAccess and connectToPort), so code that holds plain settings cannot grant. Only grantWithLiveSettings creates it, for the synchronous grant it runs right after the read, and the grant functions reject it outside that call (assertLiveSettingsInGrantWindow).
+// Settings read from a ready configuration on the caller's admitted network. grantWithLiveSettings creates this marker for its callback; legacy granting APIs do not enforce it yet.
 export type LiveSettings = ReadyRpcSettings & { readonly [liveSettingsMarker]: true }
 
-// Checked at runtime because the type system cannot see live settings captured by a closure that runs after the grant; asynchronous grants are rejected by type (Synchronous). The live settings whose grant is running right now. A grant runs synchronously, so a value is here only between the read and the end of its grant; a value the grant let escape (returned, or captured by a closure that runs later) is no longer here once anything could have awaited.
+// This optional runtime assertion detects a marked value used after its callback returned. Admission-layer callers can opt in when their APIs require LiveSettings.
 const liveSettingsInGrantWindow = new WeakSet<LiveSettings>()
 
-// Called by every function that grants with LiveSettings: using live settings after their grant returned fails loudly instead of granting on settings that may have changed meanwhile.
+// Available to typed admission-layer callers; current reconciliation relies on the synchronous callback rather than invoking this assertion.
 export function assertLiveSettingsInGrantWindow(settings: LiveSettings) {
 	if (!liveSettingsInGrantWindow.has(settings)) throw new Error('Live settings were used outside the grant they were read for. Grant inside grantWithLiveSettings.')
 }
@@ -18,7 +18,7 @@ export function assertLiveSettingsInGrantWindow(settings: LiveSettings) {
 // A result that is not a promise: a grant that returns one would continue after an await, when the live settings may no longer hold.
 type Synchronous<Result> = Result extends PromiseLike<unknown> ? never : Result
 
-// The only way to grant: reads the live settings and, while they are still on the admitted network, runs `grant` with them at once. Two checks keep an await from coming between the read and the grant: `grant` must be synchronous (one that returns a promise does not type-check), and the settings are valid for granting only while it runs (assertLiveSettingsInGrantWindow), so settings that escape the grant fail when used. A grant whose follow-up work is asynchronous returns that work wrapped in an object, so the grant itself still completes synchronously.
+// Re-read on the admitted network, then invoke the callback synchronously. Asynchronous follow-up work is returned inside an object so it cannot defer the grant itself; the optional runtime marker check is not enforced by legacy entry points.
 export async function grantWithLiveSettings<Grant extends (settings: LiveSettings) => unknown>(
 	admitted: Settings | CapturedRpcNetwork,
 	grant: Grant & ((settings: LiveSettings) => Synchronous<ReturnType<Grant>>),

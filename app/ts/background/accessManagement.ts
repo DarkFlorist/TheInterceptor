@@ -1,9 +1,10 @@
-import { getActiveAddress, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { backgroundTaskSupervisor } from './backgroundTasks.js'
+import { getActiveAddress, getWebsiteSocketConnection, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
+import type { Settings } from '../types/interceptor-messages.js'
 import { getSettingsSnapshot, updateWebsiteAccess, requireReadableSettings } from './settings.js'
 import { grantWithLiveSettings } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
@@ -25,15 +26,15 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { getWebsiteAccessForAddress, hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { updateDeclarativeNetRequestBlocks } from './requestBlocking.js'
-import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
+import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
 
 
 /**
  * Connection approval and its reconciliation. Which entry point to call:
  * - A handler that committed an access-affecting write calls reconcileCommittedAccessChange with the write's CommittedAccessChange and an AccessReconciliationFollowUp that says what follows the reconciliation (prompts, error handling, popup notification). It fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. persistWebsiteAccessChange is setAccess followed by it.
- * - An operation that surfaces every failure of several committed steps through one collector calls reconcileCommittedAccessChangeCollectingFailures instead, whose callback runs reconcileWebsiteApprovalAccessesCollectingFailures. accessReconciliationArchitecture.test.ts checks that handlers call the inner reconciliation functions only inside that callback.
+ * - An operation that surfaces every failure of several committed steps through one collector calls reconcileCommittedAccessChangeCollectingFailures instead, whose callback runs reconcileWebsiteApprovalAccessesCollectingFailures.
  * - updateWebsiteApprovalAccesses reconciles without a committed write (follow-up prompts after an access dialog); the entry points above run it.
- * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. Keeping the scope private here means no caller can revoke a narrower scope than its change implies; the architecture test checks that it stays private.
+ * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. Keeping the scope private here means no caller can revoke a narrower scope than its change implies.
  */
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
@@ -54,50 +55,11 @@ export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabCo
 	}
 }
 
-const unscopedConnectionEventSuppressionCounts = new Map<string, number>()
-
-function incrementUnscopedConnectionEventSuppression(socket: WebsiteSocket) {
-	const socketIdentifier = websiteSocketToString(socket)
-	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, (unscopedConnectionEventSuppressionCounts.get(socketIdentifier) ?? 0) + 1)
-	return socketIdentifier
-}
-
-function decrementUnscopedConnectionEventSuppression(socketIdentifier: string) {
-	const previousCount = unscopedConnectionEventSuppressionCounts.get(socketIdentifier)
-	if (previousCount === undefined || previousCount <= 1) {
-		unscopedConnectionEventSuppressionCounts.delete(socketIdentifier)
-		return
-	}
-	unscopedConnectionEventSuppressionCounts.set(socketIdentifier, previousCount - 1)
-}
-
-function shouldSendUnscopedConnectionEvents(socket: WebsiteSocket) {
-	return !unscopedConnectionEventSuppressionCounts.has(websiteSocketToString(socket))
-}
-
-export function withSuppressedUnscopedConnectionEventsForSocket<T>(socket: WebsiteSocket, action: () => T): T {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
-	}
-}
-
-export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(socket: WebsiteSocket, action: () => Promise<T>): Promise<T> {
-	const socketIdentifier = incrementUnscopedConnectionEventSuppression(socket)
-	try {
-		return await action()
-	} finally {
-		decrementUnscopedConnectionEventSuppression(socketIdentifier)
-	}
-}
-
 type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
-// Can approve the connection and announce the settings' chain to the page, so it takes LiveSettings, which only grantWithLiveSettings's synchronous grant receives.
+// Legacy access entry point: accepts ordinary settings. Reconciliation grants use grantWithLiveSettings; typed enforcement at all entry points belongs to the later admission layer.
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
@@ -119,35 +81,6 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	}
 	if (access === 'noAccess' || access === 'interceptorDisabled') return access
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
-}
-
-export function sendMessageToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, message: InpageScriptCallBack) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result' as const, ...message })
-		}
-	}
-}
-export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, settings: Settings) {
-	// inform all the tabs about the address change
-	for (const [_tab, tabConnection] of websiteTabConnections.entries() ) {
-		for (const key in tabConnection.connections) {
-			const connection = tabConnection.connections[key]
-			if (connection === undefined) throw new Error('missing connection')
-			if (!connection.approved) continue
-			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
-			const activeAddress = await getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
-			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
-				type: 'result' as const,
-				method: 'accountsChanged',
-				result: activeAddress !== undefined ? [activeAddress.address] : []
-			})
-		}
-	}
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -283,6 +216,7 @@ async function readSettingsForAccessReconciliation(): Promise<AccessReconciliati
 	try {
 		const snapshot = await getSettingsSnapshot()
 		if (snapshot.status === 'available') return { status: 'available', settings: snapshot.settings }
+		if (snapshot.websiteApprovals.status === 'unreadable') return { status: 'rejected', failure: snapshot.websiteApprovals.error }
 	} catch (error: unknown) {
 		return { status: 'rejected', failure: error }
 	}
@@ -307,7 +241,7 @@ function disconnectIfApproved(websiteTabConnections: WebsiteTabConnections, conn
 }
 
 // Never throws: every failure of the connection's steps is returned, in order.
-async function reconcileConnection(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, inputs: AccessReconciliationInputs): Promise<readonly unknown[]> {
+async function reconcileConnection(websiteTabConnections: WebsiteTabConnections, connection: WebsiteConnection, inputs: AccessReconciliationInputs, newlyGranted: Set<WebsiteConnection>): Promise<readonly unknown[]> {
 	let activeAddress: AddressBookEntry | undefined
 	try {
 		activeAddress = await getConnectionActiveAddress(websiteTabConnections, connection, inputs.settings)
@@ -322,16 +256,18 @@ async function reconcileConnection(websiteTabConnections: WebsiteTabConnections,
 		// The active-address lookup and the connections before this one awaited, so the grant is decided on a fresh read. connectToPort approves synchronously; its request-block update is returned and awaited after the grant.
 		const grant = await grantWithLiveSettings(inputs.settings, (liveSettings) => {
 			if (connection.approved || getConnectionAccessForAddress(liveSettings.websiteAccess, connection, activeAddress) !== 'hasAccess') return undefined
+			newlyGranted.add(connection)
 			return { blocksUpdated: connectToPort(websiteTabConnections, connection.socket, liveSettings, activeAddress?.address) }
 		})
 		if (grant.kind === 'granted' && grant.result !== undefined) await grant.result.blocksUpdated
 		return []
 	} catch (error: unknown) {
-		return [error]
+		return [error, ...disconnectIfApproved(websiteTabConnections, connection)]
 	}
 }
 
-async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+// Awaited; reports each failed prompt and continues with the next connection.
+async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections): Promise<void> {
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.wantsToConnect) continue
@@ -342,8 +278,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
-				if (throwOnError) throw error
-				await reportUnexpectedError(error)
+				await reportUnexpectedError(error, { source: 'website_access_prompt', details: { websiteOrigin: connection.websiteOrigin, socket: connection.socket } })
 			}
 		}
 	}
@@ -387,6 +322,7 @@ export async function reconcileWebsiteApprovalAccessesCollectingFailures(
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	const failures = await withAccessReconciliationLock(websiteTabConnections, async () => {
 		const runFailures: unknown[] = []
+		const newlyGranted = new Set<WebsiteConnection>()
 		try {
 			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 		} catch (error: unknown) {
@@ -403,7 +339,7 @@ export async function reconcileWebsiteApprovalAccessesCollectingFailures(
 			const connectionFailures: unknown[] = []
 			for (const connection of Object.values(tabConnection.connections)) {
 				addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
-				connectionFailures.push(...await reconcileConnection(websiteTabConnections, connection, inputs))
+				connectionFailures.push(...await reconcileConnection(websiteTabConnections, connection, inputs, newlyGranted))
 			}
 			return connectionFailures
 		}))
@@ -413,24 +349,28 @@ export async function reconcileWebsiteApprovalAccessesCollectingFailures(
 		} catch (error: unknown) {
 			runFailures.push(error)
 		}
-		return [...runFailures, ...tabFailures.flat()]
+		const failures = [...runFailures, ...tabFailures.flat()]
+		// An unsuccessful run withdraws its own grants, even if a different tab finished granting after another tab failed. Unrelated approvals keep their authority.
+		if (failures.length > 0) {
+			for (const connection of newlyGranted) failures.push(...disconnectIfApproved(websiteTabConnections, connection))
+		}
+		return failures
 	})
 	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
 	return { update: { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }, failures }
 }
 
-// Call after releasing the settings lock: access dialogs can activate another address.
-export async function finishWebsiteAccessUpdate(
+// Awaited prompt and icon work, reporting failures; module-private so callers choose between startWebsiteAccessUiUpdateInBackground and updateWebsiteApprovalAccesses. Runs after the settings lock is released, because access dialogs can activate another address.
+async function finishWebsiteAccessUpdate(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
-) {
+): Promise<void> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
 	if (promptForAccessesIfNeeded && simulationServicesOwner !== undefined) {
-		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections, throwOnError)
+		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections)
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
@@ -442,8 +382,7 @@ export async function finishWebsiteAccessUpdate(
 			updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, update.popupRefreshGeneration)
 		))
 	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await reportUnexpectedError(error, { source: 'website_access_icons', details: { popupRefreshGeneration: update.popupRefreshGeneration } })
 	}
 }
 
@@ -453,11 +392,21 @@ export async function updateWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
 ): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings)
+	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded)
 	return update.popupRefreshGeneration
+}
+
+// Not awaited; starts the prompt and icon work for a finished reconciliation as a background task that reports its own failures, so a local command can reply without waiting for prompts.
+export function startWebsiteAccessUiUpdateInBackground(
+	simulationServicesOwner: SimulationServicesOwner | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	update: WebsiteAccessUpdate,
+	promptForAccessesIfNeeded: boolean,
+): void {
+	backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
+		async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 }
 
 export async function persistWebsiteAccessChange(
@@ -511,11 +460,16 @@ const isAffectedWebsite = (affectedWebsites: AffectedWebsites, websiteOrigin: st
 }
 
 // The connections of the affected websites lose their runtime approval so a committed revocation is never left unapplied, and request blocks are still reconciled (that works without an active RPC network). A failed disconnect notification or request-block update does not stop the rest; those failures are reported afterwards.
-async function revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites): Promise<readonly unknown[]> {
+async function revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections: WebsiteTabConnections, affectedWebsites: AffectedWebsites): Promise<readonly unknown[]> {
 	// Under the reconciliation lock, so a run already in flight cannot approve a revoked connection again after it.
 	return await withAccessReconciliationLock(websiteTabConnections, async () => {
 		const affectedConnections = [...websiteTabConnections.values()].flatMap((tabConnection) => Object.values(tabConnection.connections)).filter((connection) => isAffectedWebsite(affectedWebsites, connection.websiteOrigin))
-		const failures = affectedConnections.flatMap((connection) => disconnectIfApproved(websiteTabConnections, connection))
+		const previouslyApproved = new Set(affectedConnections.filter((connection) => connection.approved))
+		for (const connection of affectedConnections) connection.approved = false
+		const failures = affectedConnections.flatMap((connection) => collectFailure(() => {
+			if (previouslyApproved.has(connection)) disconnectFromPort(websiteTabConnections, connection.socket)
+			else notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, connection.socket, false)
+		}))
 		try {
 			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 		} catch (error: unknown) {
@@ -534,22 +488,53 @@ export type AccessReconciliationFollowUp = {
 	readonly throwOnError: boolean
 	// Tells open popups that website access changed, after the reconciliation is applied.
 	readonly notifyWebsiteAccessChanged: boolean
+	readonly uiCompletion?: 'background'
+}
+
+function refreshIconsAfterFailedReconciliation(websiteTabConnections: WebsiteTabConnections) {
+	startWebsiteAccessUiUpdateInBackground(undefined, websiteTabConnections, {
+		popupRefreshGeneration: bumpPopupRefreshGeneration(),
+		iconRefreshTargets: [...websiteTabConnections.values()].flatMap((tab) => Object.values(tab.connections).map(({ socket, websiteOrigin }) => ({ tabId: socket.tabId, websiteOrigin }))),
+	}, false)
+}
+
+async function reconcileCommittedAccessState(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, throwOnError: boolean) {
+	const committedSettings = await readSettingsForAccessReconciliation()
+	if (committedSettings.status !== 'available') {
+		const failures = [committedSettings.failure, ...await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))]
+		refreshIconsAfterFailedReconciliation(websiteTabConnections)
+		await surfaceFailures(failures.slice(1), reportAsUnexpectedError, { throwFirst: false })
+		throw committedSettings.failure
+	}
+	try {
+		const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, committedSettings.settings, throwOnError)
+		return { settings: committedSettings.settings, update }
+	} catch (error: unknown) {
+		const failures = await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))
+		refreshIconsAfterFailedReconciliation(websiteTabConnections)
+		await surfaceFailures(failures, reportAsUnexpectedError, { throwFirst: false })
+		throw error
+	}
+}
+
+// Compatibility for current main's local edits: await authority reconciliation, with prompts/icons explicitly scheduled by its callers.
+export async function reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections: WebsiteTabConnections): Promise<WebsiteAccessUpdate> {
+	return (await reconcileCommittedAccessState(websiteTabConnections, { kind: 'address-book' }, true)).update
 }
 
 // The entry point for reconciling a committed access-affecting write: the reconciliation runs with the committed settings, read now, and then `followUp`. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown, and any failure of the revocation reported.
 export async function reconcileCommittedAccessChange(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, followUp: AccessReconciliationFollowUp): Promise<Settings> {
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings.status !== 'available') return await surfaceFailures([committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))], reportAsUnexpectedError)
-	await updateWebsiteApprovalAccesses(followUp.simulationServicesOwner, websiteTabConnections, committedSettings.settings, followUp.promptForAccesses, followUp.throwOnError)
-	// Sent after the revocation is applied, so a failed notification is reported, not lost.
+	const { settings, update } = await reconcileCommittedAccessState(websiteTabConnections, change, followUp.throwOnError)
+	if (followUp.uiCompletion === 'background') startWebsiteAccessUiUpdateInBackground(followUp.simulationServicesOwner, websiteTabConnections, update, followUp.promptForAccesses)
+	else await finishWebsiteAccessUpdate(followUp.simulationServicesOwner, websiteTabConnections, update, followUp.promptForAccesses)
 	if (followUp.notifyWebsiteAccessChanged) await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return committedSettings.settings
+	return settings
 }
 
 // The same entry point for a step of a larger committed-write operation: it never throws, and returns every failure in order (the unavailable read and the revocation's, or the failures `reconcile` returns or throws) for that operation's single collector to surface.
 export async function reconcileCommittedAccessChangeCollectingFailures(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<readonly unknown[]>): Promise<readonly unknown[]> {
 	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings.status !== 'available') return [committedSettings.failure, ...await revokeAffectedApprovalsBecauseSettingsAreUnreadable(websiteTabConnections, getAffectedWebsites(change))]
+	if (committedSettings.status !== 'available') return [committedSettings.failure, ...await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))]
 	try {
 		return await reconcile(committedSettings.settings)
 	} catch (error: unknown) {

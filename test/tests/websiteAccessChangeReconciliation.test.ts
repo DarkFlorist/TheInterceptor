@@ -91,7 +91,7 @@ const importAccessManagement = async () => await import('../../app/ts/background
 
 const makeReconciliationReject = async (reconcileError: Error) => {
 	const accessManagement = await importAccessManagement()
-	spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementationOnce(async () => { throw reconcileError })
+	spyOn(accessManagement, 'reconcileCommittedAccessChange').mockImplementationOnce(async () => { throw reconcileError })
 }
 
 afterEach(() => {
@@ -147,8 +147,8 @@ describe('website access registration and reconciliation', () => {
 		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
-		const reconcileApprovals = accessManagement.updateWebsiteApprovalAccesses
-		spyOn(accessManagement, 'updateWebsiteApprovalAccesses').mockImplementation(async (...args) => {
+		const reconcileApprovals = accessManagement.reconcileCommittedAccessChange
+		spyOn(accessManagement, 'reconcileCommittedAccessChange').mockImplementation(async (...args) => {
 			sideEffectOrder.push('reconcile')
 			return await reconcileApprovals(...args)
 		})
@@ -175,7 +175,7 @@ describe('website access registration and reconciliation', () => {
 	test('does not run follow-ups when the initial storage write fails', async () => {
 		const { reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		const registration = mockContentScriptInjectionUpdate()
-		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
 		const writeError = new Error('storage write failed')
 		spyOn(browser.storage.local, 'set').mockImplementation(async () => { throw writeError })
 
@@ -190,7 +190,7 @@ describe('website access registration and reconciliation', () => {
 	test('rolls back a failed registration and reconciles the restored permissions', async () => {
 		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
-		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
 
@@ -207,7 +207,7 @@ describe('website access registration and reconciliation', () => {
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
 		const reportingError = new Error('report failed')
 		spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingError })
-		const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
 
 		await assert.rejects(handlers[handler](), (error) => error === reportingError)
 
@@ -230,7 +230,7 @@ describe('website access registration and reconciliation', () => {
 		test(`${ handler } (disabled: ${ interceptorDisabled }) refreshes registration if needed and reconciles once`, async () => {
 			const { reloadedTabIds, connectedTabIds, handlers } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled })
 			const registration = mockContentScriptInjectionUpdate()
-			const reconcile = spyOn(await importAccessManagement(), 'updateWebsiteApprovalAccesses')
+			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
 
 			await handlers[handler]()
 
@@ -238,5 +238,47 @@ describe('website access registration and reconciliation', () => {
 			assert.deepEqual(reloadedTabIds, reloadsTabs ? connectedTabIds : [])
 			assert.equal(reconcile.mock.calls.length, 1)
 		})
+	}
+})
+
+
+for (const edit of ['approval', 'blocking', 'new-blocking-record'] as const) test(`an unreadable post-write snapshot preserves unrelated approvals for a ${ edit } edit`, async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { applyWebsiteAccessUpdate } = await import('../../app/ts/background/applyWebsiteAccessUpdate.js')
+	const { waitForBackgroundTasks } = await import('./backgroundTasksTestHarness.js')
+	const origins = ['scope-a.test', 'scope-b.test']
+	await modules.updateWebsiteAccess(() => origins.filter((_, index) => edit !== 'new-blocking-record' || index !== 0).map((websiteOrigin) => ({ website: { websiteOrigin }, access: true })))
+	const connections = new Map(origins.map((websiteOrigin, index) => {
+		const tabId = index + 1
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
+	}))
+	const originalGet = browser.storage.local.get.bind(browser.storage.local)
+	const originalSet = browser.storage.local.set.bind(browser.storage.local)
+	let committed = false
+	Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
+		await originalSet(items)
+		if ('websiteAccess' in items) committed = true
+	} })
+	Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys?: string | string[] | Record<string, unknown> | null) => {
+		if (committed && Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('post-write settings unavailable')
+		return await originalGet(keys)
+	} })
+	try {
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await withSilencedConsole(async () => {
+			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] ? entry : edit === 'approval' ? { ...entry, access: false } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
+			await waitForBackgroundTasks()
+		})
+		assert.equal(committed, true)
+		const approvalOf = (tabId: number) => Object.values(connections.get(tabId)?.connections ?? {})[0]?.approved
+		assert.equal(approvalOf(1), edit !== 'approval')
+		assert.equal(approvalOf(2), true)
+	} finally {
+		await waitForBackgroundTasks()
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
 	}
 })

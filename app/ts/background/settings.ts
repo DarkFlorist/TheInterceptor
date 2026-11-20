@@ -464,4 +464,3 @@ export async function getSettings() : Promise<Settings> {
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
-

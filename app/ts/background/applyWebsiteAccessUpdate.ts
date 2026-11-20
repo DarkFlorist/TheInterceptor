@@ -1,3 +1,5 @@
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { createWorkflowStepsError, type WorkflowStepFailure } from '../utils/errors.js'
@@ -33,7 +35,7 @@ const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): 
 async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: WorkflowStepFailure[], change: CommittedAccessChange) {
 	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
 		code: 'website_access_approval_reconciliation_failed',
-		run: async () => { await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: true, notifyWebsiteAccessChanged: false }) },
+		run: async () => { await reconcileCommittedAccessChange(websiteTabConnections, change, { simulationServicesOwner, promptForAccesses: true, throwOnError: true, notifyWebsiteAccessChanged: false, uiCompletion: 'background' }) },
 	}
 	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
 		try {
@@ -48,17 +50,39 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 	throw createWorkflowStepsError(failures)
 }
 
+// Compare only authority fields: changing request blocking or display metadata must not revoke approvals during a settings outage.
+function getCommittedApprovalChange(previous: WebsiteAccessArray, next: WebsiteAccessArray): CommittedAccessChange {
+	const approvalSignatures = (entries: WebsiteAccessArray) => {
+		const signatures = new Map<string, string[]>()
+		for (const { website, access, addressAccess, interceptorDisabled } of entries) {
+			const existing = signatures.get(website.websiteOrigin) ?? []
+			existing.push(stringifyJSONWithBigInts({ access, addressAccess: addressAccess?.length === 0 ? undefined : addressAccess, interceptorDisabled: interceptorDisabled === true ? true : undefined }))
+			signatures.set(website.websiteOrigin, existing)
+		}
+		// A lone metadata/blocking-only record has the same approval policy as an absent record. Preserve duplicate ordering, which can affect legacy lookup precedence.
+		for (const [origin, values] of signatures) {
+			if (values.length === 1 && values[0] === '{}') signatures.delete(origin)
+		}
+		return signatures
+	}
+	const before = approvalSignatures(previous)
+	const after = approvalSignatures(next)
+	const origins = new Set([...before.keys(), ...after.keys()])
+	const changed = [...origins].filter((origin) => JSON.stringify(before.get(origin)) !== JSON.stringify(after.get(origin)))
+	return changed.length === 0 ? { kind: 'request-block-mode' } : { kind: 'website-access', websiteOrigins: changed }
+}
+
 // Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
-	const websiteOrigins = new Set<string>()
+	let change: CommittedAccessChange = { kind: 'request-block-mode' }
 	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previous) => {
 		const next = mutation(previous)
-		for (const entry of [...previous, ...next]) websiteOrigins.add(entry.website.websiteOrigin)
+		change = getCommittedApprovalChange(previous, next)
 		return next
 	})
 	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error
 	const failures: WorkflowStepFailure[] = outcome.status === 'failed' ? [{ code: 'website_access_injection_update_failed', error: outcome.error }] : []
 	// The injection owner reports whether it already handled the reload, including failed attempts. Only an unchanged configuration may need an additional reload.
 	const steps = reloadPolicy === 'alsoWhenInjectionUnchanged' && outcome.reload === 'not-needed' ? [reloadConnectedTabsStep(websiteTabConnections)] : []
-	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures, { kind: 'website-access', websiteOrigins: [...websiteOrigins] })
+	await runStepsThenReconcileApprovals(simulationServicesOwner, websiteTabConnections, steps, failures, change)
 }
