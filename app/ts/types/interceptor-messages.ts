@@ -746,8 +746,14 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
-		safeAppsHostOrigins: SafeAppsHostOrigins,
 	})
+})
+
+// Kept out of ChangeSettings so popupMessageProtocol can restrict the Safe Apps hosting allowlist to extension pages.
+export type SetSafeAppsHostOrigins = funtypes.Static<typeof SetSafeAppsHostOrigins>
+export const SetSafeAppsHostOrigins = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setSafeAppsHostOrigins'),
+	data: funtypes.ReadonlyObject({ origins: SafeAppsHostOrigins }),
 })
 
 export { ImportSettings, ImportSettingsReply } from './popupSettingsRequests.js'
@@ -1100,6 +1106,7 @@ const PopupMessageRuntype = funtypes.Union(
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),
 	ChangeSettings,
+	SetSafeAppsHostOrigins,
 	SetRpcList,
 	ChangeAddOrModifyAddressWindowState,
 	OpenWebPage,

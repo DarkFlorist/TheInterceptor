@@ -26,7 +26,7 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 	const { value: save, waitFor: waitForSave } = useAsyncState<void>()
 	const saveOrigins = async (next: readonly string[]) => {
 		if (!enabled) throw new Error('Enable Safe Apps compatibility before changing websites.')
-		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_ChangeSettings', data: { safeAppsHostOrigins: next } })
+		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_setSafeAppsHostOrigins', data: { origins: next } })
 		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_requestSettings' })
 	}
 	return <div class = 'grid' style = '--gap-y: 0.5rem; --btn-text-size: 0.9rem; padding-block: 0.5rem'>

@@ -21,9 +21,8 @@ describe('popup message sender policy', () => {
 		}
 	})
 
-	test('Safe App preparation and cancellation are declared extension-page only', () => {
-		expect(extensionPageOnlyMethods).toContain('popup_prepareSafeApp')
-		expect(extensionPageOnlyMethods).toContain('popup_cancelPrepareSafeApp')
+	test('Safe App preparation, cancellation and hosting allowlist writers are declared extension-page only', () => {
+		for (const method of ['popup_prepareSafeApp', 'popup_cancelPrepareSafeApp', 'popup_setSafeAppsHostOrigins', 'popup_import_settings']) expect(extensionPageOnlyMethods).toContain(method)
 	})
 
 	test('every protocol entry flagged extension-page only is rejected for a content script sender', () => {

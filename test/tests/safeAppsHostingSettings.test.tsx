@@ -88,7 +88,7 @@ test('saving a website leaves connection buttons ready without showing their pen
 	let finishSave: (() => void) | undefined
 	const save = new Promise<void>((resolve) => { finishSave = resolve })
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: { sendMessage: async (message: { method: string }) => {
-		if (message.method === 'popup_ChangeSettings') return await save
+		if (message.method === 'popup_setSafeAppsHostOrigins') return await save
 		if (message.method === 'popup_requestSettings') return undefined
 		throw new Error(`Unexpected message: ${ message.method }`)
 	} } } })
