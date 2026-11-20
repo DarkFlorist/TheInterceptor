@@ -84,14 +84,19 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 	const selectedRichAddress = useSignal<bigint | undefined>(undefined)
 
 	useSignalEffect(() => {
-		if (richTokenSaveConfirmedAddress.value === undefined) return
-		const timeout = globalThis.setTimeout(() => { richTokenSaveConfirmedAddress.value = undefined }, 1600)
-		return () => { globalThis.clearTimeout(timeout) }
+		const savedAddress = richTokenSaveConfirmedAddress.value
+		if (savedAddress === undefined) return
+		// The pinned signals hook forwards this cleanup to the core effect; the identity guard also protects a callback already queued before cancellation.
+		let active = true
+		const timeout = globalThis.setTimeout(() => { if (active && richTokenSaveConfirmedAddress.peek() === savedAddress) richTokenSaveConfirmedAddress.value = undefined }, 1600)
+		return () => { active = false; globalThis.clearTimeout(timeout) }
 	})
 	useSignalEffect(() => {
-		if (newlyAddedRichTokenKeys.value.length === 0) return
-		const timeout = globalThis.setTimeout(() => { newlyAddedRichTokenKeys.value = [] }, 1800)
-		return () => { globalThis.clearTimeout(timeout) }
+		const addedKeys = newlyAddedRichTokenKeys.value
+		if (addedKeys.length === 0) return
+		let active = true
+		const timeout = globalThis.setTimeout(() => { if (active && newlyAddedRichTokenKeys.peek() === addedKeys) newlyAddedRichTokenKeys.value = [] }, 1800)
+		return () => { active = false; globalThis.clearTimeout(timeout) }
 	})
 	const resetRichDialogViewState = () => {
 		richTokenSearch.value = ''

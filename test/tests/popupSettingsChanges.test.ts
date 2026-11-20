@@ -423,6 +423,44 @@ describe('popup settings changes', () => {
 		assert.equal(refreshCount(), afterReplacement)
 	})
 
+	test('token funding shares admission with other settings commands and returns a token-shaped busy reply', async () => {
+		const { runtimeMessages, setStorageHooks } = installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { updateRichAccountBalances } = await import('../../app/ts/background/richModeSettings.js')
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const { PopupSettingsChangeStatus } = await import('../../app/ts/types/popupSettingsProtocol.js')
+		const account = 1n
+		const token = 2n
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: account, nativeAmount: 1n, tokenBalances: [{ tokenAddress: token, tokenId: undefined, amount: 1n }] }])
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const context = { ...services, settings: await getSettings(), websiteTabConnections: new Map(), publishRpcConnectionStatus: async () => undefined, simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(), resetSimulationState: async () => undefined }
+		const entered = createDeferredValue<void>()
+		const release = createDeferredValue<void>()
+		setStorageHooks({ beforeSet: async (items) => {
+			if (!('richModeState' in items)) return
+			entered.resolve(undefined)
+			await release.promise
+		} })
+		const request = { method: 'popup_modifyRichToken' as const, data: { action: 'Remove' as const, address: account, tokenAddress: token } }
+		const pending = dispatchPopupMessage(context, request)
+		try {
+			await entered.promise
+			const statuses = () => runtimeMessages.flatMap((message) => { const parsed = PopupSettingsChangeStatus.safeParse(message); return parsed.success ? [parsed.value.data] : [] })
+			assert.equal(statuses().at(-1)?.operation, 'rich')
+			const busyToken = await dispatchPopupMessage(context, request)
+			assert.ok(busyToken !== undefined && 'method' in busyToken && busyToken.method === 'popup_modifyRichToken' && !busyToken.result.success && busyToken.result.error.includes('Another popup'))
+			const busyRpc = await dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: { ...context.settings.activeRpcNetwork, httpsRpc: 'https://another.example' } })
+			assert.ok(busyRpc !== undefined && 'ok' in busyRpc && !busyRpc.ok)
+			assert.equal(services.simulationServicesOwner.getCurrent().ethereum, services.ethereum)
+		} finally {
+			release.resolve(undefined)
+			setStorageHooks({})
+			await pending
+		}
+		const statuses = runtimeMessages.flatMap((message) => { const parsed = PopupSettingsChangeStatus.safeParse(message); return parsed.success ? [parsed.value.data] : [] })
+		assert.equal(statuses.at(-1)?.operation, undefined)
+	})
+
 	test('rich changes request a visualization refresh immediately and unchanged values skip it', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { getSettings } = await loadModules()

@@ -1,3 +1,4 @@
+import { createRichTokenFailureReply } from '../types/richModeRequests.js'
 import type { RichTokenSimulationRefresh } from '../types/interceptor-reply-messages.js'
 import type { RichFundingResult, RichToken } from '../types/richMode.js'
 import { getErrorMessage, reportUnexpectedError } from '../utils/errors.js'
@@ -37,10 +38,9 @@ export async function completeRichFundingMutation(result: RichFundingResult, sim
 }
 
 // The two popup replies for a rich-funding outcome; this is the only place outcomes become replies.
-export const toModifyRichTokenReply = (outcome: RichFundingOutcome) => ({
-	method: 'popup_modifyRichToken' as const,
-	result: outcome.ok ? { success: true as const, richToken: outcome.richToken, simulationRefresh: outcome.simulationRefresh } : { success: false as const, error: outcome.error },
-})
+export const toModifyRichTokenReply = (outcome: RichFundingOutcome) => outcome.ok
+	? { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: outcome.richToken, simulationRefresh: outcome.simulationRefresh } }
+	: createRichTokenFailureReply(outcome.error)
 
 export const toRichSettingsChangeReply = (outcome: RichFundingOutcome) => {
 	if (!outcome.ok) return { type: 'PopupSettingsChangeReply' as const, ok: false as const, message: outcome.error }

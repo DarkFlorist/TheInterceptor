@@ -1,3 +1,5 @@
+import { ModifyRichTokenRequest, ModifyRichTokenReply } from './richModeRequests.js'
+export { ModifyRichTokenRequest, RichTokenSimulationRefresh } from './richModeRequests.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList } from './popupSettingsRequests.js'
 import type { popupSettingsOperations, DirectPopupSettingsMethod } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
@@ -9,7 +11,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
-import { RichAccountBalances, RichToken, RichTokenOptions } from './richMode.js'
+import { RichAccountBalances, RichTokenOptions } from './richMode.js'
 import { SafeStackExport } from './safeTypes.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
@@ -41,48 +43,6 @@ const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	richNativeAmount: EthereumQuantity,
 	richAccountBalances: RichAccountBalances,
 }))
-
-export type ModifyRichTokenRequest = funtypes.Static<typeof ModifyRichTokenRequest>
-export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_modifyRichToken'),
-	data: funtypes.Union(
-		funtypes.ReadonlyObject({
-			action: funtypes.Literal('Add'),
-			tokenAddress: EthereumAddress,
-			address: EthereumAddress,
-		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
-		funtypes.ReadonlyObject({
-			action: funtypes.Literal('Remove'),
-			tokenAddress: EthereumAddress,
-			address: EthereumAddress,
-		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
-		funtypes.ReadonlyObject({
-			action: funtypes.Literal('SetAmount'),
-			tokenAddress: EthereumAddress,
-			address: EthereumAddress,
-			amount: EthereumQuantity,
-		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
-	),
-}).asReadonly()
-
-// A successful reply means the change is saved. 'Refreshed' means a completed refresh covered it; 'Superseded' means a newer queued refresh replaced this one before it ran and that refresh will update the simulation; 'Unavailable' means the refresh failed and the balances shown may be stale.
-export type RichTokenSimulationRefresh = funtypes.Static<typeof RichTokenSimulationRefresh>
-export const RichTokenSimulationRefresh = funtypes.Union(funtypes.Literal('Refreshed'), funtypes.Literal('Superseded'), funtypes.Literal('Unavailable'))
-
-const ModifyRichTokenReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_modifyRichToken'),
-	result: funtypes.Union(
-		funtypes.ReadonlyObject({
-			success: funtypes.Literal(true),
-			richToken: funtypes.Union(RichToken, funtypes.Undefined),
-			simulationRefresh: RichTokenSimulationRefresh,
-		}),
-		funtypes.ReadonlyObject({
-			success: funtypes.Literal(false),
-			error: funtypes.String,
-		}),
-	),
-})
 
 type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
 const RequestActiveAddressesReply = funtypes.ReadonlyObject({
@@ -327,6 +287,7 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 type PopupSettingsReplyCodecs = {
 	ChangeActiveAddressReply: typeof ChangeActiveAddressReply
 	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
+	ModifyRichTokenReply: typeof ModifyRichTokenReply
 }
 
 // Settings commands with direct replies use their descriptor codec; imports deliver their reply by broadcast.
@@ -336,7 +297,6 @@ type PopupSettingsRepliesMap = {
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
-	popup_modifyRichToken: typeof ModifyRichTokenReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
 	popup_requestLatestUnexpectedError: typeof RequestLatestUnexpectedErrorReply

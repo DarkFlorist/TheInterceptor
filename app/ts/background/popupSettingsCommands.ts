@@ -5,9 +5,9 @@ import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { getSettings } from './settings.js'
-import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
+import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, modifyRichToken, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
 import { isPopupSimulationAvailable, runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import { completeRichFundingMutation, toRichSettingsChangeReply } from './richFundingReplies.js'
+import { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply } from './richFundingReplies.js'
 import { getPopupVisualisationState } from './storageVariables.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
@@ -23,6 +23,7 @@ function settingsCommand<Method extends PopupSettingsAdmittedRequest['method']>(
 			await sendPopupMessageToOpenWindows(reply.createFailure(message))
 			return
 		}
+		if ('createFailure' in reply) return reply.createFailure(message)
 		return { type: reply.type, ok: false, message }
 	})
 }
@@ -40,6 +41,14 @@ export const popupSettingsCommandHandlers = {
 	popup_enableSimulationMode: settingsCommand('popup_enableSimulationMode', async (context, request) => {
 		await enableSimulationMode(context.simulationServicesOwner, context.websiteTabConnections, request)
 		return { type: 'PopupSettingsChangeReply', ok: true }
+	}),
+	popup_modifyRichToken: settingsCommand('popup_modifyRichToken', async (context, request) => {
+		const services = context.simulationServicesOwner.getCurrent()
+		const result = await modifyRichToken(services.ethereum, context.simulationAbortController, request)
+		return toModifyRichTokenReply(await completeRichFundingMutation(result, {
+			refresh: async () => await runPopupSimulationRefresh({ ...services, invalidateOldState: true }),
+			isStoredSimulationAvailable: async () => isPopupSimulationAvailable(await getPopupVisualisationState()),
+		}))
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		const result = await modifyMakeMeRich(request)

@@ -72,7 +72,7 @@ export async function applyRichTokenChange(ethereum: RichTokenStorageClient, req
 			const amount = change.amount
 			const richToken = (await store.getRichTokens()).find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
 			if (richToken === undefined) return richFundingRejected('Add the token before changing its amount.')
-			const profiles = await store.ensureRichAccountBalances(chainId, [change.address])
+			const profiles = store.getState().accountBalances
 			const profile = profiles.find((candidate) => candidate.chainId === chainId && candidate.address === change.address)
 			if (profile?.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity)) !== true) {
 				return richFundingRejected('Add the token to this account before changing its amount.')

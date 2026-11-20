@@ -4,7 +4,8 @@ import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookT
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { RichModeState } from '../types/richMode.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
+import { emptyRichModeState } from './richModeSettings.js'
+import { richTokenLayout } from '../utils/richModeDerivation.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getImportedAddressBookStorageWrites, getUserAddressBookEntries } from './addressBookStorage.js'
@@ -30,12 +31,12 @@ function getImportedSimulationModeStorageWrite(exportedSettings: ExportedSetting
 
 // This user-selected full settings backup is trusted configuration, including its RPC endpoint and access permissions. Restore intentional simulated balances for round trips; reconciliation checks address-book consistency, not on-chain balances. addressesBeingMadeRich excludes all funding overrides in signing mode.
 function getImportedRichModeState(settings: ReturnType<typeof classifyExportedSettings>['richFunding']): RichModeState {
-	if (settings === undefined) return { makeCurrentAddressRich: false, defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value, fixedAddressRichList: [], tokenLayouts: [], accountBalances: [] }
+	if (settings === undefined) return emptyRichModeState
 	return {
 		makeCurrentAddressRich: settings.makeCurrentAddressRich,
 		defaultNativeAmount: settings.richNativeAmount,
 		fixedAddressRichList: settings.fixedAddressRichList,
-		tokenLayouts: settings.richTokens.map(({ amount: _amount, ...layout }) => layout),
+		tokenLayouts: settings.richTokens.map(richTokenLayout),
 		accountBalances: normalizeRichAccountBalances(settings.richAccountBalances),
 	}
 }

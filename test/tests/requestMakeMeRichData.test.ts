@@ -678,6 +678,32 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(refreshes, 0)
 	})
 
+	test('rejected funding mutations discard all staged writes, including a newly synthesized profile', async () => {
+		let writes = 0
+		const storage = installBrowserMock({ onStorageSet: (items) => { if ('richModeState' in items) writes += 1 } })
+		const { mutateRichMode, updateRichTokens, modifyRichToken, getRichModeState, completeRichFundingMutation } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		await updateRichTokens(() => [{ chainId: 1n, tokenAddress, tokenType: 'ERC20', tokenId: undefined, name: 'Token', symbol: 'TOK', decimals: 6n, amount: 1n, balanceSlot: 9n, erc1155StorageOrder: undefined }])
+		const before = JSON.stringify(storage.richModeState)
+		const writesBefore = writes
+		const rejected = await mutateRichMode(async (store) => {
+			await store.ensureRichAccountBalances(1n, [richAccountAddress])
+			return { ok: false, error: 'Rejected after staging a profile' }
+		})
+		assert.equal(rejected.ok, false)
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, { name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false })
+		const result = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { action: 'SetAmount', address: richAccountAddress, tokenAddress, amount: 5n } })
+		assert.deepEqual(result, { ok: false, error: 'Add the token to this account before changing its amount.' })
+		await completeRichFundingMutation(result, {
+			refresh: async () => { throw new Error('A rejected edit must not refresh') },
+			isStoredSimulationAvailable: async () => { throw new Error('A rejected edit must not inspect the simulation') },
+		})
+		assert.equal(writes, writesBefore)
+		assert.equal(JSON.stringify(storage.richModeState), before)
+		assert.deepEqual((await getRichModeState()).accountBalances, [])
+	})
+
 	test('every rich-funding mutation completes through one result contract and one reply mapping', async () => {
 		installBrowserMock()
 		const { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply, modifyMakeMeRich } = await loadModules()
@@ -844,6 +870,7 @@ describe('requestMakeMeRichList resilience', () => {
 			},
 		})
 
+		const tokensBefore = await getRichTokens()
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
 			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
@@ -852,7 +879,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.deepEqual(reply, { ok: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' })
 		assert.equal(probeCount, 0)
 		assert.equal(await getLatestUnexpectedError(), undefined)
-		assert.deepEqual(await getRichTokens(), [])
+		assert.deepEqual(await getRichTokens(), tokensBefore, 'a rejected edit must not repair or otherwise mutate funding')
 	})
 
 	test('rejects ERC-20 entries invalidated by startup decimal recovery before storage discovery', async () => {

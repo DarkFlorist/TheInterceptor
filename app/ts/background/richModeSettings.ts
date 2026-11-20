@@ -23,12 +23,18 @@ export async function getRichNativeAmountForAddress(chainId: bigint, address: bi
 
 export const richModeStateStorageWrite = (richModeState: RichModeState): StorageWrite => ({ richModeState })
 
-export async function mutateRichMode<Result>(operation: (store: ReturnType<typeof createRichModeTransaction>) => Promise<Result>) {
+export async function mutateRichMode<Result extends { readonly ok: boolean }>(operation: (store: ReturnType<typeof createRichModeTransaction>) => Promise<Result>) {
 	return await runSettingsStorageTransaction(async () => {
 		const store = createRichModeTransaction(await getRichModeState())
 		const result = await operation(store)
-		return { writes: store.getStorageWrites(), result }
+		return { writes: result.ok ? store.getStorageWrites() : [], result }
 	})
+}
+
+// Unvalidated state transformations cannot reject; wrap their returned value in an explicit successful transaction outcome.
+async function updateRichMode<Result>(operation: (store: ReturnType<typeof createRichModeTransaction>) => Promise<Result>) {
+	const outcome = await mutateRichMode(async (store) => ({ ok: true, value: await operation(store) }))
+	return outcome.value
 }
 
 // The funding writes that keep rich mode consistent with new address-book entries. Only addressBookStorage calls this, inside the settings storage transaction that writes those entries, so no address-book write can skip reconciliation. fundingChanged says whether any account's funded balances changed.
@@ -87,7 +93,7 @@ export const getFixedAddressRichList = async () => (await getRichModeState()).fi
 export const getRichTokens = async () => richTokensForPresentation(await getRichModeState())
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => { await updateMakeCurrentAddressRich(() => makeCurrentAddressRich) }
-export const setRichNativeAmount = async (defaultNativeAmount: bigint) => { await mutateRichMode(async (store) => { store.replace({ ...store.getState(), defaultNativeAmount }) }) }
+export const setRichNativeAmount = async (defaultNativeAmount: bigint) => { await updateRichMode(async (store) => { store.replace({ ...store.getState(), defaultNativeAmount }) }) }
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => { await updateFixedMakeMeRichList(() => fixedAddressRichList) }
 
 export async function updateMakeCurrentAddressRich(update: (enabled: boolean) => boolean): Promise<RichFundingResult> {
@@ -100,9 +106,9 @@ export async function updateMakeCurrentAddressRich(update: (enabled: boolean) =>
 	})
 }
 
-export const updateRichAccountBalances = async (update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) => await mutateRichMode(async (store) => await store.updateRichAccountBalances(update))
-export const ensureRichAccountBalances = async (chainId: bigint, addresses: readonly bigint[]) => await mutateRichMode(async (store) => await store.ensureRichAccountBalances(chainId, addresses))
-export const updateRichTokens = async (update: (tokens: readonly RichToken[]) => readonly RichToken[]) => await mutateRichMode(async (store) => await store.updateRichTokens(update))
+export const updateRichAccountBalances = async (update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) => await updateRichMode(async (store) => await store.updateRichAccountBalances(update))
+export const ensureRichAccountBalances = async (chainId: bigint, addresses: readonly bigint[]) => await updateRichMode(async (store) => await store.ensureRichAccountBalances(chainId, addresses))
+export const updateRichTokens = async (update: (tokens: readonly RichToken[]) => readonly RichToken[]) => await updateRichMode(async (store) => await store.updateRichTokens(update))
 
 function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {

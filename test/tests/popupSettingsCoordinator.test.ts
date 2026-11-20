@@ -39,3 +39,10 @@ test('the import descriptor owns a valid broadcast admission-failure reply', () 
 	const reply = popupSettingsOperations.popup_import_settings.reply.createFailure('Settings are busy')
 	assert.deepEqual(ImportSettingsReply.parse(reply), { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Settings are busy' } })
 })
+
+test('token funding is an admitted rich command with a valid token-shaped failure reply', async () => {
+	const { PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+	const descriptor = popupSettingsOperations.popup_modifyRichToken
+	assert.equal(descriptor.operation, 'rich')
+	assert.deepEqual(PopupRequestsReplies.popup_modifyRichToken.parse(descriptor.reply.createFailure('Settings are busy')), { method: 'popup_modifyRichToken', result: { success: false, error: 'Settings are busy' } })
+})

@@ -4,7 +4,7 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { RichToken, type RichAccountBalance, type RichTokenOption } from '../../app/ts/types/richMode.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import { act } from 'preact/test-utils'
 import { h, render } from 'preact'
 import { App } from '../../app/ts/components/App.js'
@@ -1246,6 +1246,41 @@ describe('popup icon sync', () => {
 		if (button === undefined) throw new Error(`Expected button ${ label }`)
 		return button
 	}
+
+	test('saved-status timers cancel on a newer save and unmount, and canceled callbacks cannot clear newer status', async () => {
+		const dom = installDomMock()
+		const originalSetTimeout = globalThis.setTimeout
+		const originalClearTimeout = globalThis.clearTimeout
+		const timers: { handle: ReturnType<typeof setTimeout>, fire: () => void }[] = []
+		const canceled: unknown[] = []
+		const setTimer = spyOn(globalThis, 'setTimeout').mockImplementation((handler, delay, ...args) => {
+			const handle = originalSetTimeout(handler, delay, ...args)
+			if (delay === 1600) timers.push({ handle, fire: () => { if (typeof handler === 'function') handler(...args) } })
+			return handle
+		})
+		const clearTimer = spyOn(globalThis, 'clearTimeout').mockImplementation((handle) => { canceled.push(handle); originalClearTimeout(handle) })
+		try {
+			const { input } = await renderEditableTokenBalance(dom, [])
+			await commitAmountEdit(input, '7')
+			const first = timers[0]
+			assert.notEqual(first, undefined)
+			await commitAmountEdit(input, '8')
+			const second = timers[1]
+			if (first === undefined || second === undefined) throw new Error('Expected a timer for each saved status')
+			assert.equal(canceled.includes(first.handle), true, 'the installed signals hook must run cleanup on re-execution')
+			await act(() => { first.fire() })
+			assert.equal(dom.document.body.textContent.includes('✓ Saved'), true)
+			await act(() => { render(undefined, dom.document.body) })
+			assert.equal(canceled.includes(second.handle), true, 'the installed signals hook must dispose timers on unmount')
+			await act(() => { second.fire() })
+		} finally {
+			render(undefined, dom.document.body)
+			for (const timer of timers) originalClearTimeout(timer.handle)
+			setTimer.mockRestore()
+			clearTimer.mockRestore()
+			dom.restore()
+		}
+	})
 
 	test('the first reset click while editing an amount discards the typed value and saves the default', async () => {
 		const dom = installDomMock()
