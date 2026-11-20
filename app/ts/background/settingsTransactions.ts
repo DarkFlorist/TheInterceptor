@@ -49,16 +49,50 @@ const websiteRules = {
 	icon: revertUnlessOverwritten<string>(Object.is),
 } satisfies FieldRules<Website>
 
+type WebsiteAccessRules = { readonly [Key in keyof WebsiteAccess]-?: FieldRules<WebsiteAccess>[Key] & { readonly affectsApproval: boolean } }
 const websiteAccessRules = {
 	website: {
+		affectsApproval: false,
 		isSame: (first, second) => hasSameFields(websiteRules, first, second),
 		rollback: (previous, updated, current) => rollbackFields(websiteRules, previous, updated, current),
 	},
-	addressAccess: revertUnlessOverwritten(hasSameAddressAccess),
-	access: revertUnlessOverwritten<boolean>(Object.is),
-	interceptorDisabled: revertUnlessOverwritten<boolean>(Object.is),
-	declarativeNetRequestBlockMode: revertUnlessOverwritten<WebsiteAccess['declarativeNetRequestBlockMode']>(Object.is),
-} satisfies FieldRules<WebsiteAccess>
+	addressAccess: { ...revertUnlessOverwritten(hasSameAddressAccess), affectsApproval: true },
+	access: { ...revertUnlessOverwritten<boolean>(Object.is), affectsApproval: true },
+	interceptorDisabled: { ...revertUnlessOverwritten<boolean>(Object.is), affectsApproval: true },
+	declarativeNetRequestBlockMode: { ...revertUnlessOverwritten<WebsiteAccess['declarativeNetRequestBlockMode']>(Object.is), affectsApproval: false },
+} satisfies WebsiteAccessRules
+
+// Approval comparison shares the exhaustive field rules with rollback. A future persisted field must explicitly declare whether it carries authority.
+function hasSameApprovalFields<T extends object>(rules: { readonly [Key in keyof T]-?: FieldEquality<T>[Key] & { readonly affectsApproval: boolean } }, first: T, second: T) {
+	for (const key in rules) {
+		if (rules[key].affectsApproval && !rules[key].isSame(first[key], second[key])) return false
+	}
+	return true
+}
+
+function hasSameWebsiteApproval(first: WebsiteAccess, second: WebsiteAccess) {
+	const normalize = (entry: WebsiteAccess): WebsiteAccess => ({ ...entry, addressAccess: entry.addressAccess?.length === 0 ? undefined : entry.addressAccess, interceptorDisabled: entry.interceptorDisabled === true ? true : undefined })
+	return hasSameApprovalFields(websiteAccessRules, normalize(first), normalize(second))
+}
+
+export function getWebsiteApprovalChangedOrigins(previous: WebsiteAccessArray, next: WebsiteAccessArray): readonly string[] {
+	const groupByOrigin = (entries: WebsiteAccessArray) => {
+		const groups = new Map<string, WebsiteAccess[]>()
+		for (const entry of entries) groups.set(entry.website.websiteOrigin, [...(groups.get(entry.website.websiteOrigin) ?? []), entry])
+		// A single metadata/block-only row grants no more authority than an absent row. Keep duplicate ordering for legacy lookup precedence.
+		for (const [origin, entries] of groups) {
+			if (entries.length === 1 && entries[0] !== undefined && hasSameWebsiteApproval(entries[0], { website: entries[0].website, addressAccess: undefined })) groups.delete(origin)
+		}
+		return groups
+	}
+	const before = groupByOrigin(previous)
+	const after = groupByOrigin(next)
+	return [...new Set([...before.keys(), ...after.keys()])].filter((origin) => {
+		const oldEntries = before.get(origin) ?? []
+		const newEntries = after.get(origin) ?? []
+		return oldEntries.length !== newEntries.length || oldEntries.some((entry, index) => newEntries[index] === undefined || !hasSameWebsiteApproval(entry, newEntries[index]))
+	})
+}
 
 const hasSameWebsiteAccess = (first: WebsiteAccess, second: WebsiteAccess) => hasSameFields(websiteAccessRules, first, second)
 

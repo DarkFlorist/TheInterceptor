@@ -70,3 +70,10 @@ test('RPC list edits never promote a signer-only selection to a configured endpo
 	const signerOnly: RpcNetwork = { name: 'Signer-only', chainId: network.chainId, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 	assert.equal(resolveRpcNetworkAfterListChange(signerOnly, [network], [network]), undefined)
 })
+
+// Importing the module and reading this error catches initialization/name regressions as well as the JSON-RPC contract.
+test('a changed endpoint on the same chain is a retryable internal error, not a chain disconnection', async () => {
+	const { ERROR_ACTIVE_RPC_ENDPOINT_CHANGED, ERROR_ACTIVE_RPC_NETWORK_CHANGED } = await import('../../app/ts/utils/constants.js')
+	assert.equal(ERROR_ACTIVE_RPC_ENDPOINT_CHANGED.error.code, -32603)
+	assert.equal(ERROR_ACTIVE_RPC_NETWORK_CHANGED.error.code, 4901)
+})
