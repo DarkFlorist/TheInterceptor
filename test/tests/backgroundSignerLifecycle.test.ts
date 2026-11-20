@@ -1,10 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -50,7 +50,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not wait for retry-state publishing before replying to eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -93,7 +93,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('refresh signer accounts for approved eth_accounts requests when the tab cache is empty', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -142,7 +142,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('refreshes an approved signer account before forwarding wallet_getCapabilities', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -197,7 +197,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			refreshSignerAccountsFromApprovedWebsitePorts,
@@ -266,7 +266,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('uses an unapproved signer owner for tab-wide refresh when a sibling frame is approved', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -321,7 +321,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not send a callback when a recreated connection reuses the expected generations', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { sendCallbackToExpectedConfirmedSignerOwner, websiteSocketToString } = await loadModules()
 		const expectedSocket = { tabId: 1, connectionName: 0n }
 		const currentSocket = { tabId: 1, connectionName: 1n }
@@ -345,7 +345,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('settles a pending chain switch when its exact signer owner disconnects', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			removeWebsiteTabConnection,
@@ -413,7 +413,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('accepts the exact solicited chain reply after the approving sibling disconnects', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -496,7 +496,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('rejects a conflicting popup switch and ignores another tab reply while a dapp switch is pending', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getSettings,
@@ -607,7 +607,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('keeps the production chain dialog guarded while signer resolution starts', async () => {
-		const { waitForDeferredChainChangeRemoval, releaseDeferredChainChangeRemoval } = installBrowserMock({ deferFirstChainChangeRemoval: true })
+		const { waitForDeferredChainChangeRemoval, releaseDeferredChainChangeRemoval } = installLegacyBackgroundBrowserMock({ deferFirstChainChangeRemoval: true })
 		const {
 			changeSimulationMode,
 			getChainChangeConfirmationPromise,
@@ -724,7 +724,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('resolves approved eth_requestAccounts after signer account state is refreshed', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -800,7 +800,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('suppresses unscoped connect events for requester during signer refresh with page-level access', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -866,7 +866,7 @@ describe('background eth_accounts', () => {
 
 	for (const manifestVersion of [2, 3] as const) {
 		test(`replays only accountsChanged before wallet_requestPermissions resolves for manifest v${ manifestVersion }`, async () => {
-			const browserMock = installBrowserMock({ manifestVersion })
+			const browserMock = installLegacyBackgroundBrowserMock({ manifestVersion })
 			const {
 				handleInterceptedRequest,
 				websiteSocketToString,
