@@ -1,3 +1,6 @@
+import { checksummedAddress } from './bigint.js'
+import { MOCK_ADDRESS } from './constants.js'
+
 const SECONDS_PER_BLOCK = 12n
 
 /**
@@ -10,3 +13,6 @@ export const describeGovernanceExecutionBlockNumber = (parentBlock: { readonly n
 	if (estimatedExecutionBlockNumber <= simulatedExecutionBlockNumber) return undefined
 	return `The simulation runs it at block ${ simulatedExecutionBlockNumber }, not at about block ${ estimatedExecutionBlockNumber } as on chain, because nodes simulate at most 256 blocks ahead. An action that depends on the block number can differ.`
 }
+
+// The preview's own blocks run with a base fee of 0 and send every planned call from MOCK_ADDRESS (governanceProposalExecution.ts), so block.basefee and tx.origin differ from the real execution. A proposal can branch on either to look harmless here, so the panel says so with every outcome.
+export const GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE = `The simulation runs the execution with a base fee of 0 and sends it from ${ checksummedAddress(MOCK_ADDRESS) }, while on chain the block has a base fee and whoever executes the proposal sends it. An action that depends on block.basefee or tx.origin can behave differently on chain, and a proposal can use that to look harmless here.`

@@ -3,8 +3,8 @@ import * as assert from 'assert'
 import { findGovernorCodeProblem, GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, pinGovernancePreviewToLatestBlock, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, splitIntoLogQueries, type GovernanceExecutionPreview } from '../../app/ts/simulation/governanceProposalExecution.js'
 import { prepareSafeExecutionsOnParentBlock, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
-import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
-import { describeGovernanceExecutionBlockNumber } from '../../app/ts/utils/governanceExecutionBlock.js'
+import { addressString, bytes32String, checksummedAddress, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { describeGovernanceExecutionBlockNumber, GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE } from '../../app/ts/utils/governanceExecutionBlock.js'
 import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCodes.js'
 import { toEventSelector, toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
@@ -286,6 +286,17 @@ describe('governance proposal execution preview of real governors', () => {
 		assert.match(note ?? '', /^The simulation runs it at block 26100002, not at about block 261\d{5} as on chain, because nodes simulate at most 256 blocks ahead\. An action that depends on the block number can differ\.$/)
 		const estimated = BigInt(/about block (\d+)/.exec(note ?? '')?.[1] ?? '0')
 		assert.ok(estimated > 26_109_012n)
+	})
+
+	test('says that block.basefee and tx.origin differ from the real execution, as the planned blocks have no base fee and every planned call comes from MOCK_ADDRESS', async () => {
+		const { requests } = await previewFixture('ens-governor-succeeded-after-stack')
+		const [, queueBlock, executionBlock] = outcomeSimulation(requests, 3).blockStateCalls
+		for (const block of [queueBlock, executionBlock]) {
+			assert.equal(block?.blockOverrides?.baseFeePerGas, 0n)
+			assert.equal(block?.calls[0]?.from, MOCK_ADDRESS)
+		}
+		assert.ok(GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE.includes(checksummedAddress(MOCK_ADDRESS)))
+		assert.match(GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE, /block\.basefee or tx\.origin can behave differently on chain/)
 	})
 
 	test('starts the plan after the last block the node runs the stack as, when a stack block is split into several', async () => {
