@@ -31,7 +31,9 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
+import { updateUserAddressBookEntries } from './addressBookStorage.js'
 import { migrateAddressBook } from './addressBookMigration.js'
+import { migrateRichMode } from './richModeMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -283,6 +285,9 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
+	await migrateRichMode()
+	// Reconciles migrated funding with the migrated address book; an unchanged address book is not rewritten.
+	await updateUserAddressBookEntries((entries) => entries)
 	await migrateWebsiteAccess()
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()

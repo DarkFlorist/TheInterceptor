@@ -2,13 +2,12 @@ import { useEffect } from 'preact/hooks'
 import { useComputed, useSignal } from '@preact/signals'
 import { MessageToPopup, type PopupSettingsChangeStatus } from '../../types/interceptor-messages.js'
 import { acceptPopupSettingsChangeStatus, type PopupSettingsOperation } from '../../types/popupSettingsProtocol.js'
-import type { PopupSettingsRequestWithSharedReply } from '../../types/popupSettingsRequests.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
-import { requestPopupSettingsChange } from '../popupSettingsChange.js'
+import { type CoordinatedPopupSettingsRequest, type ChangeRichSettings, requestPopupSettingsChange } from '../popupSettingsChange.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
 
 const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, string>> = {
@@ -50,12 +49,12 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 		}
 	}
 
-	async function changePopupSettings(message: PopupSettingsRequestWithSharedReply) {
+	async function changePopupSettings<Request extends CoordinatedPopupSettingsRequest>(message: Request) {
 		if (!isSettingsLoaded.value) return
 		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
 		pendingSettingsChange.value = true
 		try {
-			await requestPopupSettingsChange(message)
+			return await requestPopupSettingsChange(message)
 		} finally {
 			pendingSettingsChange.value = false
 		}
@@ -67,9 +66,7 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 	async function setSimulationMode(enabled: boolean) {
 		await changePopupSettings({ method: 'popup_enableSimulationMode', data: enabled })
 	}
-	async function setRichState(add: boolean, address: bigint | 'CurrentAddress') {
-		await changePopupSettings({ method: 'popup_modifyMakeMeRich', data: { add, address } })
-	}
+	const changeRichSettings: ChangeRichSettings = changePopupSettings
 
 	useEffect(() => {
 		let latestSettingsGeneration = 0
@@ -101,5 +98,5 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 		return () => browser.runtime.onMessage.removeListener(listener)
 	}, [])
 
-	return { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState }
+	return { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, changeRichSettings }
 }

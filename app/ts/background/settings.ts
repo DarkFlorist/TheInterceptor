@@ -1,17 +1,17 @@
 import type { ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
-import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries } from './storageVariables.js'
+import { browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { getUserAddressBookEntries } from './addressBookStorage.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import { getRichModeState } from './richModeSettings.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -89,61 +89,6 @@ export async function rememberSigningAddressPreference(preference: SigningAddres
 	await runSettingsStorageTransaction(async () => {
 		const preferences = await getSigningAddressPreferences()
 		return { writes: [signingAddressPreferencesStorageWrite([...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress), preference])], result: undefined }
-	})
-}
-
-export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
-export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
-
-const makeMeRichSettingsSemaphore = new Semaphore(1)
-
-export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRich: boolean) => boolean) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getMakeCurrentAddressRich()
-		const next = update(previous)
-		if (next === previous) return false
-		await setMakeCurrentAddressRich(next)
-		return true
-	})
-}
-
-export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
-export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
-
-function toComparableRichListElement(element: RichListElement): RichListElement {
-	return {
-		address: element.address,
-		makingRich: element.makingRich,
-		type: element.type,
-	}
-}
-
-function richListElementsEqual(first: RichListElement, second: RichListElement) {
-	const firstValues = Object.values(toComparableRichListElement(first))
-	const secondValues = Object.values(toComparableRichListElement(second))
-	return firstValues.length === secondValues.length && firstValues.every((value, index) => value === secondValues[index])
-}
-
-export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: readonly RichListElement[]) => readonly RichListElement[]) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getFixedAddressRichList()
-		const next = update(previous)
-		if (previous.length === next.length && previous.every((element, index) => {
-			const nextElement = next[index]
-			return nextElement !== undefined && richListElementsEqual(element, nextElement)
-		})) return false
-		await setFixedMakeMeRichList(next)
-		return true
-	})
-}
-
-export async function trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress: EthereumAddress | undefined) {
-	return await updateFixedMakeMeRichList((currentList) => {
-		const richList = currentList
-			.filter((element) => !(element.type === 'PreviousActiveAddress' && !element.makingRich))
-			.map((element) => ({ ...element, type: 'UserAdded' as const }))
-		if (previousActiveAddress === undefined || richList.some((element) => element.address === previousActiveAddress)) return richList
-		return [...richList, { address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' as const }]
 	})
 }
 
@@ -234,10 +179,11 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences, richModeState] = await Promise.all([getSettings(), getSigningAddressPreferences(), getRichModeState()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.6' as const,
+		// Layouts and account balances are exported separately, as they are stored.
+		version: '1.7' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
@@ -251,6 +197,11 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+			makeCurrentAddressRich: richModeState.makeCurrentAddressRich,
+			richNativeAmount: richModeState.defaultNativeAmount,
+			fixedAddressRichList: richModeState.fixedAddressRichList,
+			richTokens: richModeState.tokenLayouts,
+			richAccountBalances: richModeState.accountBalances,
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
 		}
 	}

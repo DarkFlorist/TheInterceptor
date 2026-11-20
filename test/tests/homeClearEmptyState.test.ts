@@ -5,7 +5,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Home } from '../../app/ts/components/pages/Home.js'
 import { installDomMock } from './domMock.js'
-import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { ICON_SIGNING, ICON_SIMULATING, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
@@ -259,9 +259,13 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		isActiveAddressChangePending: new Signal(false),
 		isSettingsChangePending: new Signal(false),
 		setSimulationMode: async () => undefined,
-		setRichState: async () => undefined,
+		changeRichSettings: async () => undefined,
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
+		richFundingChainId: new Signal(rpcNetwork.chainId),
+		richNativeAmount: new Signal(MAKE_YOU_RICH_TRANSACTION.transaction.value),
+		richTokenOptions: new Signal([]),
+		richAccountBalances: new Signal([]),
 		activeAddresses: new Signal([activeAddressEntry]),
 		walletSelectedAddressBookEntry: new Signal(undefined),
 		tabState: new Signal<TabState | undefined>(undefined),
@@ -491,10 +495,10 @@ describe('Home popup clear empty state', () => {
 		const browserMock = installBrowserMock()
 		let rejectChange: ((error: Error) => void) | undefined
 		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
-		const params = createHomeParams({ setRichState: async (enabled, address) => {
-			assert.equal(enabled, true)
-			assert.equal(address, 'CurrentAddress')
+		const params = createHomeParams({ changeRichSettings: async (request) => {
+			assert.deepEqual(request, { method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: true, address: 'CurrentAddress' } })
 			await change
+			return undefined
 		} })
 		try {
 			await act(() => { render(h(Home, params), dom.document.body) })
@@ -504,7 +508,7 @@ describe('Home popup clear empty state', () => {
 			if (handler === undefined) throw new Error('Expected rich toggle handler')
 			Reflect.set(checkbox, 'checked', true)
 			await act(async () => { await handler({ target: checkbox }) })
-			assert.equal(params.makeCurrentAddressRich.value, true)
+			assert.equal(params.makeCurrentAddressRich.value, false, 'a pending toggle must not mutate the authoritative home-data snapshot')
 			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), true)
 			assert.equal(String(checkbox.getAttribute?.('disabled')), 'true')
 			await act(async () => {

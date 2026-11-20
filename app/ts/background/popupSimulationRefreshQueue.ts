@@ -1,5 +1,6 @@
 // Owns coalescing and supersession of interactive refreshes: which requests are equivalent, which is pending, and the invalidation merged across them. popupVisualisationUpdater owns execution, the publication generation guard, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
+import type { CompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -8,6 +9,9 @@ import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { preparePopupVisualisationRefresh, type PopupVisualisationRefreshTarget } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
+
+// Whether a stored or just-refreshed popup simulation is available to show.
+export const isPopupSimulationAvailable = (simulation: Pick<CompleteVisualizedSimulation, 'simulationUpdatingState' | 'simulationResultState'>) => simulation.simulationUpdatingState !== 'failed' && simulation.simulationResultState !== 'invalid'
 
 export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
 

@@ -1,20 +1,22 @@
+import { createRichTokenFailureReply, type ModifyRichTokenRequest } from './richModeRequests.js'
 import * as funtypes from 'funtypes'
 // Depend on leaf request/reply codecs; interceptor-messages consumes this protocol and re-exports those codecs.
 import { createImportSettingsFailureReply, type ImportSettings, type ImportSettingsReply, type PopupSettingsRequest } from './popupSettingsRequests.js'
 
-export type PopupSettingsAdmittedRequest = PopupSettingsRequest | ImportSettings
+export type PopupSettingsAdmittedRequest = PopupSettingsRequest | ImportSettings | ModifyRichTokenRequest
 
 // Exhaustive over admitted settings commands and imports: admission and shared status use this definition.
 export const popupSettingsOperations = {
 	popup_changeActiveAddress: { operation: 'wallet', reply: { transport: 'direct', type: 'ChangeActiveAddressReply' } },
 	popup_enableSimulationMode: { operation: 'mode', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_changeActiveRpc: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
+	popup_modifyRichToken: { operation: 'rich', reply: { transport: 'direct', type: 'ModifyRichTokenReply', createFailure: createRichTokenFailureReply } },
 	popup_modifyMakeMeRich: { operation: 'rich', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_set_rpc_list: { operation: 'rpc', reply: { transport: 'direct', type: 'PopupSettingsChangeReply' } },
 	popup_import_settings: { operation: 'import', reply: { transport: 'broadcast', createFailure: createImportSettingsFailureReply } },
 } as const satisfies Record<PopupSettingsAdmittedRequest['method'], {
 	operation: string
-	reply: { transport: 'direct', type: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' } | { transport: 'broadcast', createFailure: (message: string) => ImportSettingsReply }
+	reply: { transport: 'direct', type: 'ChangeActiveAddressReply' | 'PopupSettingsChangeReply' } | { transport: 'direct', type: 'ModifyRichTokenReply', createFailure: typeof createRichTokenFailureReply } | { transport: 'broadcast', createFailure: (message: string) => ImportSettingsReply }
 }>
 
 export type DirectPopupSettingsMethod = {

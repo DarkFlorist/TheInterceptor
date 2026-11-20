@@ -5,8 +5,11 @@ import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { getSettings } from './settings.js'
-import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
-import { runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, modifyRichToken, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
+import { isPopupSimulationAvailable, runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply } from './richFundingReplies.js'
+import { validateRichFundingChain } from './richFundingContext.js'
+import { getPopupVisualisationState } from './storageVariables.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
@@ -21,6 +24,7 @@ function settingsCommand<Method extends PopupSettingsAdmittedRequest['method']>(
 			await sendPopupMessageToOpenWindows(reply.createFailure(message))
 			return
 		}
+		if ('createFailure' in reply) return reply.createFailure(message)
 		return { type: reply.type, ok: false, message }
 	})
 }
@@ -39,14 +43,20 @@ export const popupSettingsCommandHandlers = {
 		await enableSimulationMode(context.simulationServicesOwner, context.websiteTabConnections, request)
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
+	popup_modifyRichToken: settingsCommand('popup_modifyRichToken', async (context, request) => {
+		const services = context.simulationServicesOwner.getCurrent()
+		const result = validateRichFundingChain(context.settings, services.ethereum, request.data.chainId) ?? await modifyRichToken(services.ethereum, context.simulationAbortController, request)
+		return toModifyRichTokenReply(await completeRichFundingMutation(result, {
+			refresh: async () => await runPopupSimulationRefresh({ ...services, invalidateOldState: true }),
+			isStoredSimulationAvailable: async () => isPopupSimulationAvailable(await getPopupVisualisationState()),
+		}))
+	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
-		if (await modifyMakeMeRich(request)) {
-			// Awaits the refresh deliberately, unlike other settings edits, so this command can report the refresh outcome in its reply.
-			const outcome = await runPopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
-			if (outcome.status === 'observed' && !outcome.available) {
-				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
-			}
-		}
-		return { type: 'PopupSettingsChangeReply', ok: true }
+		const services = context.simulationServicesOwner.getCurrent()
+		const result = validateRichFundingChain(context.settings, services.ethereum, request.data.action === 'set-native-amount' ? request.data.chainId : undefined) ?? await modifyMakeMeRich(request)
+		return toRichSettingsChangeReply(await completeRichFundingMutation(result, {
+			refresh: async () => await runPopupSimulationRefresh({ ...services, invalidateOldState: true }),
+			isStoredSimulationAvailable: async () => isPopupSimulationAvailable(await getPopupVisualisationState()),
+		}))
 	}),
 } satisfies Pick<PopupMessageHandlerMap, PopupSettingsAdmittedRequest['method'] | 'popup_requestSettingsChangeStatus'>

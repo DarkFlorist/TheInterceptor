@@ -1,9 +1,13 @@
+import { classifyExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { beforeEach, describe, test } from 'bun:test'
 import * as ts from 'typescript'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import type { RichAccountBalance, RichToken } from '../../app/ts/types/richMode.js'
+import type { RichListElement } from '../../app/ts/utils/storageUtils.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
@@ -111,19 +115,23 @@ function createBrowserStorageMock() {
 }
 
 const browserMock = createBrowserStorageMock()
-const settingsModulePromise = Promise.all([import('../../app/ts/background/settings.js'), import('../../app/ts/background/settingsImport.js')]).then(([settingsModule, settingsImportModule]) => ({
+const settingsModulePromise = Promise.all([import('../../app/ts/background/settings.js'), import('../../app/ts/background/settingsImport.js'), import('../../app/ts/background/richModeSettings.js')]).then(([settingsModule, settingsImportModule, richModeSettingsModule]) => ({
 	...settingsModule,
 	...settingsImportModule,
+	...richModeSettingsModule,
+	getStoredRichAccountBalances: async () => (await richModeSettingsModule.getRichModeState()).accountBalances,
 	setMetamaskCompatibilityMode: settingsModule.persistMetamaskCompatibilityMode,
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
-const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
+const storageVariablesModulePromise = Promise.all([import('../../app/ts/background/storageVariables.js'), import('../../app/ts/background/addressBookStorage.js')]).then(([storageVariablesModule, addressBookStorageModule]) => ({ ...storageVariablesModule, ...addressBookStorageModule }))
 
 const settingsStorageModulePaths = {
 	settings: 'app/ts/background/settings.ts',
 	storageVariables: 'app/ts/background/storageVariables.ts',
 	settingsImport: 'app/ts/background/settingsImport.ts',
 	settingsStorageTransaction: 'app/ts/background/settingsStorageTransaction.ts',
+	addressBookStorage: 'app/ts/background/addressBookStorage.ts',
+	richModeSettings: 'app/ts/background/richModeSettings.ts',
 }
 
 const parseSourceFile = (path: string) => ts.createSourceFile(path, fs.readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
@@ -164,6 +172,16 @@ const getKeysWrittenByStorageWriteFunctions = (sourceFile: ts.SourceFile) => {
 	})
 	return keys
 }
+
+const hasExportModifier = (node: ts.Node) => ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+
+// The names a module exports, from its exported declarations and its export lists.
+const getExportedNames = (sourceFile: ts.SourceFile) => sourceFile.statements.flatMap((statement) => {
+	if (ts.isVariableStatement(statement) && hasExportModifier(statement)) return statement.declarationList.declarations.flatMap((declaration) => ts.isIdentifier(declaration.name) ? [declaration.name.text] : [])
+	if (ts.isFunctionDeclaration(statement) && hasExportModifier(statement) && statement.name !== undefined) return [statement.name.text]
+	if (ts.isExportDeclaration(statement) && statement.exportClause !== undefined && ts.isNamedExports(statement.exportClause)) return statement.exportClause.elements.map((element) => element.name.text)
+	return []
+})
 
 const readWholeStorage = async () => structuredClone(await browser.storage.local.get(null))
 
@@ -250,6 +268,14 @@ describe('settings import', () => {
 		browserMock.reset()
 	})
 
+	test('settings.ts is not a second entry point to rich-mode settings', () => {
+		const settingsSource = parseSourceFile(settingsStorageModulePaths.settings)
+		const richModeReExports = settingsSource.statements.filter((statement) => ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === './richModeSettings.js')
+		assert.deepEqual(richModeReExports.map((statement) => statement.getText()), [])
+		const settingsExportNames = new Set(getExportedNames(settingsSource))
+		assert.deepEqual(getExportedNames(parseSourceFile(settingsStorageModulePaths.richModeSettings)).filter((name) => settingsExportNames.has(name)), [])
+	})
+
 	test('resets the simulation address and restores the opened page from version 1.3 exports', async () => {
 		const { defaultActiveAddresses, getPage, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
 
@@ -271,7 +297,36 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	for (const backupKind of ['rich-1.5', 'signing-1.5', 'signing-1.6']) {
+		test(`imports historical ${ backupKind } backups without mixing their settings`, async () => {
+			const { exportSettingsAndAddressBook, getMakeCurrentAddressRich, getDefaultRichNativeAmount, getSettings, getSafeAppsCompatibilityMode, importSettingsAndAddressBook, setMakeCurrentAddressRich, setRichNativeAmount, setSafeAppsCompatibilityMode } = await settingsModulePromise
+			await setMakeCurrentAddressRich(true)
+			await setRichNativeAmount(123n)
+			await setSafeAppsCompatibilityMode(true)
+			const current = serialize(ExportedSettings, await exportSettingsAndAddressBook())
+			const richFields = ['makeCurrentAddressRich', 'richNativeAmount', 'fixedAddressRichList', 'richTokens', 'richAccountBalances']
+			const omittedFields = backupKind === 'rich-1.5'
+				? ['activeSigningSafeAddress', 'signingAddressPreferences', 'safeAppsCompatibilityMode']
+				: [...richFields, ...(backupKind === 'signing-1.5' ? ['safeAppsCompatibilityMode'] : [])]
+			const historical = ExportedSettings.parse({
+				...current,
+				version: backupKind === 'signing-1.6' ? '1.6' : '1.5',
+				settings: Object.fromEntries(Object.entries(current.settings).filter(([key]) => !omittedFields.includes(key))),
+			})
+			const classified = classifyExportedSettings(historical)
+			assert.equal(classified.kind, backupKind === 'rich-1.5' ? 'legacy-rich' : 'independent-addresses')
+			assert.equal(classified.richFunding !== undefined, backupKind === 'rich-1.5')
+			assert.equal(classified.independentAddresses !== undefined, backupKind !== 'rich-1.5')
+			browserMock.reset()
+			await importSettingsAndAddressBook(historical)
+			assert.equal(await getMakeCurrentAddressRich(), backupKind === 'rich-1.5')
+			if (backupKind === 'rich-1.5') assert.equal(await getDefaultRichNativeAmount(), 123n)
+			assert.equal(await getSafeAppsCompatibilityMode(), backupKind === 'signing-1.6')
+			assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+		})
+	}
+
+	test('round-trips Safe settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
@@ -295,8 +350,8 @@ describe('settings import', () => {
 		await setSafeAppsCompatibilityMode(true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
@@ -542,6 +597,115 @@ describe('settings import', () => {
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 
+	test('clears rich-mode state when importing backups that predate rich-mode exports', async () => {
+		const {
+			getFixedAddressRichList,
+			getMakeCurrentAddressRich,
+			getStoredRichAccountBalances,
+			getDefaultRichNativeAmount,
+			getRichTokens,
+			importSettingsAndAddressBook,
+		} = await settingsModulePromise
+		await browser.storage.local.set({
+			makeCurrentAddressRich: true,
+			richNativeAmount: 123n,
+			fixedAddressRichList: [{ address: 0x1111111111111111111111111111111111111111n, makingRich: true, type: 'UserAdded' }],
+			richTokens: [{ stale: true }],
+			richAccountBalances: [{ stale: true }],
+		})
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+
+		assert.equal(await getMakeCurrentAddressRich(), false)
+		assert.equal(await getDefaultRichNativeAmount(), 200_000n * 10n ** 18n)
+		assert.deepEqual(await getFixedAddressRichList(), [])
+		assert.deepEqual(await getRichTokens(), [])
+		assert.deepEqual(await getStoredRichAccountBalances(), [])
+	})
+
+	test('round-trips rich-mode account and token settings in version 1.7 exports', async () => {
+		const {
+			exportSettingsAndAddressBook,
+			getFixedAddressRichList,
+			getMakeCurrentAddressRich,
+			getStoredRichAccountBalances,
+			getDefaultRichNativeAmount,
+			getRichTokens,
+			importSettingsAndAddressBook,
+			setFixedMakeMeRichList,
+			setMakeCurrentAddressRich,
+			setRichNativeAmount,
+			updateRichAccountBalances,
+			updateRichTokens,
+		} = await settingsModulePromise
+		const { updateUserAddressBookEntries } = await import('../../app/ts/background/addressBookStorage.js')
+		const accountAddress = 0x1111111111111111111111111111111111111111n
+		const tokenAddress = 0x2222222222222222222222222222222222222222n
+		const richToken: RichToken = {
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Test Token',
+			symbol: 'TST',
+			decimals: 6n,
+			amount: 200_000n * 10n ** 6n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}
+		const richAccountBalance: RichAccountBalance = {
+			chainId: 1n,
+			address: accountAddress,
+			nativeAmount: 200_000n * 10n ** 18n,
+			tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 123_456n * 10n ** 6n }],
+		}
+		const fixedAddressRichList: readonly RichListElement[] = [{ address: accountAddress, makingRich: true, type: 'UserAdded' }]
+
+		await updateUserAddressBookEntries(() => [{
+			type: 'ERC20',
+			name: richToken.name,
+			address: tokenAddress,
+			symbol: richToken.symbol,
+			decimals: richToken.decimals,
+			chainId: richToken.chainId,
+			entrySource: 'User',
+		}])
+		await setMakeCurrentAddressRich(true)
+		await setRichNativeAmount(richAccountBalance.nativeAmount)
+		await setFixedMakeMeRichList(fixedAddressRichList)
+		await updateRichTokens(() => [richToken])
+		await updateRichAccountBalances(() => [richAccountBalance])
+
+		const exported = await exportSettingsAndAddressBook()
+		assert.equal(exported.version, '1.7')
+		if (exported.version !== '1.7') throw new Error('Expected a version 1.7 settings export')
+		const { amount: _amount, ...layout } = richToken
+		assert.deepEqual(exported.settings.richTokens, [layout])
+		assert.equal(Object.hasOwn(exported.settings.richTokens[0] ?? {}, 'amount'), false)
+		assert.deepEqual(exported.settings.richAccountBalances, [richAccountBalance])
+
+		browserMock.reset()
+		await importSettingsAndAddressBook(ExportedSettings.parse(ExportedSettings.serialize(exported)))
+
+		assert.equal(await getMakeCurrentAddressRich(), true)
+		assert.equal(await getDefaultRichNativeAmount(), richAccountBalance.nativeAmount)
+		assert.deepEqual(await getFixedAddressRichList(), fixedAddressRichList)
+		assert.deepEqual(await getRichTokens(), [richToken])
+		assert.deepEqual(await getStoredRichAccountBalances(), [richAccountBalance])
+
+		const duplicateProfile = {
+			...richAccountBalance,
+			nativeAmount: richAccountBalance.nativeAmount + 1n,
+			tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 999n }],
+		}
+		await importSettingsAndAddressBook({
+			...exported,
+			settings: { ...exported.settings, richAccountBalances: [richAccountBalance, duplicateProfile] },
+		})
+
+		assert.deepEqual(await getStoredRichAccountBalances(), [duplicateProfile])
+	})
+
 	const preImportSigningPreference = { signerAddress: 0x9595959595959595959595959595959595959595n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
 
 	const storePreImportSettings = async () => {
@@ -596,6 +760,41 @@ describe('settings import', () => {
 				metamaskCompatibilityMode: false,
 			},
 		}
+		const version16SigningPreference = { signerAddress: 0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6n, selection: 'signer' as const, chainId: testRpcNetwork.chainId }
+		const version16Import: ExportedSettings = {
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.6',
+			exportedDate: '2026-05-21',
+			settings: {
+				...version15Import.settings,
+				activeSigningSafeAddress: undefined,
+				signingAddressPreferences: [version16SigningPreference],
+				addressBookEntries: [],
+				safeAppsCompatibilityMode: false,
+			},
+		}
+		const rich15AccountAddress = 0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5n
+		const rich15Import: ExportedSettings = {
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.5',
+			exportedDate: '2026-05-21',
+			settings: {
+				activeSimulationAddress: rich15AccountAddress,
+				rpcNetwork: testRpcNetwork,
+				openedPage: { page: 'Settings' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: true,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: false,
+				metamaskCompatibilityMode: false,
+				makeCurrentAddressRich: true,
+				richNativeAmount: 123n,
+				fixedAddressRichList: [{ address: rich15AccountAddress, makingRich: true, type: 'UserAdded' }],
+				richTokens: [],
+				richAccountBalances: [],
+			},
+		}
 		const assertResetsSigningState = async () => {
 			assert.deepEqual(await settings.getSigningAddressPreferences(), [])
 			assert.equal((await settings.getSettings()).activeSigningSafeAddress, undefined)
@@ -638,6 +837,21 @@ describe('settings import', () => {
 				assert.equal(await settings.getSafeAppsCompatibilityMode(), false, 'version 1.5 has no Safe Apps compatibility, so it is reset')
 				assert.equal(await settings.getMetamaskCompatibilityMode(), false)
 				assert.deepEqual(await settings.getPage(), { page: 'Settings' })
+			} },
+			{ exportedSettings: version16Import, assertImportedValues: async () => {
+				const importedSettings = await settings.getSettings()
+				assert.equal(importedSettings.activeSimulationAddress, version15SimulationAddress)
+				assert.equal(importedSettings.activeSigningSafeAddress, undefined)
+				assert.deepEqual((await settings.getSigningAddressPreferences()).map(({ signerAddress }) => signerAddress), [version16SigningPreference.signerAddress])
+				assert.equal(await settings.getSafeAppsCompatibilityMode(), false)
+				assert.equal(await settings.getMakeCurrentAddressRich(), false, 'version 1.6 has no rich mode, so it is reset')
+			} },
+			{ exportedSettings: rich15Import, assertImportedValues: async () => {
+				await assertResetsSigningState()
+				assert.equal(await settings.getMakeCurrentAddressRich(), true)
+				assert.equal(await settings.getDefaultRichNativeAmount(), 123n)
+				assert.deepEqual(await settings.getFixedAddressRichList(), [{ address: rich15AccountAddress, makingRich: true, type: 'UserAdded' }])
+				assert.equal((await settings.getSettings()).activeSimulationAddress, settings.defaultActiveAddresses[0]?.address)
 			} },
 			{ exportedSettings: await settings.exportSettingsAndAddressBook(), assertImportedValues: async () => {
 				assert.deepEqual(await settings.getSigningAddressPreferences(), [])
@@ -690,7 +904,7 @@ describe('settings import', () => {
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
-		if (currentVersionExport?.version !== '1.6') throw new Error('Expected current settings export version')
+		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
 			...currentVersionExport,
 			settings: {
@@ -740,7 +954,7 @@ describe('settings import', () => {
 		const { getWebsiteAccess, getSigningAddressPreferences, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
-		const addressBookWrite = updateUserAddressBookEntries((entries) => entries)
+		const addressBookWrite = updateUserAddressBookEntries((entries) => [...entries])
 		await addressBookWriteGate.started
 
 		const websiteAccessUpdate = updateWebsiteAccess(() => [{ website: { websiteOrigin: 'queued.example', icon: undefined, title: 'Queued' }, access: true }])

@@ -53,7 +53,7 @@ describe('UI mutation completion', () => {
 		const handlers = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		await modules.changeSimulationMode({ simulationMode: operation !== 'mode' && operation !== 'safe', activeSimulationAddress: signedTransaction.from, activeSigningAddress: signedTransaction.from })
-		await modules.setMakeCurrentAddressRich(false)
+		await (await import('../../app/ts/background/richModeSettings.js')).setMakeCurrentAddressRich(false)
 		if (operation === 'remove' || operation === 'transaction time' || operation === 'gas') {
 			await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'Transaction', preSimulationTransaction: transaction }] }))
 		}

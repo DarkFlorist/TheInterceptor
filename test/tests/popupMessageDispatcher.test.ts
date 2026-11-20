@@ -199,6 +199,63 @@ beforeEach(() => {
 })
 
 describe('popup message dispatcher seams', () => {
+	test('returns the shared settings reply for an invalid native rich amount without saving it', async () => {
+		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_modifyMakeMeRich', data: { chainId: 1n, action: 'set-native-amount', address: 1n, nativeAmount: 0n },
+		})
+		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount must be greater than zero and fit within uint256.' })
+		assert.equal(storageState.richModeState, undefined)
+	})
+
+	test('acknowledges an unchanged native rich amount without refreshing simulation services', async () => {
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		const { emptyRichModeState } = await import('../../app/ts/background/richModeSettings.js')
+		await browserStorageLocalSet({ richModeState: { ...emptyRichModeState, accountBalances: [{ chainId: 1n, address: 1n, nativeAmount: 123n, tokenBalances: [] }] } })
+		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_modifyMakeMeRich', data: { chainId: 1n, action: 'set-native-amount', address: 1n, nativeAmount: 123n },
+		})
+		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
+	})
+
+	test('replies to a committed rich-token change with the simulation refresh outcome', async () => {
+		const reply = await withSilencedConsole(async () => await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_modifyRichToken', data: { chainId: 1n, action: 'Remove', address: 1n, tokenAddress: 2n },
+		}))
+		if (reply === undefined || !('method' in reply) || reply.method !== 'popup_modifyRichToken' || !reply.result.success) throw new Error('Expected a committed rich-token reply')
+		assert.equal(reply.result.simulationRefresh === 'Refreshed' || reply.result.simulationRefresh === 'Unavailable', true)
+	})
+
+	for (const drift of ['stale popup', 'uninstalled selection'] as const) test(`rejects native and token funding before writes when ${ drift } disagrees with the funding owner`, async () => {
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		const context = createDispatcherContext(async () => undefined)
+		await browserStorageLocalSet({ activeRpcNetwork: { ...settings.activeRpcNetwork, chainId: drift === 'stale popup' ? 1n : 2n } })
+		const native = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', chainId: 2n, address: 1n, nativeAmount: 42n } })
+		assert.ok(native !== undefined && 'ok' in native && native.ok === false && native.message.includes('funding network changed'))
+		const token = await dispatchPopupMessage(context, { method: 'popup_modifyRichToken', data: { action: 'Add', chainId: 2n, address: 1n, tokenAddress: 2n } })
+		assert.ok(token !== undefined && 'method' in token && token.method === 'popup_modifyRichToken' && !token.result.success && token.result.error.includes('funding network changed'))
+		assert.equal(storageState.richModeState, undefined)
+	})
+
+	test('uses the same non-mainnet funding key for native writes, token writes and home data', async () => {
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		const { emptyRichModeState, getRichModeState } = await import('../../app/ts/background/richModeSettings.js')
+		const { getSettings } = await import('../../app/ts/background/settings.js')
+		const { getCachedRichData } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const network = { ...settings.activeRpcNetwork, chainId: 2n }
+		await browserStorageLocalSet({ activeRpcNetwork: network, richModeState: { ...emptyRichModeState, accountBalances: [1n, 2n].map((chainId) => ({ chainId, address: 1n, nativeAmount: 7n, tokenBalances: [{ tokenAddress: 2n, tokenId: undefined, amount: 9n }] })) } })
+		const context = { ...createDispatcherContext(async () => undefined), simulationServicesOwner: createSimulationServicesOwner(network, async () => undefined, async () => undefined) }
+		await withSilencedConsole(async () => {
+			await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', chainId: 2n, address: 1n, nativeAmount: 42n } })
+			await dispatchPopupMessage(context, { method: 'popup_modifyRichToken', data: { action: 'Remove', chainId: 2n, address: 1n, tokenAddress: 2n } })
+		})
+		const state = await getRichModeState()
+		assert.equal(state.accountBalances.find((profile) => profile.chainId === 1n)?.nativeAmount, 7n)
+		assert.equal(state.accountBalances.find((profile) => profile.chainId === 1n)?.tokenBalances.length, 1)
+		assert.equal(state.accountBalances.find((profile) => profile.chainId === 2n)?.nativeAmount, 42n)
+		assert.equal(state.accountBalances.find((profile) => profile.chainId === 2n)?.tokenBalances.length, 0)
+		assert.equal((await getCachedRichData(await getSettings())).richFundingChainId, 2n)
+	})
+
 	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
 

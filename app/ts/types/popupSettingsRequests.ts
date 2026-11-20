@@ -1,14 +1,14 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 import { RpcEntry, RpcEntries } from './rpc.js'
 
 export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
 export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({ action: funtypes.Literal('set-address-rich'), add: funtypes.Boolean, address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress) }),
+		funtypes.ReadonlyObject({ action: funtypes.Literal('set-native-amount'), chainId: EthereumQuantity, nativeAmount: EthereumQuantity, address: EthereumAddress }),
+	)
 }).asReadonly()
 
 export type EnableSimulationMode = funtypes.Static<typeof EnableSimulationMode>

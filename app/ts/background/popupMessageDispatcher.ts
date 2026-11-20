@@ -15,6 +15,7 @@ import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistri
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
 const popupMessageHandlers = {
+
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
@@ -35,7 +36,7 @@ const popupMessageHandlers = {
 		return await refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, context.confirmTransactionAbortController)
 	}),
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
-	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
+	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_requestNewHomeData: popupSnapshotMessageHandler('popup_requestNewHomeData', async (context, request) => {
 		const { ethereum } = context.services

@@ -8,7 +8,7 @@ import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
 import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
 import { getSafeSignatureRequirement } from '../safe/safeSignatureRequirement.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice, getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -24,7 +24,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressWith, lookUpMetadataOnChain, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -39,23 +39,22 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext } from '../utils/activeStackContext.js'
+import { getRichModeState } from './richModeSettings.js'
+import { addressesBeingMadeRich } from '../utils/richModeDerivation.js'
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()
-	if (!settings.simulationMode) return []
-	const currentAddressBeingRich = await getAddressToMakeRich(settings)
-	const makeRichAddressList = await getFixedAddressRichList()
-	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
+	return [...addressesBeingMadeRich(settings, await getRichModeState())]
 }
 
 export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
 	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
 		settingsSnapshot ?? getSettings(),
-		getPreSimulationBlockTimeManipulation()
+		getPreSimulationBlockTimeManipulation(),
 	])
-	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
 	const stack = await getInterceptorTransactionStack()
-	return buildSimulationStateInput(settings, { richAddresses: await richListPromise, preSimulationBlockTimeManipulation }, stack)
+	const richModeState = await getRichModeState()
+	return buildSimulationStateInput(settings, { richAddresses: richAddresses ?? addressesBeingMadeRich(settings, richModeState), richModeState, preSimulationBlockTimeManipulation }, stack)
 }
 
 export type SimulationSnapshot = {

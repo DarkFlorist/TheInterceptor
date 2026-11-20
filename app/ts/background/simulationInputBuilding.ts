@@ -1,24 +1,22 @@
 import type { Settings } from '../types/interceptor-messages.js'
+import type { RichModeState } from '../types/richMode.js'
 import type { BlockTimeManipulation, InterceptorTransactionStack, PreSimulationTransaction, SignedMessageTransaction, SimulationStateInput, SimulationStateInputBlock } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { addressString } from '../utils/bigint.js'
-import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
+import { addRichAccountBalanceOverrides } from '../utils/richTokens.js'
 import { assertNever } from '../utils/typescript.js'
+import { profilesForAddresses, richTokensForPresentation } from '../utils/richModeDerivation.js'
 
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
+const getMakeCurrentAddressRichStateOverride = (chainId: bigint, addressesToMakeRich: readonly bigint[], state: RichModeState) => {
 	if (addressesToMakeRich.length === 0) return {}
-	return Object.fromEntries(
-		addressesToMakeRich.map(currentAddress => {
-			const addressKey = addressString(currentAddress)
-			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
-		})
-	)
+	const profiles = profilesForAddresses(state, chainId, addressesToMakeRich)
+	return addRichAccountBalanceOverrides({}, profiles.filter((profile) => profile.chainId === chainId && addressesToMakeRich.includes(profile.address)), richTokensForPresentation(state))
 }
 
 // Storage state besides the settings and the stack that simulation input is built from.
 type SimulationInputSources = {
 	readonly richAddresses: readonly bigint[]
+	readonly richModeState: RichModeState
 	readonly preSimulationBlockTimeManipulation: BlockTimeManipulation
 }
 
@@ -27,7 +25,7 @@ export function buildSimulationStateInput(settings: Settings, sources: Simulatio
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(sources.richAddresses)
+	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(settings.activeRpcNetwork.chainId, sources.richAddresses, sources.richModeState)
 	let previousBlockTimeManipulation = settings.simulationMode ? sources.preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
