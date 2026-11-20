@@ -362,7 +362,7 @@ describe('active settings concurrency', () => {
 
 	test.each(['direct', 'selection'])('reports a failed access prompt without rejecting a persisted %s address change', async (entryPoint) => {
 		installBrowserMock()
-		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString, updateWebsiteApprovalAccesses } = await loadModules()
+		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
@@ -383,7 +383,6 @@ describe('active settings concurrency', () => {
 		assert.equal((await getSettings()).activeSimulationAddress, selectedAddress.address)
 		await waitForBackgroundTasks()
 		assert.equal((await getLatestUnexpectedError())?.data.message, 'Access popup failed to open')
-		await assert.rejects(updateWebsiteApprovalAccesses(simulationServicesOwner, connections, await getSettings(), true, true), /Access popup failed to open/u)
 	})
 
 	test.each([1, 2])('continues prompting after a failure when the next connection is in tab %j', async (secondTabId) => {
@@ -491,7 +490,7 @@ describe('active settings concurrency', () => {
 
 	test.each(['immediate', 'staged'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
@@ -506,7 +505,7 @@ describe('active settings concurrency', () => {
 		if (completion === 'staged') {
 			const update = await reconcileWebsiteApprovalAccesses(connections, snapshot)
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-			await finishWebsiteAccessUpdate(simulationServicesOwner, connections, update, true)
+			startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, connections, update, true)
 		} else {
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
 			await updateWebsiteApprovalAccesses(simulationServicesOwner, connections, snapshot, true)

@@ -8,7 +8,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './websiteConnectionEvents.js'
-import { reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate } from './accessManagement.js'
+import { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
@@ -123,7 +123,7 @@ export async function runActiveSettingsTransition(
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			scheduleWebsiteAccessUiUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, options.promptForAccessesIfNeeded ?? true)
+			startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, accessUpdate, options.promptForAccessesIfNeeded ?? true)
 		}
 	}
 }

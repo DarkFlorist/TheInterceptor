@@ -240,7 +240,7 @@ describe('UI mutation completion', () => {
 	test('failed reconciliation clears every approval and notifies lifecycle despite a broken port', async () => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { reconcileCommittedWebsiteAccess } = await import('../../app/ts/background/accessManagement.js')
+		const { reconcileCommittedWebsiteAccessOrFailClosed } = await import('../../app/ts/background/accessManagement.js')
 		const revokedTabs: number[] = []
 		const connections: WebsiteTabConnections = Object.assign(new Map(), { lifecycle: { approvalChanged: (socket: { tabId: number }, approved: boolean) => { if (!approved) revokedTabs.push(socket.tabId) } } })
 		const healthyPort = createPort(2)
@@ -256,7 +256,7 @@ describe('UI mutation completion', () => {
 			return await originalGet(keys)
 		} })
 		try {
-			await assert.rejects(reconcileCommittedWebsiteAccess(connections), caught => caught === error)
+			await assert.rejects(reconcileCommittedWebsiteAccessOrFailClosed(connections), caught => caught === error)
 			assert.equal([...connections.values()].some(tab => Object.values(tab.connections).some(connection => connection.approved)), false)
 			assert.deepEqual(revokedTabs, [1, 2, 3])
 			assert.deepEqual(healthyPort.messages.map(message => message.method), ['accountsChanged', 'disconnect'])
@@ -406,10 +406,10 @@ describe('UI mutation completion', () => {
 		assert.match((await modules.getTabState(1)).tabIconDetails.iconReason, /has PENDING access request for Saved account/u)
 	})
 
-	test.each([false, true])('access UI failure is awaited only by the synchronous API (deferred=%s)', async deferred => {
+	test.each([false, true])('access UI failure is awaited and reported only by the synchronous API (deferred=%s)', async deferred => {
 		installBrowserMock()
 		const modules = await loadModules()
-		const { reconcileWebsiteApprovalAccesses, scheduleWebsiteAccessUiUpdate, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
+		const { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 		const settings = await modules.getSettings()
@@ -423,12 +423,14 @@ describe('UI mutation completion', () => {
 			return await originalGet(keys)
 		} })
 		if (deferred) {
-			const update = await reconcileWebsiteApprovalAccesses(connections, settings, true)
-			scheduleWebsiteAccessUiUpdate(owner, connections, update, false)
+			const update = await reconcileWebsiteApprovalAccesses(connections, settings)
+			startWebsiteAccessUiUpdateInBackground(owner, connections, update, false)
 			await waitForBackgroundTasks()
 			assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Cannot read access icon targets')
 		} else {
-			await assert.rejects(updateWebsiteApprovalAccesses(owner, connections, settings, false, true), /Cannot read access icon targets/)
+			// No background task is involved, so the failure is reported by the time the awaited call resolves.
+			await updateWebsiteApprovalAccesses(owner, connections, settings, false)
+			assert.equal((await modules.getLatestUnexpectedError())?.data.message, 'Cannot read access icon targets')
 		}
 	})
 

@@ -196,7 +196,8 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+// Awaited; reports each failed prompt and continues with the next connection.
+async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections): Promise<void> {
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.wantsToConnect) continue
@@ -207,7 +208,6 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
-				if (throwOnError) throw error
 				await reportUnexpectedError(error, { source: 'website_access_prompt', details: { websiteOrigin: connection.websiteOrigin, socket: connection.socket } })
 			}
 		}
@@ -314,10 +314,10 @@ export type WebsiteAccessUpdate = {
 	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
 }
 
-// Reconciles live connections with the stored authority after a website-access or address-book change. A failure clears every approval (fails closed) and still refreshes icons.
-export async function reconcileCommittedWebsiteAccess(websiteTabConnections: WebsiteTabConnections) {
+// Awaited; reconciles live connections with the stored authority after a website-access or address-book change, and on failure clears every approval (fails closed), starts an icon refresh and rethrows.
+export async function reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections: WebsiteTabConnections): Promise<WebsiteAccessUpdate> {
 	try {
-		return await reconcileWebsiteApprovalAccesses(websiteTabConnections, await getSettings(), true)
+		return await reconcileApprovalsWithSettings(websiteTabConnections, await getSettings(), async error => { throw error })
 	} catch (error) {
 		const connections = [...websiteTabConnections.values()].flatMap(tab => Object.values(tab.connections))
 		const approvedConnections = new Set(connections.filter(connection => connection.approved))
@@ -332,7 +332,7 @@ export async function reconcileCommittedWebsiteAccess(websiteTabConnections: Web
 			} catch (notificationError) { notificationErrors.push(notificationError) }
 		}
 		// Failed reconciliation has no returned update. Refresh icons from current storage after clearing authority, including for address-book callers that will return an error.
-		scheduleWebsiteAccessUiUpdate(undefined, websiteTabConnections, {
+		startWebsiteAccessUiUpdateInBackground(undefined, websiteTabConnections, {
 			popupRefreshGeneration: bumpPopupRefreshGeneration(),
 			iconRefreshTargets: connections.map(connection => ({ tabId: connection.socket.tabId, websiteOrigin: connection.websiteOrigin })),
 		}, false)
@@ -341,11 +341,16 @@ export async function reconcileCommittedWebsiteAccess(websiteTabConnections: Web
 	}
 }
 
-// Reconcile approvals with the committed settings while the caller owns the settings lock.
-export async function reconcileWebsiteApprovalAccesses(
+// Awaited; reconciles approvals with the committed settings while the caller owns the settings lock, reporting failures and continuing.
+export async function reconcileWebsiteApprovalAccesses(websiteTabConnections: WebsiteTabConnections, settings: Settings): Promise<WebsiteAccessUpdate> {
+	return await reconcileApprovalsWithSettings(websiteTabConnections, settings, async error => { await reportUnexpectedError(error) })
+}
+
+// Shared body of the two reconcile entry points above, which differ only in what a failure does: reporting and continuing, or rethrowing to fail closed.
+async function reconcileApprovalsWithSettings(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
-	throwOnError = false,
+	handleError: (error: unknown) => Promise<void>,
 ): Promise<WebsiteAccessUpdate> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
@@ -353,8 +358,7 @@ export async function reconcileWebsiteApprovalAccesses(
 	try {
 		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await handleError(error)
 	}
 	const updatePromises = [...websiteTabConnections.values()].map(async (tabConnection) => {
 		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settings)
@@ -367,26 +371,24 @@ export async function reconcileWebsiteApprovalAccesses(
 			if (result.status === 'rejected') throw result.reason
 		}
 	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
+		await handleError(error)
 	}
 
 	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
 	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
 }
 
-// Call after releasing the settings lock: access dialogs can activate another address.
-export async function finishWebsiteAccessUpdate(
+// Awaited prompt and icon work, reporting failures; module-private so callers choose between startWebsiteAccessUiUpdateInBackground and updateWebsiteApprovalAccesses. Runs after the settings lock is released, because access dialogs can activate another address.
+async function finishWebsiteAccessUpdate(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
-) {
+): Promise<void> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
 	if (promptForAccessesIfNeeded && simulationServicesOwner !== undefined) {
-		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections, throwOnError)
+		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections)
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
@@ -398,31 +400,30 @@ export async function finishWebsiteAccessUpdate(
 			updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, update.popupRefreshGeneration)
 		))
 	} catch (error) {
-		if (throwOnError) throw error
 		await reportUnexpectedError(error, { source: 'website_access_icons', details: { popupRefreshGeneration: update.popupRefreshGeneration } })
 	}
 }
 
+// Awaited; reconciles approvals and then awaits the prompt and icon work, reporting failures of both. Local commands use startWebsiteAccessUiUpdateInBackground instead, so they do not wait for prompts.
 export async function updateWebsiteApprovalAccesses(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
-	throwOnError = false,
 ): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings)
+	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded)
 	return update.popupRefreshGeneration
 }
 
-// Schedule only after reconciliation; save success covers committed permissions, while this completion covers prompt/icon work.
-export function scheduleWebsiteAccessUiUpdate(
+// Not awaited; starts the prompt and icon work for a finished reconciliation as a background task that reports its own failures, so a local command can reply without waiting for prompts.
+export function startWebsiteAccessUiUpdateInBackground(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
-) {
-	return backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
+): void {
+	backgroundTaskSupervisor.start({ source: 'website_access_ui', details: { popupRefreshGeneration: update.popupRefreshGeneration } },
 		async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded))
 }
 
