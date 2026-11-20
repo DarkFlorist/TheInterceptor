@@ -803,7 +803,7 @@ async function main() {
 				throw new Error('Safe co-signing mutated the proposer stack before the returned file was imported')
 			}
 
-			const simulationStackTargetId = await createTargetPage(chrome.browserConnection, `chrome-extension://${ extensionId }/html3/simulationStackV3.html`)
+			const simulationStackTargetId = await createTargetPage(chrome.browserConnection, `chrome-extension://${ extensionId }/html3/managementViewV3.html#simulation-stack`)
 			const simulationStackConnection = await connectTarget(chrome.browserDebugPort, simulationStackTargetId)
 			try {
 				await waitForText(simulationStackConnection, 'Gnosis Safe Stack')

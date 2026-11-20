@@ -1,13 +1,5 @@
-import * as preact from 'preact'
-import { SimulationStackPage } from './components/pages/SimulationStackPage.js'
-import { ErrorBoundary } from './components/subcomponents/Error.js'
-import Hint from './components/subcomponents/Hint.js'
+import { getHtmlFile } from './background/backgroundUtils.js'
+import { redirectStandalonePageToManagementShell } from './utils/managementLocation.js'
 
-function rerender() {
-	const root = document.getElementById('simulation-stack-root')
-	if (root === null) throw new Error('Missing simulation stack root element')
-	root.textContent = ''
-	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(Hint, { children: preact.createElement(SimulationStackPage, {}) })), root)
-}
-
-rerender()
+// Pre-shell standalone URL kept only so saved links keep working; the page itself renders only inside the management shell.
+redirectStandalonePageToManagementShell('simulation-stack', getHtmlFile('managementView'))

@@ -1,11 +1,5 @@
-import * as preact from 'preact'
-import { WebsiteAccessView } from './components/pages/WebsiteAccess.js'
-import { ErrorBoundary } from './components/subcomponents/Error.js'
+import { getHtmlFile } from './background/backgroundUtils.js'
+import { redirectStandalonePageToManagementShell } from './utils/managementLocation.js'
 
-function rerender() {
-	const body = document.body
-	const main = document.querySelector('main')!
-	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(WebsiteAccessView, {})), body, main)
-}
-
-rerender()
+// Pre-shell standalone URL kept only so saved links keep working; the page itself renders only inside the management shell.
+redirectStandalonePageToManagementShell('websites', getHtmlFile('managementView'))

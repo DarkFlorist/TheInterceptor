@@ -6,7 +6,8 @@ import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimu
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { clearInterceptorErrorDiagnostics, getInterceptorErrorDiagnostics } from './diagnosticStorage.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
@@ -17,7 +18,7 @@ import { changeActiveRpc } from './walletSwitch.js'
 import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
 import { withWebsiteAccessChanges } from './websiteAccessMutations.js'
-import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getActiveOrFirstSignerAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress, hasAddressBookDuplicate } from './metadataUtils.js'
@@ -34,7 +35,7 @@ import type { Website } from '../types/websiteAccessTypes.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
-import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise, updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
+import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -781,55 +782,6 @@ export async function getAddressBookData(parsed: GetAddressBookData) {
 	})
 }
 
-type ExtensionTabName = 'settingsView' | 'addressBook' | 'websiteAccess' | 'simulationStack'
-
-type ExistingTabUpdate = {
-	active: true
-	highlighted: true
-	url?: string
-}
-
-function getExistingTabUpdate(tabName: ExtensionTabName, targetUrl: string, resolvedTargetUrl: URL, currentTabUrl: string | undefined, targetHash: string): ExistingTabUpdate {
-	const url = getExistingTabUrlUpdate(tabName, targetUrl, resolvedTargetUrl, currentTabUrl, targetHash)
-	if (url === undefined) return { active: true, highlighted: true }
-	return { active: true, highlighted: true, url }
-}
-
-function getExistingTabUrlUpdate(tabName: ExtensionTabName, targetUrl: string, resolvedTargetUrl: URL, currentTabUrl: string | undefined, targetHash: string) {
-	if (targetHash.length !== 0) return targetUrl
-	if (tabName !== 'simulationStack') return undefined
-	if (currentTabUrl === undefined) return undefined
-	return shouldClearSimulationStackHash(currentTabUrl, targetUrl, resolvedTargetUrl) ? targetUrl : undefined
-}
-
-function shouldClearSimulationStackHash(currentTabUrl: string, targetUrl: string, resolvedTargetUrl: URL) {
-	try {
-		const currentUrl = new URL(currentTabUrl, browser.runtime.getURL('/'))
-		return currentUrl.pathname !== resolvedTargetUrl.pathname || currentUrl.hash !== ''
-	} catch {
-		return currentTabUrl !== targetUrl
-	}
-}
-
-export const openNewTab = async (tabName: ExtensionTabName, targetHash = '') => {
-	const targetUrl = `${ getHtmlFile(tabName) }${ targetHash }`
-	const resolvedTargetUrl = new URL(targetUrl, browser.runtime.getURL('/'))
-	const openInNewTab = async () => {
-		const tab = await browser.tabs.create({ url: targetUrl })
-		if (tab.id !== undefined) await setIdsOfOpenedTabs({ [tabName]: tab.id })
-	}
-
-	const tabId = (await getIdsOfOpenedTabs())[tabName]
-	if (tabId === undefined) return await openInNewTab()
-	const allTabs = await browser.tabs.query({})
-	const addressBookTab = allTabs.find((tab) => tab.id === tabId)
-
-	if (addressBookTab?.id === undefined) return await openInNewTab()
-	const tab = await updateTabIfExists(addressBookTab.id, getExistingTabUpdate(tabName, targetUrl, resolvedTargetUrl, addressBookTab.url, targetHash))
-	if (tab === undefined) return await openInNewTab()
-	if (tab?.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })
-}
-
 export async function requestNewHomeData(
 	ethereum: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
@@ -1127,6 +1079,13 @@ export const requestSimulationMode = async () => ({ method: 'popup_requestSimula
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
+export const requestDiagnostics = async () => ({ method: 'popup_requestDiagnostics' as const, diagnostics: await getInterceptorErrorDiagnostics() })
+
+export const clearDiagnostics = async () => {
+	await clearInterceptorErrorDiagnostics()
+	return { method: 'popup_clearDiagnostics' as const, diagnostics: await getInterceptorErrorDiagnostics() }
+}
+
 async function getCachedRichData(chainId: bigint) {
 	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
 		getMakeCurrentAddressRich(),
@@ -1227,6 +1186,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,
 		debugId: parsedRequest.data.debugId,
+		rawError: parsedRequest.data.rawError,
 		details: parsedRequest.data,
 		suppressExpectedHandledErrors: false,
 	})

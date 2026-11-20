@@ -4,6 +4,8 @@ type StoredValueRepositoryOptions<T> = {
 	read: () => Promise<T | undefined>
 	write: (value: T) => Promise<void>
 	getDefault: () => T
+	// Recovery handles only errors accepted by this predicate; all others propagate before recovery or writes.
+	canRecover?: (error: unknown) => boolean
 	recover?: (error: unknown, defaultValue: T) => Promise<void>
 }
 
@@ -20,7 +22,7 @@ export function createStoredValueRepository<T>(options: StoredValueRepositoryOpt
 		try {
 			return await options.read() ?? options.getDefault()
 		} catch (error: unknown) {
-			if (options.recover === undefined) throw error
+			if (options.recover === undefined || options.canRecover?.(error) === false) throw error
 			const defaultValue = options.getDefault()
 			await options.recover(error, defaultValue)
 			return defaultValue

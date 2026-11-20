@@ -54,6 +54,7 @@ import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import { getSendAnywayOverrideReason, isRejectOnlyTransaction } from '../../utils/sendAnywayConsent.js'
 import { getReviewedResultId } from '../reviewedResult.js'
 import { createBackoffRetryScheduler } from '../../utils/retryScheduler.js'
+import { openManagementSimulationStackReview } from '../managementNavigation.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 // Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Safe nonce against the pending proposals stored before it (createSafeSigningRequestForTransaction).
@@ -66,10 +67,10 @@ const SIMULATION_MODE_ENABLED_AFTER_REQUEST: PendingTransactionOrSignableMessage
 	...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error,
 }
 
-// Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
+// Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the management simulation stack review opens, where the user continues with the proposal.
 async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
+	await openManagementSimulationStackReview()
 }
 
 // Shows how resolving a request changed the simulation stack. Every outcome is handled here, so a new outcome fails typecheck until it is given its view work.

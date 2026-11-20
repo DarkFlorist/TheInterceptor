@@ -31,16 +31,4 @@ describe('root page CSS', () => {
 			assert.doesNotMatch(text, /min-width\s*:\s*(?:300|320)px\s*;/, path)
 		}
 	})
-
-	test('simulation stack shells mount the app into a div root placeholder', async () => {
-		const simulationStackShells = [
-			'app/html/simulationStack.html',
-			'app/html3/simulationStackV3.html',
-		]
-		for (const path of simulationStackShells) {
-			const text = await Bun.file(path).text()
-			assert.match(text, /<div id = 'simulation-stack-root'>Loading\.\.\.<\/div>/, path)
-			assert.doesNotMatch(text, /<main id = 'simulation-stack-root'>/, path)
-		}
-	})
 })

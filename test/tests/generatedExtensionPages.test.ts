@@ -39,7 +39,7 @@ describe('extension page rendering', () => {
 		assert.doesNotMatch(addressBook, /bulma-(?:badge|divider)\.css/)
 
 		const simulationStack = renderExtensionPage(getPageDefinition('simulationStack'), 3)
-		assert.match(simulationStack, /<div id = 'simulation-stack-root'>Loading\.\.\.<\/div>/)
+		assert.match(simulationStack, /src = '\.\.\/js\/simulationStack\.js'/)
 
 		const watchAsset = renderExtensionPage(getPageDefinition('watchAsset'), 3)
 		assert.match(watchAsset, /<title>Watch Asset - The Interceptor<\/title>/)
@@ -48,11 +48,6 @@ describe('extension page rendering', () => {
 	})
 
 	test('preserves the intentional manifest-specific differences', () => {
-		const websiteAccessV2 = renderExtensionPage(getPageDefinition('websiteAccess'), 2)
-		const websiteAccessV3 = renderExtensionPage(getPageDefinition('websiteAccess'), 3)
-		assert.match(websiteAccessV2, /overflow-y: inherit/)
-		assert.match(websiteAccessV3, /overflow-y: scroll/)
-
 		const confirmTransactionV3 = renderExtensionPage(getPageDefinition('confirmTransaction'), 3)
 		assert.ok(confirmTransactionV3.indexOf('browser-polyfill.js') < confirmTransactionV3.indexOf('<main>Loading...</main>'))
 
