@@ -1,130 +1,47 @@
-import * as assert from 'assert'
+import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
-import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
+import { flushMicrotasks } from '../harness/async.js'
+import { type BrowserMock, createMockPort } from '../harness/browserMock.js'
+import { createPerTestRestorer } from '../harness/perTest.js'
 
-type BrowserStorageState = Record<string, unknown>
-type MockTab = {
-	id: number
-	url: string
-	status: 'complete' | 'loading'
-	title?: string
-	favIconUrl?: string
-}
+const { installBrowserMockForTest } = createPerTestRestorer()
 
-function installBrowserMock(tabs: readonly MockTab[]) {
-	const storageState: BrowserStorageState = {}
-	const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
-	const setIconCalls: browser.action._SetIconDetails[] = []
-	const setTitleCalls: browser.action._SetTitleDetails[] = []
+// The generation only tags popup_websiteIconChanged messages, which these tests do not inspect.
+const popupRefreshGeneration = 0
 
-	globalThis.browser = {
-		runtime: {
-			lastError: null,
-			async sendMessage() {
-				return undefined
-			},
-			getManifest: () => ({ manifest_version: 3 }),
-			onMessage: { addListener: () => undefined, removeListener: () => undefined },
-			onConnect: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		storage: {
-			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
-				},
-				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-				},
-				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
-				},
-			},
-		},
-		tabs: {
-			async query() { return [] },
-			async get(tabId: number) {
-				const tab = tabsById.get(tabId)
-				if (tab === undefined) throw new Error(`No tab with id ${ tabId }`)
-				return tab
-			},
-			async update() { return undefined },
-			onUpdated: { addListener: () => undefined, removeListener: () => undefined },
-			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-		},
-		windows: {
-			async get() { return undefined },
-			async update() { return undefined },
-		},
-		action: {
-			async setIcon(details: browser.action._SetIconDetails) {
-				setIconCalls.push(details)
-				return undefined
-			},
-			async setTitle(details: browser.action._SetTitleDetails) {
-				setTitleCalls.push(details)
-				return undefined
-			},
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		browserAction: {
-			async setIcon() { return undefined },
-			async setTitle() { return undefined },
-			async setBadgeText() { return undefined },
-			async setBadgeBackgroundColor() { return undefined },
-		},
-		declarativeNetRequest: {
-			async getDynamicRules() { return [] },
-			async getSessionRules() { return [] },
-			async updateDynamicRules() { return undefined },
-			async updateSessionRules() { return undefined },
-		},
-		webRequest: {
-			onBeforeRequest: {
-				addListener: () => undefined,
-				removeListener: () => undefined,
-			},
-		},
-	} as typeof globalThis.browser
-	globalThis.chrome = { runtime: { id: 'test-extension' } }
-
-	return { setIconCalls, setTitleCalls }
+function installBrowserMockWithExampleTab() {
+	const browserMock = installBrowserMockForTest({ tabs: [{ id: 1, url: 'https://example.test', status: 'complete' }] })
+	return {
+		browserMock,
+		readSetIconCalls: () => browserMock.calls.action.flatMap((call) => call.api === 'action' && call.method === 'setIcon' ? [call.details] : []),
+		readSetTitleCalls: () => browserMock.calls.action.flatMap((call) => call.api === 'action' && call.method === 'setTitle' ? [call.details] : []),
+	}
 }
 
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
+		...await import('../../app/ts/background/websiteAccessReconciliation.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/iconHandler.js'),
 		...await import('../../app/ts/background/settings.js'),
-		...await importAllPopupMessageHandlers(),
+		...await import('../../app/ts/background/popupMessageHandlers/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/signerStateOwnership.js'),
 	}
 }
 
-function createPort(tabId: number) {
-	return {
-		name: '0x0',
-		sender: { tab: { id: tabId } },
-		postMessage: () => undefined,
-	} as browser.runtime.Port
-}
-
-async function flushAsyncWork() {
-	await Promise.resolve()
-	await Promise.resolve()
-	await new Promise((resolve) => setTimeout(resolve, 0))
+function createPort(browserMock: BrowserMock, tabId: number) {
+	const tab = browserMock.getTab(tabId)
+	assert.ok(tab !== undefined, `tab ${ tabId } is not seeded in the browser mock`)
+	return createMockPort({ name: '0x0', sender: { tab } }).port
 }
 
 describe('extension icon deduping', () => {
 	test('setIcon runs on the first state change and not on an identical follow-up update', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
 		const { changeSimulationMode, updateExtensionIcon, updateTabState } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
@@ -136,17 +53,17 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
-		assert.equal(setIconCalls.length, 1)
-		assert.equal(setTitleCalls.length, 1)
+		await updateExtensionIcon(new Map(), 1, 'example.test', popupRefreshGeneration)
+		assert.equal(readSetIconCalls().length, 1)
+		assert.equal(readSetTitleCalls().length, 1)
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
-		assert.equal(setIconCalls.length, 1)
-		assert.equal(setTitleCalls.length, 1)
+		await updateExtensionIcon(new Map(), 1, 'example.test', popupRefreshGeneration)
+		assert.equal(readSetIconCalls().length, 1)
+		assert.equal(readSetTitleCalls().length, 1)
 	})
 
 	test('title-only icon updates skip setIcon', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
 		const { changeSimulationMode, updateExtensionIcon, updateTabState } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
@@ -158,14 +75,14 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
-		assert.equal(setIconCalls.length, 0)
-		assert.equal(setTitleCalls.length, 1)
-		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
+		await updateExtensionIcon(new Map(), 1, 'example.test', popupRefreshGeneration)
+		assert.equal(readSetIconCalls().length, 0)
+		assert.equal(readSetTitleCalls().length, 1)
+		assert.equal(readSetTitleCalls()[0]?.title, 'No active address selected.')
 	})
 
 	test('icon-only updates skip setTitle', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
 		const { changeSimulationMode, updateExtensionIcon, updateTabState } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
@@ -177,14 +94,14 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test')
-		assert.equal(setIconCalls.length, 1)
-		assert.equal(setTitleCalls.length, 0)
-		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
+		await updateExtensionIcon(new Map(), 1, 'example.test', popupRefreshGeneration)
+		assert.equal(readSetIconCalls().length, 1)
+		assert.equal(readSetTitleCalls().length, 0)
+		assert.deepEqual(readSetIconCalls()[0]?.path, { 128: ICON_NOT_ACTIVE })
 	})
 
 	test('blocked websites with denied access keep the plain denied icon', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
 		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 
 		await updateWebsiteAccess(() => [{
@@ -201,15 +118,15 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(new Map(), 1, 'example.test', popupRefreshGeneration)
 
-		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
-		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
+		assert.deepEqual(readSetIconCalls().at(-1)?.path, { 128: ICON_ACCESS_DENIED })
+		assert.match(readSetTitleCalls().at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
 	})
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { browserMock, readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
+		const { changeSimulationMode, updateTabState, syncWebsiteApprovalsWithSettings } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -220,7 +137,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		const port = createPort(1)
+		const port = createPort(browserMock, 1)
 		const websiteTabConnections = new Map([
 			[1, {
 				connections: {
@@ -230,22 +147,16 @@ describe('extension icon deduping', () => {
 			}],
 		])
 
-		await updateWebsiteApprovalAccesses(
-			undefined,
-			websiteTabConnections,
-			await getSettings(),
-			true,
-			0,
-		)
-		await flushAsyncWork()
+		await syncWebsiteApprovalsWithSettings(websiteTabConnections, { promptForAccessesIfNeeded: false })
+		await flushMicrotasks()
 
-		assert.equal(setIconCalls.length, 1)
-		assert.equal(setTitleCalls.length, 1)
+		assert.equal(readSetIconCalls().length, 1)
+		assert.equal(readSetTitleCalls().length, 1)
 	})
 
 	test('access refresh updates stale icons for tabs without active connections', async () => {
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
+		const { changeSimulationMode, updateTabState, syncWebsiteApprovalsWithSettings } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -257,24 +168,18 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateWebsiteApprovalAccesses(
-			undefined,
-			new Map(),
-			await getSettings(),
-			true,
-			0,
-		)
-		await flushAsyncWork()
+		await syncWebsiteApprovalsWithSettings(new Map(), { promptForAccessesIfNeeded: false })
+		await flushMicrotasks()
 
-		assert.equal(setIconCalls.length, 1)
-		assert.equal(setTitleCalls.length, 1)
-		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
-		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
+		assert.equal(readSetIconCalls().length, 1)
+		assert.equal(readSetTitleCalls().length, 1)
+		assert.deepEqual(readSetIconCalls()[0]?.path, { 128: ICON_NOT_ACTIVE })
+		assert.equal(readSetTitleCalls()[0]?.title, 'No active address selected.')
 	})
 
 	test('imported mode change updates tabs without active connections', async () => {
-		const { changeSimulationMode, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
-		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { changeSimulationMode, getSettings, importSettings, updateTabState, syncWebsiteApprovalsWithSettings } = await loadModules()
+		const { readSetIconCalls, readSetTitleCalls } = installBrowserMockWithExampleTab()
 		const importedSettingsReply = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
 			version: '1.4',
@@ -312,29 +217,23 @@ describe('extension icon deduping', () => {
 
 		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } })
 		assert.equal(importSettingsReply.data.success, true)
-		await updateWebsiteApprovalAccesses(
-			undefined,
-			new Map(),
-			await getSettings(),
-			true,
-			0,
-		)
-		await flushAsyncWork()
+		await syncWebsiteApprovalsWithSettings(new Map(), { promptForAccessesIfNeeded: false })
+		await flushMicrotasks()
 
 		const settings = await getSettings()
 		assert.equal(settings.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(settings.simulationMode, false)
 
-		assert.deepEqual(setIconCalls[0]?.path, { 128: ICON_NOT_ACTIVE })
-		assert.equal(setTitleCalls[0]?.title, 'No active address selected.')
+		assert.deepEqual(readSetIconCalls()[0]?.path, { 128: ICON_NOT_ACTIVE })
+		assert.equal(readSetTitleCalls()[0]?.title, 'No active address selected.')
 	})
 
 	test('last-port disconnect removes the tab entry', async () => {
-		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { browserMock } = installBrowserMockWithExampleTab()
 		const { removeWebsiteTabConnection, websiteSocketToString } = await loadModules()
 
 		const socket = { tabId: 1, connectionName: 0n }
-		const port = createPort(1)
+		const port = createPort(browserMock, 1)
 		const websiteTabConnections = new Map([
 			[1, {
 				connections: {
@@ -349,12 +248,12 @@ describe('extension icon deduping', () => {
 	})
 
 	test('stale port disconnect keeps a replacement connection with the same socket identifier', async () => {
-		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { browserMock } = installBrowserMockWithExampleTab()
 		const { removeWebsiteTabConnection, websiteSocketToString } = await loadModules()
 
 		const socket = { tabId: 1, connectionName: 0n }
-		const disconnectedPort = createPort(1)
-		const replacementPort = createPort(1)
+		const disconnectedPort = createPort(browserMock, 1)
+		const replacementPort = createPort(browserMock, 1)
 		const connectionIdentifier = websiteSocketToString(socket)
 		const websiteTabConnections = new Map([
 			[1, {
@@ -372,13 +271,13 @@ describe('extension icon deduping', () => {
 	})
 
 	test('signer owner disconnect releases ownership while sibling connections remain', async () => {
-		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { browserMock } = installBrowserMockWithExampleTab()
 		const { removeWebsiteTabConnection, websiteSocketToString } = await loadModules()
 
 		const ownerSocket = { tabId: 1, connectionName: 0n }
 		const siblingSocket = { tabId: 1, connectionName: 1n }
-		const ownerPort = createPort(1)
-		const siblingPort = createPort(1)
+		const ownerPort = createPort(browserMock, 1)
+		const siblingPort = createPort(browserMock, 1)
 		const websiteTabConnections = new Map([
 			[1, {
 				connections: {
@@ -403,7 +302,7 @@ describe('extension icon deduping', () => {
 	})
 
 	test('BFCache restoration provisionally reclaims signer ownership before the previous page disconnects', async () => {
-		installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { browserMock } = installBrowserMockWithExampleTab()
 		const {
 			getTabState,
 			registerWebsiteConnectionAndProvisionallyClaimSignerState,
@@ -414,9 +313,9 @@ describe('extension icon deduping', () => {
 
 		const restoredSocket = { tabId: 1, connectionName: 10n }
 		const previousPageSocket = { tabId: 1, connectionName: 11n }
-		const staleRestoredPort = createPort(1)
-		const restoredPort = createPort(1)
-		const previousPagePort = createPort(1)
+		const staleRestoredPort = createPort(browserMock, 1)
+		const restoredPort = createPort(browserMock, 1)
+		const previousPagePort = createPort(browserMock, 1)
 		const staleAccount = 0x1111111111111111111111111111111111111111n
 		const websiteTabConnections = new Map([
 			[1, {

@@ -16,17 +16,17 @@ import { isJSON } from '../../utils/json.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from '../metadataSearch.js'
 import { identifyAddress } from '../metadataUtils.js'
-import { getPage, setPage, getSettings } from '../settings.js'
+import { getPage, setPage } from '../settings.js'
 import { addEnsLabelHash, addEnsNodeHash, updateUserAddressBookEntries } from '../storageVariables.js'
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { syncWebsiteApprovalsWithSettings } from '../websiteAccessReconciliation.js'
 
-export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
+export async function removeAddressBookEntry(websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
 	await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await syncWebsiteApprovalsWithSettings(websiteTabConnections, { promptForAccessesIfNeeded: true })
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -74,7 +74,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
+		if (entryToStore.useAsActiveAddress) await syncWebsiteApprovalsWithSettings(websiteTabConnections, { promptForAccessesIfNeeded: true, throwOnError: true })
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
