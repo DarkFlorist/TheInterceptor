@@ -1,7 +1,7 @@
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { DecodedError } from '../types/error.js'
 import type { VisualizedPersonalSignRequest } from '../types/personal-message-definitions.js'
-import { isPossibleToSignMessage } from './personalSignRequest.js'
+import { canSignatureRequestProceedWithoutOverride } from './personalSignRequest.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from './requests.js'
 import { getVisualizedTransactionResult } from './visualizedTransactionResult.js'
 
@@ -23,18 +23,13 @@ type SendAnywayConsent = {
 // The popup shows the decoded reason and revert data, and two different reverts can share the raw message, so all error fields count.
 const getFailureFields = (error: DecodedError): DecodedError => ({ code: error.code, message: error.message, decodedErrorMessage: error.decodedErrorMessage, data: error.data })
 
-// A quarantined signature request needs the acknowledgement wherever acknowledging lets the request proceed: always in signing mode, and in simulation mode when the simulation signer can sign it or the RPC can simulate it, matching shouldDisableSignableMessageConfirm.
-function canAcknowledgeQuarantinedSignature(visualizedPersonalSignRequest: VisualizedPersonalSignRequest) {
-	return isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address)
-		|| visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined
-}
-
 // What the user acknowledges by ticking send-anyway: why the override is needed, the failure and the quarantine reasons. Fees, timestamps, balances and other per-block churn are left out, including the insufficient-balance wording the popup derives from balances for the same failure.
 function getSendAnywayConsent(pending: SendAnywayConsentInput): SendAnywayConsent | undefined {
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 	if (pending.type === 'SignableMessage') {
 		const signRequest = pending.visualizedPersonalSignRequest
-		if (!signRequest.quarantine || !canAcknowledgeQuarantinedSignature(signRequest)) return undefined
+		// A quarantined signature request needs the acknowledgement wherever it can otherwise proceed, matching the popup's shouldDisableSignableMessageConfirm.
+		if (!signRequest.quarantine || !canSignatureRequestProceedWithoutOverride(signRequest)) return undefined
 		return { reason: 'quarantinedSignature', failure: undefined, quarantineReasons: signRequest.quarantineReasons }
 	}
 	const result = getVisualizedTransactionResult(pending.popupVisualisation, pending.transactionIdentifier)

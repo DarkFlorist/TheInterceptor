@@ -168,3 +168,35 @@ test('signing mode still requires the acknowledgement for a quarantined typed-da
 		await page.cleanup()
 	}
 })
+
+test('the popup enables Confirm for a signature request only when the background would accept it', async () => {
+	const { shouldDisableSignableMessageConfirm } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
+	const { getSendAnywayOverrideReason } = await import('../../app/ts/utils/sendAnywayConsent.js')
+	const { canSignatureRequestProceedWithoutOverride } = await import('../../app/ts/utils/personalSignRequest.js')
+	const { MOCK_PRIVATE_KEYS_ADDRESS } = await import('../../app/ts/utils/constants.js')
+	await openQuarantinedSignatureRequest(true, createApprovedConnections([]))
+	const [stored] = await modules.getPendingTransactionsAndMessages()
+	if (stored?.type !== 'SignableMessage' || stored.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected a prepared signature request')
+	for (const simulationMode of [true, false]) {
+		for (const httpsRpc of ['https://rpc.example.test', undefined]) {
+			for (const signingAddress of [MOCK_PRIVATE_KEYS_ADDRESS, activeAddress]) {
+				for (const quarantine of [true, false]) {
+					const base = stored.visualizedPersonalSignRequest
+					const visualizedPersonalSignRequest = { ...base, simulationMode, quarantine, rpcNetwork: { ...base.rpcNetwork, httpsRpc }, activeAddress: { ...base.activeAddress, address: signingAddress } }
+					const pending = { ...stored, visualizedPersonalSignRequest }
+					const overrideReason = getSendAnywayOverrideReason(pending)
+					const canProceed = canSignatureRequestProceedWithoutOverride(visualizedPersonalSignRequest)
+					for (const forceSend of [false, true]) {
+						const description = JSON.stringify({ simulationMode, httpsRpc, signingAddress: signingAddress.toString(16), quarantine, forceSend })
+						// The popup's Confirm rules for a signature request (isConfirmDisabled in ConfirmTransaction) and the background's send-anyway accept check (isAcceptForStoredResult).
+						const popupEnablesConfirm = !(overrideReason !== undefined && !forceSend) && !shouldDisableSignableMessageConfirm({ isValidMessage: true, canProceedWithoutOverride: canProceed, forceSendEnabled: forceSend, quarantined: quarantine })
+						const backgroundAccepts = forceSend || overrideReason === undefined
+						if (popupEnablesConfirm) assert.equal(backgroundAccepts, true, description)
+						// Where the request can proceed, the send-anyway override is the only gate on either side, so both decide alike.
+						if (canProceed) assert.equal(popupEnablesConfirm, backgroundAccepts, description)
+					}
+				}
+			}
+		}
+	}
+})

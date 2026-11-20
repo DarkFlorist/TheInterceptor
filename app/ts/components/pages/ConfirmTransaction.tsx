@@ -31,7 +31,7 @@ import { identifySignature } from '../simulationExplaining/identifySignature.js'
 import { InvalidMessage, SignatureCard, SignatureHeader } from './PersonalSign.js'
 import { type SendAnywayOverrideReason, getSendAnywayOverrideReason, isRejectOnlyTransaction, isSameSendAnywayConsent } from '../../utils/sendAnywayConsent.js'
 import { getResultsForTransaction, getVisualizedTransactionResult } from '../../utils/visualizedTransactionResult.js'
-import { isPossibleToSignMessage } from '../../utils/personalSignRequest.js'
+import { canSignatureRequestProceedWithoutOverride } from '../../utils/personalSignRequest.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
@@ -121,16 +121,16 @@ export function getAddressBookEntryForEdit(clickedEntry: AddressBookEntry, addre
 
 const HALF_HEADER_HEIGHT = 48 / 2
 
+// canProceedWithoutOverride comes from canSignatureRequestProceedWithoutOverride, the rule the background's send-anyway check also uses.
 export function shouldDisableSignableMessageConfirm(params: {
 	isValidMessage: boolean
-	canSignMessage: boolean
+	canProceedWithoutOverride: boolean
 	forceSendEnabled: boolean
-	hasSupportedRpc: boolean
 	quarantined: boolean
 }) {
 	if (!params.isValidMessage) return true
-	if (params.quarantined && !params.forceSendEnabled) return true
-	return !params.canSignMessage && !params.forceSendEnabled && !params.hasSupportedRpc
+	if (params.forceSendEnabled) return false
+	return params.quarantined || !params.canProceedWithoutOverride
 }
 
 export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
@@ -1031,9 +1031,8 @@ export function ConfirmTransaction() {
 		if (pending.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
-				canSignMessage: isPossibleToSignMessage(pending.visualizedPersonalSignRequest, pending.activeAddress),
+				canProceedWithoutOverride: canSignatureRequestProceedWithoutOverride(pending.visualizedPersonalSignRequest),
 				forceSendEnabled: forceSend.value,
-				hasSupportedRpc: pending.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
 				quarantined: pending.visualizedPersonalSignRequest.quarantine,
 			})
 		}

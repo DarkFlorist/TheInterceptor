@@ -53,9 +53,8 @@ describe('ConfirmTransaction signable message disable logic', () => {
 		const { shouldDisableSignableMessageConfirm } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 		assert.equal(shouldDisableSignableMessageConfirm({
 			isValidMessage: true,
-			canSignMessage: false,
+			canProceedWithoutOverride: false,
 			forceSendEnabled: false,
-			hasSupportedRpc: false,
 			quarantined: false,
 		}), true)
 	})
@@ -65,9 +64,8 @@ describe('ConfirmTransaction signable message disable logic', () => {
 		const { shouldDisableSignableMessageConfirm } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 		assert.equal(shouldDisableSignableMessageConfirm({
 			isValidMessage: true,
-			canSignMessage: false,
+			canProceedWithoutOverride: false,
 			forceSendEnabled: true,
-			hasSupportedRpc: false,
 			quarantined: false,
 		}), false)
 	})
@@ -77,8 +75,7 @@ describe('ConfirmTransaction signable message disable logic', () => {
 		const { shouldDisableSignableMessageConfirm } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 		const base = {
 			isValidMessage: true,
-			canSignMessage: true,
-			hasSupportedRpc: true,
+			canProceedWithoutOverride: true,
 			quarantined: true,
 		}
 
