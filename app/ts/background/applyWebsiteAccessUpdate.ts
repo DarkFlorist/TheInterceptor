@@ -1,8 +1,7 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { createWorkflowStepsError, type WorkflowStepFailure } from '../utils/errors.js'
-import { updateWebsiteApprovalAccesses } from './accessManagement.js'
-import { getSettings } from './settings.js'
+import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
 import type { WebsiteAccessMutation } from './websiteAccessMutations.js'
 import { tryUpdateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
@@ -34,7 +33,8 @@ const reloadConnectedTabsStep = (websiteTabConnections: WebsiteTabConnections): 
 async function runStepsThenReconcileApprovals(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, stepsBeforeReconciliation: readonly WebsiteAccessFollowUpStep[], failures: WorkflowStepFailure[] = []) {
 	const reconcileApprovalsStep: WebsiteAccessFollowUpStep = {
 		code: 'website_access_approval_reconciliation_failed',
-		run: async () => { await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true) },
+		// Awaits only the stored authority; prompts and icons follow in the background, also after an earlier step failed, so the toolbar matches what was committed.
+		run: async () => { startWebsiteAccessUiUpdateInBackground(simulationServicesOwner, websiteTabConnections, await reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections), true) },
 	}
 	for (const step of [...stepsBeforeReconciliation, reconcileApprovalsStep]) {
 		try {
