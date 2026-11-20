@@ -4,6 +4,7 @@ import type { RichAccountBalance, RichModeState, RichToken, RichTokenLayout } fr
 import { getDefaultRichTokenAmount, getRichTokenOptions, reconcileRichTokenMetadata, sameRichTokenIdentity } from './richTokens.js'
 
 // Pure derivations of rich-mode state, shared by the storage owner (richModeSettings), the popup payloads and the storage-free simulation input builder. Nothing here reads or writes storage.
+
 // The stored layout of a presented token, which never carries a funding amount.
 export const richTokenLayout = ({ amount: _amount, ...layout }: RichToken): RichTokenLayout => layout
 
