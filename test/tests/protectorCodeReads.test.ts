@@ -1,7 +1,7 @@
 import { test } from 'bun:test'
 import * as assert from 'assert'
-import { getCodeOrError } from '../../app/ts/simulation/protectors/commonTokenOops.js'
-import type { ProtectorChainReads } from '../../app/ts/simulation/protectorChainReads.js'
+import { getCodeOrError } from '../../app/ts/simulation/protectors/codeVerification.js'
+import type { ProtectorChainReads } from '../../app/ts/simulation/protectorTypes.js'
 import type { IdentifyAddress } from '../../app/ts/types/metadataLookups.js'
 
 const address = 123n

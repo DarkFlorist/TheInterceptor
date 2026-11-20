@@ -569,7 +569,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(createLiveProtectorChainReads(ethereum, requestAbortController, slicedSimulationState), transaction, ethereum.getChainId(), identifyAddressWith(ethereum, requestAbortController), eventsForTransactionPromise)
+				return await runProtectorsForTransaction(transaction.transaction, { chainReads: createLiveProtectorChainReads(ethereum, requestAbortController, slicedSimulationState), connectedChainId: ethereum.getChainId(), identify: identifyAddressWith(ethereum, requestAbortController), eventsPromise: eventsForTransactionPromise })
 			})
 		}
 	)
