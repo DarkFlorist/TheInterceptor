@@ -3329,6 +3329,24 @@ describe('background eth_accounts', () => {
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, true)
 	})
 
+	test('the consent dialog associates only the exact origin\'s address grants, never a legacy record\'s that approval would drop', async () => {
+		installBrowserMock()
+		const { getAssociatedAddresses, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const legacyGrantedAddress = 0x5757575757575757575757575757575757575757n
+		const requestedAddress = 0x5858585858585858585858585858585858585858n
+		await updateUserAddressBookEntries(() => [
+			{ type: 'contact', name: 'Legacy granted', address: legacyGrantedAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+			{ type: 'contact', name: 'Requested', address: requestedAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+		])
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'example.test' }, access: true, addressAccess: [{ address: legacyGrantedAddress, access: true }] }])
+		const settings = await getSettings()
+		const requested = { type: 'contact' as const, name: 'Requested', address: requestedAddress, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
+
+		const associatedAddresses = await getAssociatedAddresses(settings, 'https://example.test', requested)
+
+		assert.deepEqual(associatedAddresses.map((entry) => entry.address), [requestedAddress])
+	})
+
 	test('suspends approved ports before publishing a signer account transition', async () => {
 		installBrowserMock()
 		const { suspendWebsitePortApprovalsForTab, websiteSocketToString } = await loadModules()

@@ -36,7 +36,7 @@ describe('website access legacy rebinding', () => {
 		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), false)
 	})
 
-	test('rebinds a legacy test-site grant only after an explicit decision and preserves its settings', () => {
+	test('rebinds a legacy test-site grant only after an explicit decision, keeping its settings and denials but not its other address grants', () => {
 		const previousAccess = [{
 			website: { websiteOrigin: 'example.test:8080', icon: undefined, title: 'Legacy test site' },
 			access: true,
@@ -61,9 +61,44 @@ describe('website access legacy rebinding', () => {
 		assert.equal(updated[0]?.interceptorDisabled, false)
 		assert.equal(updated[0]?.declarativeNetRequestBlockMode, 'block-all')
 		assert.deepEqual(updated[0]?.addressAccess, [
-			{ address: firstAddress, access: true },
 			{ address: secondAddress, access: false },
+			{ address: firstAddress, access: true },
 		])
+	})
+
+	test('a page-level approval rebinds a legacy record without the address grants its consent dialog never showed', () => {
+		const askingAddress: ContactEntry = { type: 'contact', address: firstAddress, name: 'First', entrySource: 'User', askForAddressAccess: true }
+		const previousAccess = [{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy site' },
+			access: true,
+			addressAccess: [
+				{ address: firstAddress, access: true },
+				{ address: secondAddress, access: true },
+			],
+		}]
+
+		const updated = applyWebsiteAccessDecision(previousAccess, { websiteOrigin: 'https://example.test', icon: undefined, title: 'Current site' }, true, undefined)
+
+		assert.equal(updated.length, 1)
+		assert.equal(updated[0]?.website.websiteOrigin, 'https://example.test')
+		assert.equal(updated[0]?.access, true)
+		assert.equal(updated[0]?.addressAccess, undefined)
+		// The page is approved, but each account that asks for access must be approved again for the exact origin.
+		assert.equal(hasAccess(updated, 'https://example.test'), 'hasAccess')
+		assert.equal(hasAddressAccess(updated, 'https://example.test', askingAddress), 'askAccess')
+	})
+
+	test('a page-level approval keeps a legacy record\'s address denials', () => {
+		const updated = applyWebsiteAccessDecision([{
+			website: { websiteOrigin: 'example.test' },
+			access: true,
+			addressAccess: [
+				{ address: firstAddress, access: true },
+				{ address: secondAddress, access: false },
+			],
+		}], { websiteOrigin: 'https://example.test' }, true, undefined)
+
+		assert.deepEqual(updated[0]?.addressAccess, [{ address: secondAddress, access: false }])
 	})
 
 	test('does not promote legacy grants when the current origin is denied', () => {
@@ -208,9 +243,11 @@ describe('stored website details lookup', () => {
 		assert.equal(findWebsiteAccessEntryForOrigin([legacy], 'https://other.test'), undefined)
 		// Reading a legacy record's details never grants access: only an exact record can.
 		assert.equal(hasAccess([legacy], 'https://example.test'), 'askAccess')
-		// The rebinding decision acts on the same record that the lookup reads.
+		// The rebinding decision acts on the same record that the lookup reads, dropping its address grants.
 		const rebound = applyWebsiteAccessDecision([legacy], exact.website, true, undefined)
-		assert.deepEqual(rebound[0]?.addressAccess, legacy.addressAccess)
+		assert.equal(rebound.length, 1)
+		assert.equal(rebound[0]?.website.title, 'Legacy')
+		assert.equal(rebound[0]?.addressAccess, undefined)
 		assert.equal(rebound[0]?.website.websiteOrigin, 'https://example.test')
 	})
 })

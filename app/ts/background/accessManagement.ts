@@ -18,7 +18,7 @@ import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
-import { findWebsiteAccessEntryForOrigin, hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
+import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
 import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 import { applyWebsiteAccessDecision } from './websiteAccessDecision.js'
@@ -75,9 +75,9 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 	return askAccessIfUnknown ? 'askAccess' : 'noAccess'
 }
 
-// Includes a not-yet-rebound legacy record's address grants, because approving the origin rebinds that record with them, so the consent dialog lists every address the website would be able to associate.
+// Only the exact record's address decisions: approving the origin rebinds a legacy host-only record without its address grants (applyWebsiteAccessDecision), so those grants never become associated addresses.
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
-	return findWebsiteAccessEntryForOrigin(websiteAccess, websiteOrigin)?.addressAccess ?? []
+	return websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.addressAccess ?? []
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)

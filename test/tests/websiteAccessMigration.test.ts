@@ -65,6 +65,22 @@ describe('website access migration', () => {
 		assert.equal(storageState.websiteAccess[4]?.website.websiteOrigin, 'https://already.example')
 	})
 
+	test('keeps a legacy host-only record\'s address grants on its host key, where they grant no exact origin', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		const { WebsiteAccessArray } = await import('../../app/ts/types/websiteAccessTypes.js')
+		const { hasAddressAccess } = await import('../../app/ts/background/websiteAccessPolicy.js')
+		const legacyAddress = '0x1111111111111111111111111111111111111111'
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: true, addressAccess: [{ address: legacyAddress, access: true }] }]
+
+		await migrateWebsiteAccess()
+
+		assert.deepEqual(storageState.websiteAccess, [{ website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: true, addressAccess: [{ address: legacyAddress, access: true }] }])
+		const migrated = WebsiteAccessArray.parse(storageState.websiteAccess)
+		const address = { type: 'contact' as const, address: BigInt(legacyAddress), name: 'Legacy account', entrySource: 'User' as const, askForAddressAccess: true }
+		assert.equal(hasAddressAccess(migrated, 'https://example.test', address), 'askAccess')
+	})
+
 	test('merges records that canonicalize to one origin, keeping the more restrictive decision on each field', async () => {
 		const storageState = installBrowserMock()
 		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')

@@ -1,4 +1,4 @@
-import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { Website, WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
@@ -36,22 +36,25 @@ export function applyWebsiteAccessDecision(previousWebsiteAccess: WebsiteAccessA
 
 	const mergedWebsiteMetadata = mergeStoredWebsiteMetadata(foundEntry.website, website)
 	const websiteData = { ...mergedWebsiteMetadata, websiteOrigin: website.websiteOrigin }
-	if (exactEntryIndex === -1 && access === false) {
-		// A denial identifies the exact origin but does not authorize carrying scheme-ambiguous legacy grants into that origin.
-		const restrictiveAddressAccess = foundEntry.addressAccess?.filter((entry) => entry.access === false) ?? []
-		const nextAddressAccess = address === undefined
-			? restrictiveAddressAccess
-			: [
-				...restrictiveAddressAccess.filter((entry) => entry.address !== address),
-				{ address, access: false },
-			]
+	if (exactEntryIndex !== -1) return applyDecisionToEntry(previousWebsiteAccess, exactEntryIndex, foundEntry, websiteData, access, address)
+	// Rebinding a scheme-ambiguous legacy record to this exact origin keeps only its denials. Its per-address grants were never shown in this decision's consent dialog, so carrying them over would authorize accounts the user did not approve for this origin; the user approves those accounts again.
+	const legacyDenials = foundEntry.addressAccess?.filter((entry) => entry.access === false) ?? []
+	const reboundEntry = { ...foundEntry, addressAccess: legacyDenials.length === 0 ? undefined : legacyDenials }
+	if (access === false) {
+		// A denial identifies the exact origin but does not authorize carrying the legacy page-level grant into that origin either.
+		const nextAddressAccess = address === undefined ? legacyDenials : [...legacyDenials.filter((entry) => entry.address !== address), { address, access: false }]
 		return replaceElementInReadonlyArray(previousWebsiteAccess, foundEntryIndex, {
-			...foundEntry,
+			...reboundEntry,
 			website: websiteData,
 			access: false,
 			addressAccess: nextAddressAccess.length === 0 ? undefined : nextAddressAccess,
 		})
 	}
+	return applyDecisionToEntry(previousWebsiteAccess, foundEntryIndex, reboundEntry, websiteData, access, address)
+}
+
+// Applies a decision to the record at foundEntryIndex, which is either the origin's exact record or a legacy record already reduced to what may be rebound to the origin.
+function applyDecisionToEntry(previousWebsiteAccess: WebsiteAccessArray, foundEntryIndex: number, foundEntry: WebsiteAccess, websiteData: Website, access: boolean, address: bigint | undefined): WebsiteAccessArray {
 	if (address === undefined) {
 		return replaceElementInReadonlyArray(previousWebsiteAccess, foundEntryIndex, modifyObject(foundEntry, { website: websiteData, access }))
 	}
