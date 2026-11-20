@@ -10,7 +10,7 @@
 // inpage.ts is a classic script that installs its provider when it runs, so every scenario imports a fresh copy through a unique `?tag` import suffix while the fake window is installed as globalThis.window.
 //
 // createFakeWindow plays both sides of the page: the dapp window (events, postMessage and an injected fake MetaMask signer) and the background script behind the bridge MessagePort. handleRequest sees every bridge request first and returns true when it answered or deliberately swallowed it; otherwise the default background replies in handleInpageRequest answer.
-import { isObjectWithOptionalProperties, type PropertiesOf } from '../harness/assertions.js'
+import { canReadObjectProperties, type PropertiesOf } from '../harness/assertions.js'
 import { replaceGlobal } from '../harness/globals.js'
 
 export type PageEvent = { readonly type: string, readonly data?: unknown, readonly detail?: unknown, readonly ports?: readonly MessagePort[], readonly origin?: string, readonly source?: unknown }
@@ -39,8 +39,8 @@ type FakeWindowOptions = {
 	readonly signerInitialSelectedAddress?: string
 }
 
-// These guards only reject non-objects (see isObjectWithOptionalProperties); they let tests read message fields without casts or index-signature access.
-const createPropertiesGuard = <Keys extends string>() => (value: unknown): value is PropertiesOf<Keys> => isObjectWithOptionalProperties<Keys>(value)
+// These guards only reject non-objects (see canReadObjectProperties); they let tests read message fields without casts or index-signature access.
+const createPropertiesGuard = <Keys extends string>() => (value: unknown): value is PropertiesOf<Keys> => canReadObjectProperties<Keys>(value)
 
 const isBridgeRequestCandidate = createPropertiesGuard<'type' | 'method' | 'params' | 'requestId' | 'usingInterceptorWithoutSigner' | 'internal' | 'replayOnDisconnect'>()
 const isMessageWithType = createPropertiesGuard<'type'>()

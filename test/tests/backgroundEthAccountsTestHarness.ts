@@ -1,8 +1,8 @@
 // Shared setup for tests that drive the background script's website-connection, account-access and signer flows.
 //
 // Usage:
-//   const installBrowserMock = createRestoringBrowserMockInstaller()  // once per file; restores the globals after each test
-//   const browserMock = installBrowserMock()                           // test/harness/browserMock.ts mock plus the background-specific helpers below
+//   const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()  // once per file; restores the globals after each test
+//   const browserMock = installBackgroundBrowserMockForTest()                           // test/harness/browserMock.ts mock plus the background-specific helpers below
 //   const { handleInterceptedRequest } = await loadModules()
 //   const { port, messages } = createPort(socket.tabId)                // a website port whose posted messages are collected as PortMessage values
 //   await waitForPortMessageCount(messages, 'accountsChanged', 1)
@@ -30,11 +30,16 @@ export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async 
 // Background modules keep dialog window ids between tests (the open access dialog, for example), so each mock creates tabs and windows from a fresh id range, like one long browser session that never reuses ids; otherwise closing an earlier test's dialog would close this test's new dialog.
 const createdIdRangeSize = 1000
 let createdIdRangeStart = 0
+// IDs are opaque, like Chrome's IDs in a single long-lived session. Tests assert relationships, never fixed created IDs. Resetting this counter per test would let cached background modules close a later test's unrelated dialog.
+const reserveFreshDialogIds = () => {
+	createdIdRangeStart += createdIdRangeSize
+	return { tab: createdIdRangeStart, window: createdIdRangeStart }
+}
 
 // The website tabs that most background tests connect ports from. They are inactive, so tabs.query({ active: true }) still finds no current tab.
 const defaultWebsiteTabs: readonly MockTabSeed[] = [{ id: 1 }, { id: 2 }]
 
-export type BackgroundBrowserMockOptions = BrowserMockOptions & {
+export type BackgroundBrowserMockOptions = Omit<BrowserMockOptions, 'firstCreatedIds'> & {
 	// Holds the first storage removal of chainChangeConfirmationPromise until releaseDeferredChainChangeRemoval() is called.
 	readonly deferFirstChainChangeRemoval?: boolean
 }
@@ -56,12 +61,11 @@ export type BackgroundBrowserMock = BrowserMock & {
 
 // Installs test/harness/browserMock.ts with the extension id and location origin that the background tests expect, counts request-blocking work, and seeds defaultWebsiteTabs unless options.tabs lists the website tabs (a website port's tab must exist, or the background treats the website as closed). restore() puts back the previous browser, chrome and location globals.
 export function installBackgroundBrowserMock({ deferFirstChainChangeRemoval = false, ...options }: BackgroundBrowserMockOptions = {}): BackgroundBrowserMock {
-	createdIdRangeStart += createdIdRangeSize
 	const browserMock = installSharedBrowserMock({
 		extensionId: 'test-extension',
 		tabs: defaultWebsiteTabs,
-		firstCreatedIds: { tab: createdIdRangeStart, window: createdIdRangeStart },
 		...options,
+		firstCreatedIds: reserveFreshDialogIds(),
 	})
 	const restoreLocation = replaceGlobal('location', { origin: '' })
 
@@ -113,12 +117,7 @@ export function installBackgroundBrowserMock({ deferFirstChainChangeRemoval = fa
 
 // The background flavour of test/harness/perTest.ts createPerTestBrowserMockInstaller: call once at file or describe level, call the returned installer in each test, and the globals those mocks replaced are restored after the test, newest first.
 export function createRestoringBrowserMockInstaller(): (options?: BackgroundBrowserMockOptions) => BackgroundBrowserMock {
-	const { restoreAfterTest } = createPerTestRestorer()
-	return (options) => {
-		const browserMock = installBackgroundBrowserMock(options)
-		restoreAfterTest(browserMock.restore)
-		return browserMock
-	}
+	return createPerTestRestorer().installForTest(installBackgroundBrowserMock)
 }
 
 // Reads one stored local-storage value, or undefined when the key is absent, like browser.storage.local.get(key)[key].
@@ -141,7 +140,8 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+// Legacy background stub; migrated tests use the restoring shared installer above.
+export function installLegacyBackgroundBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []

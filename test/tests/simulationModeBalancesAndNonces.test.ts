@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { createExecutionSimulationState, createSimulationState, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, mockSignTransaction, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
@@ -7,7 +7,8 @@ import { Erc20ABI } from '../../app/ts/utils/abi.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { createSimulationModeTestContext, example7702Transaction, exampleTransaction } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { requestHandler, ethereum } = createSimulationModeTestContext()
+const { requestHandler, ethereum, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 
 describe('SimulationModeEthereumClientService', () => {
 	test('sponsored 7702 authorizations increment both the sponsor and authority nonces', async () => {
