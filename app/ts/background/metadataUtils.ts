@@ -1,7 +1,6 @@
 import { addressString, addressStringWithout0x } from '../utils/bigint.js'
 import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
-import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
 import { getAddress, keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -15,7 +14,6 @@ import type { RpcNetwork } from '../types/rpc.js'
 import type { IdentifyAddress, LookUpEnsName, MetadataLookups } from '../types/metadataLookups.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
-const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
 import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, EnrichedEthereumInputData, EnsEvent, SolidityVariable, TokenEvent, TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereumData.js'
 import type { PureGroupedSolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
@@ -24,10 +22,7 @@ import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/er
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
-
-const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
-
-export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
+import { bundledMetadataToAddressBookEntry, findBundledMetadataForChain } from './bundledMetadata.js'
 
 /**
  * Resolves metadata for an address being surfaced as an active account. This
@@ -81,61 +76,8 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
-	const addrString = addressString(address)
-	// bundled @darkflorist/address-metadata entries describe Ethereum mainnet contracts only
-	const useBundledMetadata = chainId === 1n
-	const addressData = useBundledMetadata ? contractMetadata.get(addrString) : undefined
-	if (addressData) {
-		const { logoUri, ...rest } = addressData
-		return {
-			...rest,
-			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-			address: address,
-			type: 'contract',
-			entrySource: 'DarkFloristMetadata',
-			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
-		}
-	}
-
-	const tokenData = useBundledMetadata ? tokenMetadata.get(addrString) : undefined
-	if (tokenData) {
-		const { logoUri, ...rest } = tokenData
-		return {
-			...rest,
-			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-			address: address,
-			type: 'ERC20',
-			entrySource: 'DarkFloristMetadata',
-			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
-		}
-	}
-
-	const erc721TokenData = useBundledMetadata ? erc721Metadata.get(addrString) : undefined
-	if (erc721TokenData) {
-		const { logoUri, ...rest } = erc721TokenData
-		return {
-			...rest,
-			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-			address: address,
-			type: 'ERC721',
-			entrySource: 'DarkFloristMetadata',
-			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
-		}
-	}
-
-	const erc1155TokenData = useBundledMetadata ? erc1155Metadata.get(addrString) : undefined
-	if (erc1155TokenData) {
-		const { logoUri, ...rest } = erc1155TokenData
-		return {
-			...rest,
-			...(logoUri !== undefined ? { logoUri: `${ getFullLogoUri(logoUri) }` } : {}),
-			address: address,
-			type: 'ERC1155',
-			entrySource: 'DarkFloristMetadata',
-			decimals: undefined,
-			...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
-		}
-	}
+	const bundledMetadata = findBundledMetadataForChain(address, chainId)
+	if (bundledMetadata !== undefined) return { ...bundledMetadataToAddressBookEntry(bundledMetadata), ...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}) }
 
 	if (address === MOCK_ADDRESS) return {
 		address: address,
