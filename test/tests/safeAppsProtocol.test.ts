@@ -3,8 +3,7 @@ import { test } from 'bun:test'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { getSDKVersion } from '@safe-global/safe-apps-sdk'
-import { createSafeAppsErrorResponse, createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_PREPARATION_CANCEL_MESSAGE, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
-import { SAFE_APPS_PREPARATION_CANCEL_MESSAGE as BACKGROUND_SAFE_APPS_PREPARATION_CANCEL_MESSAGE } from '../../app/ts/background/prepareSafeApp.js'
+import { createSafeAppsErrorResponse, createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
 
 test('the host and provider use one SDK version validator and preserve request parameters', () => {
 	for (const version of ['9.1.0', '1.0.0', '9.1.0-beta.1', '9.1.0+build-2']) {
@@ -37,10 +36,6 @@ test('provider rejections of host-forwarded requests echo the bridge token the h
 // The SDK is only a test dependency, so this check guards version drift without the production bundler loading it.
 test('the Safe Apps response version matches the installed Safe Apps SDK', () => {
 	assert.equal(SAFE_APPS_RESPONSE_VERSION, getSDKVersion())
-})
-
-test('the background reports the same preparation cancellation message as the injected page', () => {
-	assert.equal(BACKGROUND_SAFE_APPS_PREPARATION_CANCEL_MESSAGE, SAFE_APPS_PREPARATION_CANCEL_MESSAGE)
 })
 
 test('page-injected sources import only sibling modules inside app/inpage/ts', () => {

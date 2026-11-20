@@ -64,6 +64,7 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 	let documentId: string | undefined = 'document-3'
 	let navigateDuringRequest = false
 	let approved = true
+	let pageCancelled = false
 	let requests = 0
 	let reloads = 0
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
@@ -88,7 +89,7 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 			// A successful real probe finishes ordinary website approval before returning.
 			if (approved) access = true
 			if (navigateDuringRequest) navigationOrigin = 'https://other.example'
-			return [{ result: { success: approved, error: 'Rejected.' } }]
+			return [{ result: pageCancelled ? { success: false, cancelled: true } : { success: approved, error: 'Rejected.' } }]
 		} },
 	} })
 	try {
@@ -124,6 +125,11 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 		navigateDuringRequest = false
 		navigationOrigin = 'not a valid URL'
 		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /navigated/)
+		assert.equal(reloads, 1)
+		navigationOrigin = 'https://safe-app.example'
+		// The page reports cancellation as a flag; the background supplies the user-facing text.
+		pageCancelled = true
+		assert.deepEqual(await prepareSafeAppTab('https://safe-app.example'), { success: false, errorMessage: 'Safe connection was cancelled.' })
 		assert.equal(reloads, 1)
 	} finally {
 		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
@@ -191,7 +197,7 @@ test('compiled preparation entrypoint returns the bridge reply without backgroun
 		fakeWindow.addEventListener('message', () => { requests++ })
 		runInNewContext(cancelSource, { window: fakeWindow, Event })
 		const cancelled: unknown = runInNewContext(source, { window: fakeWindow, crypto })
-		assert.deepEqual(await cancelled, { success: false, error: 'Safe connection was cancelled.' })
+		assert.deepEqual(await cancelled, { success: false, cancelled: true })
 		assert.equal(requests, 0)
 		runInNewContext(clearSource, { window: fakeWindow })
 		assert.equal(Reflect.get(fakeWindow, SAFE_APPS_PREPARATION_CANCEL_MARKER), undefined)
@@ -204,7 +210,7 @@ test('page preparation cancellation settles immediately and clears the probe tim
 		const pending = requestSafeAppConnection(origin)
 		assert.deepEqual(activeTimeouts(), [SAFE_APPS_PREPARATION_TIMEOUT_MS])
 		fakeWindow.dispatchEvent(new Event(SAFE_APPS_PREPARATION_CANCEL_EVENT))
-		assert.deepEqual(await pending, { success: false, error: 'Safe connection was cancelled.' })
+		assert.deepEqual(await pending, { success: false, cancelled: true })
 		assert.deepEqual(activeTimeouts(), [])
 	} finally { restoreGlobals() }
 })
@@ -215,7 +221,7 @@ test('a cancellation that executes before page preparation prevents the Safe acc
 	try {
 		fakeWindow.addEventListener('message', () => { requests++ })
 		Reflect.set(fakeWindow, SAFE_APPS_PREPARATION_CANCEL_MARKER, true)
-		assert.deepEqual(await requestSafeAppConnection(origin), { success: false, error: 'Safe connection was cancelled.' })
+		assert.deepEqual(await requestSafeAppConnection(origin), { success: false, cancelled: true })
 		assert.equal(requests, 0)
 		assert.deepEqual(activeTimeouts(), [])
 	} finally { restoreGlobals() }
@@ -294,7 +300,7 @@ for (const action of ['cancel', 'cleanup-error', 'close', 'get-error', 'reload-e
 		let failPreparation: (() => void) | undefined
 		const cleanup = new Promise<void>((resolve) => { completeCleanup = resolve })
 		const pageScript = new Promise<unknown>((resolve, reject) => {
-			completePreparation = () => resolve([{ result: { success: false, error: 'Safe connection was cancelled.' } }])
+			completePreparation = () => resolve([{ result: { success: false, cancelled: true } }])
 			failPreparation = () => reject(new Error('The tab was closed.'))
 		})
 		Object.defineProperty(globalThis, 'browser', { configurable: true, value: {

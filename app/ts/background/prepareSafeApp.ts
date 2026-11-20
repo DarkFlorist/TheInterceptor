@@ -42,6 +42,7 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	const results = await Promise.race([pageScript, operation.cancelled])
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	const result = results?.[0]?.result
+	if (typeof result === 'object' && result !== null && 'cancelled' in result && result.cancelled === true) return { success: false, errorMessage: SAFE_APPS_PREPARATION_CANCEL_MESSAGE }
 	if (typeof result !== 'object' || result === null || !('success' in result) || result.success !== true) {
 		return { success: false, errorMessage: typeof result === 'object' && result !== null && 'error' in result && typeof result.error === 'string' ? result.error : 'The website did not confirm a Safe connection.' }
 	}
@@ -60,8 +61,8 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	return { success: true }
 }
 
-// Matches the injected page's SAFE_APPS_PREPARATION_CANCEL_MESSAGE, which cannot be imported across the inpage bundle boundary; safeAppsProtocol.test.ts checks they match.
-export const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = 'Safe connection was cancelled.'
+// The only copy of this text: the injected page reports cancellation as a flag (SafeAppConnectionResult in app/inpage/ts/safeAppsProtocol.ts), whichever side cancelled.
+const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = 'Safe connection was cancelled.'
 
 type PreparationOperation = {
 	readonly abort: AbortController

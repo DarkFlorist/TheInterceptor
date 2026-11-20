@@ -5,8 +5,8 @@ export const SAFE_APPS_REQUEST_TIMEOUT_MS = 5 * 60_000
 export const SAFE_APPS_PREPARATION_TIMEOUT_MS = 30_000
 export const SAFE_APPS_PREPARATION_CANCEL_EVENT = 'interceptor-cancel-safe-preparation'
 export const SAFE_APPS_PREPARATION_CANCEL_MARKER = 'interceptorSafePreparationCancelled'
-// The injected bundle imports only modules in app/inpage/ts, so the background keeps its own copy of this message; safeAppsProtocol.test.ts checks they match.
-export const SAFE_APPS_PREPARATION_CANCEL_MESSAGE = 'Safe connection was cancelled.'
+// A cancelled preparation reports a flag instead of text: prepareSafeApp.ts owns the user-facing cancellation message, since the separate inpage and background TypeScript projects cannot import a shared module.
+export type SafeAppConnectionResult = { readonly success: true } | { readonly success: false, readonly error: string } | { readonly success: false, readonly cancelled: true }
 export type SafeAppsRequest = { readonly id: string, readonly method: string, readonly params?: unknown, readonly env: { readonly sdkVersion: string }, readonly bridgeToken?: string }
 export type ParsedSafeAppsRequest = { readonly id: string, readonly request: SafeAppsRequest } | { readonly id: string, readonly error: string, readonly bridgeToken?: string }
 export type SafeAppsResponse = { readonly id: string, readonly success: boolean, readonly error?: unknown, readonly bridgeToken?: string }
