@@ -31,7 +31,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
 import { createSimulationServicesOwner, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
-import { reconcileRichTokensWithAddressBook } from './settings.js'
+import { reconcileRichTokensWithAddressBook } from './richModeSettings.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'

@@ -1105,7 +1105,7 @@ describe('requestMakeMeRichList resilience', () => {
 			const storageState = installBrowserMock({ onRuntimeSendMessage: (message) => {
 				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') visibilityProbeCount += 1
 			} })
-			const { addOrModifyAddressBookEntry, removeAddressBookEntry, updateRichTokens, updateRichAccountBalances, setMakeCurrentAddressRich, getRichAccountBalances } = await loadModules()
+			const { addOrModifyAddressBookEntry, removeAddressBookEntry, updateRichTokens, updateRichAccountBalances, setMakeCurrentAddressRich, getRichModeState } = await loadModules()
 			const entry: Erc1155Entry = {
 				type: 'ERC1155', name: 'Game Items', address: 0x4444444444444444444444444444444444444444n,
 				symbol: 'ITEM', entrySource: 'User', chainId: 1n, watchedTokenIds: [42n],
@@ -1148,7 +1148,7 @@ describe('requestMakeMeRichList resilience', () => {
 			}
 			const fundingChanged = edit === 'removal' || edit === 'watched-ID change' || edit === 'token-type change'
 			assert.equal(visibilityProbeCount, fundingChanged ? 1 : 0)
-			assert.equal((await getRichAccountBalances())[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
+			assert.equal((await getRichModeState()).accountBalances[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
 		})
 	}
 

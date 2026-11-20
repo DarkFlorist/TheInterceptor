@@ -3,17 +3,15 @@ import type { Settings } from '../types/interceptor-messages.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import type { RichAccountBalance, RichToken } from '../types/richMode.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { getRichModeState, mutateRichMode, richTokensForPresentation } from './richModeSettings.js'
-export { getRichAccountBalancesForAddresses, getRichModeState, mutateRichMode } from './richModeSettings.js'
+import { getRichModeState, richTokensForPresentation } from './richModeSettings.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -91,72 +89,6 @@ export async function rememberSigningAddressPreference(preference: SigningAddres
 	await runSettingsStorageTransaction(async () => {
 		const preferences = await getSigningAddressPreferences()
 		return { writes: [signingAddressPreferencesStorageWrite([...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress), preference])], result: undefined }
-	})
-}
-
-export const getMakeCurrentAddressRich = async () => (await getRichModeState()).makeCurrentAddressRich
-export const getRichNativeAmount = async () => (await getRichModeState()).defaultNativeAmount
-export const getFixedAddressRichList = async () => (await getRichModeState()).fixedAddressRichList
-export const getRichTokens = async () => richTokensForPresentation(await getRichModeState())
-export const getRichAccountBalances = async () => (await getRichModeState()).accountBalances
-
-export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => { await updateMakeCurrentAddressRich(() => makeCurrentAddressRich) }
-export const setRichNativeAmount = async (defaultNativeAmount: bigint) => { await mutateRichMode(async (store) => { store.replace({ ...store.getState(), defaultNativeAmount }) }) }
-export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => { await updateFixedMakeMeRichList(() => fixedAddressRichList) }
-
-export async function updateMakeCurrentAddressRich(update: (enabled: boolean) => boolean) {
-	return await mutateRichMode(async (store) => {
-		const previous = store.getState()
-		const makeCurrentAddressRich = update(previous.makeCurrentAddressRich)
-		if (makeCurrentAddressRich === previous.makeCurrentAddressRich) return false
-		store.replace({ ...previous, makeCurrentAddressRich })
-		return true
-	})
-}
-
-export const updateRichAccountBalances = async (update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) => await mutateRichMode(async (store) => await store.updateRichAccountBalances(update))
-export const ensureRichAccountBalances = async (chainId: bigint, addresses: readonly bigint[]) => await mutateRichMode(async (store) => await store.ensureRichAccountBalances(chainId, addresses), chainId, addresses)
-export const updateRichTokens = async (update: (tokens: readonly RichToken[]) => readonly RichToken[]) => await mutateRichMode(async (store) => await store.updateRichTokens(update))
-
-function toComparableRichListElement(element: RichListElement): RichListElement {
-	return {
-		address: element.address,
-		makingRich: element.makingRich,
-		type: element.type,
-	}
-}
-
-function richListElementsEqual(first: RichListElement, second: RichListElement) {
-	const firstValues = Object.values(toComparableRichListElement(first))
-	const secondValues = Object.values(toComparableRichListElement(second))
-	return firstValues.length === secondValues.length && firstValues.every((value, index) => value === secondValues[index])
-}
-
-export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: readonly RichListElement[]) => readonly RichListElement[]) {
-	return await mutateRichMode(async (store) => {
-		const previous = store.getState().fixedAddressRichList
-		const next = update(previous)
-		if (previous.length === next.length && previous.every((element, index) => {
-			const nextElement = next[index]
-			return nextElement !== undefined && richListElementsEqual(element, nextElement)
-		})) return false
-		store.replace({ ...store.getState(), fixedAddressRichList: next })
-		return true
-	})
-}
-
-export const reconcileRichTokensWithAddressBook = async () => await mutateRichMode(async (store) => {
-	await store.reconcileAddressBook(await getUserAddressBookEntries())
-	return await store.getRichTokens()
-})
-
-export async function trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress: EthereumAddress | undefined) {
-	return await updateFixedMakeMeRichList((currentList) => {
-		const richList = currentList
-			.filter((element) => !(element.type === 'PreviousActiveAddress' && !element.makingRich))
-			.map((element) => ({ ...element, type: 'UserAdded' as const }))
-		if (previousActiveAddress === undefined || richList.some((element) => element.address === previousActiveAddress)) return richList
-		return [...richList, { address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' as const }]
 	})
 }
 
