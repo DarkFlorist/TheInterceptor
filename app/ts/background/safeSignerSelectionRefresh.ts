@@ -317,6 +317,7 @@ function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, ref
 
 function mergeSafeSignerSelectionRefresh(
 	current: PendingTransactionOrSignableMessage,
+	refreshBase: PendingTransactionOrSignableMessage,
 	refreshed: PendingTransactionOrSignableMessage,
 ): PendingTransactionOrSignableMessage {
 	const currentFlow = getSafePendingFlow(current)
@@ -326,20 +327,26 @@ function mergeSafeSignerSelectionRefresh(
 		safeMessageCoSignSnapshot: refreshedFlow.pending.safeMessageCoSignSnapshot,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
 	})
-	if (currentFlow.kind === 'directExecution' && refreshedFlow.kind === 'directExecution') return modifyObject(currentFlow.pending, {
-		activeAddress: refreshedFlow.pending.activeAddress,
-		originalRequestParameters: refreshedFlow.pending.originalRequestParameters,
-		safeExecutionSignerAddress: refreshedFlow.pending.safeExecutionSignerAddress,
-		safeExecutionReviewedSafeState: refreshedFlow.pending.safeExecutionReviewedSafeState,
-		approvalStatus: refreshedFlow.pending.approvalStatus,
-		...refreshedFlow.pending.transactionOrMessageCreationStatus === 'Simulated' || refreshedFlow.pending.transactionOrMessageCreationStatus === 'FailedToSimulate'
+	if (currentFlow.kind === 'directExecution' && refreshedFlow.kind === 'directExecution') {
+		const refreshedPending = refreshedFlow.pending
+		const refreshedSimulation = refreshedPending.transactionOrMessageCreationStatus === 'Simulated' || refreshedPending.transactionOrMessageCreationStatus === 'FailedToSimulate'
 			? {
-				transactionOrMessageCreationStatus: refreshedFlow.pending.transactionOrMessageCreationStatus,
-				transactionToSimulate: refreshedFlow.pending.transactionToSimulate,
-				popupVisualisation: refreshedFlow.pending.popupVisualisation,
+				transactionOrMessageCreationStatus: refreshedPending.transactionOrMessageCreationStatus,
+				transactionToSimulate: refreshedPending.transactionToSimulate,
+				popupVisualisation: refreshedPending.popupVisualisation,
 			}
-			: {},
-	})
+			: undefined
+		// Carry the simulation only when the refresh re-simulated; otherwise keep any newer simulation stored meanwhile.
+		const simulationUnchangedByRefresh = 'popupVisualisation' in refreshBase && refreshBase.popupVisualisation === refreshedSimulation?.popupVisualisation
+		return modifyObject(currentFlow.pending, {
+			activeAddress: refreshedPending.activeAddress,
+			originalRequestParameters: refreshedPending.originalRequestParameters,
+			safeExecutionSignerAddress: refreshedPending.safeExecutionSignerAddress,
+			safeExecutionReviewedSafeState: refreshedPending.safeExecutionReviewedSafeState,
+			approvalStatus: refreshedPending.approvalStatus,
+			...simulationUnchangedByRefresh ? {} : refreshedSimulation,
+		})
+	}
 	if (currentFlow.kind === 'proposal' && refreshedFlow.kind === 'proposal') return modifyObject(currentFlow.pending, {
 		safeTransaction: refreshedFlow.pending.safeTransaction,
 		approvalStatus: refreshedFlow.pending.approvalStatus,
@@ -402,6 +409,16 @@ function pendingSafeRefreshBaseMatches(
 		&& currentSafeTransaction.executionGasLimit === baseSafeTransaction.executionGasLimit
 		&& areSafeContractStateSnapshotsEqual(currentSafeTransaction.reviewedSafeState, baseSafeTransaction.reviewedSafeState)
 		&& areOriginalSendRequestsEqual(currentFlow.pending.originalRequestParameters, refreshBaseFlow.pending.originalRequestParameters)
+}
+
+// Applies a Safe refresh computed from `refreshBase` to the stored request, or returns undefined when the stored Safe request no longer matches that base.
+export function applySafeRefreshToStoredPending(
+	current: PendingTransactionOrSignableMessage,
+	refreshBase: PendingTransactionOrSignableMessage,
+	refreshed: PendingTransactionOrSignableMessage,
+): PendingTransactionOrSignableMessage | undefined {
+	if (!pendingSafeRefreshBaseMatches(current, refreshBase)) return undefined
+	return mergeSafeSignerSelectionRefresh(current, refreshBase, refreshed)
 }
 
 // A recognized message can precede owner validation. Keep it blocked until a selected owner validates a complete snapshot.
@@ -477,7 +494,7 @@ export async function refreshAndPersistSafeSignerSelection(
 		if (currentFlow === undefined || !shouldRefreshSafeSignerSelection(currentFlow, selectedSigner)) return current
 		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
 		persistedPending = refreshResult.status === 'refreshed'
-			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
+			? mergeSafeSignerSelectionRefresh(current, pending, refreshResult.pending)
 			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
 		return persistedPending
 	})
