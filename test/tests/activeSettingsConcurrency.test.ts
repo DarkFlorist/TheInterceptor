@@ -4,7 +4,7 @@ import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookType
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -29,7 +29,7 @@ function pauseAfterFirstStorageWrite(key: string) {
 
 describe('active settings concurrency', () => {
 	test('publishes concurrent network transitions in persisted order', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		await updateUserAddressBookEntries(() => [firstAddress, secondAddress])
 		const websiteOrigin = 'example.test'
@@ -85,7 +85,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test('a selection queued behind an endpoint reset uses the installed services', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, changeActiveAddressAndChain, getSettings } = await loadModules()
 		const original = createEthereumWithGetBlockCounter({ count: 0 })
 		const installed = createEthereumWithGetBlockCounter({ count: 0 })
@@ -124,7 +124,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each([true, false])('keeps concurrent simulation selections consistent when selecting signer first: %j', async (signerFirst) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const signerSelection = { type: 'signer', address: firstAddress.address } as const
@@ -142,7 +142,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each([true, false])('remembers the final concurrent signing selection when selecting Safe first: %j', async (safeFirst) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
@@ -164,7 +164,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
 		const { getPopupVisualisationState, setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 		const { getLatestUnexpectedError } = await import('../../app/ts/utils/unexpectedErrorStorage.js')
@@ -212,7 +212,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
 		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
@@ -236,7 +236,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test('settles an address change that prompts for access alongside an approval that selects another address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, requestAccessFromUser, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
@@ -302,7 +302,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each(['direct', 'selection'])('reports a failed access prompt without rejecting a persisted %s address change', async (entryPoint) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString, updateWebsiteApprovalAccesses } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [selectedAddress])
@@ -327,7 +327,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each([1, 2])('continues prompting after a failure when the next connection is in tab %j', async (secondTabId) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeActiveAddressAndChain, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [selectedAddress])
@@ -368,7 +368,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test('a slow icon refresh does not block the next address change or leave stale toolbar state', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString, getTabState } = await loadModules()
 		await updateUserAddressBookEntries(() => [firstAddress, { ...secondAddress, askForAddressAccess: true }])
 		const websiteOrigin = 'example.test'
@@ -428,7 +428,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each(['immediate', 'staged'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
@@ -463,7 +463,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test('rejects an invalid signing selection before changing stored settings', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection } = await loadModules()
 		const before = await browser.storage.local.get()
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -474,7 +474,7 @@ describe('active settings concurrency', () => {
 	})
 
 	test.each(['direct', 'selection'])('completes access UI after a persisted %s transition throws', async (entryPoint) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getTabState, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [selectedAddress])

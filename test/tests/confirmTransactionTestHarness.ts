@@ -41,7 +41,8 @@ export function createSafeAddressBookEntry(overrides: Partial<SafeEntry> = {}): 
 	}
 }
 
-export function createBrowserMock() {
+// Legacy fixture-backed confirmation mock; new tests should use the generic browser mock rather than copying its simplified API behavior.
+export function installLegacyConfirmationBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 	const liveTabIds = new Set<number>()
@@ -322,7 +323,7 @@ export function makeFakeEthSimulateResult(multicallBalance: bigint, multicallAbi
 	}
 }
 
-export const browserMock = createBrowserMock()
+export const browserMock = installLegacyConfirmationBrowserMock()
 export const modules = await loadModules()
 
 export const fakeRpcNetwork = {
