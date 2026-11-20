@@ -635,7 +635,7 @@ function FirstCard(param: FirstCardParams) {
 				</> : !param.isFreshHomeDataLoaded.value ?
 					<SimulationControlsLoadingSkeleton/>
 				: <div class = 'popup-simulation-controls popup-data-reveal'>
-					<RichModeAccountManager isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } richNativeAmount = { param.richNativeAmount } nativeCurrencyTicker = { param.rpcNetwork.value?.currencyTicker ?? 'ETH' } richFundingChainId = { param.richFundingChainId } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } richTokenOptions = { param.richTokenOptions } richAccountBalances = { param.richAccountBalances } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
+					<RichModeAccountManager isSettingsChangePending = { param.isSettingsChangePending } changeRichSettings = { param.changeRichSettings } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } richNativeAmount = { param.richNativeAmount } nativeCurrencyTicker = { param.rpcNetwork.value?.currencyTicker ?? 'ETH' } richFundingChainId = { param.richFundingChainId } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } richTokenOptions = { param.richTokenOptions } richAccountBalances = { param.richAccountBalances } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -882,7 +882,7 @@ export function Home(param: HomeParams) {
 			isActiveAddressChangePending = { param.isActiveAddressChangePending }
 			isSettingsChangePending = { param.isSettingsChangePending }
 			setSimulationMode = { param.setSimulationMode }
-			setRichState = { param.setRichState }
+			changeRichSettings = { param.changeRichSettings }
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
 			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }

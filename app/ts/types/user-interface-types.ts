@@ -1,3 +1,4 @@
+import type { ChangeRichSettings } from '../components/popupSettingsChange.js'
 import type { WebsiteLifecycleCallbacks } from './websiteLifecycle.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBlockHeader, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
@@ -38,7 +39,7 @@ export type HomeParams = {
 	isActiveAddressChangePending: ReadonlySignal<boolean>
 	isSettingsChangePending: ReadonlySignal<boolean>
 	setSimulationMode: (enabled: boolean) => Promise<void>
-	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
+	changeRichSettings: ChangeRichSettings
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richFundingChainId: ReadonlySignal<bigint | undefined>
@@ -88,7 +89,7 @@ export type FirstCardParams = {
 	isActiveAddressChangePending: ReadonlySignal<boolean>
 	isSettingsChangePending: ReadonlySignal<boolean>
 	setSimulationMode: (enabled: boolean) => Promise<void>
-	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
+	changeRichSettings: ChangeRichSettings
 	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>

@@ -1,7 +1,8 @@
 import { type ReadonlySignal, type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import type { ChangeRichSettings } from '../popupSettingsChange.js'
 import type { JSX } from 'preact'
 import { useRef } from 'preact/hooks'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedRichListElement, RichTokenSimulationRefresh } from '../../types/interceptor-reply-messages.js'
 import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
@@ -16,7 +17,7 @@ export type RichTokenFilter = 'All' | 'ERC20' | 'ERC1155'
 
 export type RichModeTokenInputs = {
 	isSettingsChangePending: ReadonlySignal<boolean>
-	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
+	changeRichSettings: ChangeRichSettings
 	makeCurrentAddressRich: ReadonlySignal<boolean>
 	richNativeAmount: ReadonlySignal<bigint>
 	nativeCurrencyTicker: string
@@ -32,14 +33,16 @@ const SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE = 'The token funding was saved, b
 const SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE = 'The token funding was saved. A newer simulation refresh is in progress; its result will update the simulation.'
 
 // Owns local editing progress and derives immutable views of the authoritative funding snapshot.
-export function useRichModeTokens({ isSettingsChangePending, setRichState, makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, richFundingChainId, isInitialHomeDataLoaded }: RichModeTokenInputs) {
+export function useRichModeTokens({ isSettingsChangePending, changeRichSettings, makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, richFundingChainId, isInitialHomeDataLoaded }: RichModeTokenInputs) {
 	const { value: richChangeState, waitFor: waitForRichChange } = useAsyncState<void>()
-	const controlsDisabled = useComputed(() => richFundingChainId.value === undefined || !isInitialHomeDataLoaded.value || isSettingsChangePending.value || richChangeState.value.state === 'pending')
+	const richTokenPending = useSignal(false)
+	const richMutationPending = useComputed(() => isSettingsChangePending.value || richTokenPending.value || richChangeState.value.state === 'pending')
+	const controlsDisabled = useComputed(() => richFundingChainId.value === undefined || !isInitialHomeDataLoaded.value || richMutationPending.value)
 	const reloadRichState = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
 	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
 		void waitForRichChange(async () => {
 			try {
-				await setRichState(enabled, address)
+				await changeRichSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: enabled, address } })
 			} catch (error) {
 				// Reload persisted balances when a saved setting cannot be visualized.
 				await reloadRichState()
@@ -60,7 +63,6 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 
 	const richTokenError = useSignal<string | undefined>(undefined)
 	const richTokenErrorTarget = useSignal<string | undefined>(undefined)
-	const richTokenPending = useSignal(false)
 	const richTokenPendingKey = useSignal<string | undefined>(undefined)
 	const richTokenPendingLabel = useSignal<string | undefined>(undefined)
 	const richTokenNotice = useSignal<string | undefined>(undefined)
@@ -140,7 +142,14 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 		richTokenErrorTarget.value = undefined
 		richTokenNotice.value = undefined
 		try {
-			const result = await operation()
+			let result: Result | undefined
+			try {
+				result = await operation()
+			} catch (error) {
+				richTokenError.value = error instanceof Error ? error.message : 'The funding change could not be completed.'
+				richTokenErrorTarget.value = key
+			}
+			// A missing reply may follow a committed write, so refresh persisted funding on failures too.
 			await reloadRichState()
 			return result
 		} finally {
@@ -152,18 +161,18 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 
 	const setRichTokenEnabled = async (option: RichTokenOption, enabled: boolean, targetAddress?: bigint, chainId = richFundingChainId.peek()) => {
 		const address = targetAddress ?? selectedRichAccount.value?.addressBookEntry.address
-		if (chainId === undefined || richTokenPending.value || address === undefined) return false
+		if (chainId === undefined || controlsDisabled.peek() || address === undefined) return false
 		const tokenKey = getRichTokenIdentityKey(option)
 		const reply = await runRichOperation(
 			tokenKey,
 			enabled ? `Preparing ${ getRichTokenLabel(option) }…` : `Removing ${ getRichTokenLabel(option) } from rich mode…`,
-			async () => await sendPopupMessageWithReply({
+			async () => await changeRichSettings({
 				method: 'popup_modifyRichToken',
 				data: { action: enabled ? 'Add' : 'Remove', chainId, address, tokenAddress: option.tokenAddress, tokenId: option.tokenId },
 			}),
 		)
 		if (reply === undefined) {
-			richTokenError.value = 'The background service did not return a token funding result.'
+			richTokenError.value ??= 'The background service did not return a token funding result.'
 			richTokenErrorTarget.value = tokenKey
 			return false
 		}
@@ -182,7 +191,7 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 	const addSelectedRichTokens = async () => {
 		const chainId = richFundingChainId.peek()
 		const address = selectedRichAccount.value?.addressBookEntry.address
-		if (chainId === undefined || address === undefined || richTokenPending.value) return
+		if (chainId === undefined || address === undefined || controlsDisabled.peek()) return
 		const options = availableRichTokens.value.filter((option) => selectedRichTokenKeys.value.includes(getRichTokenIdentityKey(option)))
 		if (options.length === 0) return
 		showRichTokenPicker.value = false
@@ -208,13 +217,13 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 		const chainId = richFundingChainId.peek()
 		const address = selectedRichAccount.value?.addressBookEntry.address
 		const profile = selectedRichProfile.value
-		if (chainId === undefined || address === undefined || profile === undefined || richTokenPending.value) return
-		const reply = await runRichOperation('native', `Saving ${ nativeCurrencyTicker } amount…`, async () => await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', chainId, nativeAmount: amount, address } }))
+		if (chainId === undefined || address === undefined || profile === undefined || controlsDisabled.peek()) return
+		const reply = await runRichOperation('native', `Saving ${ nativeCurrencyTicker } amount…`, async () => await changeRichSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', chainId, nativeAmount: amount, address } }))
 		if (reply?.ok === true) {
 			richTokenSaveConfirmedAddress.value = address
 			return
 		}
-		richTokenError.value = reply === undefined ? 'The background service did not confirm the native balance.' : reply.message
+		richTokenError.value ??= reply === undefined ? 'The background service did not confirm the native balance.' : reply.message
 		richTokenErrorTarget.value = 'native'
 	}
 
@@ -239,11 +248,11 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 		const chainId = richFundingChainId.peek()
 		const address = selectedRichAccount.value?.addressBookEntry.address
 		if (chainId === undefined || address === undefined) return
-		if (richTokenPending.value) return
+		if (controlsDisabled.peek()) return
 		const tokenKey = getRichTokenIdentityKey(option)
-		const reply = await runRichOperation(tokenKey, `Saving ${ getRichTokenLabel(option) } amount…`, async () => await sendPopupMessageWithReply({ method: 'popup_modifyRichToken', data: { action: 'SetAmount', chainId, address, tokenAddress: option.tokenAddress, tokenId: option.tokenId, amount } }))
+		const reply = await runRichOperation(tokenKey, `Saving ${ getRichTokenLabel(option) } amount…`, async () => await changeRichSettings({ method: 'popup_modifyRichToken', data: { action: 'SetAmount', chainId, address, tokenAddress: option.tokenAddress, tokenId: option.tokenId, amount } }))
 		if (reply === undefined) {
-			richTokenError.value = 'The background service did not return a token funding result.'
+			richTokenError.value ??= 'The background service did not return a token funding result.'
 			richTokenErrorTarget.value = tokenKey
 			return
 		}
@@ -432,7 +441,7 @@ export function useRichModeTokens({ isSettingsChangePending, setRichState, makeC
 	const feedback = useComputed(() => ({
 		richTokenError: richTokenError.value,
 		richTokenErrorTarget: richTokenErrorTarget.value,
-		richTokenPending: richTokenPending.value,
+		richTokenPending: richMutationPending.value,
 		richTokenPendingKey: richTokenPendingKey.value,
 		richTokenNotice: richTokenNotice.value,
 		richTokenPendingLabel: richTokenPendingLabel.value,

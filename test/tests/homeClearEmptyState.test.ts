@@ -259,7 +259,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		isActiveAddressChangePending: new Signal(false),
 		isSettingsChangePending: new Signal(false),
 		setSimulationMode: async () => undefined,
-		setRichState: async () => undefined,
+		changeRichSettings: async () => undefined,
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		richFundingChainId: new Signal(rpcNetwork.chainId),
@@ -495,10 +495,10 @@ describe('Home popup clear empty state', () => {
 		const browserMock = installBrowserMock()
 		let rejectChange: ((error: Error) => void) | undefined
 		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
-		const params = createHomeParams({ setRichState: async (enabled, address) => {
-			assert.equal(enabled, true)
-			assert.equal(address, 'CurrentAddress')
+		const params = createHomeParams({ changeRichSettings: async (request) => {
+			assert.deepEqual(request, { method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: true, address: 'CurrentAddress' } })
 			await change
+			return undefined
 		} })
 		try {
 			await act(() => { render(h(Home, params), dom.document.body) })
