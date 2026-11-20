@@ -4,11 +4,11 @@ import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 describe('background access dialog address policy', () => {
 	test('keeps a newly selected self-owned Safe distinct from its signer EOA in the access dialog', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -57,7 +57,7 @@ describe('background access dialog address policy', () => {
 	})
 
 	test('activates a self-owned Safe selected over its same-address signer EOA when access is approved', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -116,7 +116,7 @@ describe('background access dialog address policy', () => {
 	})
 
 	test('does not inherit wrong-chain address access policy during requests or access-dialog changes', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -187,7 +187,7 @@ describe('background access dialog address policy', () => {
 	})
 
 	test('rechecks Safe ownership against the live signer when website access is approved', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -252,7 +252,7 @@ describe('background access dialog address policy', () => {
 	})
 
 	test('stored websites without an active decision remain promptable instead of denied', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { hasAccess, hasAddressAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const address: AddressBookEntry = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address', entrySource: 'User' }
@@ -264,7 +264,7 @@ describe('background access dialog address policy', () => {
 	})
 
 	test('verifyAccess requires an address decision despite website approval', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { getSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }

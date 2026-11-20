@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 type InterceptorAccessModule = typeof import('../../app/ts/background/windows/interceptorAccess.js')
 
@@ -21,7 +21,7 @@ async function importSeparateInterceptorAccessModule(instanceName: string): Prom
 
 describe('background eth_requestAccounts address consent', () => {
 	test('requires visible address consent after signer discovery for site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -90,7 +90,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('does not override an explicitly denied address for site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -130,7 +130,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('does not approve the port before site-approved eth_requestAccounts receives address consent', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -201,7 +201,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('does not overwrite an address denial made while site-approved eth_requestAccounts is pending', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -245,7 +245,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('uses wallet metadata for cached signer address consent when a same-address Safe exists', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -318,7 +318,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			websiteSocketToString,
 			changeSimulationMode,
@@ -399,7 +399,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('uses refreshed website access after signer account discovery', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -454,7 +454,7 @@ describe('background eth_requestAccounts address consent', () => {
 	})
 
 	test('keeps sibling connection events when address consent resolves eth_requestAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,

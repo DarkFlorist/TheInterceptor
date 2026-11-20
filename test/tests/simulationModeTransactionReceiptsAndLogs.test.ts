@@ -1,10 +1,11 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { createExecutionSimulationState, createSimulationState, getSimulatedLogs, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, example7702Transaction, exampleTransaction } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { ethereum, getBlockFromInput, getTransactionByHashFromInput, getReceiptFromState, getLogsFromState } = createSimulationModeTestContext()
+const { ethereum, getBlockFromInput, getTransactionByHashFromInput, getReceiptFromState, getLogsFromState, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 
 describe('SimulationModeEthereumClientService', () => {
 	test('input-based transaction lookup uses execution block positions after gas splitting', async () => {

@@ -1,12 +1,13 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterAll, describe, test } from 'bun:test'
 import { assertActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { installBrowserMock } from '../harness/browserMock.js'
 
-// The access page and dialog modules still import background.ts, whose module setup needs the extension globals, so install them before loading those modules.
-installBrowserMock({ extensionId: 'test-extension' })
+// The access page and dialog modules still import background.ts, whose module setup needs the extension globals, so install them before loading those modules. The imported background graph captures these globals, so keep one file-lifetime install and restore it after this isolated suite.
+const moduleBrowserMock = installBrowserMock({ extensionId: 'test-extension' })
+afterAll(moduleBrowserMock.restore)
 const { getSelectedPendingAccessRequest } = await import('../../app/ts/components/pages/InterceptorAccess.js')
 const { filterAccessDialogAddressesForChain } = await import('../../app/ts/background/windows/interceptorAccess.js')
 
