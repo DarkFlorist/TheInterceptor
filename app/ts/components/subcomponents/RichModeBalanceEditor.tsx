@@ -35,7 +35,7 @@ type RichModeBalanceEditorProps = {
 	showRichTokenSelection: () => void
 }
 
-// The balance view of the rich-account dialog: the native amount and the funded tokens of one account.
+// The balance view of the rich-account dialog: the native amount and the funded tokens of one account. Token selection stays enabled while a save is pending, so leaving an edited amount for it commits the amount and still opens the picker, whose controls wait for the save.
 export function RichModeBalanceEditor({ accountName, addingRichTokens, availableRichTokens, clearRichTokenError, enabledRichTokens, failedAddedRichToken, nativeCurrencyTicker, newlyAddedRichTokenKeys, profile, removeFailedRichTokenSelection, retryFailedRichTokenSelection, richBalanceAssetStatusLabel, richNativeAmount, richTokenError, richTokenErrorTarget, richTokenPending, richTokenPendingKey, richTokenNotice, richTokenPendingLabel, saveNativeAmount, saveRichTokenAmount, selectRichTokensButtonRef, setNativeAmount, setRichTokenAmount, setRichTokenEnabled, showRichTokenSelection }: RichModeBalanceEditorProps) {
 	return <div class = 'rich-mode-balance-page'>
 		<div class = 'rich-mode-modal-toolbar'>
@@ -44,7 +44,7 @@ export function RichModeBalanceEditor({ accountName, addingRichTokens, available
 				<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Open token address book' data-tooltip = 'Open token address book' onClick = { () => { void sendPopupMessageToBackgroundPage({ method: 'popup_openAddressBook' }) } }>
 					<span class = 'icon'><img src = '../img/address-book.svg' width = '18' height = '18'/></span>
 				</button>
-				<button type = 'button' class = 'btn btn--outline is-small' aria-label = 'Select tokens' ref = { selectRichTokensButtonRef } disabled = { richTokenPending.value || profile === undefined || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select tokens</button>
+				<button type = 'button' class = 'btn btn--outline is-small' aria-label = 'Select tokens' ref = { selectRichTokensButtonRef } disabled = { profile === undefined || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select tokens</button>
 			</div>
 		</div>
 		{ profile === undefined ? <p class = 'help'>This account has no balance profile.</p> : <>
@@ -60,7 +60,7 @@ export function RichModeBalanceEditor({ accountName, addingRichTokens, available
 					{ enabledRichTokens.value.length !== 0 || addingRichTokens.value.length !== 0 || failedAddedRichToken.value !== undefined ? <></> : <div class = 'rich-mode-empty-state'>
 						<span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>+</span>
 						<span><strong>Only { nativeCurrencyTicker }</strong><small>Add an address-book token.</small></span>
-						<button type = 'button' class = 'btn btn--ghost is-small' disabled = { richTokenPending.value || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select token</button>
+						<button type = 'button' class = 'btn btn--ghost is-small' disabled = { availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select token</button>
 					</div> }
 					{ addingRichTokens.value.map((option) => <RichBalanceRow class = 'is-adding' key = { `adding:${ getRichTokenIdentityKey(option) }` } label = { getRichTokenLabel(option) } logoUri = { option.logoUri } name = { option.name } balance = { <span class = 'rich-mode-balance-progress' role = 'status'>{ richTokenPendingKey.value === getRichTokenIdentityKey(option) ? 'Scanning storage…' : 'Queued' }</span> }/>) }
 					{ failedAddedRichToken.value === undefined ? <></> : <RichBalanceRow
@@ -79,7 +79,7 @@ export function RichModeBalanceEditor({ accountName, addingRichTokens, available
 						logoUri = { option.logoUri }
 						name = { option.name }
 						balance = { <RichAmountEditor amount = { option.amount } autoFocus = { newlyAddedRichTokenKeys.value[0] === getRichTokenIdentityKey(option) } defaultAmount = { getDefaultRichTokenAmount(option.decimals) } decimals = { Number(option.decimals) } disabled = { !option.enabled || richTokenPending.value } error = { richTokenErrorTarget.value === getRichTokenIdentityKey(option) ? richTokenError.value : undefined } label = { `${ getRichTokenLabel(option) } rich amount` } unit = { option.symbol } onCommit = { input => { void setRichTokenAmount(option, input) } } onReset = { () => { clearRichTokenError(); void saveRichTokenAmount(option, getDefaultRichTokenAmount(option.decimals)) } }/> }
-						action = { <button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove rich token ${ getRichTokenLabel(option) }` } data-tooltip = 'Remove token' onClick = { () => { void setRichTokenEnabled(option, false) } }><TrashIcon/></button> }
+						action = { <button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' data-keeps-amount-edit = '' disabled = { richTokenPending.value } aria-label = { `Remove rich token ${ getRichTokenLabel(option) }` } data-tooltip = 'Remove token' onClick = { () => { void setRichTokenEnabled(option, false) } }><TrashIcon/></button> }
 					/>) }
 				</div>
 			</div>

@@ -34,7 +34,7 @@ export function InterceptorDialogSurface({ ariaLabel, children, class: className
 	}, [])
 
 	return <>
-		<div class = 'modal-background interceptor-dialog-backdrop' onClick = { onBackdropClick }/>
+		<div class = 'modal-background interceptor-dialog-backdrop' data-dialog-backdrop = '' onClick = { onBackdropClick }/>
 		<div
 			class = { `modal-card interceptor-dialog interceptor-dialog--${ size }${ fill ? ' interceptor-dialog--fill' : '' }${ className === undefined ? '' : ` ${ className }` }` }
 			role = 'dialog'
@@ -92,7 +92,7 @@ export function InterceptorDialogHeader({ accessory, close, closeDisabled = fals
 			{ subtitle === undefined ? <></> : <p class = 'interceptor-dialog-subtitle'>{ subtitle }</p> }
 		</div>
 		{ accessory === undefined ? <></> : <div class = 'interceptor-dialog-header-accessory'>{ accessory }</div> }
-		<button type = 'button' class = 'interceptor-dialog-close' aria-label = { closeLabel } onClick = { close } disabled = { closeDisabled }><XMarkIcon/></button>
+		<button type = 'button' class = 'interceptor-dialog-close' data-dialog-close = '' aria-label = { closeLabel } onClick = { close } disabled = { closeDisabled }><XMarkIcon/></button>
 	</header>
 }
 

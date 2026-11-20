@@ -15,7 +15,7 @@ import { InterceptorDialogBody, InterceptorDialogHeader, InterceptorDialogSurfac
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { RichModeAccountList } from '../subcomponents/RichModeAccountList.js'
 import { RichModeBalanceEditor } from '../subcomponents/RichModeBalanceEditor.js'
-import { findFundedRichTokenOption } from '../subcomponents/RichModeShared.js'
+import { findFundedRichTokenOption, KEEPS_AMOUNT_EDIT_SELECTOR } from '../subcomponents/RichModeShared.js'
 import { type RichTokenFilter, RichModeTokenPicker, RichModeTokenPickerFooter } from '../subcomponents/RichModeTokenPicker.js'
 
 type RichModeAccountManagerProps = {
@@ -468,6 +468,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 			? <></>
 			: <div
 				class = 'modal is-active rich-mode-modal-layer'
+				onMouseDown = { event => { if (event.target instanceof Element && event.target.closest(KEEPS_AMOUNT_EDIT_SELECTOR) !== null) event.preventDefault() } }
 				onKeyDown = { event => {
 					if (event.key !== 'Escape' || richTokenPending.value) return
 					showRichTokenPicker.value ? hideRichTokenSelection() : closeRichBalanceDialog()

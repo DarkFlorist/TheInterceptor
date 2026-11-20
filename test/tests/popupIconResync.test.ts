@@ -180,8 +180,41 @@ async function inputElementValue(element: TestDomNode, value: string) {
 	await dispatchElementValueEvent(element, value, ['input'])
 }
 
-async function changeElementValue(element: TestDomNode, value: string) {
-	await dispatchElementValueEvent(element, value, ['change', 'input'])
+// As in a browser, leaving an edited field fires change and then blur.
+function leaveAmountField(input: TestDomNode) {
+	input.dispatchEvent?.(new Event('change', { bubbles: true }))
+	input.dispatchEvent?.(new Event('blur'))
+}
+
+// Types into an amount field the way a user does: focus (whose re-render shows the raw amount), then input events; the edit stays open until focus leaves the field.
+async function editAmount(input: TestDomNode, value: string) {
+	await act(() => { input.dispatchEvent?.(new Event('focus')) })
+	await act(() => {
+		input.value = value
+		input.dispatchEvent?.(new Event('input', { bubbles: true }))
+	})
+}
+
+async function commitAmountEdit(input: TestDomNode, value: string) {
+	await editAmount(input, value)
+	await act(async () => {
+		leaveAmountField(input)
+		await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+	})
+}
+
+// The browser order of a pointer click while an amount field is focused: mousedown on the control moves focus out of the field unless it is cancelled, and the click only reaches a control that is still enabled after the resulting re-render.
+async function clickWhileEditingAmount(input: TestDomNode, control: TestDomNode) {
+	// The re-render after leaving the field is flushed synchronously, before any background reply, because a user's click arrives long before the save completes.
+	act(() => {
+		const focusLeavesInput = control.dispatchEvent?.(new Event('mousedown', { bubbles: true, cancelable: true })) ?? true
+		if (focusLeavesInput) leaveAmountField(input)
+	})
+	if (control.tagName?.toLowerCase() === 'button' && isButtonDisabled(control)) return
+	await act(async () => {
+		control.dispatchEvent?.(new Event('click', { bubbles: true }))
+		await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+	})
 }
 
 function installClipboardMock() {
@@ -1148,10 +1181,7 @@ describe('popup icon sync', () => {
 			await act(async () => { await clickElement(balancesButton) })
 			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'ETH rich amount for Persisted account')
 			if (input === undefined) throw new Error('Expected native balance editor')
-			await act(async () => {
-				await changeElementValue(input, '25')
-				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
-			})
+			await commitAmountEdit(input, '25')
 			assert.equal(balancesReloaded, true)
 			assert.equal(input.value, '25')
 			assert.equal(dom.document.body.textContent.includes(refreshError), true)
@@ -1173,6 +1203,100 @@ describe('popup icon sync', () => {
 		if (balancesButton === undefined) throw new Error('Expected balance editor button')
 		await act(async () => { await clickElement(balancesButton) })
 	}
+
+	const renderEditableTokenBalance = async (dom: ReturnType<typeof installDomMock>, sentRichTokenRequests: unknown[]) => {
+		const account: AddressBookEntry = { type: 'contact', name: 'Editing account', address: 1n, entrySource: 'User' }
+		const option = usdcOption(true)
+		const daiOption: RichTokenOption = { ...usdcOption(false), tokenAddress: 0x6b175474e89094c44da98b954eedeac495271d0fn, name: 'Dai', symbol: 'DAI', decimals: 18n }
+		installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
+			sentRichTokenRequests.push(message)
+			const { enabled: _enabled, ...richToken } = option
+			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Refreshed' } }
+		})
+		await act(() => {
+			render(h(RichModeAccountManager, {
+				activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+				makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
+				richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5_000_000n }] }]),
+				richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option, daiOption]),
+				setRichState: async () => undefined,
+			}), dom.document.body)
+		})
+		await openBalanceEditor(dom, account.name)
+		const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'USDC rich amount')
+		if (input === undefined) throw new Error('Expected token balance editor')
+		await editAmount(input, '7')
+		return { input, accountName: account.name }
+	}
+	const requestedActions = (requests: readonly unknown[]) => requests.map((request) => typeof request === 'object' && request !== null && 'data' in request && typeof request.data === 'object' && request.data !== null && 'action' in request.data ? request.data.action : undefined)
+	const requestedAmounts = (requests: readonly unknown[]) => requests.map((request) => typeof request === 'object' && request !== null && 'data' in request && typeof request.data === 'object' && request.data !== null && 'amount' in request.data ? request.data.amount : undefined)
+	const findButton = (dom: ReturnType<typeof installDomMock>, label: string) => {
+		const button = collectElements(dom.document.body, 'button').find((candidate) => candidate.getAttribute?.('aria-label')?.startsWith(label) === true)
+		if (button === undefined) throw new Error(`Expected button ${ label }`)
+		return button
+	}
+
+	test('the first reset click while editing an amount discards the typed value and saves the default', async () => {
+		const dom = installDomMock()
+		const sent: unknown[] = []
+		try {
+			const { input } = await renderEditableTokenBalance(dom, sent)
+			await clickWhileEditingAmount(input, findButton(dom, 'Reset USDC rich amount'))
+			assert.deepEqual(requestedActions(sent), ['SetAmount'])
+			assert.deepEqual(requestedAmounts(sent), ['0x2e90edd000'])
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('the first remove click while editing an amount removes the token without saving the typed value', async () => {
+		const dom = installDomMock()
+		const sent: unknown[] = []
+		try {
+			const { input } = await renderEditableTokenBalance(dom, sent)
+			await clickWhileEditingAmount(input, findButton(dom, 'Remove rich token USDC'))
+			assert.deepEqual(requestedActions(sent), ['Remove'])
+			assert.equal(hasAriaLabel(dom.document.body, 'USDC rich amount'), false)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	for (const control of ['close button', 'backdrop'] as const) {
+		test(`the first ${ control } click while editing an amount closes the dialog and discards the typed value`, async () => {
+			const dom = installDomMock()
+			const sent: unknown[] = []
+			try {
+				const { input, accountName } = await renderEditableTokenBalance(dom, sent)
+				const target = control === 'close button' ? findButton(dom, 'Close balance manager') : findElementWithClass(dom.document.body, 'div', 'interceptor-dialog-backdrop')
+				if (target === undefined) throw new Error(`Expected ${ control }`)
+				await clickWhileEditingAmount(input, target)
+				assert.equal(hasAriaLabel(dom.document.body, `Balance editor for ${ accountName }`), false)
+				assert.deepEqual(sent, [])
+			} finally {
+				render(undefined, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
+	test('the first Select tokens click while editing an amount saves the typed value and opens the picker', async () => {
+		const dom = installDomMock()
+		const sent: unknown[] = []
+		try {
+			const { input, accountName } = await renderEditableTokenBalance(dom, sent)
+			await clickWhileEditingAmount(input, findButton(dom, 'Select tokens'))
+			assert.deepEqual(requestedActions(sent), ['SetAmount'])
+			assert.deepEqual(requestedAmounts(sent), ['0x6acfc0'])
+			assert.equal(hasAriaLabel(dom.document.body, `Select tokens for ${ accountName }`), true)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
 
 	test('does not show a token balance without a stored layout as funded', async () => {
 		const dom = installDomMock()
@@ -1223,10 +1347,7 @@ describe('popup icon sync', () => {
 			await openBalanceEditor(dom, account.name)
 			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'USDC rich amount')
 			if (input === undefined) throw new Error('Expected token balance editor')
-			await act(async () => {
-				await changeElementValue(input, '7')
-				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
-			})
+			await commitAmountEdit(input, '7')
 			assert.equal(profiles.value[0]?.tokenBalances[0]?.amount, 7_000_000n)
 			assert.equal(dom.document.body.textContent.includes('The token funding was saved, but the latest simulation is unavailable.'), true)
 		} finally {
@@ -1257,10 +1378,7 @@ describe('popup icon sync', () => {
 			await openBalanceEditor(dom, account.name)
 			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'USDC rich amount')
 			if (input === undefined) throw new Error('Expected token balance editor')
-			await act(async () => {
-				await changeElementValue(input, '7')
-				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
-			})
+			await commitAmountEdit(input, '7')
 			assert.equal(profiles.value[0]?.tokenBalances[0]?.amount, 7_000_000n)
 			assert.equal(dom.document.body.textContent.includes('A newer simulation refresh is in progress; its result will update the simulation.'), true)
 			assert.equal(dom.document.body.textContent.includes('latest simulation is unavailable'), false)
@@ -1428,7 +1546,7 @@ describe('popup icon sync', () => {
 			const nativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount for Loaded Account')
 			assert.equal(nativeAmountInput?.getAttribute?.('value'), '12.5')
 			if (nativeAmountInput === undefined) throw new Error('Expected native amount input')
-			await act(async () => { await changeElementValue(nativeAmountInput, '25') })
+			await commitAmountEdit(nativeAmountInput, '25')
 			assert.equal(collectElements(dom.document.body, 'span').some((span) => hasClass(span, 'rich-mode-save-status') && span.textContent === 'Saving…'), true)
 			const pendingCloseButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance manager')
 			assert.equal(isButtonDisabled(pendingCloseButton), true)
