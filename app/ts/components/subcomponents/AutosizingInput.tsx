@@ -22,7 +22,9 @@ interface ParsedInputModel<T> extends BaseInputModel {
 
 function ParsedInput<T>(model: ParsedInputModel<T>) {
 	const pendingOnChange = useSignal(false)
-	const internalValue = model.rawValue || useSignal(model.serialize(model.value.deepPeek()))
+	// Always create the local signal so the hook order stays fixed; it is only used when the caller does not own the raw text.
+	const localRawValue = useSignal(model.serialize(model.value.deepPeek()))
+	const internalValue = model.rawValue ?? localRawValue
 
 	// internalValue changed or signal/hook referenced by sanitize/tryParse changed
 	useSignalEffect(() => {
@@ -84,7 +86,9 @@ function isParsedAutosizingInputModel<T>(model: UnparsedAutosizingInputModel | P
 }
 
 function AutosizingInput<T>(model: UnparsedAutosizingInputModel | ParsedAutosizingInputModel<T>) {
-	const internalValue = model.rawValue || useSignal(isParsedAutosizingInputModel(model) ? model.serialize(model.value.deepPeek()) : model.value.peek())
+	// Always create the local signal so the hook order stays fixed; it is only used when the caller does not own the raw text.
+	const localRawValue = useSignal(isParsedAutosizingInputModel(model) ? model.serialize(model.value.deepPeek()) : model.value.peek())
+	const internalValue = model.rawValue ?? localRawValue
 	const baseInputModel = {
 		rawValue: internalValue,
 		...(model.type !== undefined ? { type: model.type } : {}),

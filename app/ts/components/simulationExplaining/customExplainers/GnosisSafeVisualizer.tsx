@@ -1,9 +1,9 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGnosisSafeTransaction } from '../../../background/backgroundUtils.js'
-import { MessageToPopup, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
+import { SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../../types/personal-message-definitions.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { usePopupMessage } from '../../hooks/usePopupMessage.js'
 import { AsyncStatusIcon } from '../../subcomponents/AsyncAction.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import { SmallAddress } from '../../subcomponents/address.js'
@@ -118,23 +118,14 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 
 	const isReplyForCurrentMessage = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentMessageIdentifier.current
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return false
-			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const { role: _role, ...popupSimulateExecutionReply } = parsed
-			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (!isReplyForCurrentMessage(reply)) return false
-			resetGnosisSimulationRequest()
-			simulateExecutionReply.value = reply
-			return false
-		}
-		// Still subscribes through the helper directly: #1682 moves this component onto usePopupMessage together with the rest of its hook changes.
-		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
-	}, [])
+	usePopupMessage((message) => {
+		if (message.method !== 'popup_simulateExecutionReply') return
+		const { role: _role, ...popupSimulateExecutionReply } = message
+		const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
+		if (!isReplyForCurrentMessage(reply)) return
+		resetGnosisSimulationRequest()
+		simulateExecutionReply.value = reply
+	})
 
 	const requestToSimulate = () => {
 		if (gnosisSimulationRequest.value.state === 'pending') return
@@ -146,6 +137,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		})
 	}
 
+	// Restart only when the simulated account or message identity changes; re-renders with an equal message object keep the current simulation.
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
 		simulateExecutionReply.value = undefined

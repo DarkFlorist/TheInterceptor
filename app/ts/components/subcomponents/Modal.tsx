@@ -65,21 +65,25 @@ type ModalDialogProps<T extends string> = JSX.IntrinsicElements['dialog'] & {
 const Dialog = <T extends string>({ children, onModalClose, ...props }: ModalDialogProps<T>) => {
 	const context = useContext(ModalContext)
 	if (!context) throw new Error('Modal.Dialog must be used within a Modal')
+	const dialogRef = context.dialogRef
 
-	const closeEventCallback = (event: Event) => {
-		if (!(event.currentTarget instanceof HTMLDialogElement)) return
-		onModalClose(event.currentTarget.returnValue as T)
-	}
+	// The close listener is registered once per dialog element, so it reads the newest callback through this ref instead of the one from its first render.
+	const latestOnModalClose = useRef(onModalClose)
+	latestOnModalClose.current = onModalClose
 
 	useEffect(() => {
-		const dialogElement = context.dialogRef.current
+		const dialogElement = dialogRef.current
 		if (dialogElement === null) return
+		const closeEventCallback = (event: Event) => {
+			if (!(event.currentTarget instanceof HTMLDialogElement)) return
+			latestOnModalClose.current(event.currentTarget.returnValue as T)
+		}
 		dialogElement.addEventListener('close', closeEventCallback)
 		return () => { dialogElement.removeEventListener('close', closeEventCallback) }
-	}, [context.dialogRef.current])
+	}, [dialogRef])
 
 	return (
-		<dialog role = 'dialog' { ...props } ref = { context.dialogRef }>
+		<dialog role = 'dialog' { ...props } ref = { dialogRef }>
 			<form method = 'dialog'>{ children }</form>
 		</dialog>
 	)
