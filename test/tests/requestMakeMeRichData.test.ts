@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addressString, checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
@@ -65,7 +66,7 @@ function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStor
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await importAllPopupMessageHandlers(),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),

@@ -1,7 +1,7 @@
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
-import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
+import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageHandlerRegistry.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'

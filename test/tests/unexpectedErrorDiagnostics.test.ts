@@ -4,9 +4,10 @@ import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDateMock, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
-const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
+const { classifyCaughtError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
 const { createSafeValidationError } = await import('../../app/ts/safe/safeErrors.js')
 
 test('Safe failures use the shared internal error classification mechanism', () => {
@@ -394,7 +395,7 @@ describe('unexpected error diagnostics', () => {
 	test('keeps forwarded popup error message as diagnostic cause', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await modulesPromise
-		const { reportUnexpectedErrorInWindow } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { reportUnexpectedErrorInWindow } = await importAllPopupMessageHandlers()
 		const timestamp = new Date('2026-06-23T00:00:00.000Z')
 
 		await withSilencedConsole(async () => await reportUnexpectedErrorInWindow({

@@ -7,6 +7,7 @@ import type { SafeTx, VisualizedPersonalSignRequestSafeTx } from '../../app/ts/t
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -141,7 +142,7 @@ function createBrowserMock(): BrowserMock {
 const browserMock = createBrowserMock()
 
 async function loadModules() {
-	const popupMessageHandlers = await import('../../app/ts/background/popupMessageHandlers.js')
+	const popupMessageHandlers = await importAllPopupMessageHandlers()
 	const confirmTransaction = await import('../../app/ts/background/windows/confirmTransaction.js')
 	const ethereumClientService = await import('../../app/ts/simulation/services/EthereumClientService.js')
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')

@@ -1,13 +1,15 @@
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { createPopupSettingsCoordinator } from './popupSettingsCoordinator.js'
-import { popupSettingsOperations } from '../types/popupSettingsProtocol.js'
-import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
-import type { PopupMessage } from '../types/interceptor-messages.js'
-import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
-import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
-import { getSettings } from './settings.js'
-import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { createPopupSettingsCoordinator } from '../popupSettingsCoordinator.js'
+import { popupSettingsOperations } from '../../types/popupSettingsProtocol.js'
+import type { PopupSettingsRequest } from '../../types/popupSettingsRequests.js'
+import type { PopupMessage } from '../../types/interceptor-messages.js'
+import type { PopupReplyOption } from '../../types/interceptor-reply-messages.js'
+import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
+import { getSettings } from '../settings.js'
+import { changeActiveAddress, modifyMakeMeRich } from '../popupMessageHandlers/home.js'
+import { popupChangeActiveRpc } from '../popupMessageHandlers/settings.js'
+import { enableSimulationMode } from '../popupMessageHandlers/simulation.js'
+import { queuePopupSimulationRefresh } from '../popupSimulationRefreshQueue.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
@@ -23,7 +25,7 @@ function settingsCommand<Method extends PopupSettingsRequest['method']>(method: 
 	})
 }
 
-// The protocol descriptor is the exhaustive operation/reply source; this boundary owns admission and command completion.
+// Settings commands from several domains share one admission coordinator, so only one popup changes settings at a time. The protocol descriptor is the exhaustive operation/reply source; this boundary owns admission and command completion.
 export const popupSettingsCommandHandlers = {
 	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await settingsCoordinator.publish()),
 	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.simulationServicesOwner, context.websiteTabConnections, request)),

@@ -8,6 +8,7 @@ import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { importAllPopupMessageHandlers } from './popupMessageHandlerModules.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -76,7 +77,7 @@ installBrowser()
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await importAllPopupMessageHandlers(),
 		...await import('../../app/ts/components/pages/ImportSimulationStack.js'),
 	}
 }
