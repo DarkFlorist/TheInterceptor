@@ -114,6 +114,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/simulation/services/EthereumSubscriptionService.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/addressBookStorage.js'),
 	}
 }
 

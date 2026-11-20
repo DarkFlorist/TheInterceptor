@@ -7,7 +7,7 @@ import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, Int
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { doAddressBookChainIdsMatch, type AddressBookEntry, type AddressBookEntries } from '../types/addressBookTypes.js'
+import type { AddressBookEntries } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -20,8 +20,6 @@ import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLarg
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
-export { getUserAddressBookEntries, getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst, repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
-import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
@@ -273,22 +271,10 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 	}
 }
 
-export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
-}
-
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await runSettingsStorageTransaction(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
 		return { writes: [{ userAddressBookEntriesV2: updateFunc(entries) }], result: undefined }
-	})
-}
-
-export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await runSettingsStorageTransaction(async () => {
-		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		return { writes: existingEntry === undefined ? [userAddressBookEntriesStorageWrite(entries.concat(newEntry))] : [], result: undefined }
 	})
 }
 

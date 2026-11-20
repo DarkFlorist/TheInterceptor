@@ -158,7 +158,7 @@ function createPort(tabId: number, onPostMessage?: (message: PortMessage) => voi
 }
 
 async function loadModules() {
-	const storageVariables = await import('../../app/ts/background/storageVariables.js')
+	const storageVariables = { ...await import('../../app/ts/background/storageVariables.js'), ...await import('../../app/ts/background/addressBookStorage.js') }
 	return {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),

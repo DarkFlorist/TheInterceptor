@@ -122,7 +122,7 @@ const settingsModulePromise = Promise.all([import('../../app/ts/background/setti
 	setMetamaskCompatibilityMode: settingsModule.persistMetamaskCompatibilityMode,
 }))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
-const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
+const storageVariablesModulePromise = Promise.all([import('../../app/ts/background/storageVariables.js'), import('../../app/ts/background/addressBookStorage.js')]).then(([storageVariablesModule, addressBookStorageModule]) => ({ ...storageVariablesModule, ...addressBookStorageModule }))
 
 const settingsStorageModulePaths = {
 	settings: 'app/ts/background/settings.ts',
@@ -633,7 +633,7 @@ describe('settings import', () => {
 			updateRichAccountBalances,
 			updateRichTokens,
 		} = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
+		const { updateUserAddressBookEntries } = await import('../../app/ts/background/addressBookStorage.js')
 		const accountAddress = 0x1111111111111111111111111111111111111111n
 		const tokenAddress = 0x2222222222222222222222222222222222222222n
 		const richToken: RichToken = {
@@ -947,7 +947,7 @@ describe('settings import', () => {
 		const { getWebsiteAccess, getSigningAddressPreferences, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
-		const addressBookWrite = updateUserAddressBookEntries((entries) => entries)
+		const addressBookWrite = updateUserAddressBookEntries((entries) => [...entries])
 		await addressBookWriteGate.started
 
 		const websiteAccessUpdate = updateWebsiteAccess(() => [{ website: { websiteOrigin: 'queued.example', icon: undefined, title: 'Queued' }, access: true }])

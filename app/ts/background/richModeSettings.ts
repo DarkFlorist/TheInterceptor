@@ -5,10 +5,9 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { profilesForAddresses, reconcileRichModeStateWithAddressBook, richTokensForPresentation, richTokenLayout } from '../utils/richModeDerivation.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
-// All funding mutations, and the address-book edits that can change funding, enter through this owner; they run under the settings storage lock so funding and address-book writes land in one storage set.
+// The owner of rich-mode funding state. Funding mutations run under the settings storage lock; address-book writes reach it through getRichModeWritesForAddressBook so funding and address-book writes land in one storage set.
 export const emptyRichModeState: RichModeState = { makeCurrentAddressRich: false, fixedAddressRichList: [], defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value, tokenLayouts: [], accountBalances: [] }
 
 // A plain read of the canonical funding state. The startup migration (richModeMigration) converts legacy keys and repairs a corrupt value before anything else runs, so an absent value means no funding is configured.
@@ -32,21 +31,17 @@ export async function mutateRichMode<Result>(operation: (store: ReturnType<typeo
 	})
 }
 
-// For address-book edits that can remove or change a funded token (removing, editing or replacing an entry); fundingChanged says whether any account's funded balances changed. Writes that cannot affect token entries, such as adding a missing entry or updating a Safe, use updateUserAddressBookEntries and never touch rich-mode state.
-export const updateAddressBookAndReconcileRichMode = async (update: (entries: AddressBookEntries) => AddressBookEntries): Promise<RichFundingResult> => await mutateRichMode(async (store) => richFundingSaved(await store.updateAddressBook(update)))
-
-// The settings import replaces funding state and the address book in its own storage transaction, so it composes these writes instead of taking the lock again.
-export async function getImportedRichModeStorageWrites(state: RichModeState, entries: AddressBookEntries) {
-	const store = createRichModeTransaction(state)
-	store.replace(state)
-	await store.updateAddressBook(() => entries)
-	return store.getStorageWrites()
+// The funding writes that keep rich mode consistent with new address-book entries. Only addressBookStorage calls this, inside the settings storage transaction that writes those entries, so no address-book write can skip reconciliation. fundingChanged says whether any account's funded balances changed.
+export async function getRichModeWritesForAddressBook(entries: AddressBookEntries, importedState?: RichModeState) {
+	const store = createRichModeTransaction(importedState ?? await getRichModeState())
+	if (importedState !== undefined) store.replace(importedState)
+	const fundingChanged = await store.reconcileAddressBook(entries)
+	return { writes: store.getStorageWrites(), fundingChanged }
 }
 
 function createRichModeTransaction(initial: RichModeState) {
 	let state = initial
 	let changed = false
-	let addressBookEntries: AddressBookEntries | undefined
 	const replace = (next: RichModeState) => { state = next; changed = true }
 	const transaction = {
 		getState: () => state,
@@ -75,17 +70,7 @@ function createRichModeTransaction(initial: RichModeState) {
 			replace(reconciled)
 			return fundingChanged
 		},
-		updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => {
-			const entries = update(addressBookEntries ?? await getUserAddressBookEntries())
-			addressBookEntries = entries
-			return await transaction.reconcileAddressBook(entries)
-		},
-		getStorageWrites: (): readonly StorageWrite[] => {
-			return [
-				...changed ? [richModeStateStorageWrite(state)] : [],
-				...addressBookEntries === undefined ? [] : [userAddressBookEntriesStorageWrite(addressBookEntries)],
-			]
-		},
+		getStorageWrites: (): readonly StorageWrite[] => changed ? [richModeStateStorageWrite(state)] : [],
 	}
 	return transaction
 }
@@ -140,11 +125,6 @@ export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: r
 		return richFundingSaved(true)
 	})
 }
-
-export const reconcileRichTokensWithAddressBook = async () => await mutateRichMode(async (store) => {
-	await store.reconcileAddressBook(await getUserAddressBookEntries())
-	return await store.getRichTokens()
-})
 
 export async function trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress: EthereumAddress | undefined) {
 	return await updateFixedMakeMeRichList((currentList) => {

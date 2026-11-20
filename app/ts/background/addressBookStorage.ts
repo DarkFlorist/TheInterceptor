@@ -1,11 +1,13 @@
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
-import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { richFundingSaved, type RichFundingResult, type RichModeState } from '../types/richMode.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import type { StorageWrite } from './settingsStorageTransaction.js'
+import { getRichModeWritesForAddressBook } from './richModeSettings.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
-// Storage reads and legacy recovery stay independent of the funding transaction owner; address-book edits that can change funded tokens enter through updateAddressBookAndReconcileRichMode.
+// The only owner of address-book storage. Every address-book write goes through updateUserAddressBookEntries, replaceUserAddressBookEntries or getImportedAddressBookStorageWrites, which reconcile rich-mode funding in the same storage set; the raw write stays private here.
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
 	if (parsedEntry.success) return parsedEntry.value
@@ -41,4 +43,35 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
+const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
+
+// The address-book writes for entries, plus the funding writes that keep rich mode consistent with them. Must run inside a settings storage transaction. An update that returns the previous array writes no address book but still reconciles funding.
+async function getFundingAwareAddressBookWrites(previous: AddressBookEntries | undefined, entries: AddressBookEntries, importedRichModeState?: RichModeState) {
+	const funding = await getRichModeWritesForAddressBook(entries, importedRichModeState)
+	return { writes: [...entries === previous ? [] : [userAddressBookEntriesStorageWrite(entries)], ...funding.writes], fundingChanged: funding.fundingChanged }
+}
+
+export async function updateUserAddressBookEntries(update: (entries: AddressBookEntries) => AddressBookEntries): Promise<RichFundingResult> {
+	return await runSettingsStorageTransaction(async () => {
+		const previous = await getUserAddressBookEntries()
+		const { writes, fundingChanged } = await getFundingAwareAddressBookWrites(previous, update(previous))
+		return { writes, result: richFundingSaved(fundingChanged) }
+	})
+}
+
+// Replaces the stored entries without reading them first, for migrations whose stored value does not parse yet.
+export async function replaceUserAddressBookEntries(entries: AddressBookEntries): Promise<RichFundingResult> {
+	return await runSettingsStorageTransaction(async () => {
+		const { writes, fundingChanged } = await getFundingAwareAddressBookWrites(undefined, entries)
+		return { writes, result: richFundingSaved(fundingChanged) }
+	})
+}
+
+export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
+	return await updateUserAddressBookEntries((entries) => entries.some((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId)) ? entries : entries.concat(newEntry))
+}
+
+// The settings import writes imported entries and imported funding, reconciled against them, inside its own storage transaction.
+export async function getImportedAddressBookStorageWrites(entries: AddressBookEntries, importedRichModeState: RichModeState) {
+	return (await getFundingAwareAddressBookWrites(undefined, entries, importedRichModeState)).writes
+}

@@ -6,8 +6,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
-import { getUserAddressBookEntries } from './storageVariables.js'
-import { getImportedRichModeStorageWrites } from './richModeSettings.js'
+import { getImportedAddressBookStorageWrites, getUserAddressBookEntries } from './addressBookStorage.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previousEntries: AddressBookEntries) {
@@ -65,7 +64,7 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 		writes: [
 			...version === '1.3' || version === '1.4' || version === '1.5' || version === '1.6' || version === '1.7' ? [pageStorageWrite(exportedSettings.settings.openedPage)] : [],
 			// Imported address-book entries and funding are written together, with funding reconciled against those entries.
-			...await getImportedRichModeStorageWrites(getImportedRichModeState(exportedSettings), getImportedAddressBookEntries(exportedSettings, await getUserAddressBookEntries())),
+			...await getImportedAddressBookStorageWrites(getImportedAddressBookEntries(exportedSettings, await getUserAddressBookEntries()), getImportedRichModeState(exportedSettings)),
 			getImportedSimulationModeStorageWrite(exportedSettings, defaultActiveAddress),
 			signingAddressPreferencesStorageWrite(getIndependentAddressSettings(exportedSettings)?.signingAddressPreferences ?? []),
 			useSignersAddressAsActiveAddressStorageWrite(exportedSettings.settings.useSignersAddressAsActiveAddress),
