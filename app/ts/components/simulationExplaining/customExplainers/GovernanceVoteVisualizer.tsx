@@ -11,6 +11,7 @@ import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
 import { Transaction } from '../Transactions.js'
 import { useEffect, useRef } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
 import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
 import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../../utils/preact-utilities.js'
@@ -78,6 +79,13 @@ const formatExecutionTime = (blockTimeManipulation: BlockTimeManipulation | unde
 	return bigintSecondsToDate(blockTimeManipulation.timeToSet).toUTCString()
 }
 
+// Every outcome of a governance preview, a refusal, a failed visualisation or a simulated execution, renders in this frame, so the note on how the preview differs from the real execution goes with each of them.
+const GovernancePreviewResult = ({ requestErrorText, children }: { requestErrorText: string | undefined, children?: ComponentChildren }) => <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+	{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
+	{ children }
+	<p class = 'paragraph'>{ GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE }</p>
+</div>
+
 const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, governanceSimulationState, requestErrorText, simulateGovernanceVote }: ShowSuccessOrFailureParams) => {
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
@@ -123,19 +131,17 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		</div>
 	}
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
-			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
+		return <GovernancePreviewResult requestErrorText = { requestErrorText }>
 			<ErrorComponent text = { errorText }/>
-		</div>
+		</GovernancePreviewResult>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
-			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
+		return <GovernancePreviewResult requestErrorText = { requestErrorText }>
 			<ErrorComponent text = { rpcErrorText }/>
-		</div>
+		</GovernancePreviewResult>
 	}
 	const simulationAndVisualisationResults = results.value
-	if (executionBlock.value === undefined || simulationAndVisualisationResults === undefined) return <></>
+	if (executionBlock.value === undefined || simulationAndVisualisationResults === undefined) return <GovernancePreviewResult requestErrorText = { requestErrorText }/>
 	const executionTime = formatExecutionTime(executionBlock.value.blockTimeManipulation)
 	const replySimulationState = simulateExecutionReply.value.data.result.simulationState
 	const simulatedExecutionBlock = replySimulationState.success ? replySimulationState.simulatedBlocks[replySimulationState.simulatedBlocks.length - 1] : undefined
@@ -143,11 +149,9 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		? describeGovernanceExecutionBlockNumber({ number: simulateExecutionReply.value.data.result.simulationState.blockNumber, timestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp }, simulatedExecutionBlock?.blockHeader?.number, executionBlock.value.blockTimeManipulation.timeToSet)
 		: undefined
 
-	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
-		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
+	return <GovernancePreviewResult requestErrorText = { requestErrorText }>
 		{ executionTime === undefined ? <></> : <p class = 'paragraph'>{ `Executed by the governor's timelock on ${ executionTime }` }</p> }
 		{ blockNumberNote === undefined ? <></> : <p class = 'paragraph'>{ blockNumberNote }</p> }
-		<p class = 'paragraph'>{ GOVERNANCE_EXECUTION_ENVIRONMENT_NOTE }</p>
 		{ executionBlock.value.simulatedAndVisualizedTransactions.map((executionTransaction) => <Transaction
 			key = { executionTransaction.transactionIdentifier.toString() }
 			simTx = { executionTransaction }
@@ -158,7 +162,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 			addressMetaData = { addressMetaData }
 		/>) }
-	</div>
+	</GovernancePreviewResult>
 }
 
 type GovernanceVoteVisualizerParams = {
