@@ -6,7 +6,7 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { getSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
-import { isPopupSimulationAvailable, queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { isPopupSimulationAvailable, runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { completeRichFundingMutation, toRichSettingsChangeReply } from './richFundingReplies.js'
 import { getPopupVisualisationState } from './storageVariables.js'
 
@@ -44,7 +44,7 @@ export const popupSettingsCommandHandlers = {
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		const result = await modifyMakeMeRich(request)
 		return toRichSettingsChangeReply(await completeRichFundingMutation(result, {
-			refresh: async () => await queuePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true }),
+			refresh: async () => await runPopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true }),
 			isStoredSimulationAvailable: async () => isPopupSimulationAvailable(await getPopupVisualisationState()),
 		}))
 	}),

@@ -1,4 +1,4 @@
-import { toRlp as encodeRlp } from './ethereumPrimitives.js'
+import { keccak256, toRlp as encodeRlp } from './ethereumPrimitives.js'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { type DistributiveOmit, assertNever } from './typescript.js'
@@ -178,6 +178,15 @@ export function rlpEncode(data: RlpEncodeableData[]): Uint8Array {
 	return stringToUint8Array(encodeRlp(data.map((x) => rlpEncodeArray(x)), 'hex'))
 }
 
+// Shared authorization tuple for signed/unsigned transaction serialization and the EIP-7702 signing hash.
+const encodeEip7702AuthorizationPayload = ({ chainId, address, nonce }: { readonly chainId: bigint, readonly address: bigint, readonly nonce: bigint }): Uint8Array[] => [
+	stripLeadingZeros(bigintToUint8Array(chainId, 32)),
+	bigintToUint8Array(address, 20),
+	stripLeadingZeros(bigintToUint8Array(nonce, 32)),
+]
+
+export const getEip7702AuthorizationSigningHash = (authorization: { readonly chainId: bigint, readonly address: bigint, readonly nonce: bigint }) => keccak256(new Uint8Array([0x05, ...rlpEncode(encodeEip7702AuthorizationPayload(authorization))]))
+
 const encodeTransactionRecipient = (recipient: bigint | null) => recipient === null ? new Uint8Array(0) : bigintToUint8Array(recipient, 20)
 
 const encodeTransactionAccessList = (accessList: readonly { address: bigint, storageKeys: readonly bigint[] }[]) => {
@@ -244,9 +253,7 @@ function rlpEncodeSigned7702TransactionPayload(transaction: DistributiveOmit<ISi
 		transaction.input,
 		encodeTransactionAccessList(transaction.accessList),
 		transaction.authorizationList.map(({ chainId, address, nonce, yParity, r, s }) => [
-			stripLeadingZeros(bigintToUint8Array(chainId, 32)),
-			bigintToUint8Array(address, 20),
-			stripLeadingZeros(bigintToUint8Array(nonce, 32)),
+			...encodeEip7702AuthorizationPayload({ chainId, address, nonce }),
 			stripLeadingZeros(new Uint8Array([yParity === 'even' ? 0 : 1])),
 			stripLeadingZeros(bigintToUint8Array(r, 32)),
 			stripLeadingZeros(bigintToUint8Array(s, 32)),
@@ -345,11 +352,7 @@ function rlpEncodeUnsigned7702TransactionPayload(transaction: IUnsignedTransacti
 		stripLeadingZeros(bigintToUint8Array(transaction.value, 32)),
 		transaction.input,
 		encodeTransactionAccessList(transaction.accessList),
-		transaction.authorizationList.map(({ chainId, address, nonce }) => [
-			stripLeadingZeros(bigintToUint8Array(chainId, 32)),
-			bigintToUint8Array(address, 20),
-			stripLeadingZeros(bigintToUint8Array(nonce, 32)),
-		]),
+		transaction.authorizationList.map(encodeEip7702AuthorizationPayload),
 	]
 	return rlpEncode(toEncode)
 }

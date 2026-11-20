@@ -1,6 +1,8 @@
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
+
 import { addressString, bigintToUint8Array, checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -10,6 +12,8 @@ import { RichToken } from '../../app/ts/types/richMode.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { AddressBookEntry, type Erc1155Entry } from '../../app/ts/types/addressBookTypes.js'
+
+afterEach(waitForBackgroundTasks)
 
 const richAccountAddress = 0x1111111111111111111111111111111111111111n
 
@@ -713,13 +717,17 @@ describe('requestMakeMeRichList resilience', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 		let releaseActiveRefresh = () => undefined
 		const activeRefreshGate = new Promise<void>((resolve) => { releaseActiveRefresh = resolve })
-		const refresh = createPopupSimulationRefresher<{ ethereum: EthereumClientService, tokenPriceService: TokenPriceService, revision: string }>(async ({ revision }) => {
-			if (revision === 'active') {
-				await activeRefreshGate
-				return true
-			}
-			throw new Error('replacement refresh failed')
-		})
+		const queue = createPopupSimulationRefresher<string>()
+		const refresh = ({ revision }: { readonly revision: string }) => queue.refresh(queue.toQueued({ ethereum, tokenPriceService }, {
+			target: revision,
+			execute: async () => {
+				if (revision === 'active') {
+					await activeRefreshGate
+					return true
+				}
+				throw new Error('replacement refresh failed')
+			},
+		}), false)
 		const activeRefresh = refresh({ ethereum, tokenPriceService, revision: 'active' })
 		await Promise.resolve()
 		await Promise.resolve()
@@ -1139,6 +1147,7 @@ describe('requestMakeMeRichList resilience', () => {
 				}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 			}
 			const fundingChanged = edit === 'removal' || edit === 'watched-ID change' || edit === 'token-type change'
+			await waitForBackgroundTasks()
 			assert.equal(visibilityProbeCount, fundingChanged ? 1 : 0)
 			assert.equal((await getRichModeState()).accountBalances[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
 		})
@@ -1174,6 +1183,7 @@ describe('requestMakeMeRichList resilience', () => {
 			const dependencies = watchAssetResolutionDependencies(new Map(), services)
 			await dependencies.updateAddressBook((entries) => replaceAddressBookEntryWithAsset(entries, { type: 'ERC721', name: 'Approved NFT', address: approvedAddress, symbol: 'NFT', entrySource: 'User', chainId: 1n }))
 			const fundingChanged = approval === 'replaces the funded token entry'
+			await waitForBackgroundTasks()
 			assert.equal(visibilityProbeCount, fundingChanged ? 1 : 0)
 			assert.equal((await getRichModeState()).accountBalances[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
 		})
