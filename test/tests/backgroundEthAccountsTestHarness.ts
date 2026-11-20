@@ -26,7 +26,7 @@ export function createDeferredValue<T>() {
 }
 
 // The background tests' own browser mock, kept until they move to the shared installBrowserMock in test/harness/browserMock.ts, which removes this one.
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+export function installLegacyBackgroundBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
