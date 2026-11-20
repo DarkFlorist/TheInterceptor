@@ -1,4 +1,4 @@
-import { RpcNetwork } from '../types/rpc.js'
+import { RpcNetwork, type RpcEntries } from '../types/rpc.js'
 
 export type RpcNetworkChange = {
 	readonly chainChanged: boolean
@@ -12,7 +12,7 @@ export const getRpcNetworkSelectionKey = (network: RpcNetwork) => JSON.stringify
 // List preferences can change independently of the active selection; they do not identify a different RPC entry.
 export const getRpcEntryIdentityKey = (network: RpcNetwork) => getRpcNetworkSelectionKey(network.httpsRpc === undefined ? network : { ...network, primary: false, minimized: false })
 
-// Chain changes require wallet approval; endpoint changes replace services; metadata changes only update the selection.
+// Chain changes require wallet approval; endpoint changes require service replacement; metadata changes are local.
 export function getRpcNetworkChange(previous: RpcNetwork | undefined, next: RpcNetwork): RpcNetworkChange {
 	const chainChanged = previous?.chainId !== next.chainId
 	return {
@@ -23,11 +23,22 @@ export function getRpcNetworkChange(previous: RpcNetwork | undefined, next: RpcN
 }
 
 // Signer-only selections retain a fallback service, but it must not be used for simulation or cache probes.
-export const isSignerOnlyNetwork = (network: RpcNetwork) => network.httpsRpc === undefined
+export const isSignerOnlyNetwork = (network: RpcNetwork): network is Extract<RpcNetwork, { readonly httpsRpc: undefined }> => network.httpsRpc === undefined
 
 // Re-evaluate at each command boundary using fresh settings, but keep the routing policy shared.
 export function getRpcChangeRoute(previous: RpcNetwork, next: RpcNetwork, simulationMode: boolean) {
 	const change = getRpcNetworkChange(previous, next)
 	if (!change.selectionChanged) return 'unchanged'
 	return !simulationMode && change.chainChanged ? 'wallet' : 'local'
+}
+
+// List edits reconcile only a selection that belonged to the previous list. Imported/custom and signer-only selections remain independent of unrelated list changes.
+export const resolveRpcNetworkAfterListChange = (active: RpcNetwork, previousEntries: RpcEntries, entries: RpcEntries) => {
+	if (isSignerOnlyNetwork(active) || !previousEntries.some(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(active))) return undefined
+	// Prefer newly edited endpoint metadata over an unchanged alias when the selected identity was replaced.
+	return entries.find(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(active))
+		?? entries.find(entry => !getRpcNetworkChange(active, entry).endpointChanged && !previousEntries.some(previous => getRpcEntryIdentityKey(previous) === getRpcEntryIdentityKey(entry)))
+		?? entries.find(entry => !getRpcNetworkChange(active, entry).endpointChanged)
+		?? entries.find(entry => entry.chainId === active.chainId && entry.primary)
+		?? entries.find(entry => entry.chainId === active.chainId)
 }

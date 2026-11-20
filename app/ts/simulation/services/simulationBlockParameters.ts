@@ -1,6 +1,8 @@
-import type { BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
-import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
-import { max, min } from '../../utils/bigint.js'
+import type { BlockOverrides } from '../../types/ethSimulate-types.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
+import type { BlockTimeManipulation, BlockTimeManipulationDeltaUnit } from '../../types/visualizer-types.js'
+import type { EthereumBlockHeader, EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { bigintSecondsToDate, dateToBigintSeconds, max, min } from '../../utils/bigint.js'
 import { ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER } from '../../utils/constants.js'
 import { assertNever } from '../../utils/typescript.js'
 
@@ -32,3 +34,17 @@ export const getNextBaseFeePerGas = (parentGasUsed: bigint, parentGasLimit: bigi
 	if (parentGasUsed > parentGasTarget) return parentBaseFeePerGas + max(1n, parentBaseFeePerGas * (parentGasUsed - parentGasTarget) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
 	return max(0n, parentBaseFeePerGas - parentBaseFeePerGas * (parentGasTarget - parentGasUsed) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
 }
+
+export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
+	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
+	// Nodes reject an eth_simulateV1 block that is not strictly later than its parent, so a zero delay (a block split inserted by getCurrentSimulationInput, or a user's 0) still advances the simulated time by one second.
+	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + max(1n, getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit)))
+	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
+}
+
+// Every appended inspection/call block shares these inherited overrides, base-fee policy and timestamp advancement; the code probe supplies only its own calls and state overrides.
+export const getAppendedSimulationBlockOverrides = (parentBlock: Pick<NonNullable<EthereumBlockHeader>, 'miner' | 'timestamp' | 'baseFeePerGas'>, previousBlockOverride: BlockOverrides | undefined, simulateWithZeroBaseFee = false): BlockOverrides => ({
+	...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
+	baseFeePerGas: simulateWithZeroBaseFee ? 0n : getSimulatedBlockBaseFeePerGas(parentBlock),
+	time: getNextBlockTimeStampOverride(previousBlockOverride?.time ?? parentBlock.timestamp, DEFAULT_BLOCK_MANIPULATION),
+})
