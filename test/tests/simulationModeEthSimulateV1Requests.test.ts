@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { bytes32String } from '../../app/ts/utils/bigint.js'
 import { ethSimulateV1FromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
@@ -6,7 +6,8 @@ import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.j
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { createSimulationModeTestContext, blockNumber, createDappEthSimulateV1Request, createSimulationStateInput, createTwoBlockSimulationStateInput, testBytes32 } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { requestHandler, ethereum, createEthereumWithThrowingSimulationPreparation, getBlockNumberFromInput, getBlockFromInput } = createSimulationModeTestContext()
+const { requestHandler, ethereum, createEthereumWithThrowingSimulationPreparation, getBlockNumberFromInput, getBlockFromInput, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 
 describe('SimulationModeEthereumClientService', () => {
 	test('input-based eth_simulateV1 prepends simulated stack for latest parent block', async () => {
