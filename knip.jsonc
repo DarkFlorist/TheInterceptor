@@ -13,7 +13,7 @@
 				"app/ts/fetchSimulationStack.ts",
 				"app/ts/interceptorAccess.ts",
 				"app/ts/popup.ts",
-				"app/ts/settingsView.ts",
+				"app/ts/managementView.ts",
 				"app/ts/websiteAccess.ts",
 				"app/ts/watchAsset.ts",
 				"app/inpage/ts/document_start.ts",

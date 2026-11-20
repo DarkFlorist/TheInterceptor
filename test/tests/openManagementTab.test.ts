@@ -119,7 +119,7 @@ const emptyOpenedTabs = (): OpenedTabIds => ({})
 describe('open management tab', () => {
 	test('reuses the tracked management tab across management sections', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
-			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites' }],
+			[{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites' }],
 			{ ...emptyOpenedTabs(), settingsView: 42 },
 		)
 		const { openManagementPage, openManagementSimulationStack } = await loadManagementNavigation()
@@ -132,11 +132,11 @@ describe('open management tab', () => {
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [
-			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#home' } },
-			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#websites' } },
-			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#address-book' } },
-			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#settings' } },
-			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#simulation-stack' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#home' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#websites' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#address-book' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#settings' } },
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#simulation-stack' } },
 		])
 	})
 })
@@ -149,8 +149,8 @@ describe('management tab tracking', () => {
 		await openManagementSimulationStackReview()
 		await openManagementPage('home')
 
-		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#simulation-stack' }])
-		assert.deepEqual(updatedTabs, [{ tabId: 99, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#home' } }])
+		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#simulation-stack' }])
+		assert.deepEqual(updatedTabs, [{ tabId: 99, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#home' } }])
 		assert.deepEqual(createdWindows, [])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
@@ -162,15 +162,15 @@ describe('management tab tracking', () => {
 		await openManagementSimulationStackReview()
 
 		assert.deepEqual(createdTabs, [])
-		assert.deepEqual(createdWindows, [{ url: '/html3/settingsViewV3.html#simulation-stack' }])
+		assert.deepEqual(createdWindows, [{ url: '/html3/managementViewV3.html#simulation-stack' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, {})
 	})
 
 	test('prefers the current management tab ID over a legacy settings tab ID', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
 			[
-				{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#settings' },
-				{ id: 43, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#home' },
+				{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#settings' },
+				{ id: 43, url: 'chrome-extension://test-extension/html3/managementViewV3.html#home' },
 			],
 			{ settingsView: 42, managementTabId: 43 },
 		)
@@ -179,7 +179,7 @@ describe('management tab tracking', () => {
 		await openManagementPage('diagnostics')
 
 		assert.deepEqual(createdTabs, [])
-		assert.deepEqual(updatedTabs, [{ tabId: 43, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#diagnostics' } }])
+		assert.deepEqual(updatedTabs, [{ tabId: 43, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#diagnostics' } }])
 	})
 
 	test('opens and tracks one management tab even when legacy page IDs were stored', async () => {
@@ -189,13 +189,13 @@ describe('management tab tracking', () => {
 
 		await openManagementPage('diagnostics')
 
-		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#diagnostics' }])
+		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#diagnostics' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('reuses and focuses the tracked management tab window', async () => {
 		const { createdTabs, updatedTabs, updatedWindows } = installBrowserMock(
-			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites', windowId: 7 }],
+			[{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites', windowId: 7 }],
 			{ ...emptyOpenedTabs(), settingsView: 42 },
 		)
 		const { openManagementSimulationStack } = await loadManagementNavigation()
@@ -208,7 +208,7 @@ describe('management tab tracking', () => {
 		assert.equal(updatedTabs[0]?.update.active, true)
 		assert.equal(updatedTabs[0]?.update.highlighted, true)
 		const targetUrl = updatedTabs[0]?.update.url
-		assert.ok(targetUrl?.startsWith('/html3/settingsViewV3.html#simulation-stack?'))
+		assert.ok(targetUrl?.startsWith('/html3/managementViewV3.html#simulation-stack?'))
 		assert.equal(getSimulationStackTargetElementIdFromHash(targetUrl.slice(targetUrl.indexOf('#'))), 'simulation-stack-transaction-0x1')
 		assert.deepEqual(updatedWindows, [{ windowId: 7, update: { focused: true } }])
 	})
@@ -220,7 +220,7 @@ describe('management tab tracking', () => {
 		await openManagementPage('diagnostics')
 
 		assert.deepEqual(createdTabs, [])
-		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#diagnostics' } }])
+		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#diagnostics' } }])
 	})
 
 	test('replaces a missing tracked management tab', async () => {
@@ -229,7 +229,7 @@ describe('management tab tracking', () => {
 
 		await openManagementPage('settings')
 
-		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
+		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#settings' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
@@ -243,17 +243,17 @@ describe('management tab tracking', () => {
 		await openManagementPage('settings')
 
 		assert.deepEqual(updatedTabs, [])
-		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
+		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#settings' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('replaces a management tab that cannot be focused', async () => {
-		const { createdTabs, storageState } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites' }], { settingsView: 42 }, true)
+		const { createdTabs, storageState } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites' }], { settingsView: 42 }, true)
 		const { openManagementPage } = await loadManagementNavigation()
 
 		await openManagementPage('settings')
 
-		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
+		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#settings' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 

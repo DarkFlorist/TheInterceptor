@@ -7,7 +7,7 @@ import { getHtmlFile } from './backgroundUtils.js'
 import { getManagementTabId, setManagementTabId } from './storageVariables.js'
 
 function managementPagePath() {
-	return getHtmlFile('settingsView')
+	return getHtmlFile('managementView')
 }
 
 async function openManagementTab(targetUrl: string): Promise<browser.tabs.Tab | undefined> {

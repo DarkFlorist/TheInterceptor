@@ -47,7 +47,7 @@ let page: CdpConnection | undefined
 try {
 	const worker = await waitForInterceptorExtensionServiceWorker(session.browserDebugPort)
 	const extensionId = new URL(worker.url).host
-	targetId = await createTargetPage(session.browserConnection, `chrome-extension://${ extensionId }/html3/settingsViewV3.html#address-book`)
+	targetId = await createTargetPage(session.browserConnection, `chrome-extension://${ extensionId }/html3/managementViewV3.html#address-book`)
 	page = await connectTarget(session.browserDebugPort, targetId)
 	await page.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false })
 	await waitForSelector(page, '.address-book-list')

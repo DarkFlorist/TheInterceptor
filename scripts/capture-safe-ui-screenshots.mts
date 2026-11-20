@@ -501,7 +501,7 @@ try {
 	await stack.close()
 
 	console.info('Opening settings import and export page')
-	const settings = await browser.openPage('settingsView')
+	const settings = await browser.openPage('managementView')
 	await waitForSelector(settings, '.window-header')
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()

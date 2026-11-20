@@ -388,7 +388,7 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'fetchSimulationStack.js'),
 	path.join(appDirectory, 'js', 'interceptorAccess.js'),
 	path.join(appDirectory, 'js', 'popup.js'),
-	path.join(appDirectory, 'js', 'settingsView.js'),
+	path.join(appDirectory, 'js', 'managementView.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
 	...inpageRuntimeEntrypointPaths,

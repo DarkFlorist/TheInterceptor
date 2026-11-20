@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker } from './chromeHarness.js'
 import { launchFirefoxSession } from './firefoxHarness.js'
 
-export type SafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'settingsView'
+export type SafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'managementView'
 
 export type SafeUiScreenshotPage = {
 	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
