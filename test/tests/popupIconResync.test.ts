@@ -1208,7 +1208,7 @@ describe('popup icon sync', () => {
 		await act(async () => { await clickElement(balancesButton) })
 	}
 
-	const renderEditableTokenBalance = async (dom: ReturnType<typeof installDomMock>, sentRichTokenRequests: unknown[]) => {
+	const renderEditableTokenBalance = async (dom: ReturnType<typeof installDomMock>, sentRichTokenRequests: unknown[], savedAmount = 5_000_000n) => {
 		const account: AddressBookEntry = { type: 'contact', name: 'Editing account', address: 1n, entrySource: 'User' }
 		const option = usdcOption(true)
 		const daiOption: RichTokenOption = { ...usdcOption(false), tokenAddress: 0x6b175474e89094c44da98b954eedeac495271d0fn, name: 'Dai', symbol: 'DAI', decimals: 18n }
@@ -1222,7 +1222,7 @@ describe('popup icon sync', () => {
 			render(h(RichModeAccountManager, {
 				activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 				makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
-				richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5_000_000n }] }]),
+				richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: savedAmount }] }]),
 				richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option, daiOption]),
 				setRichState: async () => undefined,
 			}), dom.document.body)
@@ -1249,6 +1249,27 @@ describe('popup icon sync', () => {
 			await clickWhileEditingAmount(input, findButton(dom, 'Reset USDC rich amount'))
 			assert.deepEqual(requestedActions(sent), ['SetAmount'])
 			assert.deepEqual(requestedAmounts(sent), ['0x2e90edd000'])
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('reset discards an edit of an amount that is already the default without saving', async () => {
+		const dom = installDomMock()
+		const sent: unknown[] = []
+		try {
+			const { input } = await renderEditableTokenBalance(dom, sent, 200_000_000_000n)
+			const resetButton = findButton(dom, 'Reset USDC rich amount')
+			assert.equal(isButtonDisabled(resetButton), false)
+			await clickWhileEditingAmount(input, resetButton)
+			assert.equal(input.value, '200000')
+			assert.equal(isButtonDisabled(resetButton), true)
+			await act(async () => {
+				leaveAmountField(input)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.deepEqual(sent, [])
 		} finally {
 			render(undefined, dom.document.body)
 			dom.restore()
