@@ -3,7 +3,6 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
-import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
 afterEach(waitForBackgroundTasks)
 
@@ -14,15 +13,12 @@ describe('popup settings changes', () => {
 		const first = createDeferredValue<boolean>()
 		const last = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
-		const refresh = createPopupSimulationRefresher(async services => {
-			if (services.revision === 'first') { started.resolve(undefined); return await first.promise }
-			return await last.promise
-		})
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'first' }
-		const result = refresh(services)
+		const refresh = createPopupSimulationRefresher()
+		const firstRequest = { coalescingKey: 'first', execute: async () => { started.resolve(undefined); return await first.promise } }
+		const result = refresh(firstRequest, false)
 		await started.promise
-		assert.equal(refresh(services), result)
-		const next = refresh({ ...services, revision: 'second' })
+		assert.equal(refresh(firstRequest, false), result)
+		const next = refresh({ coalescingKey: 'second', execute: async () => await last.promise }, false)
 		assert.notEqual(next, result)
 		first.resolve(firstSucceeded)
 		assert.deepEqual(await result, { status: 'observed', available: firstSucceeded })
@@ -30,60 +26,76 @@ describe('popup settings changes', () => {
 		assert.deepEqual(await next, { status: 'observed', available: !firstSucceeded })
 	})
 
-	for (const change of ['same', 'revision', 'provider', 'force'] as const) {
-		test(`shares only refresh work that covers the requested revision and invalidation (${ change })`, async () => {
+	for (const change of ['same', 'key', 'force'] as const) {
+		test(`shares only refresh work that covers the requested key and invalidation (${ change })`, async () => {
 			installBrowserMock()
 			const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 			const release = createDeferredValue<boolean>()
 			const started = createDeferredValue<void>()
 			let calls = 0
-			const refresh = createPopupSimulationRefresher(async () => { calls++; started.resolve(undefined); return await release.promise })
-			const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'one' }
-			const pending = refresh(services)
+			const refresh = createPopupSimulationRefresher()
+			const execute = async () => { calls++; started.resolve(undefined); return await release.promise }
+			const request = { coalescingKey: 'one', execute }
+			const pending = refresh(request, false)
 			await started.promise
-			const next = change === 'provider' ? { ...services, ...createEthereumWithGetBlockCounter({ count: 0 }) }
-				: change === 'revision' ? { ...services, revision: 'two' }
-				: change === 'force' ? { ...services, invalidateOldState: true } : services
-			const nextResult = refresh(next)
+			const next = change === 'key' ? { coalescingKey: 'two', execute } : request
+			const invalidate = change === 'force'
+			const nextResult = refresh(next, invalidate)
 			assert.equal(nextResult === pending, change === 'same')
-			for (let i = 0; i < 5; i++) assert.equal(refresh(next), nextResult)
+			for (let i = 0; i < 5; i++) assert.equal(refresh(next, invalidate), nextResult)
 			release.resolve(true)
 			assert.deepEqual(await pending, { status: 'observed', available: true })
 			assert.deepEqual(await nextResult, { status: 'observed', available: true })
 			assert.equal(calls, change === 'same' ? 1 : 2)
-			await refresh(next)
+			await refresh(next, invalidate)
 			assert.equal(calls, change === 'same' ? 2 : 3)
 		})
 	}
+
+	test('gives each installed service pair its own coalescing key', async () => {
+		installBrowserMock()
+		await loadModules()
+		const { preparePopupVisualisationRefresh } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const otherServices = createEthereumWithGetBlockCounter({ count: 0 })
+		for (const { ethereum } of [services, otherServices]) Object.defineProperty(ethereum, 'getCachedBlock', { value: () => ({ number: 7n, hash: 0x77n }) })
+		const first = await preparePopupVisualisationRefresh(services, false)
+		const repeated = await preparePopupVisualisationRefresh(services, false)
+		const other = await preparePopupVisualisationRefresh(otherServices, false)
+		assert.ok(first !== undefined && repeated !== undefined && other !== undefined)
+		assert.equal(typeof first.coalescingKey, 'string', 'the test services must expose a cached block, or every key is unique')
+		assert.equal(repeated.coalescingKey, first.coalescingKey)
+		assert.notEqual(other.coalescingKey, first.coalescingKey)
+		assert.deepEqual(Object.keys(first).sort(), ['coalescingKey', 'execute'])
+	})
 
 	test('supersedes queued B with the latest A and carries forward invalidation', async () => {
 		installBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const release = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
-		const calls: RevisionedPopupSimulationRefresh[] = []
-		const refresh = createPopupSimulationRefresher(async services => { calls.push(services); started.resolve(undefined); return await release.promise })
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
-		const first = refresh(services)
+		const calls: { readonly key: string, readonly invalidateOldState: boolean }[] = []
+		const refresh = createPopupSimulationRefresher()
+		const request = (key: string) => ({ coalescingKey: key, execute: async (invalidateOldState: boolean) => { calls.push({ key, invalidateOldState }); started.resolve(undefined); return await release.promise } })
+		const first = refresh(request('A'), false)
 		await started.promise
-		const skipped = refresh({ ...services, revision: 'B', invalidateOldState: true })
-		const last = refresh(services)
+		const skipped = refresh(request('B'), true)
+		const last = refresh(request('A'), false)
 		assert.notEqual(first, last)
 		assert.deepEqual(await skipped, { status: 'superseded' })
 		release.resolve(true)
 		assert.deepEqual(await first, { status: 'observed', available: true })
 		assert.deepEqual(await last, { status: 'observed', available: true })
-		assert.deepEqual(calls.map(call => call.revision), ['A', 'A'])
-		assert.equal(calls[1]?.invalidateOldState, true)
+		assert.deepEqual(calls, [{ key: 'A', invalidateOldState: false }, { key: 'A', invalidateOldState: true }])
 	})
 
 	test('merges invalidation for equivalent work before it starts', async () => {
 		installBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
-		const refresh = createPopupSimulationRefresher(async services => services.invalidateOldState === true)
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
-		const result = refresh(services)
-		assert.equal(refresh({ ...services, invalidateOldState: true }), result)
+		const refresh = createPopupSimulationRefresher()
+		const request = { coalescingKey: 'A', execute: async (invalidateOldState: boolean) => invalidateOldState }
+		const result = refresh(request, false)
+		assert.equal(refresh(request, true), result)
 		assert.deepEqual(await result, { status: 'observed', available: true })
 	})
 
@@ -93,18 +105,18 @@ describe('popup settings changes', () => {
 		const release = createDeferredValue<void>()
 		const started = createDeferredValue<void>()
 		let attempts = 0
-		const refresh = createPopupSimulationRefresher(async () => {
+		const refresh = createPopupSimulationRefresher()
+		const execute = async () => {
 			if (++attempts === 1) { started.resolve(undefined); await release.promise; throw new Error('Refresh failed') }
 			return true
-		})
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'first' }
-		const failed = assert.rejects(refresh(services), /Refresh failed/)
+		}
+		const failed = assert.rejects(refresh({ coalescingKey: 'first', execute }, false), /Refresh failed/)
 		await started.promise
-		const queued = refresh({ ...services, revision: 'second' })
+		const queued = refresh({ coalescingKey: 'second', execute }, false)
 		release.resolve(undefined)
 		await failed
 		assert.deepEqual(await queued, { status: 'observed', available: true })
-		assert.deepEqual(await refresh(services), { status: 'observed', available: true })
+		assert.deepEqual(await refresh({ coalescingKey: 'first', execute }, false), { status: 'observed', available: true })
 	})
 
 	test('coordinates settings changes across dispatchers without blocking wallet replies or reads', async () => {

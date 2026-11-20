@@ -5,18 +5,15 @@ import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { preparePopupVisualisationRefresh, type PopupVisualisationRefreshRequest } from './popupVisualisationUpdater.js'
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
-export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
 
 export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
 
-// An observed result describes stored availability after an attempt, not which request published it.
-export function createPopupSimulationRefresher<T extends RevisionedPopupSimulationRefresh>(refresh: (services: T) => Promise<boolean>) {
-	type Entry = { services: T, readonly result: Future<PopupSimulationRefreshOutcome> }
+// An observed result describes stored availability after an attempt, not which request published it. The queue owns the invalidation merged across coalesced requests and passes it to execute; requests carry none of their own.
+export function createPopupSimulationRefresher() {
+	type Entry = { readonly request: PopupVisualisationRefreshRequest, readonly invalidateOldState: boolean, readonly result: Future<PopupSimulationRefreshOutcome> }
 	let pending: Entry | undefined
 	let active: Entry | undefined
 	let draining = false
-	const sameRevision = (left: T, right: T) => left.revision === right.revision
-		&& left.ethereum === right.ethereum && left.tokenPriceService === right.tokenPriceService
 
 	const drain = async () => {
 		while (pending !== undefined) {
@@ -24,7 +21,7 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 			pending = undefined
 			active = entry
 			// Settle only this entry, including thrown failures, then continue with independently queued work.
-			await Promise.resolve().then(() => refresh(entry.services)).then(
+			await Promise.resolve().then(() => entry.request.execute(entry.invalidateOldState)).then(
 				value => { active = undefined; entry.result.resolve({ status: 'observed', available: value }) },
 				error => { active = undefined; entry.result.reject(error) },
 			)
@@ -32,16 +29,17 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 		draining = false
 	}
 
-	return (services: T): Promise<PopupSimulationRefreshOutcome> => {
-		if (pending !== undefined && sameRevision(pending.services, services)) {
-			pending.services = { ...services, invalidateOldState: services.invalidateOldState || pending.services.invalidateOldState }
+	return (request: PopupVisualisationRefreshRequest, invalidateOldState: boolean): Promise<PopupSimulationRefreshOutcome> => {
+		if (pending !== undefined && pending.request.coalescingKey === request.coalescingKey) {
+			pending = { ...pending, request, invalidateOldState: invalidateOldState || pending.invalidateOldState }
 			return pending.result.asPromise
 		}
 		// In A → B → A, the last A must replace pending B rather than join the active A.
-		if (pending === undefined && active !== undefined && sameRevision(active.services, services)
-			&& (!services.invalidateOldState || active.services.invalidateOldState)) return active.result.asPromise
+		if (pending === undefined && active !== undefined && active.request.coalescingKey === request.coalescingKey
+			&& (!invalidateOldState || active.invalidateOldState)) return active.result.asPromise
 		const entry: Entry = {
-			services: { ...services, invalidateOldState: services.invalidateOldState || pending?.services.invalidateOldState },
+			request,
+			invalidateOldState: invalidateOldState || (pending?.invalidateOldState ?? false),
 			result: new Future<PopupSimulationRefreshOutcome>(),
 		}
 		pending?.result.resolve({ status: 'superseded' })
@@ -54,17 +52,17 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 	}
 }
 
-const refreshRevision = createPopupSimulationRefresher<PopupVisualisationRefreshRequest>(async request => await request.execute(request.invalidateOldState ?? false))
+const refreshQueue = createPopupSimulationRefresher()
 
 // Awaits the refresh and returns its outcome; failures reject to the caller. Use startPopupSimulationRefreshInBackground when the caller must not wait for RPC work.
-export async function runPopupSimulationRefresh(services: PopupSimulationRefresh): Promise<PopupSimulationRefreshOutcome> {
-	const request = await preparePopupVisualisationRefresh(services)
-	return request === undefined ? { status: 'superseded' } as const : await refreshRevision(request)
+export async function runPopupSimulationRefresh({ invalidateOldState = false, ...services }: PopupSimulationRefresh): Promise<PopupSimulationRefreshOutcome> {
+	const request = await preparePopupVisualisationRefresh(services, invalidateOldState)
+	return request === undefined ? { status: 'superseded' } : await refreshQueue(request, invalidateOldState)
 }
 
 // Awaits only local invalidation and capture, then returns without an outcome; the refresh runs as a background task that reports its own failures. Callers that need the outcome use runPopupSimulationRefresh.
-export async function startPopupSimulationRefreshInBackground(services: PopupSimulationRefresh): Promise<void> {
-	const request = await preparePopupVisualisationRefresh(services, true)
+export async function startPopupSimulationRefreshInBackground({ invalidateOldState = true, ...services }: PopupSimulationRefresh): Promise<void> {
+	const request = await preparePopupVisualisationRefresh(services, invalidateOldState, true)
 	if (request === undefined) return
-	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshRevision(request))
+	backgroundTaskSupervisor.start({ source: 'popup_simulation_refresh' }, async () => await refreshQueue(request, invalidateOldState))
 }

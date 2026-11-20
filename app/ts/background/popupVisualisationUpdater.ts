@@ -147,24 +147,37 @@ async function publishUpdatingPopupVisualisation(invalidateOldState: boolean, ge
 	if (generation === publicationGeneration) await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: pending } })
 }
 
-export type PopupVisualisationRefreshRequest = SimulationServices & {
-	readonly revision: string | symbol
-	readonly invalidateOldState?: boolean
+// Opaque to the queue: it coalesces requests with equal keys and runs execute with the invalidation it merged across them. Services, snapshot and the publication generation stay in the closure, so the queue cannot bypass the generation guard.
+export type PopupVisualisationRefreshRequest = {
+	readonly coalescingKey: string | symbol
 	readonly execute: (invalidateOldState: boolean) => Promise<boolean>
 }
 
-// The queue receives only an identity and executable request; validity and snapshot ownership stay here.
-export async function preparePopupVisualisationRefresh(services: SimulationServices & { readonly invalidateOldState?: boolean }, publishUpdatingState = false): Promise<PopupVisualisationRefreshRequest | undefined> {
+const servicesIdentities = new WeakMap<EthereumClientService, WeakMap<TokenPriceService, number>>()
+let nextServicesIdentity = 0
+// Numbers each installed service pair, so a coalescing key can name the pair without exposing it.
+function getServicesIdentity({ ethereum, tokenPriceService }: SimulationServices): number {
+	const byTokenPriceService = servicesIdentities.get(ethereum) ?? new WeakMap<TokenPriceService, number>()
+	servicesIdentities.set(ethereum, byTokenPriceService)
+	const existing = byTokenPriceService.get(tokenPriceService)
+	if (existing !== undefined) return existing
+	nextServicesIdentity += 1
+	byTokenPriceService.set(tokenPriceService, nextServicesIdentity)
+	return nextServicesIdentity
+}
+
+// Captures the snapshot and, for background edits, publishes the updating state; the caller decides invalidation once and passes it to the queue, which hands it to execute.
+export async function preparePopupVisualisationRefresh(services: SimulationServices, invalidateOldState: boolean, publishUpdatingState = false): Promise<PopupVisualisationRefreshRequest | undefined> {
 	const generation = publishUpdatingState ? invalidatePopupVisualisation() : publicationGeneration
 	const snapshot = await captureSimulationSnapshot()
 	if (generation !== publicationGeneration) return undefined
-	const invalidateOldState = services.invalidateOldState ?? publishUpdatingState
 	if (publishUpdatingState) await publishUpdatingPopupVisualisation(invalidateOldState, generation)
 	if (generation !== publicationGeneration) return undefined
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = publishUpdatingState ? undefined : provider?.getCachedBlock()
 	// Without a cached head we cannot prove equivalence; keep the follow-up refresh.
-	const revision = publishUpdatingState || block === undefined ? Symbol('UI simulation refresh') : stringifyJSONWithBigInts([
+	const coalescingKey = publishUpdatingState || block === undefined ? Symbol('UI simulation refresh') : stringifyJSONWithBigInts([
+		getServicesIdentity(services),
 		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
@@ -172,7 +185,7 @@ export async function preparePopupVisualisationRefresh(services: SimulationServi
 		generation,
 	])
 	return {
-		...services, invalidateOldState, revision,
+		coalescingKey,
 		execute: async invalidateOldState => {
 			const result = await executePopupVisualisationIfNeeded(services.ethereum, services.tokenPriceService, {
 				// Scheduled edits already published their invalidation before acknowledgement.
