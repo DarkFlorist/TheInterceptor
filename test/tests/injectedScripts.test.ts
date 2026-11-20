@@ -12,3 +12,13 @@ test('every injected script is emitted from an app/inpage/ts source', () => {
 		assert.ok(fs.existsSync(sourcePath), `${ file } has no source at ${ sourcePath }`)
 	}
 })
+
+// Exposing them would let every website load them by URL. Real Chrome registration and MAIN-world injection of these files without web_accessible_resources is covered by `bun run test:chrome-safe-apps-host` (test/benchmarks/chromeSafeCoSigningCommunication.ts).
+test('Safe Apps MAIN-world scripts stay out of web_accessible_resources because registered and executeScript files do not need them', () => {
+	const safeAppsScripts = [INPAGE_SCRIPTS.safeAppsHost, INPAGE_SCRIPTS.prepareSafeApp, INPAGE_SCRIPTS.cancelSafeAppPreparation, INPAGE_SCRIPTS.clearSafeAppPreparationCancellation].map((file) => file.replace(/^\//, ''))
+	for (const manifestPath of ['app/manifestV3.json', 'app/manifestV2.json']) {
+		const manifestSource = fs.readFileSync(manifestPath, 'utf8')
+		for (const file of safeAppsScripts) assert.equal(manifestSource.includes(file), false, `${ manifestPath } exposes ${ file }`)
+		assert.equal(manifestSource.includes('inpage/*'), false, `${ manifestPath } exposes every injected script through a wildcard`)
+	}
+})
