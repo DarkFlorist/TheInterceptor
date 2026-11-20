@@ -6,7 +6,8 @@ const MAX_ERROR_SNAPSHOT_TEXT = 12_000
 const TRUNCATION_NOTICE = '\n[Diagnostic text truncated]'
 const SAFE_DIAGNOSTIC_CONTEXT_KEYS = ['address', 'senderAddress', 'callbackName', 'popupRefreshGeneration', 'tokenId'] as const
 type ErrorSnapshotBudget = { remainingNodes: number, remainingText: number }
-type ErrorSnapshot = { name?: string, message?: string, stack?: string, cause?: ErrorSnapshot | string, errors?: unknown[], omitted?: string }
+const UNREADABLE_ERROR_FIELD = '[Error field could not be read]'
+type ErrorSnapshot = { className?: string, name?: string, message?: string, stack?: string, cause?: ErrorSnapshot | string, errors?: unknown[], omitted?: string }
 
 function limitDiagnosticText(value: string, limit = MAX_DIAGNOSTIC_TEXT_LENGTH): string {
 	return value.length <= limit ? value : `${ value.slice(0, limit - TRUNCATION_NOTICE.length) }${ TRUNCATION_NOTICE }`
@@ -17,10 +18,26 @@ function ownDataProperty(value: object, key: string): unknown {
 	return descriptor !== undefined && 'value' in descriptor ? descriptor.value : undefined
 }
 
-function errorField(error: Error, key: string, budget: ErrorSnapshotBudget): string | undefined {
+// Standard fields use normal property access: native errors inherit name and message from their prototype, and V8 defines stack as an accessor.
+function readStandardErrorField(error: Error, key: 'name' | 'message' | 'stack'): unknown {
+	try {
+		return error[key]
+	} catch {
+		return UNREADABLE_ERROR_FIELD
+	}
+}
+
+function readErrorClassName(error: Error): unknown {
+	try {
+		return error.constructor?.name
+	} catch {
+		return UNREADABLE_ERROR_FIELD
+	}
+}
+
+function budgetedErrorText(value: unknown, budget: ErrorSnapshotBudget): string | undefined {
 	if (budget.remainingText <= TRUNCATION_NOTICE.length) return undefined
-	const value = ownDataProperty(error, key)
-	if (typeof value !== 'string') return undefined
+	if (typeof value !== 'string' || value === '') return undefined
 	const text = limitDiagnosticText(value, Math.min(MAX_DIAGNOSTIC_FIELD_LENGTH, budget.remainingText))
 	budget.remainingText -= text.length
 	return text
@@ -34,10 +51,12 @@ function snapshotError(error: Error, seen: WeakSet<object>, budget: ErrorSnapsho
 	seen.add(error)
 	const cause = ownDataProperty(error, 'cause')
 	const errors = ownDataProperty(error, 'errors')
+	const name = budgetedErrorText(readStandardErrorField(error, 'name'), budget) ?? 'Error'
 	const snapshot: ErrorSnapshot = {
-		name: errorField(error, 'name', budget) ?? 'Error',
-		message: errorField(error, 'message', budget),
-		stack: errorField(error, 'stack', budget),
+		className: budgetedErrorText(readErrorClassName(error), budget) ?? name,
+		name,
+		message: budgetedErrorText(readStandardErrorField(error, 'message'), budget),
+		stack: budgetedErrorText(readStandardErrorField(error, 'stack'), budget),
 	}
 	if (cause instanceof Error) snapshot.cause = snapshotError(cause, seen, budget, depth + 1)
 	if (Array.isArray(errors)) {

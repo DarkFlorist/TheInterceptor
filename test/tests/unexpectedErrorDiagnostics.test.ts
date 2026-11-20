@@ -706,6 +706,45 @@ describe('unexpected error diagnostics', () => {
 		assert.match(diagnostic?.details ?? '', /\[Diagnostic text truncated\]$/u)
 	})
 
+	test('records the class, inherited name and message, and stack of native errors', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const error = new TypeError('bad input')
+
+		const rawError = JSON.parse(stringifyDiagnosticDetails(error) ?? '')
+
+		assert.equal(rawError.className, 'TypeError')
+		assert.equal(rawError.name, 'TypeError')
+		assert.equal(rawError.message, 'bad input')
+		assert.match(rawError.stack, /TypeError: bad input/u)
+	})
+
+	test('records the subclass of a custom error that keeps the inherited name', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		class RpcTimeoutError extends TypeError {}
+		const error = new RpcTimeoutError('rpc timed out')
+
+		const rawError = JSON.parse(stringifyDiagnosticDetails(error) ?? '')
+
+		assert.equal(rawError.className, 'RpcTimeoutError')
+		assert.equal(rawError.name, 'TypeError')
+		assert.equal(rawError.message, 'rpc timed out')
+		assert.equal(typeof rawError.stack, 'string')
+		assert.notEqual(rawError.stack, '')
+	})
+
+	test('reads an accessor-defined stack, as V8 defines it, and replaces throwing getters with a placeholder', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const accessorStack = new Error('accessor stack')
+		Object.defineProperty(accessorStack, 'stack', { configurable: true, get: () => 'Error: accessor stack\n    at v8Frame (app.js:1:1)' })
+		const throwingStack = new Error('throwing stack')
+		Object.defineProperty(throwingStack, 'stack', { configurable: true, get: () => { throw new Error('stack getter failed') } })
+
+		assert.equal(JSON.parse(stringifyDiagnosticDetails(accessorStack) ?? '').stack, 'Error: accessor stack\n    at v8Frame (app.js:1:1)')
+		const throwingSnapshot = JSON.parse(stringifyDiagnosticDetails(throwingStack) ?? '')
+		assert.equal(throwingSnapshot.message, 'throwing stack')
+		assert.equal(throwingSnapshot.stack, '[Error field could not be read]')
+	})
+
 	test('uses a fixed fallback when a value prevents inspection', async () => {
 		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
 		const unreadable = new Proxy({}, { getPrototypeOf: () => { throw new Error('prototype inaccessible') } })
@@ -795,7 +834,7 @@ describe('unexpected error diagnostics', () => {
 		const diagnostic = (await getInterceptorErrorDiagnostics())[0]
 		if (diagnostic?.rawError === undefined) throw new Error('missing raw error')
 		const rawError = JSON.parse(diagnostic.rawError)
-		assert.equal(rawError.message, undefined)
+		assert.equal(rawError.message, '[Error field could not be read]')
 		assert.equal(rawError.stack, error.stack)
 		assert.equal((await getLatestUnexpectedError())?.data.message, GENERIC_UNEXPECTED_ERROR_MESSAGE)
 	})
