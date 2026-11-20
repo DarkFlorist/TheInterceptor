@@ -1,6 +1,7 @@
-import { queuePopupSimulationRefresh, type PopupSimulationRefreshOutcome } from './popupSimulationRefreshQueue.js'
+import type { PopupSimulationRefreshOutcome } from './popupSimulationRefreshQueue.js'
 import { applyRichTokenChange, type RichTokenChangeResult } from './richModeTokens.js'
-import { getRichModeState, mutateRichMode, updateAddressBookAndReconcileRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
+import { getRichModeState, mutateRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
+import { updateAddressBookAndRefreshChangedFunding } from './addressBookFundingEdits.js'
 import { buildRichModePresentation } from '../utils/richModeDerivation.js'
 import { MAX_RICH_TOKEN_AMOUNT } from '../utils/richTokens.js'
 import { getReviewedResultId } from './reviewedResult.js'
@@ -48,7 +49,7 @@ import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/Si
 import { refreshPopupVisualisationForOpenConsumer, type OpenConsumerVisualisationDependencies, updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
 import { resolveFetchSimulationStackRequest } from './windows/fetchSimulationStack.js'
 import { updateChainChangeViewWithPendingRequest } from './windows/changeChain.js'
-import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './windows/watchAsset.js'
+import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest, watchAssetResolutionDependencies } from './windows/watchAsset.js'
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
@@ -222,8 +223,8 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 	}
 }
 
-export async function watchAssetDialog(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation) {
-	await resolveWatchAsset(websiteTabConnections, confirmation)
+export async function watchAssetDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation) {
+	await resolveWatchAsset(websiteTabConnections, confirmation, watchAssetResolutionDependencies(websiteTabConnections, simulationServicesOwner))
 }
 
 async function getSignerAccount() {
@@ -338,11 +339,10 @@ export async function refreshSimulationAfterRichTokenChange(refresh: () => Promi
 }
 
 export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
-	const fundingChanged = await updateAddressBookAndReconcileRichMode((previousContacts) => previousContacts.filter((contact) =>
+	await updateAddressBookAndRefreshChangedFunding(simulationServicesOwner, (previousContacts) => previousContacts.filter((contact) =>
 		!(contact.address === removeAddressBookEntry.data.address
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
-	if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	}
@@ -386,13 +386,12 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				}
 			}
 		}
-		const fundingChanged = await updateAddressBookAndReconcileRichMode((previousContacts) => {
+		await updateAddressBookAndRefreshChangedFunding(simulationServicesOwner, (previousContacts) => {
 			if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
 				return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }

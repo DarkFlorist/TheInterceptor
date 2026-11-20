@@ -7,7 +7,8 @@ import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
 import { getPendingWatchAssetRequests, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingWatchAssetRequests } from '../storageVariables.js'
-import { updateAddressBookAndReconcileRichMode } from '../richModeSettings.js'
+import { updateAddressBookAndRefreshChangedFunding } from '../addressBookFundingEdits.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
@@ -249,12 +250,12 @@ type ResolutionDependencies = {
 	sendToSigner: (request: StoredWatchAssetRequest) => boolean
 }
 
-function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
+export function watchAssetResolutionDependencies(websiteTabConnections: WebsiteTabConnections, simulationServicesOwner: SimulationServicesOwner): ResolutionDependencies {
 	return {
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
-		// Adding an asset can replace a funded token entry of another type at the same address, so rich-mode funding is reconciled with the write.
-		updateAddressBook: updateAddressBookAndReconcileRichMode,
+		// Adding an asset can replace a funded token entry of another type at the same address, so rich-mode funding is reconciled with the write and the simulation refreshed when it changed.
+		updateAddressBook: async (update) => await updateAddressBookAndRefreshChangedFunding(simulationServicesOwner, update),
 		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
@@ -313,7 +314,7 @@ function refreshQueuedNftRequests(requests: readonly StoredWatchAssetRequest[], 
 }
 
 let resolutionInProgress = false
-export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies = defaultResolutionDependencies(websiteTabConnections)) {
+export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnections, confirmation: WatchAssetConfirmation, dependencies: ResolutionDependencies) {
 	if (resolutionInProgress) return
 	resolutionInProgress = true
 	try {

@@ -79,6 +79,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/richModeSettings.js'),
 		...await import('../../app/ts/background/richModeTokens.js'),
+		...await import('../../app/ts/background/windows/watchAsset.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
@@ -1213,6 +1214,41 @@ describe('requestMakeMeRichList resilience', () => {
 				}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 			}
 			const fundingChanged = edit === 'removal' || edit === 'watched-ID change' || edit === 'token-type change'
+			assert.equal(visibilityProbeCount, fundingChanged ? 1 : 0)
+			assert.equal((await getRichModeState()).accountBalances[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
+		})
+	}
+
+	for (const approval of ['replaces the funded token entry', 'adds an unrelated token'] as const) {
+		test(`a watch-asset approval that ${ approval } refreshes simulation only when funding changes`, async () => {
+			let visibilityProbeCount = 0
+			const storageState = installBrowserMock({ onRuntimeSendMessage: (message) => {
+				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') visibilityProbeCount += 1
+			} })
+			const { replaceAddressBookEntryWithAsset, updateRichTokens, updateRichAccountBalances, setMakeCurrentAddressRich, getRichModeState, watchAssetResolutionDependencies } = await loadModules()
+			const fundedEntry: Erc1155Entry = {
+				type: 'ERC1155', name: 'Game Items', address: 0x4444444444444444444444444444444444444444n,
+				symbol: 'ITEM', entrySource: 'User', chainId: 1n, watchedTokenIds: [42n],
+			}
+			storageState.userAddressBookEntriesV3 = [serialize(AddressBookEntry, fundedEntry)]
+			storageState.simulationMode = true
+			storageState.independentActiveSimulationAddress = addressString(richAccountAddress)
+			await updateRichTokens(() => [{
+				chainId: 1n, tokenAddress: fundedEntry.address, tokenType: 'ERC1155', tokenId: 42n,
+				name: fundedEntry.name, symbol: fundedEntry.symbol, decimals: 0n, amount: 100n,
+				balanceSlot: 3n, erc1155StorageOrder: 'TokenIdThenOwner',
+			}])
+			await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 1n, tokenBalances: [{ tokenAddress: fundedEntry.address, tokenId: 42n, amount: 100n }] }])
+			await setMakeCurrentAddressRich(true)
+			const requestHandler = new MockRequestHandler()
+			const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+				name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true,
+			})
+			const services = createTestSimulationServicesOwner({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) })
+			const approvedAddress = approval === 'replaces the funded token entry' ? fundedEntry.address : 0x5555555555555555555555555555555555555555n
+			const dependencies = watchAssetResolutionDependencies(new Map(), services)
+			await dependencies.updateAddressBook((entries) => replaceAddressBookEntryWithAsset(entries, { type: 'ERC721', name: 'Approved NFT', address: approvedAddress, symbol: 'NFT', entrySource: 'User', chainId: 1n }))
+			const fundingChanged = approval === 'replaces the funded token entry'
 			assert.equal(visibilityProbeCount, fundingChanged ? 1 : 0)
 			assert.equal((await getRichModeState()).accountBalances[0]?.tokenBalances.length, fundingChanged ? 0 : 1)
 		})
