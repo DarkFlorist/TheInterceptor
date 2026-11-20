@@ -495,6 +495,24 @@ export const CompoundTimeLock = [
 	},
 ] as const satisfies Abi
 
+// How a timelock names who may queue on it: Compound's Timelock has one admin(), OpenZeppelin's TimelockController grants proposers a role.
+export const GovernanceTimelockReadsAbi = [
+	{
+		type: 'function',
+		name: 'admin',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ type: 'address' }],
+	},
+	{
+		type: 'function',
+		name: 'hasRole',
+		stateMutability: 'view',
+		inputs: [{ name: 'role', type: 'bytes32' }, { name: 'account', type: 'address' }],
+		outputs: [{ type: 'bool' }],
+	},
+] as const satisfies Abi
+
 export const getAbi = (entry: AddressBookEntry): AbiLike | undefined => {
 	if (entry?.address === ETHEREUM_LOGS_LOGGER_ADDRESS) return Erc20ABI
 	if (entry === undefined) return undefined
