@@ -68,7 +68,7 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 		await changePopupSettings({ method: 'popup_enableSimulationMode', data: enabled })
 	}
 	async function setRichState(add: boolean, address: bigint | 'CurrentAddress') {
-		await changePopupSettings({ method: 'popup_modifyMakeMeRich', data: { add, address } })
+		await changePopupSettings({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add, address } })
 	}
 
 	useEffect(() => {

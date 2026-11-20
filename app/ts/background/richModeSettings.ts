@@ -1,8 +1,8 @@
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
-import { richFundingSaved, type RichAccountBalance, type RichFundingResult, type RichListElement, type RichModeState, type RichToken } from '../types/richMode.js'
+import { richFundingRejected, richFundingSaved, type RichAccountBalance, type RichFundingResult, type RichListElement, type RichModeState, type RichToken } from '../types/richMode.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
-import { normalizeRichAccountBalances } from '../utils/richTokens.js'
+import { MAX_RICH_TOKEN_AMOUNT, normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { profilesForAddresses, reconcileRichModeStateWithAddressBook, richTokensForPresentation, richTokenLayout } from '../utils/richModeDerivation.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
@@ -133,5 +133,20 @@ export async function trackPreviousActiveAddressForMakeMeRichList(previousActive
 			.map((element) => ({ ...element, type: 'UserAdded' as const }))
 		if (previousActiveAddress === undefined || richList.some((element) => element.address === previousActiveAddress)) return richList
 		return [...richList, { address: previousActiveAddress, makingRich: false, type: 'PreviousActiveAddress' as const }]
+	})
+}
+
+// Native funding is mutated under the same transaction as token and address funding.
+export async function updateRichNativeAmountForAddress(chainId: bigint, address: EthereumAddress, nativeAmount: bigint): Promise<RichFundingResult> {
+	if (nativeAmount <= 0n || nativeAmount > MAX_RICH_TOKEN_AMOUNT) return richFundingRejected('Native amount must be greater than zero and fit within uint256.')
+	return await mutateRichMode(async (store) => {
+		await store.ensureRichAccountBalances(chainId, [address])
+		let changed = false
+		await store.updateRichAccountBalances((profiles) => profiles.map((profile) => {
+			if (profile.chainId !== chainId || profile.address !== address || profile.nativeAmount === nativeAmount) return profile
+			changed = true
+			return { ...profile, nativeAmount }
+		}))
+		return richFundingSaved(changed)
 	})
 }

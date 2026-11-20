@@ -184,7 +184,7 @@ describe('popup settings changes', () => {
 			for (const request of [
 				{ method: 'popup_changeActiveRpc', data: rpc },
 				{ method: 'popup_enableSimulationMode', data: true },
-				{ method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } },
+				{ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', address: 'CurrentAddress', add: true } },
 				{ method: 'popup_changeActiveAddress', data: { simulationMode: true, activeAddress: 2n } },
 			] as const) {
 				const reply = await dispatchPopupMessage({ ...context }, request)
@@ -205,7 +205,7 @@ describe('popup settings changes', () => {
 		const setStorage = browser.storage.local.set
 		try {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async () => { throw new Error('Storage unavailable') } })
-			await assert.rejects(dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } }), /Storage unavailable/)
+			await assert.rejects(dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', address: 'CurrentAddress', add: true } }), /Storage unavailable/)
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: setStorage })
 		}
@@ -437,7 +437,7 @@ describe('popup settings changes', () => {
 		const refreshRequests = () => runtimeMessages.filter((message) => {
 			return typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'
 		}).length
-		const request = { method: 'popup_modifyMakeMeRich' as const, data: { address: 'CurrentAddress' as const, add: true } }
+		const request = { method: 'popup_modifyMakeMeRich' as const, data: { action: 'set-address-rich', address: 'CurrentAddress' as const, add: true } }
 		const initialCount = refreshRequests()
 		await dispatchPopupMessage(context, request)
 		await waitForBackgroundTasks()
@@ -465,7 +465,7 @@ describe('popup settings changes', () => {
 			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
 			resetSimulationState: async () => undefined,
 		}
-		const reply = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
+		const reply = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', address: 'CurrentAddress', add: true } })
 		assert.ok(runtimeMessages.some(message => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'), 'the reply must wait for the refresh')
 		assert.deepEqual(reply, refreshOutcome === 'unavailable'
 			? { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }

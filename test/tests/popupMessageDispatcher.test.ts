@@ -201,7 +201,7 @@ beforeEach(() => {
 describe('popup message dispatcher seams', () => {
 	test('returns the shared settings reply for an invalid native rich amount without saving it', async () => {
 		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
-			method: 'popup_modifyMakeMeRich', data: { address: 1n, nativeAmount: 0n },
+			method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', address: 1n, nativeAmount: 0n },
 		})
 		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount must be greater than zero and fit within uint256.' })
 		assert.equal(storageState.richModeState, undefined)
@@ -212,7 +212,7 @@ describe('popup message dispatcher seams', () => {
 		const { emptyRichModeState } = await import('../../app/ts/background/richModeSettings.js')
 		await browserStorageLocalSet({ richModeState: { ...emptyRichModeState, accountBalances: [{ chainId: 1n, address: 1n, nativeAmount: 123n, tokenBalances: [] }] } })
 		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
-			method: 'popup_modifyMakeMeRich', data: { address: 1n, nativeAmount: 123n },
+			method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', address: 1n, nativeAmount: 123n },
 		})
 		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
 	})

@@ -222,7 +222,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		const previousAmount = profile.nativeAmount
 		const reply = await runRichOperation('native', `Saving ${ nativeCurrencyTicker } amount…`, async () => {
 			updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: amount }))
-			const reply = await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: amount, address } })
+			const reply = await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', nativeAmount: amount, address } })
 			if (reply?.ok !== true) {
 				updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: previousAmount }))
 				// A rejected reply can mean the amount was saved but its simulation refresh failed; reload authoritative balances.

@@ -1,8 +1,9 @@
+import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/simulation/richTokenStorageDiscovery.js'
 import assert from 'node:assert'
 import { describe, test } from 'node:test'
 import type { IEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
-import { addRichAccountBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getMatchingRichTokenOptions, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, normalizeRichAccountBalances, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
+import { addRichAccountBalanceOverrides, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getMatchingRichTokenOptions, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, normalizeRichAccountBalances, parseRichTokenAmountInput } from '../../app/ts/utils/richTokens.js'
 import { addressString, bigintToUint8Array, bytes32String } from '../../app/ts/utils/bigint.js'
 
 const owner = 0x1111111111111111111111111111111111111111n

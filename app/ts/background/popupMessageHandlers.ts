@@ -1,9 +1,8 @@
 import { applyRichTokenChange } from './richModeTokens.js'
-import { richFundingRejected, richFundingSaved, type RichFundingResult } from '../types/richMode.js'
-import { getRichModeState, mutateRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
+import { richFundingRejected, type RichFundingResult } from '../types/richMode.js'
+import { getRichModeState, updateRichNativeAmountForAddress, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
 import { updateAddressBookAndRefreshChangedFunding } from './addressBookFundingEdits.js'
 import { buildRichModePresentation } from '../utils/richModeDerivation.js'
-import { MAX_RICH_TOKEN_AMOUNT } from '../utils/richTokens.js'
 import { backgroundTaskSupervisor } from './backgroundTasks.js'
 import { startPopupSimulationRefreshInBackground } from './popupSimulationRefreshQueue.js'
 import { getReviewedResultId } from './reviewedResult.js'
@@ -275,23 +274,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 }
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich): Promise<RichFundingResult> {
-	if ('nativeAmount' in makeMeRichChange.data) {
-		if (makeMeRichChange.data.nativeAmount <= 0n || makeMeRichChange.data.nativeAmount > MAX_RICH_TOKEN_AMOUNT) {
-			return richFundingRejected('Native amount must be greater than zero and fit within uint256.')
-		}
-		const { nativeAmount, address } = makeMeRichChange.data
-		const chainId = (await getSettings()).activeRpcNetwork.chainId
-		return await mutateRichMode(async (store) => {
-			await store.ensureRichAccountBalances(chainId, [address])
-			let changed = false
-			await store.updateRichAccountBalances((profiles) => profiles.map((profile) => {
-				if (profile.chainId !== chainId || profile.address !== address || profile.nativeAmount === nativeAmount) return profile
-				changed = true
-				return { ...profile, nativeAmount }
-			}))
-			return richFundingSaved(changed)
-		})
-	}
+	if (makeMeRichChange.data.action === 'set-native-amount') return await updateRichNativeAmountForAddress((await getSettings()).activeRpcNetwork.chainId, makeMeRichChange.data.address, makeMeRichChange.data.nativeAmount)
 	const { add, address } = makeMeRichChange.data
 	if (address === 'CurrentAddress') return await updateMakeCurrentAddressRich(() => add)
 	return await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
