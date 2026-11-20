@@ -1,3 +1,4 @@
+import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { PendingTransactionOrSignableMessage, PendingTransactionSafeFlow } from '../types/accessRequest.js'
 import type { SafeMessageCoSignSnapshot, SafeTransactionRequestContext, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
@@ -111,4 +112,11 @@ export function getPendingRequestAccountBinding(pending: PendingTransactionOrSig
 			? { transactionSender: { requested: pending.transactionToSimulate.transaction.from, authorized: pending.activeAddress } }
 			: {},
 	}
+}
+
+// A direct execution's gas and fees belong to its wallet request, not the zero-fee simulation. The popup and Safe resolver consume this same immutable projection; originalRequestParameters is bound by the reviewed-result id.
+export function getDirectSafeExecutionSignerRequest(pending: Pick<PendingTransaction, 'safeFlow' | 'originalRequestParameters'>): SendTransactionParams | undefined {
+	if (pending.safeFlow.kind !== 'directExecution') return undefined
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('A direct Safe execution must have a wallet transaction request')
+	return pending.originalRequestParameters
 }

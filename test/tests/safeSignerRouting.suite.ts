@@ -1257,7 +1257,14 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(dappReply.result, transactionHash)
 })
 
-test('forwards a direct Safe execution that omits type, gas, and fee fields when its signer was connected at review time', async () => {
+const directExecutionEnvelopeCases = [
+	{ name: 'wallet-selected gas and fees', fields: {} },
+	{ name: 'legacy fees', fields: { type: '0x0', gas: '0x493e0', gasPrice: '0x2540be400' } },
+	{ name: 'EIP-2930 fees', fields: { type: '0x1', gas: '0x493e0', gasPrice: '0x2540be400', accessList: [] } },
+	{ name: 'EIP-1559 fees', fields: { type: '0x2', gas: '0x493e0', maxFeePerGas: '0x4a817c800', maxPriorityFeePerGas: '0x77359400' } },
+] as const
+
+for (const { name, fields } of directExecutionEnvelopeCases) test(`forwards the reviewed direct Safe execution with ${ name }`, async () => {
 	await modules.changeSimulationMode({ simulationMode: false })
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const safeSignerAddress = recipientAddress
@@ -1280,6 +1287,7 @@ test('forwards a direct Safe execution that omits type, gas, and fee fields when
 	const transactionParams = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
+			...fields,
 			from: addressString(activeAddress),
 			to: addressString(activeAddress),
 			data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [
@@ -1326,9 +1334,20 @@ test('forwards a direct Safe execution that omits type, gas, and fee fields when
 	assert.equal(pendingExecution.approvalStatus.status, 'WaitingForUser')
 	assert.equal(pendingExecution.safeFlow.kind === 'directExecution' ? pendingExecution.safeFlow.safeExecutionSignerAddress : undefined, safeSignerAddress)
 	// The pending request keeps the routed website inputs; the zero-fee simulation values for the external executor never replace them.
-	assert.equal(pendingExecution.originalRequestParameters.params[0].type, undefined)
-	assert.equal(pendingExecution.originalRequestParameters.params[0].gas, undefined)
-	assert.equal(pendingExecution.originalRequestParameters.params[0].maxFeePerGas, undefined)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].type, transactionParams.params[0].type)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].gas, transactionParams.params[0].gas)
+	assert.equal(pendingExecution.originalRequestParameters.params[0].maxFeePerGas, transactionParams.params[0].maxFeePerGas)
+
+	const staleAccept = await createAcceptConfirmation()
+	const request = pendingExecution.originalRequestParameters.params[0]
+	const changedFees = request.type === 'legacy' || request.type === '2930' ? { gasPrice: 30_000_000_000n } : { maxFeePerGas: 30_000_000_000n }
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' ? {
+		...pending,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{ ...request, ...changedFees }] },
+	} : pending)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, staleAccept, { selectedSigner: safeSignerAddress, verificationError: undefined }), false)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false, 'changed wallet fees invalidate the previous review')
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async () => pendingExecution)
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
@@ -1343,8 +1362,16 @@ test('forwards a direct Safe execution that omits type, gas, and fee fields when
 	if (!isRecord(signerTransaction)) throw new Error('Missing direct Safe execution transaction parameters')
 	assert.equal(signerRequest.method, 'eth_sendTransaction')
 	assert.equal(signerTransaction.from, addressString(safeSignerAddress))
-	assert.equal(signerTransaction.maxFeePerGas, undefined)
-	assert.equal(signerTransaction.maxPriorityFeePerGas, undefined)
+	const { getDirectSafeExecutionSignerRequest } = await import('../../app/ts/safe/safePendingFlow.js')
+	const displayedRequest = getDirectSafeExecutionSignerRequest(pendingExecution)
+	if (displayedRequest === undefined) throw new Error('Missing displayed wallet request')
+	const displayedTransaction = SendTransactionParams.serialize(displayedRequest).params[0]
+	assert.equal(signerTransaction.type, displayedTransaction.type)
+	assert.equal(signerTransaction.gas, displayedTransaction.gas)
+	assert.equal(signerTransaction.gasPrice, displayedTransaction.gasPrice)
+	assert.equal(signerTransaction.maxFeePerGas, displayedTransaction.maxFeePerGas)
+	assert.equal(signerTransaction.maxPriorityFeePerGas, displayedTransaction.maxPriorityFeePerGas)
+	assert.equal(pendingExecution.transactionOrMessageCreationStatus === 'Simulated' && pendingExecution.transactionToSimulate.transaction.type === '1559' ? pendingExecution.transactionToSimulate.transaction.maxFeePerGas : undefined, 0n, 'the simulation still excludes executor gas costs')
 })
 
 test('blocks direct Safe execution when the configured signer cannot satisfy the threshold', async () => {

@@ -1,6 +1,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'
+import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
@@ -14,7 +15,7 @@ import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from '../safe/safeErrors.js'
 import { getCurrentSafeEntry, getCurrentSafeEntryAndAddressBookEntries, getSafeMessageCoSignContext, handleSafeExecutionRefreshFailure, refreshSafeExecutionSignerSelection, refreshSafeSignerSelection, SAFE_SIGNER_SELECTION_ERROR_CODE, type SafeMessageCoSignContext } from './safeSignerSelectionRefresh.js'
-import { createCreatedSafeProposalSafeFlow, getSafeFlowSignerAddress, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
+import { createCreatedSafeProposalSafeFlow, getDirectSafeExecutionSignerRequest, getSafeFlowSignerAddress, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export { SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeSignerSelectionRefresh.js'
 
@@ -55,7 +56,7 @@ export type SafeConfirmationResolution =
 		readonly status: 'ready'
 		readonly pending: PendingTransactionOrSignableMessage
 		readonly pendingChanged: boolean
-		readonly signerFacingRequest: SignMessageParams | undefined
+		readonly signerFacingRequest: SignMessageParams | SendTransactionParams | undefined
 	}
 	| {
 		readonly status: 'blocked'
@@ -319,10 +320,11 @@ async function resolveDirectSafeExecutionConfirmation(
 	const pending = flow.pending
 	try {
 		const refreshedExecution = await refreshSafeExecutionSignerSelection(ethereum, flow)
-		if (refreshedExecution === undefined) return { status: 'ready', pending, pendingChanged: false, signerFacingRequest: undefined }
+		if (refreshedExecution === undefined) return { status: 'ready', pending, pendingChanged: false, signerFacingRequest: getDirectSafeExecutionSignerRequest(pending) }
+		if (refreshedExecution.type !== 'Transaction' || refreshedExecution.safeFlow.kind !== 'directExecution') throw new Error('A refreshed direct Safe execution must retain its transaction flow')
 		const mismatch = await getSafeSignerSelectionError(refreshedExecution, refreshedSafeSignerSelection)
 		if (mismatch !== undefined) return { status: 'blocked', approvalStatus: mismatch }
-		return { status: 'ready', pending: refreshedExecution, pendingChanged: true, signerFacingRequest: undefined }
+		return { status: 'ready', pending: refreshedExecution, pendingChanged: true, signerFacingRequest: getDirectSafeExecutionSignerRequest(refreshedExecution) }
 	} catch(error) {
 		return handleSafeExecutionRefreshFailure(error)
 	}

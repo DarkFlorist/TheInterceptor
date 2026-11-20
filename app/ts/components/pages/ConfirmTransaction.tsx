@@ -1,4 +1,5 @@
 import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
+import { WalletTransactionDetails } from '../subcomponents/WalletTransactionDetails.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -48,7 +49,7 @@ import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
-import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getDirectSafeExecutionSignerRequest, getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
 import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
 
 type UnderTransactionsParams = {
@@ -471,6 +472,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
 	const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
+	const directExecutionRequest = getDirectSafeExecutionSignerRequest(currentPendingTransaction)
 	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -507,6 +509,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 					/>
 				</> }
 
+				{ directExecutionRequest === undefined ? <></> : <WalletTransactionDetails request = { directExecutionRequest }/> }
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } signerNonce = { getSignerNonce(currentPendingTransaction, safeFlow?.kind === 'proposal') } />
 
 				<SafeExecutionSimulationNotice transaction = { simTx }/>

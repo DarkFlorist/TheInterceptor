@@ -1,3 +1,4 @@
+import type { SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { type Erc1155TokenBalanceChange, type Erc721and1155OperatorChange, summarizeLogs, type SummaryOutcome } from '../../simulation/services/LogSummarizer.js'
 import type { RenameAddressCallBack, RpcConnectionStatus } from '../../types/user-interface-types.js'
 import { type Erc721TokenApprovalChange, type SimulatedAndVisualizedTransaction, type ResolvedSimulationResults, type SimulationAndVisualisationResults, type ERC20TokenApprovalChange, type Erc20TokenBalanceChange, type TransactionWithAddressBookEntries, type NamedTokenId, type MaybeSimulatedTransaction, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
@@ -991,22 +992,23 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 }
 
 // The fee fields the wallet is asked to sign, for every supported transaction type.
-function TransactionFeeFields({ transaction }: { transaction: TransactionWithAddressBookEntries }) {
+export function TransactionFeeFields({ transaction }: { transaction: Pick<SendTransactionParams['params'][0], 'gasPrice' | 'maxFeePerGas' | 'maxPriorityFeePerGas'> & { readonly type: TransactionWithAddressBookEntries['type'] } }) {
+	const feeText = (amount: SendTransactionParams['params'][0]['maxFeePerGas']) => typeof amount === 'bigint' ? `${ nanoString(amount) } nanoeth/gas` : 'Selected by your wallet'
 	switch (transaction.type) {
 		case 'legacy':
-		case '2930': return transaction.gasPrice === undefined ? <></> : <>
+		case '2930': return <>
 			<dt>Gas Price</dt>
-			<dd>{ `${ nanoString(transaction.gasPrice) } nanoeth/gas` }</dd>
+			<dd>{ feeText(transaction.gasPrice) }</dd>
 		</>
 		case '1559':
 		case '4844':
 		case '7702': return <>
 			<dt>Max Fee Per Gas</dt>
-			<dd>{ `${ nanoString(transaction.maxFeePerGas) } nanoeth/gas` }</dd>
+			<dd>{ feeText(transaction.maxFeePerGas) }</dd>
 			<dt>Max Priority Fee Per Gas</dt>
-			<dd>{ `${ nanoString(transaction.maxPriorityFeePerGas) } nanoeth/gas` }</dd>
+			<dd>{ feeText(transaction.maxPriorityFeePerGas) }</dd>
 		</>
-		default: return assertNever(transaction)
+		default: return assertNever(transaction.type)
 	}
 }
 

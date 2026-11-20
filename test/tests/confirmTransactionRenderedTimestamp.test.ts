@@ -790,6 +790,23 @@ describe('ConfirmTransaction', () => {
 		dom.restore()
 	})
 
+	test('shows direct Safe wallet fees separately from its execution simulation', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const pending = makeSimulatedPendingTransaction(0n)
+		if (pending.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Expected wallet transaction')
+		const originalRequestParameters = { ...pending.originalRequestParameters, params: [{ ...pending.originalRequestParameters.params[0], type: '1559', gas: 300000n, maxFeePerGas: 20_000_000_000n, maxPriorityFeePerGas: 2_000_000_000n }] } satisfies typeof pending.originalRequestParameters
+		await renderConfirmTransaction(dom)
+		await dispatchPendingTransactions(browser, [{ ...pending, originalRequestParameters, safeFlow: { kind: 'directExecution', safeExecutionOriginalRequestParameters: originalRequestParameters } }])
+		const fees = findRenderedElement(dom.document.body, (node) => node.attributes?.['aria-label'] === 'Wallet execution fees')
+		assert.ok(fees, 'direct executions expose wallet fee choices without expanding raw simulation details')
+		assert.ok(fees.textContent?.includes('Max Fee Per Gas20 nanoeth/gas'))
+		assert.ok(fees.textContent?.includes('Max Priority Fee Per Gas2 nanoeth/gas'))
+		assert.ok(fees.textContent?.includes('Gas limit300000'))
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
 	test('keeps the Gnosis Safe gas label, creation time and simulation time in one wrapping card footer', async () => {
 		const dom = installDomMock()
 		const browser = createBrowserMock()

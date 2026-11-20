@@ -732,11 +732,13 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
-// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the reviewed transaction with the fees the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the reviewed transaction with the fees the popup displayed so it cannot sign values the user did not see. The Safe resolver supplies typed-data requests and direct execution requests separately; direct executions display the wallet's actual gas and fee choices alongside the zero-fee simulation.
 function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage, forceSend: boolean): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
-	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
+	const safeFlow = getSafePendingFlow(pending)
+	if (safeFlow?.kind === 'proposal') return pending.originalRequestParameters
+	if (safeFlow?.kind === 'directExecution') throw new Error('The Safe resolver must supply the reviewed direct execution request')
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
 	// A failed confirmation simulation leaves no reviewed transaction to bind, and resolvePendingTransactionOrMessage refuses every accept for it (isRejectOnlyTransaction), so this request is never forwarded.
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
