@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
+import { contentScriptDocumentMarkers } from '../../app/ts/utils/contentScriptDocumentMarkers.js'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown, stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
@@ -4514,5 +4515,43 @@ test('Safe SDK settings belong to the page and survive background connection rei
 			assert.deepEqual(replies.get(method), { id: method, success: true, data: { safeTxHash: '0x' + 'ab'.repeat(32) }, version: '9.1.0' })
 		}
 		assert.equal(proposalCount, 2)
+	})
+})
+
+describe('inpage provider once per document', () => {
+	test('runs the provider once per document when two content script registrations inject it', async () => {
+		let connections = 0
+		const { fakeWindow } = createFakeWindow({ onConnectedToSignerRequest: () => { connections += 1 } })
+		const providerFromFirstInjection = await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?once-per-document-first', async () => {
+			await waitFor(() => connections === 1)
+			return fakeWindow.ethereum
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?once-per-document-second', async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50))
+		})
+
+		assert.equal(connections, 1)
+		assert.equal(fakeWindow.ethereum, providerFromFirstInjection)
+	})
+
+	test('skips only the provider of the registration that marked its document origin as disabled', async () => {
+		let connections = 0
+		const { fakeWindow } = createFakeWindow({ onConnectedToSignerRequest: () => { connections += 1 } })
+		const signerBeforeInjection = fakeWindow.ethereum
+		const disabledOriginMarker = Symbol.for(contentScriptDocumentMarkers.MAIN.disabledOriginKey)
+		Reflect.defineProperty(fakeWindow, disabledOriginMarker, { value: true, configurable: true })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?marked-disabled-origin', async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50))
+		})
+
+		assert.equal(connections, 0)
+		assert.equal(fakeWindow.ethereum, signerBeforeInjection)
+		// The skipping provider consumed the mark and did not claim the document, so another registration's provider that matches the page, such as the general one after the site is enabled again, still runs.
+		assert.equal(Reflect.has(fakeWindow, disabledOriginMarker), false)
+		assert.equal(Reflect.has(fakeWindow, Symbol.for(contentScriptDocumentMarkers.MAIN.claimedKey)), false)
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?after-disabled-origin-skip', async () => {
+			await waitFor(() => connections === 1)
+		})
+		assert.equal(connections, 1)
 	})
 })

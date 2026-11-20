@@ -1,3 +1,6 @@
+// Runs the provider once per document, as the first statements. A Firefox disabled-host registration's origin check marks a disabled origin for this copy only, which consumes the mark and skips without claiming the document, so another registration that matches the page still provides. Otherwise the first copy claims the document. The keys repeat app/ts/utils/contentScriptDocumentMarkers.ts, which this classic script cannot import.
+const interceptorProviderSkipsDisabledOrigin = Reflect.has(window, Symbol.for('TheInterceptor.pageProviderOnDisabledOrigin')) && Reflect.deleteProperty(window, Symbol.for('TheInterceptor.pageProviderOnDisabledOrigin'))
+const isFirstInterceptorProviderInDocument = !interceptorProviderSkipsDisabledOrigin && !Reflect.has(window, Symbol.for('TheInterceptor.pageProvider')) && Reflect.defineProperty(window, Symbol.for('TheInterceptor.pageProvider'), { value: true, configurable: true })
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -529,7 +532,7 @@ type InpageWindow = Window & {
 }
 
 const inpageWindow: InpageWindow = window
-// Build-time variant flag: scripts/inline-inpage-document-start.mts rewrites this literal per artifact; the source value false is the default inpage.js (non-compatibility) build.
+// Build-time variant flag: scripts/generate-page-world-providers.mts rewrites this literal per artifact; the source value false is the default inpage.js (non-compatibility) build.
 const metamaskCompatibilityModeAtPageLoad = false // [[metamaskCompatibilityModeAtPageLoad]]
 
 interface EIP6963ProviderInfo {
@@ -636,7 +639,7 @@ function getForwardedDiagnosticsRequestContext(value: unknown): ForwardedDiagnos
 	}
 }
 
-function formatForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
+function formatForwardedDiagnostics(source: 'inpage' | 'content-script', phase: string, summary: string, thrown: unknown, context: ForwardedDiagnosticsRequestContext = {}) {
 	return [
 		`${ source }: ${ summary }`,
 		`phase: ${ phase }`,
@@ -691,7 +694,7 @@ function getLegacyWeb3WithoutInvokingAccessors(target: InpageWindow): LegacyWeb3
 	return descriptor.value
 }
 
-function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
+function serializeForwardedDiagnostics(source: 'inpage' | 'content-script', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
 	return formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 }
 
@@ -2029,4 +2032,4 @@ function injectInterceptor() {
 	window.dispatchEvent(new Event('ethereum#initialized'))
 }
 
-injectInterceptor()
+if (isFirstInterceptorProviderInDocument) injectInterceptor()

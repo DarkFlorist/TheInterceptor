@@ -1,7 +1,7 @@
 import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
+import { createFirefoxContentScriptRegistrations, updateContentScriptInjectionStrategyManifestV3, type FirefoxContentScriptRegistrations } from '../utils/contentScriptsUpdating.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { hasSameContentScriptInjectionSitesConfiguration, hasSameContentScriptRegistrationConfiguration, hasSamePageWorldProviderConfiguration, type ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
@@ -10,6 +10,12 @@ import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js
 import { getMetamaskCompatibilityMode } from './settings.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
+// The Firefox (MV2) background's one owner of its content script registrations, which live as long as this background. It is created on the first Firefox update, so the Chrome build never creates it and loading this module needs no extension runtime, and it is used only under the semaphore above.
+let firefoxContentScriptRegistrations: FirefoxContentScriptRegistrations | undefined
+const getFirefoxContentScriptRegistrations = () => {
+	firefoxContentScriptRegistrations ??= createFirefoxContentScriptRegistrations()
+	return firefoxContentScriptRegistrations
+}
 
 type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<StorageTransactionOutcome>
 
@@ -19,12 +25,11 @@ type ContentScriptInjectionStrategyRefresh =
 
 // Callers must hold contentScriptInjectionConfigurationSemaphore, which serializes every registration update.
 async function applyContentScriptInjectionStrategy(refresh: ContentScriptInjectionStrategyRefresh) {
+	const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
 	if (browser.runtime.getManifest().manifest_version === 2) {
-		// MV2 installs a lazy reader because each navigation is injected through webNavigation.
-		await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+		await getFirefoxContentScriptRegistrations().update(configuration)
 		return
 	}
-	const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
 	await updateContentScriptInjectionStrategyManifestV3(configuration)
 }
 
@@ -46,7 +51,7 @@ type ContentScriptConfigurationUpdate =
 	| { readonly onRefreshFailure: 'reportAndKeepUpdate', readonly refreshFailureCode: string, readonly runUpdate: () => Promise<unknown> }
 
 async function applyConfigurationAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptRegistrationConfiguration, onRefreshFailure: RefreshFailureHandling) {
-	// Rolled-back updates look up tabs before registering so a lookup failure leaves registration untouched; kept updates register first so the persisted change reaches MV3 registration even when optional tab lookup fails.
+	// Rolled-back updates look up tabs before registering so a lookup failure leaves registration untouched; kept updates register first so the persisted change reaches the registration even when optional tab lookup fails.
 	if (onRefreshFailure === 'rollBackUpdate') {
 		const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
 		await applyContentScriptInjectionStrategy({ configurationSource: 'updated', configuration })
@@ -83,10 +88,19 @@ async function updateContentScriptConfigurationAndReloadTabsIfChanged<Snapshot>(
 					throw error
 				}
 			}
+			// A failed refresh can leave registrations changed for the configuration that was just rolled back, such as a Firefox host that stays excluded after its own registration failed. Applying the restored configuration again makes the registrations match the persisted settings; a failure of that is reported on its own, because the rethrown refresh error does not carry it.
+			const reapplyRestoredConfiguration = async () => {
+				try {
+					await applyContentScriptInjectionStrategy({ configurationSource: 'storage' })
+				} catch (restoreError: unknown) {
+					await reportUnexpectedError(restoreError, { code: 'content_script_registration_restore_failed' })
+				}
+			}
 			try {
 				if (update.onRefreshFailure === 'rollBackUpdate') {
 					const transaction = await update.runUpdateWithRefresh(refreshIfChanged)
 					storage = transaction.storage
+					if (transaction.status === 'failed' && transaction.storage === 'rolled-back' && refreshErrors.has(transaction.error)) await reapplyRestoredConfiguration()
 					if (transaction.status === 'failed') throw transaction.error
 				} else {
 					await update.runUpdate()

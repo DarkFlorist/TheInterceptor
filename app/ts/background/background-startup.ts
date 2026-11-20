@@ -129,6 +129,7 @@ const manifestVersion = browser.runtime.getManifest().manifest_version
 const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
+// The MV3 service worker registers the content scripts itself in backgroundServiceWorker.ts.
 if (isManifestV2) {
 	silenceChromeUnCaughtPromise(refreshContentScriptInjectionStrategy())
 }

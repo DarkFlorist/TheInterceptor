@@ -1,29 +1,24 @@
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
-import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
-import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
+import { getHostWithPort } from './requests.js'
+import { reportUnexpectedError } from './errors.js'
+import { getPageWorldScriptPaths, isolatedWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
 import type { ContentScriptRegistrationConfiguration } from './contentScriptInjectionConfiguration.js'
+import { contentScriptDocumentMarkers, type ContentScriptDocumentMarkers, type ContentScriptWorld } from './contentScriptDocumentMarkers.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
-const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
-const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extension:// URL of different extension'
-const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
-const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
-const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 const asRootRelativePaths = (paths: readonly string[]) => paths.map((scriptPath) => `/${ scriptPath }`)
 const haveSameScriptFiles = (first: readonly string[] | undefined, second: readonly string[] | undefined) => {
 	if (first === undefined || second === undefined) return first === second
 	return first.length === second.length && first.every((scriptPath, index) => scriptPath === second[index])
 }
 
-// A match pattern without a port matches every port of its host, while one with a port compares it with the URL's effective port, so naming the default port too keeps the pattern to that one origin. Chrome rejects a port after the * scheme, so each pattern names its scheme.
+// In Chrome a match pattern without a port matches every port of its host, while one with a port compares it with the URL's effective port, so naming the default port too keeps the pattern to that one origin. Chrome rejects a port after the * scheme, so each pattern names its scheme.
 function getExactOriginMatchPattern(url: URL) {
 	const defaultPort = url.protocol === 'https:' ? '443' : '80'
 	return `${ url.protocol }//${ url.hostname }:${ url.port === '' ? defaultPort : url.port }/*`
 }
 
-// Website access, including a disabled Interceptor, is stored per getHostWithPort origin and compared as an exact string, as the MV2 injection also does. A disabled site is excluded on exactly the URLs with that origin: excluding its subdomains or other ports too would leave pages that the popup and the access policy treat as enabled without the Interceptor provider (#1701).
-function getManifestV3ExcludeMatchesForOrigin(origin: string) {
+// Website access, including a disabled Interceptor, is stored per getHostWithPort origin and compared as an exact string. A disabled site is excluded on exactly the URLs with that origin: excluding its subdomains or other ports too would leave pages that the popup and the access policy treat as enabled without the Interceptor provider (#1701).
+function getContentScriptExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
 	try {
 		const hasExplicitScheme = origin.includes('://')
@@ -45,40 +40,70 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	}
 }
 
-export function getManifestV3ExcludeMatches(origins: readonly string[]) {
+export function getContentScriptExcludeMatches(origins: readonly string[]) {
 	const patterns = new Set<string>()
 	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
+		for (const pattern of getContentScriptExcludeMatchesForOrigin(origin)) patterns.add(pattern)
 	}
 	return [...patterns]
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async ({ injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
-	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
+
+// Firefox matches a pattern's host and ignores the URL's port, so a pattern that names a port matches no URL at all (Firefox bugs 1362809 and 1468162). Firefox therefore excludes each disabled origin's whole host from the registered content scripts, and registers the same scripts again for each such host, behind a first script that leaves out exactly the host's disabled origins.
+export function getFirefoxContentScriptExclusions(exactOriginExcludeMatches: readonly string[]) {
+	const excludeMatches = new Set<string>()
+	const disabledHosts = new Map<string, { readonly matches: Set<string>, readonly disabledOrigins: Set<string> }>()
+	for (const pattern of exactOriginExcludeMatches) {
+		const url = new URL(pattern.slice(0, -1))
+		if (url.protocol === 'file:') {
+			excludeMatches.add(pattern)
+			continue
+		}
+		const hostPattern = `${ url.protocol }//${ url.hostname }/*`
+		excludeMatches.add(hostPattern)
+		const disabledHost = disabledHosts.get(url.hostname) ?? { matches: new Set<string>(), disabledOrigins: new Set<string>() }
+		disabledHost.matches.add(hostPattern)
+		// A URL's origin leaves out its scheme's default port, as window.origin does.
+		disabledHost.disabledOrigins.add(url.origin)
+		disabledHosts.set(url.hostname, disabledHost)
+	}
+	return {
+		excludeMatches: [...excludeMatches],
+		disabledHosts: [...disabledHosts.values()].map(({ matches, disabledOrigins }) => ({ matches: [...matches], disabledOrigins: [...disabledOrigins] })),
+	}
+}
+
+// Each content script runs once per document, guarded by its world's markers in contentScriptDocumentMarkers.ts. Both compatibility-mode providers are built from inpage.ts, so they use the same markers.
+type ContentScriptDefinition = { readonly id: string, readonly js: string[], readonly world: ContentScriptWorld }
+const getContentScriptDefinitions = (metamaskCompatibilityMode: boolean): readonly ContentScriptDefinition[] => [
+	{ id: 'inpage2', js: asRootRelativePaths(isolatedWorldScriptPaths), world: 'ISOLATED' },
+	{ id: 'inpage', js: asRootRelativePaths(getPageWorldScriptPaths(metamaskCompatibilityMode)), world: 'MAIN' },
+]
+
+// How every registration runs, on both registration APIs: at document_start, in every frame, and in frames without a URL origin of their own (such as about:blank) under their creator's origin. Only the two mapping functions below name each API's fields.
+type ContentScriptExecution = { readonly runAt: 'document_start', readonly allFrames: boolean, readonly framesWithCreatorOrigin: boolean }
+export const contentScriptExecution: ContentScriptExecution = { runAt: 'document_start', allFrames: true, framesWithCreatorOrigin: true }
+
+// scripting.registerContentScripts (Chrome, and Firefox 128 and later) names the creator-origin fallback matchOriginAsFallback.
+export const toScriptingExecutionOptions = ({ runAt, allFrames, framesWithCreatorOrigin }: ContentScriptExecution): { readonly runAt: 'document_start', readonly allFrames: boolean, readonly matchOriginAsFallback: boolean } => ({ runAt, allFrames, matchOriginAsFallback: framesWithCreatorOrigin })
+
+// Firefox's contentScripts.register validates its options against its own schema, which has no matchOriginAsFallback; its matchAboutBlank is the counterpart.
+export const toFirefoxContentScriptsExecutionOptions = ({ runAt, allFrames, framesWithCreatorOrigin }: ContentScriptExecution): Pick<browser.contentScripts.RegisteredContentScriptOptions, 'runAt' | 'allFrames' | 'matchAboutBlank'> => ({ runAt, allFrames, matchAboutBlank: framesWithCreatorOrigin })
+
+// Firefox matches URL globs against the URL with its credentials, and a glob's * also matches /, so no glob names exactly one origin. This first script of a disabled-host registration compares the document's origin instead. On a disabled origin it sets the world's disabledOriginKey, which the guarded script of the same registration consumes to skip; Firefox runs one registration's scripts back to back, so no other registration's script runs in between. It never claims the document, so a registration that should provide on this origin, such as the general one after the site is enabled again, still does. An opaque origin ("null") counts as disabled, because it cannot be told apart.
+export function getDisabledOriginCheckCode(disabledOrigins: readonly string[], { global, disabledOriginKey }: ContentScriptDocumentMarkers) {
+	return `if (window.origin === 'null' || ${ JSON.stringify(disabledOrigins) }.includes(window.origin)) Reflect.defineProperty(${ global }, Symbol.for(${ JSON.stringify(disabledOriginKey) }), { value: true, configurable: true })`
+}
+
+// Registers, updates, replaces and removes the scripting registrations to match the definitions. A failure after the first change restores the previous registrations and is rethrown for the caller to report.
+async function updateRegisteredContentScripts(contentScriptDefinitions: readonly ContentScriptDefinition[], excludeMatches: string[]) {
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
+	// The browser polyfill types do not expose the MAIN world or matchOriginAsFallback options of scripting.registerContentScripts, which Chrome and Firefox 128 accept.
+	type FixedContentScript = RegisteredContentScript & { world: ContentScriptWorld, matchOriginAsFallback: boolean }
+	const contentScripts: FixedContentScript[] = contentScriptDefinitions.map(({ id, js, world }) => ({ id, js, world, matches: injectableSitesWildcard, excludeMatches, ...toScriptingExecutionOptions(contentScriptExecution) }))
 	let previousRegisteredContentScripts: RegisteredContentScript[] | undefined
 	let registrationMutationStarted = false
 	try {
-		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
-		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
-		const contentScripts: FixedContentScript[] = [{
-			id: 'inpage2',
-			allFrames: true,
-			matches: injectableSitesWildcard,
-			excludeMatches,
-			js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'],
-			runAt: 'document_start',
-			matchOriginAsFallback: true
-		}, {
-			id: 'inpage',
-			allFrames: true,
-			matches: injectableSitesWildcard,
-			excludeMatches,
-			js: asRootRelativePaths(getPageWorldScriptPaths(metamaskCompatibilityMode)),
-			runAt: 'document_start',
-			world: 'MAIN',
-			matchOriginAsFallback: true
-		}]
 		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
 		previousRegisteredContentScripts = registeredContentScripts
 		const registeredContentScriptsById = new Map(registeredContentScripts.map((registration) => [registration.id, registration]))
@@ -107,7 +132,6 @@ export const updateContentScriptInjectionStrategyManifestV3 = async ({ injection
 			registrationMutationStarted = true
 			await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 		}
-		return true
 	} catch (error: unknown) {
 		if (registrationMutationStarted && previousRegisteredContentScripts !== undefined) {
 			try {
@@ -125,34 +149,98 @@ export const updateContentScriptInjectionStrategyManifestV3 = async ({ injection
 	}
 }
 
-type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptRegistrationConfiguration>
+type DisabledHost = ReturnType<typeof getFirefoxContentScriptExclusions>['disabledHosts'][number]
+type FirefoxContentScriptRegistration = browser.contentScripts.RegisteredContentScript
+// Firefox validates contentScripts.register options against its own schema, so they are built from its fields only, never from a scripting registration. The polyfill types predate the world option, which Firefox 128 added.
+type FirefoxContentScriptOptions = browser.contentScripts.RegisteredContentScriptOptions & { readonly world: ContentScriptWorld }
+const getDisabledHostRegistrationKey = (disabledHost: DisabledHost, contentScriptDefinitions: readonly ContentScriptDefinition[]) => JSON.stringify({ ...disabledHost, scriptFiles: contentScriptDefinitions.map(({ js }) => js) })
 
-const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => async (content: browser.webNavigation._OnCommittedDetails) => {
-	if (!isInjectableSite(content.url)) return false
-	const { injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } } = await getContentScriptInjectionConfiguration()
-	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
-	const thisTab = await getTabIfExists(content.tabId)
-	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
-	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = interceptorDisabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
-	if (!noMatches) return false
-	try {
-		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
-			await browser.tabs.executeScript(content.tabId, { file: `/${ injection.file }`, allFrames: false, runAt: 'document_start' })
+export type FirefoxContentScriptRegistrations = ReturnType<typeof createFirefoxContentScriptRegistrations>
+
+// Owns Firefox's (MV2) content script registrations: the scripting registrations, which exclude each disabled host, and Firefox's own registrations for those hosts. Firefox's contentScripts API takes code and returns a handle that keeps the registration only while the background page that made it is loaded, which for the persistent MV2 background is the whole session, so the Firefox background creates one owner and passes every update to it.
+export function createFirefoxContentScriptRegistrations() {
+	// Keyed by each host's patterns, disabled origins and script files, so an unchanged host keeps its registration and a compatibility mode change registers the host again with the other provider. A key is tracked only while all of its host's scripts are registered.
+	const disabledHostContentScripts = new Map<string, readonly FirefoxContentScriptRegistration[]>()
+	// Registrations that belong to no tracked host any more but could not be unregistered yet. Every handle that leaves a tracked host or a half-made host passes through removeContentScripts, which keeps it here until its removal succeeds, so no live registration is ever forgotten. Removing one never leaves a page without the provider, because the registrations that should match a page are all tracked hosts or the scripting registrations.
+	const contentScriptsPendingRemoval: FirefoxContentScriptRegistration[] = []
+
+	// Unregisters each registration, keeps the ones that fail pending removal for the next update, and reports each failure with the given code, because the error the caller rethrows does not carry it.
+	const removeContentScripts = async (registrations: readonly FirefoxContentScriptRegistration[], failureCode: string) => {
+		for (const registration of registrations) {
+			try {
+				await registration.unregister()
+			} catch (unregisterError: unknown) {
+				// Known limit: a registration the browser refuses to unregister keeps injecting with its old disabled-origin list, so it can still provide on an origin disabled since, until a later update's retry removes it; Firefox cannot change a registered script, and a MAIN-world document_start script cannot read extension state synchronously to revoke itself, so each failure is reported and the removal is retried on every update.
+				contentScriptsPendingRemoval.push(registration)
+				await reportUnexpectedError(unregisterError, { code: failureCode })
+			}
 		}
-		checkAndThrowRuntimeLastError()
-	} catch(error) {
-		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
-		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
 	}
-	return false
+
+	const registerDisabledHost = async (disabledHost: DisabledHost, contentScriptDefinitions: readonly ContentScriptDefinition[]) => {
+		const registeredContentScripts: FirefoxContentScriptRegistration[] = []
+		try {
+			for (const { js, world } of contentScriptDefinitions) {
+				const contentScript: FirefoxContentScriptOptions = {
+					matches: disabledHost.matches,
+					js: [{ code: getDisabledOriginCheckCode(disabledHost.disabledOrigins, contentScriptDocumentMarkers[world]) }, ...js.map((file) => ({ file }))],
+					...toFirefoxContentScriptsExecutionOptions(contentScriptExecution),
+					world,
+				}
+				registeredContentScripts.push(await browser.contentScripts.register(contentScript))
+			}
+		} catch (registrationError: unknown) {
+			// A host is tracked only with all of its scripts, so the scripts of a host that failed half way are removed, and the next update registers the host again. The registration error is rethrown unchanged; a failed removal is reported on its own.
+			await removeContentScripts(registeredContentScripts, 'content_script_registration_cleanup_failed')
+			throw registrationError
+		}
+		disabledHostContentScripts.set(getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions), registeredContentScripts)
+	}
+
+	// The key stops being tracked before its scripts are removed, so a host whose removal fails half way is never taken for a complete registration; the scripts that are left wait for the next update in contentScriptsPendingRemoval.
+	const unregisterDisabledHost = async (key: string, failureCode: string) => {
+		const registeredContentScripts = disabledHostContentScripts.get(key) ?? []
+		disabledHostContentScripts.delete(key)
+		await removeContentScripts(registeredContentScripts, failureCode)
+	}
+
+	// A disabled host's own registration is added before the scripting registrations stop matching that host, and removed only after they match it again, so the host's other origins always have a registration that provides; two that provide at once are harmless, because each script runs once per document. A stale registration never suppresses another one, because its origin check only skips its own scripts. If the scripting update fails and rolls back, the host registrations added in this update are removed again and the earlier ones are kept, which restores the previous configuration.
+	const update = async ({ injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
+		const contentScriptDefinitions = getContentScriptDefinitions(metamaskCompatibilityMode)
+		const exactOriginExcludeMatches = getContentScriptExcludeMatches(interceptorDisabledSites)
+		await removeContentScripts(contentScriptsPendingRemoval.splice(0), 'content_script_registration_cleanup_failed')
+		const { excludeMatches, disabledHosts } = getFirefoxContentScriptExclusions(exactOriginExcludeMatches)
+		const desiredDisabledHostKeys = new Set(disabledHosts.map((disabledHost) => getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions)))
+		const addedDisabledHostKeys: string[] = []
+		const registrationErrors: unknown[] = []
+		for (const disabledHost of disabledHosts) {
+			const key = getDisabledHostRegistrationKey(disabledHost, contentScriptDefinitions)
+			if (disabledHostContentScripts.has(key)) continue
+			try {
+				await registerDisabledHost(disabledHost, contentScriptDefinitions)
+				addedDisabledHostKeys.push(key)
+			} catch (error: unknown) {
+				// A host whose own registration failed is still excluded below, because giving its disabled origin the provider would ignore the user's setting; its other origins go without the provider until the next update registers it again.
+				registrationErrors.push(error)
+			}
+		}
+		try {
+			await updateRegisteredContentScripts(contentScriptDefinitions, excludeMatches)
+		} catch (error: unknown) {
+			for (const key of addedDisabledHostKeys) await unregisterDisabledHost(key, 'content_script_registration_rollback_failed')
+			// The caller reports the scripting failure with the code of its own context, so it is only rethrown here.
+			throw error
+		}
+		for (const key of [...disabledHostContentScripts.keys()]) {
+			if (!desiredDisabledHostKeys.has(key)) await unregisterDisabledHost(key, 'content_script_registration_cleanup_failed')
+		}
+		if (registrationErrors.length > 0) throw registrationErrors[0]
+	}
+
+	return { update }
 }
 
-let registeredManifestV2InjectLogic: ReturnType<typeof createInjectLogic> | undefined
-
-export const updateContentScriptInjectionStrategyManifestV2 = async (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => {
-	if (registeredManifestV2InjectLogic !== undefined) browser.webNavigation.onCommitted.removeListener(registeredManifestV2InjectLogic)
-	registeredManifestV2InjectLogic = createInjectLogic(getContentScriptInjectionConfiguration)
-	browser.webNavigation.onCommitted.addListener(registeredManifestV2InjectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
+// Chrome (MV3) registers the content scripts through the scripting API, so the active compatibility mode's provider runs in the page's MAIN world at document_start, before the page's own scripts and regardless of the page's CSP. Firefox (MV2) does the same through createFirefoxContentScriptRegistrations, which also handles its disabled hosts. Callers serialize updates, because each one reads and replaces the previous registrations, and report the rethrown failure.
+export async function updateContentScriptInjectionStrategyManifestV3({ injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) {
+	await updateRegisteredContentScripts(getContentScriptDefinitions(metamaskCompatibilityMode), getContentScriptExcludeMatches(interceptorDisabledSites))
 }
