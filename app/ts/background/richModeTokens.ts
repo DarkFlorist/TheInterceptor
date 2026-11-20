@@ -1,9 +1,8 @@
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { Erc1155Entry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { ModifyRichTokenRequest } from '../types/interceptor-reply-messages.js'
 import type { RichToken } from '../types/richMode.js'
-import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStorage.js'
+import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenEligibility, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
+import { getUserAddressBookEntries } from './addressBookStorage.js'
 import { getRichModeState, mutateRichMode } from './richModeSettings.js'
 import { richTokensForPresentation } from '../utils/richModeDerivation.js'
 
@@ -11,23 +10,16 @@ export type RichTokenChange = ModifyRichTokenRequest['data']
 export type RichTokenChangeResult = { readonly success: true, readonly richToken: RichToken | undefined } | { readonly success: false, readonly error: string }
 type RichTokenStorageClient = Pick<IEthereumClientService, 'ethSimulateV1'>
 
-// The address-book entry that makes a token eligible for rich mode on chainId: an ERC-20 entry, or an ERC-1155 entry whose watched IDs include tokenId. The most precise chain entry supplies the metadata.
-export async function getEligibleAddressBookRichToken(chainId: bigint, tokenAddress: bigint, tokenId: bigint | undefined): Promise<Erc20TokenEntry | Erc1155Entry | undefined> {
-	const entries = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
-		.filter((entry): entry is Erc20TokenEntry | Erc1155Entry => entry.type === 'ERC20' || entry.type === 'ERC1155')
-		.filter((entry) => entry.address === tokenAddress)
-	if (tokenId === undefined) return entries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
-	const metadataEntry = entries.find((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
-	const tokenIdIsWatched = entries.some((entry) => entry.type === 'ERC1155' && entry.watchedTokenIds?.includes(tokenId) === true)
-	return tokenIdIsWatched ? metadataEntry : undefined
-}
+// The active-chain eligibility of a token, by the shared rule in utils/richTokens.
+export const getRichTokenEligibilityFromAddressBook = async (chainId: bigint, token: Pick<RichToken, 'tokenAddress' | 'tokenId'>) => getRichTokenEligibility(await getUserAddressBookEntries(), chainId, token)
 
 // Finds the balance storage layout of a token being added, through RPC probes. Returns undefined when nothing needs discovering (not an add, an ineligible token, or a layout already stored) or when no layout was found.
 export async function discoverRichTokenStorage(ethereum: RichTokenStorageClient, requestAbortController: AbortController | undefined, chainId: bigint, change: RichTokenChange) {
 	if (change.action !== 'Add') return undefined
 	const identity = { tokenAddress: change.tokenAddress, tokenId: change.tokenId }
-	const addressBookToken = await getEligibleAddressBookRichToken(chainId, change.tokenAddress, change.tokenId)
-	if (addressBookToken === undefined || (addressBookToken.type === 'ERC20' && !isSupportedRichTokenDecimals(addressBookToken.decimals))) return undefined
+	const eligibility = await getRichTokenEligibilityFromAddressBook(chainId, identity)
+	if (!eligibility.eligible) return undefined
+	const addressBookToken = eligibility.metadataEntry
 	const current = richTokensForPresentation(await getRichModeState())
 	if (current.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))) return undefined
 	const getErc1155Storage = async () => {
@@ -100,14 +92,13 @@ export async function applyRichTokenChange(ethereum: RichTokenStorageClient, req
 			}))
 		}
 
-		const addressBookToken = await getEligibleAddressBookRichToken(chainId, change.tokenAddress, change.tokenId)
-		if (addressBookToken === undefined) {
+		const eligibility = await getRichTokenEligibilityFromAddressBook(chainId, identity)
+		if (!eligibility.eligible) {
+			if (eligibility.reason === 'UnsupportedDecimals') return { success: false as const, error: `ERC-20 decimals cannot exceed ${ MAX_SUPPORTED_RICH_TOKEN_DECIMALS.toString() } in rich mode.` }
 			await store.updateRichTokens((tokens) => tokens.filter((token) => token.chainId !== chainId || !sameRichTokenIdentity(token, identity)))
 			return { success: false as const, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' }
 		}
-		if (addressBookToken.type === 'ERC20' && !isSupportedRichTokenDecimals(addressBookToken.decimals)) {
-			return { success: false as const, error: `ERC-20 decimals cannot exceed ${ MAX_SUPPORTED_RICH_TOKEN_DECIMALS.toString() } in rich mode.` }
-		}
+		const addressBookToken = eligibility.metadataEntry
 		const current = await store.getRichTokens()
 		const existing = current.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
 		if (existing !== undefined) {

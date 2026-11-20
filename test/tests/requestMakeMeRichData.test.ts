@@ -691,21 +691,29 @@ describe('requestMakeMeRichList resilience', () => {
 		await assert.rejects(replacementRefresh, /replacement refresh failed/u)
 	})
 
-	test('treats only ERC-20 entries and watched ERC-1155 token IDs on the chain as eligible rich tokens', async () => {
+	test('one eligibility rule: ERC-20 entries with supported decimals and watched ERC-1155 token IDs on the chain', async () => {
 		const storageState = installBrowserMock()
-		const { getEligibleAddressBookRichToken } = await loadModules()
+		const { getRichTokenEligibilityFromAddressBook } = await loadModules()
+		const { getRichTokenEligibility } = await import('../../app/ts/utils/richTokens.js')
 		const erc20Address = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const wideDecimalsAddress = 0x6666666666666666666666666666666666666666n
 		const erc1155Address = 0x4444444444444444444444444444444444444444n
 		storageState.userAddressBookEntriesV3 = [
 			{ type: 'ERC20', address: addressString(erc20Address), name: 'USD Coin', symbol: 'USDC', decimals: '0x6', entrySource: 'User', chainId: '0x1' },
 			{ type: 'ERC1155', address: addressString(erc1155Address), name: 'Game Items', symbol: 'ITEM', entrySource: 'User', chainId: '0x1', watchedTokenIds: ['0x7'] },
 		]
-		assert.equal((await getEligibleAddressBookRichToken(1n, erc20Address, undefined))?.symbol, 'USDC')
-		assert.equal(await getEligibleAddressBookRichToken(10n, erc20Address, undefined), undefined)
-		assert.equal(await getEligibleAddressBookRichToken(1n, erc20Address, 7n), undefined)
-		assert.equal((await getEligibleAddressBookRichToken(1n, erc1155Address, 7n))?.symbol, 'ITEM')
-		assert.equal(await getEligibleAddressBookRichToken(1n, erc1155Address, 8n), undefined)
-		assert.equal(await getEligibleAddressBookRichToken(1n, erc1155Address, undefined), undefined)
+		const symbolOf = async (chainId: bigint, tokenAddress: bigint, tokenId: bigint | undefined) => {
+			const eligibility = await getRichTokenEligibilityFromAddressBook(chainId, { tokenAddress, tokenId })
+			return eligibility.eligible ? eligibility.metadataEntry.symbol : eligibility.reason
+		}
+		assert.equal(await symbolOf(1n, erc20Address, undefined), 'USDC')
+		// Stored entries with such decimals are repaired into contracts on read, so the decimals rule is checked on the pure function.
+		assert.deepEqual(getRichTokenEligibility([{ type: 'ERC20', address: wideDecimalsAddress, name: 'Wide', symbol: 'WIDE', decimals: 256n, entrySource: 'User', chainId: 1n }], 1n, { tokenAddress: wideDecimalsAddress, tokenId: undefined }), { eligible: false, reason: 'UnsupportedDecimals' })
+		assert.equal(await symbolOf(10n, erc20Address, undefined), 'NotInAddressBook')
+		assert.equal(await symbolOf(1n, erc20Address, 7n), 'NotInAddressBook')
+		assert.equal(await symbolOf(1n, erc1155Address, 7n), 'ITEM')
+		assert.equal(await symbolOf(1n, erc1155Address, 8n), 'NotInAddressBook')
+		assert.equal(await symbolOf(1n, erc1155Address, undefined), 'NotInAddressBook')
 	})
 
 	test('discovers token storage only for an eligible token without a stored layout', async () => {

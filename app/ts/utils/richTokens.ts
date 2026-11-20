@@ -198,56 +198,43 @@ export const normalizeRichAccountBalances = (profiles: readonly RichAccountBalan
 	return [...normalized.values()]
 }
 
-export const isRichTokenSupportedByAddressBook = (token: RichToken, addressBookEntries: readonly AddressBookEntry[]) => addressBookEntries.some((entry) => {
-	const appliesToChain = entry.chainId === token.chainId
-		|| (entry.chainId === undefined && token.chainId === 1n)
-		|| entry.chainId === 'AllChains'
-	if (!appliesToChain || entry.address !== token.tokenAddress || entry.type !== token.tokenType) return false
-	if (entry.type === 'ERC20') return token.tokenId === undefined && isSupportedRichTokenDecimals(entry.decimals)
-	return token.tokenId !== undefined && entry.watchedTokenIds?.includes(token.tokenId) === true
+export type RichTokenEligibility =
+	| { readonly eligible: true, readonly metadataEntry: Erc20TokenEntry | Erc1155Entry }
+	| { readonly eligible: false, readonly reason: 'NotInAddressBook' | 'UnsupportedDecimals' }
+
+// The one rich-mode eligibility rule, used by reconciliation, the token options and token changes. On chainId, an ERC-20 is eligible when the most precise ERC-20 entry for its address has supported decimals, and an ERC-1155 token ID when an ERC-1155 entry for its address watches it. The most precise entry of the type supplies the metadata.
+export function getRichTokenEligibility(addressBookEntries: readonly AddressBookEntry[], chainId: bigint, token: Pick<RichToken, 'tokenAddress' | 'tokenId'>): RichTokenEligibility {
+	const entries = getAddressBookEntriesForChainIdMorePreciseFirst([...addressBookEntries], chainId).filter((entry) => entry.address === token.tokenAddress)
+	const tokenId = token.tokenId
+	if (tokenId === undefined) {
+		const erc20Entry = entries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
+		if (erc20Entry === undefined) return { eligible: false, reason: 'NotInAddressBook' }
+		return isSupportedRichTokenDecimals(erc20Entry.decimals) ? { eligible: true, metadataEntry: erc20Entry } : { eligible: false, reason: 'UnsupportedDecimals' }
+	}
+	const erc1155Entry = entries.find((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
+	const tokenIdIsWatched = entries.some((entry) => entry.type === 'ERC1155' && entry.watchedTokenIds?.includes(tokenId) === true)
+	return erc1155Entry !== undefined && tokenIdIsWatched ? { eligible: true, metadataEntry: erc1155Entry } : { eligible: false, reason: 'NotInAddressBook' }
+}
+
+export const reconcileRichTokenMetadata = (tokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]): readonly RichToken[] => tokens.flatMap((token) => {
+	const eligibility = getRichTokenEligibility(addressBookEntries, token.chainId, token)
+	if (!eligibility.eligible || eligibility.metadataEntry.type !== token.tokenType) return []
+	const metadata = eligibility.metadataEntry
+	const decimals = metadata.type === 'ERC20' ? metadata.decimals : 0n
+	if (token.name === metadata.name && token.symbol === metadata.symbol && token.decimals === decimals) return [token]
+	// Layout metadata controls defaults for future accounts; existing profile amounts remain in base units.
+	return [{ ...token, name: metadata.name, symbol: metadata.symbol, decimals, amount: getDefaultRichTokenAmount(decimals) }]
 })
 
-export const filterRichTokensSupportedByAddressBook = (tokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]) => (
-	tokens.filter((token) => isRichTokenSupportedByAddressBook(token, addressBookEntries))
-)
-
-export const reconcileRichTokenMetadata = (tokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]): readonly RichToken[] => (
-	filterRichTokensSupportedByAddressBook(tokens, addressBookEntries).map((token) => {
-		const entries = getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries, token.chainId)
-		const metadata = entries.find((entry) => entry.address === token.tokenAddress && entry.type === token.tokenType)
-		if (metadata === undefined || (metadata.type !== 'ERC20' && metadata.type !== 'ERC1155')) return token
-		const decimals = metadata.type === 'ERC20' ? metadata.decimals : 0n
-		if (token.name === metadata.name && token.symbol === metadata.symbol && token.decimals === decimals) return token
-		// Layout metadata controls defaults for future accounts; existing profile amounts remain in base units.
-		return { ...token, name: metadata.name, symbol: metadata.symbol, decimals, amount: getDefaultRichTokenAmount(decimals) }
-	})
-)
-
-type AddressBookRichTokenCandidate =
-	| { metadataEntry: Erc20TokenEntry, tokenId: undefined }
-	| { metadataEntry: Erc1155Entry, tokenId: bigint }
-
-const getAddressBookRichTokenCandidates = (addressBookEntries: readonly AddressBookEntry[]): AddressBookRichTokenCandidate[] => {
-	const erc20Entries = new Map<bigint, Erc20TokenEntry>()
-	const erc1155Entries = new Map<bigint, { metadataEntry: Erc1155Entry, watchedTokenIds: Set<bigint> }>()
+// Every ERC-20 address and watched ERC-1155 token ID named by the address book, ERC-20 tokens first, each once.
+const getAddressBookTokenIdentities = (addressBookEntries: readonly AddressBookEntry[]) => {
+	const erc20Identities = [...new Set(addressBookEntries.flatMap((entry) => entry.type === 'ERC20' ? [entry.address] : []))].map((tokenAddress) => ({ tokenAddress, tokenId: undefined }))
+	const erc1155Keys = new Map<string, { tokenAddress: bigint, tokenId: bigint }>()
 	for (const entry of addressBookEntries) {
-		if (entry.type === 'ERC20' && isSupportedRichTokenDecimals(entry.decimals)) {
-			if (!erc20Entries.has(entry.address)) erc20Entries.set(entry.address, entry)
-			continue
-		}
 		if (entry.type !== 'ERC1155') continue
-		const configured = erc1155Entries.get(entry.address)
-		if (configured === undefined) {
-			erc1155Entries.set(entry.address, { metadataEntry: entry, watchedTokenIds: new Set(entry.watchedTokenIds ?? []) })
-			continue
-		}
-		for (const tokenId of entry.watchedTokenIds ?? []) configured.watchedTokenIds.add(tokenId)
+		for (const tokenId of entry.watchedTokenIds ?? []) erc1155Keys.set(getRichTokenIdentityKey({ tokenAddress: entry.address, tokenId }), { tokenAddress: entry.address, tokenId })
 	}
-	const erc20Candidates = [...erc20Entries.values()].map((metadataEntry): AddressBookRichTokenCandidate => ({ metadataEntry, tokenId: undefined }))
-	const erc1155Candidates = [...erc1155Entries.values()].flatMap(({ metadataEntry, watchedTokenIds }): AddressBookRichTokenCandidate[] => (
-		[...watchedTokenIds].map((tokenId) => ({ metadataEntry, tokenId }))
-	))
-	return [...erc20Candidates, ...erc1155Candidates]
+	return [...erc20Identities, ...erc1155Keys.values()]
 }
 
 export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]): RichTokenOption[] => {
@@ -256,8 +243,11 @@ export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly 
 		const tokenKey = getRichTokenIdentityKey(token)
 		if (token.chainId === chainId && !configuredOnChain.has(tokenKey)) configuredOnChain.set(tokenKey, token)
 	}
-	return getAddressBookRichTokenCandidates(addressBookEntries).map(({ metadataEntry, tokenId }): RichTokenOption => {
-			const identity = { tokenAddress: metadataEntry.address, tokenId }
+	return getAddressBookTokenIdentities(addressBookEntries).flatMap((identity): RichTokenOption[] => {
+			const eligibility = getRichTokenEligibility(addressBookEntries, chainId, identity)
+			if (!eligibility.eligible) return []
+			const { metadataEntry } = eligibility
+			const tokenId = identity.tokenId
 			const configured = configuredOnChain.get(getRichTokenIdentityKey(identity))
 			const decimals = metadataEntry.type === 'ERC20' ? metadataEntry.decimals : 0n
 			const base = {
@@ -270,7 +260,7 @@ export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly 
 				decimals,
 				logoUri: metadataEntry.logoUri,
 			}
-			return configured === undefined
+			return [configured === undefined
 				? {
 					...base,
 					amount: getDefaultRichTokenAmount(decimals),
@@ -278,7 +268,7 @@ export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly 
 					erc1155StorageOrder: undefined,
 					enabled: false,
 				}
-				: { ...configured, ...base, enabled: true }
+				: { ...configured, ...base, enabled: true }]
 	})
 }
 
