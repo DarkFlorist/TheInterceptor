@@ -76,8 +76,8 @@ test('the Safe Apps host bootstrap is injected only by the selected-origin regis
 	assert.deepEqual(referencingFiles, ['app/ts/background/safeAppsHostRegistration.ts', 'app/ts/config/injectedScripts.ts'])
 	const registrationSource = fs.readFileSync('app/ts/background/safeAppsHostRegistration.ts', 'utf8')
 	assert.equal(registrationSource.match(/INPAGE_SCRIPTS\.safeAppsHost\b/g)?.length, 1)
-	assert.match(registrationSource, /matches: hosting\.matches,/)
-	assert.match(registrationSource, /matches: getSafeAppsHostMatchPatterns\(origins\)/)
+	assert.match(registrationSource, /const matches = getSafeAppsHostMatchPatterns\(origins\)\n/)
+	assert.match(registrationSource, /\tmatches,\n/)
 	// Injected sources are bundled per entrypoint, so an import from the provider or another bootstrap would install the host wherever that script runs.
 	const injectedSourceFiles = [...new Bun.Glob('app/inpage/ts/**/*.ts').scanSync('.')]
 	const hostUsers = injectedSourceFiles.filter((file) => {

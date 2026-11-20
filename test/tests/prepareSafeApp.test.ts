@@ -443,7 +443,8 @@ for (const outcome of ['registered', 'recovered', 'removed', 'cancelled', 'acces
 					assert.deepEqual(reply, { success: true })
 					assert.equal(reloads, 1)
 				} else {
-				if (outcome === 'unexpected-error') assert.match(reply instanceof Error ? reply.message : '', /Unexpected registration failure/)
+				// Every registration fails, so the host install and its base fallback both reject.
+				if (outcome === 'unexpected-error') assert.ok(reply instanceof AggregateError && reply.errors.every((error: unknown) => error instanceof Error && error.message === 'Unexpected registration failure'))
 					else if (outcome === 'access-revoked' || outcome === 'access-removed') assert.match(JSON.stringify(reply), /Website Access/)
 					else if (outcome === 'disabled') assert.match(JSON.stringify(reply), /Enable Interceptor/)
 					else assert.match(JSON.stringify(reply), outcome === 'cancelled' ? /cancelled/ : /could not be registered/)

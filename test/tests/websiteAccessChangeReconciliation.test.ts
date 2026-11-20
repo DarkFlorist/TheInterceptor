@@ -84,7 +84,6 @@ function makeReloadStepReject(reloadStepError: Error) {
 
 const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptRegistration, 'reconcile').mockImplementation(async () => {
 	if (contentScriptUpdateError !== undefined) throw contentScriptUpdateError
-	return 'configuration-applied'
 })
 
 // Imported only after the harness installs the browser mock, which the background modules need when they load.
@@ -145,10 +144,7 @@ describe('removeWebsiteAddressAccess', () => {
 describe('website access registration and reconciliation', () => {
 	test('registers and reloads before reconciling and notifying the popup', async () => {
 		const { handlers, sentPopupMessageMethods, sideEffectOrder } = await setUpApprovedConnectionAndOtherTab()
-		spyOn(contentScriptRegistration, 'reconcile').mockImplementation(async () => {
-			sideEffectOrder.push('content script update')
-			return 'configuration-applied'
-		})
+		spyOn(contentScriptRegistration, 'reconcile').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
 		const reconcileApprovals = accessManagement.updateWebsiteApprovalAccesses
