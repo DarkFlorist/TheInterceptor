@@ -1,6 +1,7 @@
 import { SigningPageRequest, type DirectSigningRequest } from '../types/directSigning.js'
-import { signingPageReplyCodecs, type SigningWalletsSuccess, type SigningMutationSuccess, type SigningRecordSuccess } from '../types/signingPageReply.js'
+import { signingPageReplyCodecs, type SigningWalletBindingsSuccess, type SigningWalletsSuccess, type SigningMutationSuccess, type SigningRecordSuccess } from '../types/signingPageReply.js'
 
+export function sendSigningPageRequest(request: Extract<SigningPageRequest, { method: 'signing_walletBindings' }>): Promise<SigningWalletBindingsSuccess>
 export function sendSigningPageRequest(request: Extract<SigningPageRequest, { method: 'signing_wallets' }>): Promise<SigningWalletsSuccess>
 export function sendSigningPageRequest(request: Extract<SigningPageRequest, { method: 'signing_saveWallet' | 'signing_setSafeAccounts' }>): Promise<SigningMutationSuccess>
 export function sendSigningPageRequest(request: DirectSigningRequest): Promise<SigningRecordSuccess>

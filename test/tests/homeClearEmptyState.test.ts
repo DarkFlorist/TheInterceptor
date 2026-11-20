@@ -365,7 +365,7 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 				async sendMessage(message: unknown) {
 					// Browser messaging clones serialized records into ordinary objects.
 					sentMessages.push(structuredClone(message))
-					return replyToMessage?.(message) ?? (hasMethod(message, 'signing_wallets') ? { ok: true, bindings: [], tabs: [] } : undefined)
+					return replyToMessage?.(message) ?? (hasMethod(message, 'signing_walletBindings') ? { ok: true, bindings: [] } : undefined)
 				},
 				// The signing wallet list listens for the background's binding-change announcements.
 				onMessage: { addListener: () => undefined, removeListener: () => undefined },

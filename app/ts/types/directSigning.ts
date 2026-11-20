@@ -26,6 +26,9 @@ export const DirectSigningRecord = funtypes.ReadonlyObject({
 export const DirectSigningRecords = funtypes.ReadonlyArray(DirectSigningRecord).withConstraint((records) => records.length <= 100)
 
 export const SigningPageRequest = funtypes.Union(
+	// The bindings alone, for pages that only show which wallet signs for an address.
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_walletBindings') }),
+	// The bindings with every tab's browser wallet state, for the wallet setup page.
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_wallets') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_setSafeAccounts'), chainId: EthereumQuantity, address: EthereumAddress, owner: EthereumAddress, executor: funtypes.Union(EthereumAddress, funtypes.Undefined) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_saveWallet'), address: EthereumAddress, wallet: funtypes.Union(SigningWallet, funtypes.Undefined), revision: funtypes.Union(funtypes.String, funtypes.Undefined), name: funtypes.Union(funtypes.String, funtypes.Undefined) }),

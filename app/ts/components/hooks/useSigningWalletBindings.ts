@@ -21,7 +21,7 @@ export function useSigningWalletBindings() {
 				while (active && pending) {
 					pending = false
 					try {
-						const reply = await sendSigningPageRequest({ method: 'signing_wallets' })
+						const reply = await sendSigningPageRequest({ method: 'signing_walletBindings' })
 						if (active) setState({ bindings: reply.bindings })
 					} catch (failure) {
 						if (active) setState({ error: failure instanceof Error ? failure.message : 'Could not load signing wallets' })

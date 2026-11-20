@@ -3,8 +3,13 @@ import type { SigningPageReply } from '../types/signingPageReply.js'
 import type { SigningPageRequest } from '../types/directSigning.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { matchesBrowserSigningWallet } from '../signing/browserWallet.js'
-import { getAddressBookAndSigningWalletBindings, saveAddressSigningWallet } from './signingAddressBookCoordinator.js'
+import { getAddressBookAndSigningWalletBindings, getSigningWalletBindings, saveAddressSigningWallet } from './signingAddressBookCoordinator.js'
 import { getAllTabStates } from './storageVariables.js'
+
+// Reads no tab state, so pages that only label addresses with their wallets do not pay for every tab's browser wallet state.
+export async function getSigningWalletBindingsReply(): Promise<SigningPageReply> {
+	return { ok: true, bindings: await getSigningWalletBindings() }
+}
 
 export async function getSigningWallets(): Promise<SigningPageReply> {
 	const data = await getAddressBookAndSigningWalletBindings()

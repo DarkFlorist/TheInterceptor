@@ -5,7 +5,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { advanceDirectSigning, getDirectSigningReview, getSignatureRefusalReason } from './signingRequestLifecycle.js'
 import { authorizeDirectSigningDevice } from './directSigning.js'
 import { isSigningOperationError } from '../signing/signingOperationError.js'
-import { getSigningWallets, saveSigningWallet } from './signingWalletHandlers.js'
+import { getSigningWalletBindingsReply, getSigningWallets, saveSigningWallet } from './signingWalletHandlers.js'
 import { setSafeSigningAccounts } from './safeSigningAccountHandler.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 
@@ -16,6 +16,7 @@ export function isSigningPageMessage(message: unknown) {
 
 export async function dispatchSigningPageRequest(request: SigningPageRequest, services: SimulationServices, connections: WebsiteTabConnections): Promise<SigningPageReply> {
 	switch (request.method) {
+		case 'signing_walletBindings': return await getSigningWalletBindingsReply()
 		case 'signing_wallets': return await getSigningWallets()
 		case 'signing_saveWallet': return await saveSigningWallet(request)
 		case 'signing_setSafeAccounts': return await setSafeSigningAccounts(request, services.ethereum)

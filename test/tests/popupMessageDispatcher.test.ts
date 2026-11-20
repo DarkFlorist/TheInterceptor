@@ -697,6 +697,23 @@ describe('popup message dispatcher seams', () => {
 	})
 })
 
+// The popup labels addresses with their signing wallets on every render and refresh, so its request must not read every tab's state.
+test('the signing wallet bindings request reads no tab state', async () => {
+	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')
+	const { signingPageMessageHandler } = await import('../../app/ts/background/signingRequestService.js')
+	const context = createDispatcherContext(async () => { throw new Error('Signing must not reset popup simulation') })
+	const readKeys: unknown[] = []
+	const originalGet = browser.storage.local.get
+	browser.storage.local.get = async (keys?: Parameters<typeof originalGet>[0]) => { readKeys.push(keys); return await originalGet(keys) }
+	try {
+		const decoded = signingPageReplyCodecs.signing_walletBindings.parse(await signingPageMessageHandler({ method: 'signing_walletBindings' }, context.simulationServicesOwner.getCurrent(), context.websiteTabConnections))
+		assert.deepEqual(decoded, { ok: true, bindings: [] })
+	} finally { browser.storage.local.get = originalGet }
+	const readsEveryKey = readKeys.some((keys) => keys === null || keys === undefined)
+	const readsTabState = readKeys.some((keys) => (Array.isArray(keys) ? keys : [keys]).some((key) => typeof key === 'string' && key.startsWith('tabState_')))
+	assert.equal(readsEveryKey || readsTabState, false)
+})
+
 test('signing requests use their service and codecs without entering the popup registry', async () => {
 	const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
 	const { signingPageReplyCodecs } = await import('../../app/ts/types/signingPageReply.js')

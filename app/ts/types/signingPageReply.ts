@@ -13,9 +13,11 @@ const Failure = funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: 
 const MutationReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true) }))
 // A verified signature can still be refused when Interceptor resolves the website request with it, for example when a Gnosis Safe's nonce changed while the device was signing. The website request then stays pending with this reason as its signer error, and the signing page must not claim the signature was returned.
 const RecordReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), record: DirectSigningRecord }).And(funtypes.ReadonlyPartial({ signatureRefusalReason: funtypes.String, review: PendingRequestReview })))
+const BindingsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings }))
 const WalletsReply = funtypes.Union(Failure, funtypes.ReadonlyObject({ ok: funtypes.Literal(true), bindings: SigningWalletBindings, tabs: funtypes.ReadonlyArray(TabState) }))
 
 export const signingPageReplyCodecs = {
+	signing_walletBindings: BindingsReply,
 	signing_wallets: WalletsReply,
 	signing_setSafeAccounts: MutationReply,
 	signing_saveWallet: MutationReply,
@@ -27,9 +29,10 @@ export const signingPageReplyCodecs = {
 	signing_cancel: RecordReply,
 	signing_editFees: RecordReply,
 }
-export const SigningPageReply = funtypes.Union(WalletsReply, RecordReply, MutationReply)
+export const SigningPageReply = funtypes.Union(WalletsReply, BindingsReply, RecordReply, MutationReply)
 export type SigningPageReply = funtypes.Static<typeof SigningPageReply>
 
+export type SigningWalletBindingsSuccess = Extract<funtypes.Static<typeof BindingsReply>, { ok: true }>
 export type SigningWalletsSuccess = Extract<funtypes.Static<typeof WalletsReply>, { ok: true }>
 export type SigningMutationSuccess = Extract<funtypes.Static<typeof MutationReply>, { ok: true }>
 export type SigningRecordSuccess = Extract<funtypes.Static<typeof RecordReply>, { ok: true }>
