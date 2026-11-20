@@ -43,6 +43,16 @@ export function handleApprovalLog(eventLog: EthereumEvent): TokenVisualizerResul
 	return [{ ...data, ...{ amount: bytesToUnsigned(eventLog.data), type: 'ERC20' } }]
 }
 
+// The standard ApprovalForAll event keeps the approved flag in its 32-byte log data, and some contracts index it as a fourth topic instead. Only a log whose every flag is zero is a revocation; a log that is malformed or contradicts itself is shown as the more dangerous grant. A log's address is the contract that emitted it, so a contract that emits a false revocation can only misstate operator rights over its own tokens, which such a contract can move without any approval; the collections whose operator approvals matter emit the flag they store.
+const isApprovalForAllRevocation = (eventLog: EthereumEvent) => {
+	if (eventLog.data.length !== 0 && eventLog.data.length !== 32) return false
+	const flags = [
+		...eventLog.topics[3] === undefined ? [] : [eventLog.topics[3]],
+		...eventLog.data.length === 32 ? [bytesToUnsigned(eventLog.data)] : [],
+	]
+	return flags.length > 0 && flags.every((flag) => flag === 0n)
+}
+
 export function handleErc721ApprovalForAllLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
 	return [{
@@ -51,7 +61,7 @@ export function handleErc721ApprovalForAllLog(eventLog: EthereumEvent): TokenVis
 		tokenAddress: eventLog.address,
 		type: 'NFT All approval',
 		isApproval: true,
-		allApprovalAdded: eventLog.topics[3] !== 0n,
+		allApprovalAdded: !isApprovalForAllRevocation(eventLog),
 	}]
 }
 
