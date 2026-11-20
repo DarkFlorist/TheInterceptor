@@ -23,7 +23,10 @@ function installManagementShellMocks() {
 	let unexpectedErrorBroadcasts = 0
 	let hash = '#home'
 	const storageState: Record<string, unknown> = {}
+	const historyReplacements: string[] = []
 	const location = {
+		pathname: '/html3/managementViewV3.html',
+		search: '',
 		get hash() { return hash },
 		set hash(nextHash: string) {
 			hash = nextHash
@@ -40,6 +43,14 @@ function installManagementShellMocks() {
 		if (type === 'hashchange') hashListeners.delete(listener)
 	}
 	const restoreLocation = replaceGlobal('location', location)
+	// replaceState swaps the current entry without firing hashchange, like the real History API.
+	const restoreHistory = replaceGlobal('history', {
+		state: undefined,
+		replaceState(_state: unknown, _title: string, url: string) {
+			historyReplacements.push(url)
+			hash = url.slice(url.indexOf('#'))
+		},
+	})
 	const restoreAddEventListener = replaceGlobal('addEventListener', addEventListener)
 	const restoreRemoveEventListener = replaceGlobal('removeEventListener', removeEventListener)
 	Object.defineProperty(globalThis.window, 'location', { configurable: true, value: location })
@@ -80,13 +91,14 @@ function installManagementShellMocks() {
 	})
 
 	const restore = () => {
+		restoreHistory()
 		restoreBrowser()
 		restoreRemoveEventListener()
 		restoreAddEventListener()
 		restoreLocation()
 		dom.restore()
 	}
-	return { dom, runtimeListeners, tabListLayout, storageState, getUnexpectedErrorBroadcasts: () => unexpectedErrorBroadcasts, getDiagnosticsLoads: () => diagnosticsLoads, getWebsiteLoads: () => websiteLoads, restore }
+	return { dom, runtimeListeners, tabListLayout, storageState, historyReplacements, getHash: () => hash, getUnexpectedErrorBroadcasts: () => unexpectedErrorBroadcasts, getDiagnosticsLoads: () => diagnosticsLoads, getWebsiteLoads: () => websiteLoads, restore }
 }
 
 test('management tabs reveal clipped selection, reload Diagnostics, and release hidden website listeners', async () => {
@@ -230,6 +242,30 @@ test('panels change the route only through navigate, and the shell hands the new
 
 		assert.equal(globalThis.location.hash, '#websites?origin=example.com')
 		assert.match(dom.document.body.textContent, /route #websites\?origin=example\.com/u)
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		restore()
+	}
+})
+
+test('replace navigation updates the current history entry and still hands the new route to the panel', async () => {
+	const { dom, historyReplacements, getHash, restore } = installManagementShellMocks()
+	const { ManagementShell } = await import('../../app/ts/components/pages/ManagementView.js')
+	const { formatManagementRoute } = await import('../../app/ts/utils/managementPages.js')
+	const renderPanel = ({ route, navigate }: { route: { page: string }, navigate: (route: { page: 'websites', websiteOrigin?: string }, options?: { replace?: boolean }) => void }) => <main>
+		<p>{ `route ${ formatManagementRoute({ page: 'home', ...route }) }` }</p>
+		<button type = 'button' onClick = { () => navigate({ page: 'websites', websiteOrigin: 'auto.example' }, { replace: true }) }>Auto-select</button>
+	</main>
+
+	try {
+		await act(() => { render(<ManagementShell renderPanel = { renderPanel } />, dom.document.body) })
+		const autoSelectButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.textContent === 'Auto-select')
+		assert.ok(autoSelectButton)
+		await act(async () => { await clickRenderedElement(autoSelectButton) })
+
+		assert.deepEqual(historyReplacements, ['/html3/managementViewV3.html#websites?origin=auto.example'])
+		assert.equal(getHash(), '#websites?origin=auto.example')
+		assert.match(dom.document.body.textContent, /route #websites\?origin=auto\.example/u)
 	} finally {
 		await act(() => { render(null, dom.document.body) })
 		restore()

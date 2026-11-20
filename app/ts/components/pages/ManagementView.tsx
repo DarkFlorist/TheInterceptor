@@ -7,7 +7,7 @@ import { SettingsView } from './SettingsView.js'
 import { SimulationStackView } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
 import { getManagementPageFromNavigationKey, managementPages, type ManagementPage, type ManagementRoute } from '../../utils/managementPages.js'
-import { readManagementRoute, replaceWithCanonicalManagementHash, subscribeToManagementRoute, writeManagementRoute } from '../../utils/managementLocation.js'
+import { readManagementRoute, replaceWithCanonicalManagementHash, subscribeToManagementRoute, writeManagementRoute, type ManagementNavigationOptions } from '../../utils/managementLocation.js'
 import { assertNever } from '../../utils/typescript.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
@@ -70,13 +70,13 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 	</main>
 }
 
-type ManagementPanelContentParams = { route: ManagementRoute, navigate: (route: ManagementRoute) => void }
+type ManagementPanelContentParams = { route: ManagementRoute, navigate: (route: ManagementRoute, options?: ManagementNavigationOptions) => void }
 
 // Each panel receives its part of the route as props and changes it only through navigate, so the shell stays the single owner of the location.
 function ManagementPanelContent({ route, navigate }: ManagementPanelContentParams) {
 	switch (route.page) {
 		case 'home': return <ManagementHome selectPage = { (page) => navigate({ page }) } />
-		case 'websites': return <WebsiteAccessView websiteOrigin = { route.websiteOrigin } selectWebsite = { (websiteOrigin) => navigate(websiteOrigin === undefined ? { page: 'websites' } : { page: 'websites', websiteOrigin }) } />
+		case 'websites': return <WebsiteAccessView websiteOrigin = { route.websiteOrigin } selectWebsite = { (websiteOrigin, options) => navigate(websiteOrigin === undefined ? { page: 'websites' } : { page: 'websites', websiteOrigin }, options) } />
 		case 'address-book': return <AddressBook />
 		case 'simulation-stack': return <SimulationStackView stackTarget = { route.stackTarget } />
 		case 'diagnostics': return <DiagnosticsView />
@@ -143,9 +143,10 @@ export function ManagementShell({ renderPanel: RenderPanel }: { renderPanel: (pa
 		return () => globalThis.removeEventListener('resize', revealSelectedTab)
 	}, [selectedPage])
 
-	function navigate(nextRoute: ManagementRoute) {
+	// Sets the route directly as well, because a replace navigation does not fire hashchange.
+	function navigate(nextRoute: ManagementRoute, options?: ManagementNavigationOptions) {
 		route.value = nextRoute
-		writeManagementRoute(nextRoute)
+		writeManagementRoute(nextRoute, options)
 	}
 
 	function selectPage(page: ManagementPage) {

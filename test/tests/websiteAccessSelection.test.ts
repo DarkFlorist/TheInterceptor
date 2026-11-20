@@ -1,7 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
-import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
@@ -23,6 +22,7 @@ type DomElement = {
 	attributes?: Record<string, string | undefined>
 	l?: Record<string, (event: unknown) => unknown>
 	open?: boolean
+	dispatchEvent?: (event: Event) => unknown
 }
 
 function createBrowserMock() {
@@ -101,16 +101,27 @@ function createBrowserMock() {
 	}
 }
 
-// The shell owns the route, so the view is driven by its websiteOrigin prop and reports selections through selectWebsite.
-function renderWebsiteAccessView(WebsiteAccessView: (props: { websiteOrigin: string | undefined, selectWebsite: (websiteOrigin: string | undefined) => void }) => unknown, initialOrigin: string | undefined) {
+type SelectWebsite = (websiteOrigin: string | undefined, options?: { readonly replace?: boolean }) => void
+type RouteSelection = { websiteOrigin: string | undefined, replace: boolean }
+
+// Acts as the shell: the view is driven by its websiteOrigin prop, and every selectWebsite call is recorded and becomes the new route, which is rendered back into the view.
+function renderWebsiteAccessView(WebsiteAccessView: (props: { websiteOrigin: string | undefined, selectWebsite: SelectWebsite }) => unknown, initialOrigin: string | undefined) {
 	const dom = installDomMock()
-	const selections: (string | undefined)[] = []
-	const selectWebsite = (websiteOrigin: string | undefined) => { selections.push(websiteOrigin) }
-	const renderWithOrigin = (websiteOrigin: string | undefined) => { render(h(WebsiteAccessView, { websiteOrigin, selectWebsite }), dom.document.body) }
+	const selections: RouteSelection[] = []
+	let routeOrigin = initialOrigin
+	const renderWithOrigin = (websiteOrigin: string | undefined) => {
+		routeOrigin = websiteOrigin
+		render(h(WebsiteAccessView, { websiteOrigin, selectWebsite }), dom.document.body)
+	}
+	const selectWebsite: SelectWebsite = (websiteOrigin, options) => {
+		selections.push({ websiteOrigin, replace: options?.replace ?? false })
+		renderWithOrigin(websiteOrigin)
+	}
 	renderWithOrigin(initialOrigin)
 	return {
 		document: dom.document,
 		selections,
+		getRouteOrigin: () => routeOrigin,
 		setRouteOrigin: renderWithOrigin,
 		restore() {
 			render(null, dom.document.body)
@@ -134,6 +145,27 @@ function findRadioByValue(root: DomElement, value: string) {
 
 function isChecked(element: DomElement) {
 	return element.checked === true || element.attributes?.checked !== undefined
+}
+
+function assertRenderedSelectionMatchesRoute(view: { document: { body: DomElement }, getRouteOrigin: () => string | undefined }) {
+	const checkedOrigins = collectElements(view.document.body, 'input').filter((element) => (element.type === 'radio' || element.attributes?.type === 'radio') && isChecked(element)).map((element) => [element.value, element.attributes?.value, element.attributes?.id].find((origin) => origin !== undefined && origin !== ''))
+	const routeOrigin = view.getRouteOrigin()
+	assert.deepEqual(checkedOrigins, routeOrigin === undefined ? [] : [routeOrigin])
+}
+
+// The view reads the search box through FormData, which the DOM mock lacks, so the search value is supplied directly.
+function installFormDataReturning(searchValue: string) {
+	const previous = Object.getOwnPropertyDescriptor(globalThis, 'FormData')
+	Object.defineProperty(globalThis, 'FormData', { configurable: true, writable: true, value: function FormData() { return { get: () => searchValue } } })
+	return () => {
+		if (previous === undefined) Reflect.deleteProperty(globalThis, 'FormData')
+		else Object.defineProperty(globalThis, 'FormData', previous)
+	}
+}
+
+function inputElement(element: DomElement) {
+	if (element.dispatchEvent === undefined) throw new Error('Expected a dispatchable element')
+	element.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 async function changeElement(element: DomElement) {
@@ -229,7 +261,8 @@ describe('WebsiteAccessView selection', () => {
 		await act(async () => {
 			await changeElement(betaRadio)
 		})
-		assert.deepEqual(dom.selections, ['beta.example'])
+		assert.deepEqual(dom.selections, [{ websiteOrigin: 'beta.example', replace: false }])
+		assert.equal(isChecked(betaRadio), true)
 		dom.restore()
 	})
 
@@ -315,14 +348,56 @@ describe('WebsiteAccessView selection', () => {
 		dom.restore()
 	})
 
-	test('asks the shell to return to the website list when the selected website is cleared', async () => {
-		const { clearSelectedWebsite } = await modulesPromise
-		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
-		const selections: (string | undefined)[] = []
+	test('auto-selecting the only result updates the route without adding history, and the rendered selection follows it', async () => {
+		const { WebsiteAccessView } = await modulesPromise
+		let dom: ReturnType<typeof renderWebsiteAccessView> | undefined
+		await act(() => {
+			dom = renderWebsiteAccessView(WebsiteAccessView, undefined)
+		})
+		if (dom === undefined) throw new Error('Expected rendered website view')
 
-		clearSelectedWebsite((websiteOrigin) => { selections.push(websiteOrigin) }, selectedDomain)
+		await act(() => {
+			browserMock.dispatch({ role: 'all', method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess: [websiteAccessEntries[0]], addressAccessMetadata: [] } })
+		})
 
-		assert.equal(selectedDomain.value, undefined)
-		assert.deepEqual(selections, [undefined])
+		assert.deepEqual(dom.selections, [{ websiteOrigin: 'alpha.example', replace: true }])
+		assertRenderedSelectionMatchesRoute(dom)
+
+		await act(() => {
+			browserMock.dispatch({ role: 'all', method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess: websiteAccessEntries, addressAccessMetadata: [] } })
+		})
+		assert.equal(dom.selections.length, 1, 'a selection that is still listed stays selected')
+		assertRenderedSelectionMatchesRoute(dom)
+		dom.restore()
+	})
+
+	test('changing the search clears the selected website through the route', async () => {
+		const { WebsiteAccessView } = await modulesPromise
+		const restoreFormData = installFormDataReturning('beta')
+		let dom: ReturnType<typeof renderWebsiteAccessView> | undefined
+		await act(() => {
+			dom = renderWebsiteAccessView(WebsiteAccessView, 'alpha.example')
+		})
+		if (dom === undefined) throw new Error('Expected rendered website view')
+		try {
+			await act(() => {
+				browserMock.dispatch({ role: 'all', method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess: websiteAccessEntries, addressAccessMetadata: [] } })
+			})
+			assert.deepEqual(dom.selections, [], 'the initial search must keep the website selected by the route')
+			assertRenderedSelectionMatchesRoute(dom)
+
+			const searchForm = collectElements(dom.document.body, 'form')[0]
+			if (searchForm === undefined) throw new Error('Expected search form')
+			await act(() => {
+				inputElement(searchForm)
+			})
+
+			assert.deepEqual(dom.selections, [{ websiteOrigin: undefined, replace: true }])
+			assert.equal(dom.getRouteOrigin(), undefined)
+			assertRenderedSelectionMatchesRoute(dom)
+		} finally {
+			restoreFormData()
+			dom.restore()
+		}
 	})
 })
