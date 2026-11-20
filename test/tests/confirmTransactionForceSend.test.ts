@@ -68,6 +68,8 @@ test.each([
 })
 
 test('force-send forwards the approved edited gas to the wallet without waiting for simulation', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const signingPending = { ...editedPending, simulationMode: false }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [signingPending] })
 	const postedMessages: unknown[] = []
@@ -117,6 +119,8 @@ test('force-send cannot approve initial simulation or revive a rejected request'
 })
 
 test('two concurrent accepts forward the request to the wallet only once', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const signingPending = { ...editedPending, simulationMode: false }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [signingPending] })
 	const reviewed = await getStoredRequest()

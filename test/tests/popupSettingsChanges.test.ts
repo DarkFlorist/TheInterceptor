@@ -371,9 +371,11 @@ describe('popup settings changes', () => {
 		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
 		const before = refreshCount()
 		await activateAddressSelection(owner, new Map(), undefined, { simulationMode: true, signerAddress: undefined, rpcNetwork: network })
+		await waitForBackgroundTasks()
 		assert.ok(refreshCount() > before)
 		const afterReplacement = refreshCount()
 		await activateAddressSelection(owner, new Map(), undefined, { simulationMode: true, signerAddress: undefined, rpcNetwork: network })
+		await waitForBackgroundTasks()
 		assert.equal(refreshCount(), afterReplacement)
 	})
 
