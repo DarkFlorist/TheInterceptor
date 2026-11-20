@@ -5,7 +5,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { addRichAccountBalanceOverrides } from '../utils/richTokens.js'
 import { assertNever } from '../utils/typescript.js'
-import { profilesForAddresses, richTokensForPresentation } from './richModeSettings.js'
+import { profilesForAddresses, richTokensForPresentation } from '../utils/richModeDerivation.js'
 
 const getMakeCurrentAddressRichStateOverride = (chainId: bigint, addressesToMakeRich: readonly bigint[], state: RichModeState) => {
 	if (addressesToMakeRich.length === 0) return {}

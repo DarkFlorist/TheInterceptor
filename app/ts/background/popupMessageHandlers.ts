@@ -1,7 +1,8 @@
 import { queuePopupSimulationRefresh, type PopupSimulationRefreshOutcome } from './popupSimulationRefreshQueue.js'
 import { applyRichTokenChange, type RichTokenChangeResult } from './richModeTokens.js'
-import { addressesBeingMadeRich, dropTokenBalancesWithoutLayout, getRichModeState, mutateRichMode, profilesForAddresses, richTokensForPresentation, updateAddressBookAndReconcileRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
-import { getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT } from '../utils/richTokens.js'
+import { getRichModeState, mutateRichMode, updateAddressBookAndReconcileRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
+import { buildRichModePresentation } from '../utils/richModeDerivation.js'
+import { MAX_RICH_TOKEN_AMOUNT } from '../utils/richTokens.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -1151,7 +1152,6 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 	const state = await getRichModeState(settings.activeRpcNetwork.chainId)
 	const addressBookTokensPromise = silenceChromeUnCaughtPromise(getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
 	const fixedAddressRichList = state.fixedAddressRichList
-	const richAccountBalances = dropTokenBalancesWithoutLayout(profilesForAddresses(state, settings.activeRpcNetwork.chainId, addressesBeingMadeRich(settings, state)), state.tokenLayouts)
 	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
 		try {
 			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
@@ -1178,14 +1178,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedRichListPromises),
-		makeCurrentAddressRich: state.makeCurrentAddressRich,
-		richNativeAmount: state.defaultNativeAmount,
-		richAccountBalances,
-		richTokenOptions: getRichTokenOptions(
-			settings.activeRpcNetwork.chainId,
-			richTokensForPresentation(state),
-			await addressBookTokensPromise,
-		),
+		...buildRichModePresentation(settings, state, await addressBookTokensPromise),
 	}
 }
 
@@ -1195,20 +1188,16 @@ export const requestSimulationMode = async () => ({ method: 'popup_requestSimula
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
-async function getCachedRichData(settings: Settings) {
+export async function getCachedRichData(settings: Settings) {
 	const chainId = settings.activeRpcNetwork.chainId
 	const state = await getRichModeState(chainId)
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
-	const richAccountBalances = dropTokenBalancesWithoutLayout(profilesForAddresses(state, chainId, addressesBeingMadeRich(settings, state)), state.tokenLayouts)
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(state.fixedAddressRichList.map(async(element) => (
 			{ ...element, addressBookEntry: await getActiveAddressEntryForChain(element.address, chainId) }
 		))),
-		makeCurrentAddressRich: state.makeCurrentAddressRich,
-		richNativeAmount: state.defaultNativeAmount,
-		richAccountBalances,
-		richTokenOptions: getRichTokenOptions(settings.activeRpcNetwork.chainId, richTokensForPresentation(state), addressBookEntries),
+		...buildRichModePresentation(settings, state, addressBookEntries),
 	}
 }
 

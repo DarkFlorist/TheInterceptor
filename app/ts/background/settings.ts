@@ -11,7 +11,8 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { getRichModeState, richTokensForPresentation } from './richModeSettings.js'
+import { getRichModeState } from './richModeSettings.js'
+import { richTokensForPresentation } from '../utils/richModeDerivation.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 

@@ -38,7 +38,8 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext } from '../utils/activeStackContext.js'
-import { addressesBeingMadeRich, getRichModeState } from './richModeSettings.js'
+import { getRichModeState } from './richModeSettings.js'
+import { addressesBeingMadeRich } from '../utils/richModeDerivation.js'
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()

@@ -4,7 +4,8 @@ import type { ModifyRichTokenRequest } from '../types/interceptor-reply-messages
 import type { RichToken } from '../types/richMode.js'
 import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStorage.js'
-import { getRichModeState, mutateRichMode, richTokensForPresentation } from './richModeSettings.js'
+import { getRichModeState, mutateRichMode } from './richModeSettings.js'
+import { richTokensForPresentation } from '../utils/richModeDerivation.js'
 
 export type RichTokenChange = ModifyRichTokenRequest['data']
 export type RichTokenChangeResult = { readonly success: true, readonly richToken: RichToken | undefined } | { readonly success: false, readonly error: string }

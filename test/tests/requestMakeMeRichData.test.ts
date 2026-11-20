@@ -463,6 +463,36 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.deepEqual((await getRichModeState()).accountBalances[0]?.tokenBalances, [])
 	})
 
+	test('fresh and cached home data build the same rich-mode presentation from the same state', async () => {
+		const storageState = installBrowserMock()
+		const { getCachedRichData, getSettings, requestMakeMeRichList, updateRichAccountBalances, updateRichTokens, setMakeCurrentAddressRich, setFixedMakeMeRichList, changeSimulationMode } = await loadModules()
+		const fundedToken = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const unfundedToken = 0x6b175474e89094c44da98b954eedeac495271d0fn
+		const fixedAddress = 0x2222222222222222222222222222222222222222n
+		storageState.userAddressBookEntriesV3 = [
+			{ type: 'ERC20', address: addressString(fundedToken), name: 'USD Coin', symbol: 'USDC', decimals: '0x6', entrySource: 'User', chainId: '0x1' },
+			{ type: 'ERC20', address: addressString(unfundedToken), name: 'Dai', symbol: 'DAI', decimals: '0x12', entrySource: 'User', chainId: '0x1' },
+		]
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: richAccountAddress })
+		await setMakeCurrentAddressRich(true)
+		await setFixedMakeMeRichList([{ address: fixedAddress, makingRich: true, type: 'UserAdded' }])
+		await updateRichTokens(() => [{ chainId: 1n, tokenAddress: fundedToken, tokenType: 'ERC20', tokenId: undefined, name: 'USD Coin', symbol: 'USDC', decimals: 6n, amount: 1n, balanceSlot: 9n, erc1155StorageOrder: undefined }])
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 7n, tokenBalances: [{ tokenAddress: fundedToken, tokenId: undefined, amount: 5n }, { tokenAddress: unfundedToken, tokenId: undefined, amount: 6n }] }])
+
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+			name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true,
+		})
+		Object.defineProperty(ethereum, 'getCode', { value: async () => new Uint8Array() })
+		const presentation = ({ makeCurrentAddressRich, richNativeAmount, richAccountBalances, richTokenOptions }: Awaited<ReturnType<typeof getCachedRichData>>) => ({ makeCurrentAddressRich, richNativeAmount, richAccountBalances, richTokenOptions })
+		const fresh = presentation(await withSilencedConsole(async () => await requestMakeMeRichList(ethereum, undefined)))
+		const cached = presentation(await getCachedRichData(await getSettings()))
+		assert.deepEqual(fresh, cached)
+		assert.deepEqual(cached.richAccountBalances.map((profile) => profile.address).sort(), [richAccountAddress, fixedAddress].sort())
+		assert.deepEqual(cached.richAccountBalances.find((profile) => profile.address === richAccountAddress)?.tokenBalances, [{ tokenAddress: fundedToken, tokenId: undefined, amount: 5n }])
+		assert.deepEqual(cached.richTokenOptions.map((option) => [option.symbol, option.enabled]), [['USDC', true], ['DAI', false]])
+	})
+
 	test('plain address-book writes leave rich-mode state untouched', async () => {
 		const writtenKeys: string[][] = []
 		installBrowserMock({ onStorageSet: (items) => { writtenKeys.push(Object.keys(items)) } })
