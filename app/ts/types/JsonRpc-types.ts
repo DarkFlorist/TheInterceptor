@@ -89,8 +89,6 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	),
 	from: EthereumAddress,
-	chainId: EthereumQuantity,
-	nonce: EthereumQuantity,
 	gas: EthereumQuantity,
 	value: EthereumQuantity,
 	to: funtypes.Union(EthereumAddress, funtypes.Null),
@@ -100,8 +98,6 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	data: EthereumData,
 	input: EthereumData,
 	accessList: EthereumAccessList,
-	maxFeePerBlobGas: EthereumQuantity,
-	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
 	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		chainId: EthereumQuantity,
 		address: EthereumAddress,
@@ -123,6 +119,15 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	if (x.maxFeePerGas !== undefined) return x.gasPrice === undefined /* && x.maxPriorityFeePerGas !== undefined*/ //Remix doesn't send "maxPriorityFeePerGas" with "maxFeePerGas"
   return true
 })
+
+// Only eth_sendTransaction consumes these envelope fields. Calls and gas estimates retain their narrower shared parameter contract.
+export type PartialEthereumSendTransaction = funtypes.Static<typeof PartialEthereumSendTransaction>
+export const PartialEthereumSendTransaction = PartialEthereumTransaction.And(funtypes.ReadonlyPartial({
+	chainId: EthereumQuantity,
+	nonce: EthereumQuantity,
+	maxFeePerBlobGas: EthereumQuantity,
+	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
+}))
 
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
 export const EthTransactionReceiptResponse = funtypes.Union(
@@ -201,7 +206,7 @@ export const TransactionByHashParams = funtypes.ReadonlyObject({
 export type SendTransactionParams = funtypes.Static<typeof SendTransactionParams>
 export const SendTransactionParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendTransaction'),
-	params: funtypes.ReadonlyTuple(PartialEthereumTransaction)
+	params: funtypes.ReadonlyTuple(PartialEthereumSendTransaction)
 })
 
 export type SendRawTransactionParams = funtypes.Static<typeof SendRawTransactionParams>

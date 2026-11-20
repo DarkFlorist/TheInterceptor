@@ -99,10 +99,16 @@ export function getSafeFlowSignerAddress(flow: SafePendingFlow) {
 	}
 }
 
-// Direct executions replace the Safe sender with its executor for wallet review. Website authority remains bound to the original Safe account, not that executor.
-export function getPendingRequestWebsiteAddress(pending: PendingTransactionOrSignableMessage): bigint {
+// A direct execution has two account roles: website approval for the original Safe and a prepared transaction from its executor. Ordinary requests use the active account for both; pre-signed raw broadcasts have no sender-authorization requirement.
+export function getPendingRequestAccountBinding(pending: PendingTransactionOrSignableMessage) {
 	const flow = getSafePendingFlow(pending)
-	return flow?.kind === 'directExecution'
+	const websiteAccount = flow?.kind === 'directExecution'
 		? flow.pending.safeFlow.safeExecutionOriginalRequestParameters.params[0].from ?? pending.activeAddress
 		: pending.activeAddress
+	return {
+		websiteAccount,
+		...pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' && pending.originalRequestParameters.method === 'eth_sendTransaction'
+			? { transactionSender: { requested: pending.transactionToSimulate.transaction.from, authorized: pending.activeAddress } }
+			: {},
+	}
 }

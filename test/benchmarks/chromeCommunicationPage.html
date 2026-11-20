@@ -115,6 +115,21 @@
 					}
 				}
 
+				// Signing-flow harnesses deliberately install a provider during document start. If its initial selection invalidates the first account request, make a fresh permission request; never retry a denial or any later signing action.
+				const requestAccountsAfterSignerStartup = async (ethereum) => {
+					const retryStartup = new URLSearchParams(location.search).get('retry-signer-startup') === 'true'
+					const deadline = performance.now() + 3000
+					while (true) {
+						try {
+							return await ethereum.request({ method: 'eth_requestAccounts' })
+						} catch (error) {
+							const providerReplaced = typeof error === 'object' && error !== null && error.code === 4001 && error.message === 'Signer connection changed before the previous wallet replied.'
+							if (!retryStartup || !providerReplaced || performance.now() >= deadline) throw error
+							await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+						}
+					}
+				}
+
 				;(async () => {
 					try {
 						const ethereum = await waitForEthereum()
@@ -161,7 +176,7 @@
 							accounts = await ethereum.request({ method: 'eth_accounts' })
 							state.eventOrder.push('accountsResolved')
 						} else {
-							accounts = await ethereum.request({ method: 'eth_requestAccounts' })
+							accounts = await requestAccountsAfterSignerStartup(ethereum)
 							state.eventOrder.push('accountsResolved')
 						}
 						updateState('access-granted', { accounts: Array.isArray(accounts) ? accounts : [] })

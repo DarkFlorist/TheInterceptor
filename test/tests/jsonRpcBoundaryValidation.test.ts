@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { EthereumJsonRpcRequest, FeeHistory, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, FeeHistory, EthGetLogsRequest, EthNewFilter, PartialEthereumTransaction, SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockHeader, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumQuantity, EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
 import { assertIsObject } from '../../app/ts/utils/typescript.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
@@ -8,6 +8,20 @@ import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 const blockHash = `0x${ '12'.repeat(32) }`
 
 describe('JSON-RPC boundary validation', () => {
+	test('send-only envelope fields decode without weakening the shared call constraints', () => {
+		const fields = { from: '0x1111111111111111111111111111111111111111', data: '0x1234', input: '0x1234', maxFeePerGas: '0x2' }
+		assert.equal(PartialEthereumTransaction.safeParse(fields).success, true)
+		const send = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ ...fields, chainId: '0x2', nonce: '0x5', maxFeePerBlobGas: '0x3', blobVersionedHashes: [blockHash] }] }).params[0]
+		assert.equal(send.chainId, 2n)
+		assert.equal(send.nonce, 5n)
+		assert.equal(send.maxFeePerBlobGas, 3n)
+		assert.deepEqual(send.blobVersionedHashes, [BigInt(blockHash)])
+		for (const invalid of [{ ...fields, input: '0x5678' }, { ...fields, gasPrice: '0x1' }]) {
+			assert.equal(PartialEthereumTransaction.safeParse(invalid).success, false)
+			assert.equal(SendTransactionParams.safeParse({ method: 'eth_sendTransaction', params: [{ ...invalid, nonce: '0x5' }] }).success, false)
+		}
+	})
+
 	test('accepts safe and earliest block tags', () => {
 		assert.equal(EthereumBlockTag.parse('safe'), 'safe')
 		assert.equal(EthereumBlockTag.parse('earliest'), 'earliest')

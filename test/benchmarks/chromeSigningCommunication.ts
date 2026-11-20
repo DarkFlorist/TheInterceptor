@@ -114,7 +114,7 @@ async function main() {
 		try {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
-			await pageConnection.send('Page.navigate', { url: server.baseUrl })
+			await pageConnection.send('Page.navigate', { url: `${ server.baseUrl }?retry-signer-startup=true` })
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'access request')
 
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
