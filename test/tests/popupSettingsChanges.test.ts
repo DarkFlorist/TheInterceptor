@@ -1,12 +1,12 @@
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
 describe('popup settings changes', () => {
 	for (const firstSucceeded of [true, false]) test(`keeps overlapping refresh outcomes independent (first=${ firstSucceeded })`, async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const first = createDeferredValue<boolean>()
 		const last = createDeferredValue<boolean>()
@@ -29,7 +29,7 @@ describe('popup settings changes', () => {
 
 	for (const change of ['same', 'revision', 'provider', 'force'] as const) {
 		test(`shares only refresh work that covers the requested revision and invalidation (${ change })`, async () => {
-			installBrowserMock()
+			installLegacyBackgroundBrowserMock()
 			const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 			const release = createDeferredValue<boolean>()
 			const started = createDeferredValue<void>()
@@ -54,7 +54,7 @@ describe('popup settings changes', () => {
 	}
 
 	test('supersedes queued B with the latest A and carries forward invalidation', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const release = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
@@ -75,7 +75,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('merges invalidation for equivalent work before it starts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const refresh = createPopupSimulationRefresher(async services => services.invalidateOldState === true)
 		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
@@ -85,7 +85,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('rejects only the failed entry and continues queued work and retries', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const release = createDeferredValue<void>()
 		const started = createDeferredValue<void>()
@@ -105,7 +105,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('coordinates settings changes across dispatchers without blocking wallet replies or reads', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { PopupSettingsChangeStatus } = await import('../../app/ts/types/interceptor-messages.js')
 		const statuses = () => runtimeMessages.flatMap(message => { const parsed = PopupSettingsChangeStatus.safeParse(message); return parsed.success ? [parsed.value.data] : [] })
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
@@ -167,7 +167,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('skips work when reselecting the current mode or RPC', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings } = await loadModules()
 		const { enableSimulationMode } = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
@@ -181,7 +181,7 @@ describe('popup settings changes', () => {
 	})
 
 	for (const simulationMode of [true, false]) test(`saves active RPC metadata without resetting services in ${ simulationMode ? 'simulation' : 'signing' } mode`, async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
 		const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
@@ -206,7 +206,7 @@ describe('popup settings changes', () => {
 	})
 
 	for (const simulationMode of [true, false]) for (const reselect of [true, false]) test(`local RPC selection persists the chain preference (simulation=${ simulationMode }, reselect=${ reselect })`, async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
 		const { setRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
@@ -222,7 +222,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('activation installs services once without exposing a potentially superseded snapshot', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings } = await loadModules()
 		const { activateAddressSelection } = await import('../../app/ts/background/activeSettings.js')
 		await changeSimulationMode({ simulationMode: true })
@@ -246,7 +246,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('publishes a saved mode before slow permission work finishes', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, changeActiveAddressAndChain, updateWebsiteAccess } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		await changeSimulationMode({ simulationMode: false })
@@ -275,7 +275,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('installs the selected RPC service before publishing its settings', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, changeActiveAddressAndChain, getSettings } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		await changeSimulationMode({ simulationMode: true })
@@ -300,7 +300,7 @@ describe('popup settings changes', () => {
 	})
 
 	test('rich changes request a visualization refresh immediately and unchanged values skip it', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { getSettings } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
@@ -324,7 +324,7 @@ describe('popup settings changes', () => {
 
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
-			installBrowserMock()
+			installLegacyBackgroundBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
@@ -385,7 +385,7 @@ describe('popup settings changes', () => {
 	}
 
 	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Safe chain (crossChain=${ crossChain })`, async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
 		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
 		const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
@@ -420,7 +420,7 @@ describe('popup settings changes', () => {
 	})
 
 	for (const matchesDispatchedToken of [true, false]) test(`early reply deadline ownership matches the dispatched signer token (${ matchesDispatchedToken })`, async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
 		const { changeActiveRpc, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 		await changeSimulationMode({ simulationMode: false })
@@ -458,7 +458,7 @@ describe('popup settings changes', () => {
 
 	for (const outcome of ['timeout', 'reply', 'failure'] as const) {
 		test(`wallet deadline releases a silent request but does not expire a received reply (${ outcome })`, async () => {
-			installBrowserMock()
+			installLegacyBackgroundBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
 			const { changeActiveRpc, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 			const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
@@ -542,7 +542,7 @@ describe('popup settings changes', () => {
 	for (const outcome of ['acceptance', 'rejection', 'endpoint mismatch'] as const) {
 		const accept = outcome !== 'rejection'
 		test(`waits for the matching wallet network ${ outcome }`, async () => {
-			installBrowserMock()
+			installLegacyBackgroundBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
 			const { changeActiveRpc, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 			await changeSimulationMode({ simulationMode: false })
