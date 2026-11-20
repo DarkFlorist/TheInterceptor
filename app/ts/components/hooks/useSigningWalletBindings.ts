@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'preact/hooks'
 import type { SigningWalletBindings } from '../../types/signingWallet.js'
 import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 export type SigningWalletBindingsState = { readonly bindings?: SigningWalletBindings, readonly error?: string }
 
@@ -29,10 +31,14 @@ export function useSigningWalletBindings() {
 				refreshing = false
 			}
 		}
-		const changed = (changes: Record<string, unknown>) => { if ('signingWalletBindings' in changes) void refresh() }
+		// The background announces binding changes; the hook requests the bindings again instead of reading storage.
+		const removeListener = noReplyExpectingBrowserRuntimeOnMessageListener((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_signingWalletBindingsChanged') void refresh()
+			return false
+		})
 		void refresh()
-		browser.storage?.onChanged?.addListener(changed)
-		return () => { active = false; browser.storage?.onChanged?.removeListener(changed) }
+		return () => { active = false; removeListener() }
 	}, [])
 	return state
 }

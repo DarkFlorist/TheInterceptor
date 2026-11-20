@@ -1,10 +1,11 @@
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStore.js'
-import { readSigningWalletBindings, signingWalletBindingsStorageWrite } from './signingWalletStore.js'
+import { isSigningWalletBindingsStorageWrite, readSigningWalletBindings, signingWalletBindingsStorageWrite } from './signingWalletStore.js'
 import { SigningWallet, SigningWalletBindings, type SigningWalletBinding } from '../types/signingWallet.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type AddressBookEntries } from '../types/addressBookTypes.js'
 import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'
 import { signingOperationError } from '../signing/signingOperationError.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
+import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 
 // A binding is global to an ordinary address, retained while any chain-scoped entry remains. A Safe entry in any scope excludes the address from ordinary-account signing.
 function getOrdinarySigningAddresses(entries: AddressBookEntries) {
@@ -25,6 +26,18 @@ function addressBookAndSigningWalletBindingsWrites(entries: AddressBookEntries, 
 	const reconciled = reconcileSigningWalletBindings(entries, bindings)
 	const bindingsChanged = previousBindings === undefined || reconciled.length !== previousBindings.length || reconciled.some((binding, index) => binding !== previousBindings[index])
 	return bindingsChanged ? [addressBookWrite, signingWalletBindingsStorageWrite(reconciled)] : [addressBookWrite]
+}
+
+// Runs a transaction of this coordinator and, once it committed a binding change, tells open extension pages to request the bindings again.
+async function runBindingsTransaction<Result>(plan: () => Promise<{ readonly writes: readonly StorageWrite[], readonly result: Result }>) {
+	let bindingsWritten = false
+	const result = await runSettingsStorageTransaction(async () => {
+		const planned = await plan()
+		bindingsWritten = planned.writes.some(isSigningWalletBindingsStorageWrite)
+		return planned
+	})
+	if (bindingsWritten) await sendPopupMessageToOpenWindows({ method: 'popup_signingWalletBindingsChanged' })
+	return result
 }
 
 export async function getAddressBookAndSigningWalletBindings() {
@@ -50,7 +63,7 @@ export async function saveAddressSigningWallet(address: bigint, wallet: SigningW
 		if (savedWallet.address !== address) throw signingOperationError('Signing wallet does not match this address')
 		assertSigningWalletIdentity(savedWallet)
 	}
-	return await runSettingsStorageTransaction(async () => {
+	return await runBindingsTransaction(async () => {
 		const [entries, storedBindings] = await Promise.all([getUserAddressBookEntries(), readSigningWalletBindings()])
 		const bindings = reconcileSigningWalletBindings(entries, storedBindings)
 		const previous = bindings.find((binding) => binding.wallet.address === address)
@@ -94,7 +107,7 @@ export function keepSafeSigningAccounts(stored: AddressBookEntry | undefined, ed
 
 /** Address edits atomically prune invalid signing bindings; unchanged eligibility skips signing-storage access. */
 export async function updateAddressBookAndSigningWalletBindings(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await runSettingsStorageTransaction(async () => {
+	await runBindingsTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
 		const nextEntries = updateFunc(entries)
 		const previousAddresses = getOrdinarySigningAddresses(entries)

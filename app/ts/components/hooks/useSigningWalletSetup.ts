@@ -6,6 +6,8 @@ import { selectLedgerDevice, withLedgerDevice } from '../../signing/ledgerHid.js
 import { checkLedgerEthereumApp, readLedgerAccount } from '../../signing/ledgerEthereum.js'
 import { createAirGapAccountImporter } from '../../signing/airgapAccountImport.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 
 export function useSigningWalletSetup() {
 	const target = new URLSearchParams(location.search).get('address')
@@ -45,14 +47,13 @@ export function useSigningWalletSetup() {
 		setBinding(target === null ? undefined : bindings.find((item) => item.wallet.address === BigInt(target)))
 		setTabs(reply.tabs)
 	}) }, [])
-	useEffect(() => {
-		const refreshAccounts = (_changes: unknown, area: string) => {
-			if (area !== 'local') return
-			void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setTabs(reply.tabs)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not refresh browser accounts'))
-		}
-		browser.storage.onChanged.addListener(refreshAccounts)
-		return () => browser.storage.onChanged.removeListener(refreshAccounts)
-	}, [])
+	// The background announces browser wallet account and signer changes; the page requests the browser wallet tabs again instead of reading storage.
+	useEffect(() => noReplyExpectingBrowserRuntimeOnMessageListener((message) => {
+		const parsed = MessageToPopup.safeParse(message)
+		if (!parsed.success || (parsed.value.method !== 'popup_accounts_update' && parsed.value.method !== 'popup_signer_name_changed')) return false
+		void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setTabs(reply.tabs)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not refresh browser accounts'))
+		return false
+	}), [])
 	const ledger = () => run(async () => {
 		setStatus('Select your Ledger, unlock it, and open Ethereum. Verify the address on the device.')
 		const device = await selectLedgerDevice()

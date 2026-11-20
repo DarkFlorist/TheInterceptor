@@ -4,6 +4,7 @@ import type { StorageWrite } from './settingsStorageTransaction.js'
 
 // Bindings change only together with the address book that decides their eligibility, so signingAddressBookCoordinator composes this write into a settings storage transaction.
 export const signingWalletBindingsStorageWrite = (signingWalletBindings: SigningWalletBindings): StorageWrite => ({ signingWalletBindings })
+export const isSigningWalletBindingsStorageWrite = (write: StorageWrite) => 'signingWalletBindings' in write
 
 // Bindings are public identity only. A missing or corrupt binding never grants website access or establishes signing authority.
 export async function readSigningWalletBindings(): Promise<SigningWalletBindings> {

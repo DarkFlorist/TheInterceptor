@@ -4,6 +4,8 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { SigningWalletSummary } from '../../app/ts/components/subcomponents/SigningWalletSummary.js'
 import { findRenderedElement, installDomMock } from './domMock.js'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 
 function SummaryList() {
 	const wallets = useSigningWalletBindings()
@@ -13,11 +15,11 @@ function SummaryList() {
 for (const failed of [false, true]) test(`wallet summary distinguishes loading from ${ failed ? 'a failed lookup' : 'an unbound address' }`, async () => {
 	const dom = installDomMock()
 	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
-	const listeners: ((changes: Record<string, unknown>) => void)[] = []
+	const listeners: ((message: unknown) => unknown)[] = []
 	let requests = 0
 	let reply: (value: unknown) => void = () => { throw new Error('Reply not initialized') }
 	const pending = new Promise<unknown>((resolve) => { reply = resolve })
-	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: { sendMessage: async () => { requests++; return await pending } }, storage: { onChanged: { addListener: (listener: (changes: Record<string, unknown>) => void) => listeners.push(listener), removeListener: (listener: (changes: Record<string, unknown>) => void) => listeners.splice(listeners.indexOf(listener), 1) } } } })
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: { sendMessage: async () => { requests++; return await pending }, onMessage: { addListener: (listener: (message: unknown) => unknown) => listeners.push(listener), removeListener: (listener: (message: unknown) => unknown) => listeners.splice(listeners.indexOf(listener), 1) } } } })
 	try {
 		await act(async () => { render(h(SummaryList, {}), dom.document.body) })
 		expect(requests).toBe(1)
@@ -29,9 +31,10 @@ for (const failed of [false, true]) test(`wallet summary distinguishes loading f
 		expect(dom.document.body.textContent).not.toContain('Loading signing wallet')
 		if (failed) expect(dom.document.body.textContent).not.toContain('No signing wallet')
 		expect(listeners).toHaveLength(1)
-		await act(async () => { listeners[0]?.({ unrelated: {} }); await Promise.resolve() })
+		// Only the background's binding-change announcement makes the list request the bindings again.
+		await act(async () => { listeners[0]?.(serialize(MessageToPopup, { role: 'all', method: 'popup_addressBookEntriesChanged' })); await new Promise((resolve) => setTimeout(resolve, 0)) })
 		expect(requests).toBe(1)
-		await act(async () => { listeners[0]?.({ signingWalletBindings: {} }); await new Promise((resolve) => setTimeout(resolve, 0)) })
+		await act(async () => { listeners[0]?.(serialize(MessageToPopup, { role: 'all', method: 'popup_signingWalletBindingsChanged' })); await new Promise((resolve) => setTimeout(resolve, 0)) })
 		expect(requests).toBe(2)
 
 	} finally {

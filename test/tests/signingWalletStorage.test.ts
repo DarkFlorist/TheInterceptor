@@ -8,7 +8,10 @@ import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 const stored: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
+// Messages the background broadcasts to open extension pages.
+const broadcasts: unknown[] = []
 Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: {
+	runtime: { sendMessage: async (message: unknown) => { broadcasts.push(message) } },
 	storage: { local: {
 		remove: async (key: string) => { delete stored[key] },
 		get: async (keys: string | readonly string[]) => Object.fromEntries((typeof keys === 'string' ? [keys] : keys).filter((key) => key in stored).map((key) => [key, stored[key]])),
@@ -25,6 +28,7 @@ const airgap: SigningWallet = { type: 'airgap', label: 'Vault · Account 1', add
 beforeEach(async () => {
 	for (const key of Object.keys(stored)) delete stored[key]
 	writes.length = 0
+	broadcasts.length = 0
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [], simulationMode: true, independentActiveSimulationAddress: 1n, activeSigningAddress: 2n, websiteAccess: [] })
 	writes.length = 0
 })
@@ -229,4 +233,19 @@ test('address-book-only additions do not depend on signing-wallet storage', asyn
 	expect((await getUserAddressBookEntries()).some((entry) => entry.address === 5n)).toBe(true)
 	expect(stored.signingWalletBindings).toBe('corrupt signing configuration')
 	expect(Object.keys(writes.at(-1) ?? {})).toEqual(['userAddressBookEntriesV3'])
+})
+
+const bindingsChangedBroadcasts = () => broadcasts.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signingWalletBindingsChanged').length
+
+test('extension pages are told to request the bindings again after each binding change, and only then', async () => {
+	const existing = { type: 'contact', address, name: 'Existing', chainId: 1n, entrySource: 'User', askForAddressAccess: false } satisfies ContactEntry
+	await updateAddressBookAndSigningWalletBindings(() => [existing])
+	expect(bindingsChangedBroadcasts()).toBe(0)
+	const saved = await saveAddressSigningWallet(address, ledger, undefined)
+	expect(bindingsChangedBroadcasts()).toBe(1)
+	await updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed' })))
+	expect(bindingsChangedBroadcasts()).toBe(1)
+	await updateAddressBookAndSigningWalletBindings(() => [])
+	expect(bindingsChangedBroadcasts()).toBe(2)
+	expect(saved).toBeDefined()
 })

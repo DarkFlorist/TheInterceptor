@@ -367,6 +367,8 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 					sentMessages.push(structuredClone(message))
 					return replyToMessage?.(message) ?? (hasMethod(message, 'signing_wallets') ? { ok: true, bindings: [], tabs: [] } : undefined)
 				},
+				// The signing wallet list listens for the background's binding-change announcements.
+				onMessage: { addListener: () => undefined, removeListener: () => undefined },
 			},
 		},
 	})
