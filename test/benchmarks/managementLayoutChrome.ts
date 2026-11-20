@@ -93,11 +93,11 @@ try {
 		document.querySelector('.management-header').style.removeProperty('padding-block')
 		location.hash = '#simulation-stack'
 	})()`)
-	await waitForSelector(page, '.page-content-frame .simulation-stack-page-header')
-	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.page-content-frame .simulation-stack-page-header')).position`)
+	await waitForSelector(page, '.management-panel--scrollable .simulation-stack-page-header')
+	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.management-panel--scrollable .simulation-stack-page-header')).position`)
 	assert.equal(embeddedHeaderPosition, 'sticky')
 	const stickyHeaderGeometry = await page.evaluate<{ frameTop: number, headerTop: number, scrollTop: number }>(`(() => {
-		const frame = document.querySelector('.page-content-frame--scrollable')
+		const frame = document.querySelector('.management-panel--scrollable')
 		const page = document.querySelector('.simulation-stack-page')
 		const header = document.querySelector('.simulation-stack-page-header')
 		if (!(frame instanceof HTMLElement) || !(page instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Simulation Stack frame is missing')
@@ -113,7 +113,7 @@ try {
 	await page.send('Emulation.setDeviceMetricsOverride', { width: 480, height: 700, deviceScaleFactor: 1, mobile: false })
 	const narrowStackGeometry = await page.evaluate<{ frameTop: number, navigationBottom: number, headerTop: number, scrollTop: number, navigationIsOnTop: boolean }>(`(() => {
 		const navigation = document.querySelector('.management-header')
-		const frame = document.querySelector('.page-content-frame--scrollable')
+		const frame = document.querySelector('.management-panel--scrollable')
 		const header = document.querySelector('.simulation-stack-page-header')
 		if (!(navigation instanceof HTMLElement) || !(frame instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Narrow Simulation Stack frame is missing')
 		frame.scrollTop = 200
@@ -132,28 +132,17 @@ try {
 	assert.equal(narrowStackGeometry.navigationIsOnTop, true, 'Narrow management navigation stays above the stack header')
 	await page.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false })
 
-	await page.send('Page.navigate', { url: `chrome-extension://${ extensionId }/html3/addressBookV3.html` })
-	await waitForSelector(page, '.address-book-list')
-	const standaloneAddressBookBottom = await page.evaluate<number>(`document.querySelector('.address-book-content').getBoundingClientRect().bottom`)
-	assert.ok(standaloneAddressBookBottom !== undefined)
-	assertNear(standaloneAddressBookBottom, 700, 'Standalone Address Book fills its page frame')
-
-	await page.send('Page.navigate', { url: `chrome-extension://${ extensionId }/html3/simulationStackV3.html` })
-	await waitForSelector(page, '.simulation-stack-page-header')
-	const standaloneHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.simulation-stack-page-header')).position`)
-	assert.equal(standaloneHeaderPosition, 'sticky')
-	const standaloneStickyHeaderTop = await page.evaluate<number>(`(() => {
-		const page = document.querySelector('.simulation-stack-page')
-		const header = document.querySelector('.simulation-stack-page-header')
-		if (!(page instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Standalone Simulation Stack is missing')
-		const filler = document.createElement('div')
-		filler.style.height = '1200px'
-		page.append(filler)
-		window.scrollTo(0, 200)
-		return header.getBoundingClientRect().top
-	})()`)
-	assert.ok(standaloneStickyHeaderTop !== undefined)
-	assertNear(standaloneStickyHeaderTop, 0, 'Standalone Simulation Stack header stays at the viewport top')
+	const legacyRedirects = [
+		{ path: 'html3/addressBookV3.html', expectedHash: '#address-book', selector: '.address-book-list' },
+		{ path: 'html3/websiteAccessV3.html#origin:example.com', expectedHash: '#websites?origin=example.com', selector: '#management-panel-websites:not([hidden])' },
+		{ path: 'html3/simulationStackV3.html', expectedHash: '#simulation-stack', selector: '.management-panel--scrollable .simulation-stack-page-header' },
+	]
+	for (const redirect of legacyRedirects) {
+		await page.send('Page.navigate', { url: `chrome-extension://${ extensionId }/${ redirect.path }` })
+		await waitForSelector(page, redirect.selector)
+		const landedAt = await page.evaluate<string>('location.pathname + location.hash')
+		assert.equal(landedAt, `/html3/managementViewV3.html${ redirect.expectedHash }`, `${ redirect.path } should continue in the management shell`)
+	}
 
 	console.info('Management layout geometry passed in Chromium')
 } finally {

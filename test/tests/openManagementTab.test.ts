@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { ManagementPage } from '../../app/ts/utils/managementPages.js'
-import { getSimulationStackTargetElementIdFromHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { parseManagementRoute } from '../../app/ts/utils/managementPages.js'
 
 type TabRecord = {
 	readonly id: number
@@ -221,7 +221,8 @@ describe('management tab tracking', () => {
 		assert.equal(updatedTabs[0]?.update.highlighted, true)
 		const targetUrl = updatedTabs[0]?.update.url
 		assert.ok(targetUrl?.startsWith('/html3/managementViewV3.html#simulation-stack?'))
-		assert.equal(getSimulationStackTargetElementIdFromHash(targetUrl.slice(targetUrl.indexOf('#'))), 'simulation-stack-transaction-0x1')
+		const targetRoute = parseManagementRoute(targetUrl.slice(targetUrl.indexOf('#')))
+		assert.equal(targetRoute?.page === 'simulation-stack' ? targetRoute.stackTarget?.elementId : undefined, 'simulation-stack-transaction-0x1')
 		assert.deepEqual(updatedWindows, [{ windowId: 7, update: { focused: true } }])
 	})
 
@@ -269,8 +270,8 @@ describe('management tab tracking', () => {
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
-	test('keeps the stored website tab when the active tab is the standalone simulation page', async () => {
-		const { storageState } = installBrowserMock([{ id: 77, url: '/html3/simulationStackV3.html' }], emptyOpenedTabs(), false, 12)
+	test('keeps the stored website tab when the active tab is the management simulation stack', async () => {
+		const { storageState } = installBrowserMock([{ id: 77, url: '/html3/managementViewV3.html#simulation-stack' }], emptyOpenedTabs(), false, 12)
 		const getLastKnownCurrentTabId = await loadGetLastKnownCurrentTabId()
 
 		assert.equal(await getLastKnownCurrentTabId(), 12)

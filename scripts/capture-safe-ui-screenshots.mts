@@ -7,7 +7,7 @@ import { serialize } from '../app/ts/types/wire-types.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
 import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage, SETTINGS_IMPORT_EXPORT_PAGE } from '../test/benchmarks/safeUiScreenshotHarness.js'
+import { ADDRESS_BOOK_PAGE, launchSafeUiScreenshotBrowser, SafeUiScreenshotPage, SETTINGS_IMPORT_EXPORT_PAGE, SIMULATION_STACK_PAGE } from '../test/benchmarks/safeUiScreenshotHarness.js'
 
 const outputDirectory = path.resolve(process.env.SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
 
@@ -90,7 +90,7 @@ const browser = await launchSafeUiScreenshotBrowser()
 console.info(`Launched ${ browser.name }${ browser.version === undefined ? '' : ` ${ browser.version }` }`)
 try {
 	console.info('Opening address book')
-	const addressBook = await browser.openPage('addressBook')
+	const addressBook = await browser.openPage(ADDRESS_BOOK_PAGE)
 	await waitForSelector(addressBook, '.address-book-page')
 	await addressBook.evaluate(`(() => {
 		const safeLink = [...document.querySelectorAll('a')].find((element) => element.textContent?.includes('My Gnosis Safes'))
@@ -216,7 +216,7 @@ try {
 	})()`
 
 	console.info('Opening compact Gnosis Safe editor')
-	const safeEditor = await browser.openPage('addressBook')
+	const safeEditor = await browser.openPage(ADDRESS_BOOK_PAGE)
 	await waitForSelector(safeEditor, '.address-book-page')
 	await safeEditor.evaluate(openSafeEditorFixture)
 	await waitForText(safeEditor, 'Treasury Safe')
@@ -240,7 +240,7 @@ try {
 	await captureScenario(safeEditor, 'safe-modify-pending')
 	await safeEditor.close()
 
-	const refreshEditor = await browser.openPage('addressBook')
+	const refreshEditor = await browser.openPage(ADDRESS_BOOK_PAGE)
 	await waitForSelector(refreshEditor, '.address-book-page')
 	await refreshEditor.evaluate(openSafeEditorFixture)
 	await waitForText(refreshEditor, 'Treasury Safe')
@@ -481,7 +481,7 @@ try {
 	await simulatedConfirm.close()
 
 	console.info('Opening simulation stack')
-	const stack = await browser.openPage('simulationStack')
+	const stack = await browser.openPage(SIMULATION_STACK_PAGE)
 	await waitForSelector(stack, '.simulation-stack-page-header')
 	await captureScenario(stack, 'safe-simulation-stack')
 	await stack.evaluate(`(() => {

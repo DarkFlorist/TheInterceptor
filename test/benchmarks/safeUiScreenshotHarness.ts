@@ -6,11 +6,13 @@ import { closeTarget, connectTarget, createTargetPage, launchChromeSession, wait
 import { launchFirefoxSession } from './firefoxHarness.js'
 import { getManagementPageHash } from '../../app/ts/utils/managementPages.js'
 
-export type SafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'managementView'
+export type SafeUiPageName = 'popup' | 'confirmTransaction' | 'managementView'
 export type SafeUiPageTarget = { readonly name: SafeUiPageName, readonly hash?: string }
 
-// The management shell opens its home tab without a hash, so a scenario for one of its tabs must route there with the app's own hash helper.
+// Management pages render only inside the shell, which opens its home tab without a hash, so each scenario routes to its tab with the app's own hash helper.
 export const SETTINGS_IMPORT_EXPORT_PAGE: SafeUiPageTarget = { name: 'managementView', hash: getManagementPageHash('settings') }
+export const ADDRESS_BOOK_PAGE: SafeUiPageTarget = { name: 'managementView', hash: getManagementPageHash('address-book') }
+export const SIMULATION_STACK_PAGE: SafeUiPageTarget = { name: 'managementView', hash: getManagementPageHash('simulation-stack') }
 
 const toPageTarget = (page: SafeUiPageName | SafeUiPageTarget): SafeUiPageTarget => typeof page === 'string' ? { name: page } : page
 

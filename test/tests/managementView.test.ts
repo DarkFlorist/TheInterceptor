@@ -1,12 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash } from '../../app/ts/utils/managementPages.js'
-import { getCanonicalManagementHash, getManagementPageFromLegacyOrCurrentHash } from '../../app/ts/utils/legacyManagementHashes.js'
-import { getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
-import { getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessRoutes.js'
-import type { TransactionOrMessageIdentifier } from '../../app/ts/types/interceptor-messages.js'
-
-const managementViewSource = await Bun.file(new URL('../../app/ts/components/pages/ManagementView.tsx', import.meta.url)).text()
+import { formatManagementRoute, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, parseManagementRoute, type ManagementRoute } from '../../app/ts/utils/managementPages.js'
+import { getSimulationStackRoute } from '../../app/ts/utils/simulationStackTargets.js'
 
 describe('management view routing', () => {
 	test('maps each management tab to a stable hash', () => {
@@ -18,51 +13,37 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageHash('settings'), '#settings')
 	})
 
-	test('routes simulation stack links into the shared management tab', () => {
-		const identifier: TransactionOrMessageIdentifier = { type: 'Transaction', transactionIdentifier: 1n }
-		const targetHash = getSimulationStackTargetHash(identifier, 'test-focus')
-
-		assert.equal(getSimulationStackManagementHash(), '#simulation-stack')
-		assert.equal(getSimulationStackManagementHash(identifier).startsWith('#simulation-stack?'), true)
-		assert.equal(getManagementPageFromHash(targetHash), 'simulation-stack')
-		assert.equal(getSimulationStackTargetElementIdFromHash(targetHash), 'simulation-stack-transaction-0x1')
+	test('round-trips every route through format and parse', () => {
+		const routes: readonly ManagementRoute[] = [
+			...managementPages.map((page): ManagementRoute => ({ page })),
+			{ page: 'websites', websiteOrigin: 'https://example.com' },
+			{ page: 'websites', websiteOrigin: 'origin with spaces & symbols?#' },
+			{ page: 'simulation-stack', stackTarget: { elementId: 'simulation-stack-transaction-0x1' } },
+			{ page: 'simulation-stack', stackTarget: { elementId: 'simulation-stack-message-0xab', focus: 'focus-1' } },
+		]
+		for (const route of routes) assert.deepEqual(parseManagementRoute(formatManagementRoute(route)), route)
 	})
 
-	test('selects management tabs from their hashes', () => {
-		assert.equal(getManagementPageFromHash('#home'), 'home')
-		assert.equal(getManagementPageFromHash('#websites'), 'websites')
-		assert.equal(getManagementPageFromHash('#address-book'), 'address-book')
-		assert.equal(getManagementPageFromHash('#simulation-stack'), 'simulation-stack')
-		assert.equal(getManagementPageFromHash('#diagnostics'), 'diagnostics')
-		assert.equal(getManagementPageFromHash('#settings'), 'settings')
-	})
-
-	test('uses the website detail hash in both the website view and management router', () => {
-		const hash = getWebsiteOriginHash('https://example.com')
-		assert.equal(getWebsiteOriginFromHash(hash), 'https://example.com')
-		assert.equal(hash.startsWith('#websites?'), true)
-		assert.equal(getManagementPageFromHash(hash), 'websites')
+	test('formats page-only routes as the plain tab hash and route details as query parameters', () => {
+		assert.equal(formatManagementRoute({ page: 'settings' }), '#settings')
+		assert.equal(formatManagementRoute({ page: 'websites', websiteOrigin: 'https://example.com' }), '#websites?origin=https%3A%2F%2Fexample.com')
+		assert.equal(formatManagementRoute(getSimulationStackRoute({ type: 'Transaction', transactionIdentifier: 1n }, 'test-focus')), '#simulation-stack?simulation-stack-target=simulation-stack-transaction-0x1&focus=test-focus')
+		assert.deepEqual(getSimulationStackRoute(), { page: 'simulation-stack' })
 	})
 
 	test('continues to open links created before management tab hashes were namespaced', () => {
-		const websiteHash = getCanonicalManagementHash('#origin:https://example.com')
-		const stackHash = getCanonicalManagementHash('#simulation-stack-target=simulation-stack-transaction-0x1')
-		assert.equal(websiteHash, getWebsiteOriginHash('https://example.com'))
-		assert.equal(getManagementPageFromHash(websiteHash ?? ''), 'websites')
-		assert.equal(getWebsiteOriginFromHash(websiteHash ?? ''), 'https://example.com')
-		assert.equal(getManagementPageFromHash(stackHash ?? ''), 'simulation-stack')
-		assert.equal(getSimulationStackTargetElementIdFromHash(stackHash ?? ''), 'simulation-stack-transaction-0x1')
-		assert.equal(getManagementPageFromHash('#origin:https://example.com'), undefined)
-		assert.equal(getManagementPageFromLegacyOrCurrentHash('#origin:https://example.com'), 'websites')
-		assert.equal(getManagementPageFromLegacyOrCurrentHash('#simulation-stack-target=simulation-stack-transaction-0x1'), 'simulation-stack')
+		assert.deepEqual(parseManagementRoute('#origin:https://example.com'), { page: 'websites', websiteOrigin: 'https://example.com' })
+		assert.deepEqual(parseManagementRoute('#simulation-stack-target=simulation-stack-transaction-0x1'), { page: 'simulation-stack', stackTarget: { elementId: 'simulation-stack-transaction-0x1' } })
 	})
 
 	test('shows an unavailable route for unknown or malformed hashes', () => {
-		assert.equal(getManagementPageFromHash('#unknown'), undefined)
-		assert.equal(getManagementPageFromHash('#origin:'), undefined)
-		assert.equal(getManagementPageFromHash(getCanonicalManagementHash('#simulation-stack-target=invalid') ?? ''), 'simulation-stack')
-		assert.equal(getManagementPageFromHash(''), 'home')
-		assert.equal(getManagementPageFromHash('#'), 'home')
+		assert.equal(parseManagementRoute('#unknown'), undefined)
+		assert.equal(parseManagementRoute('#origin:'), undefined)
+		assert.deepEqual(parseManagementRoute('#simulation-stack-target=invalid'), { page: 'simulation-stack' })
+		assert.deepEqual(parseManagementRoute('#simulation-stack?simulation-stack-target=not-a-row'), { page: 'simulation-stack' })
+		assert.deepEqual(parseManagementRoute('#websites?origin='), { page: 'websites' })
+		assert.deepEqual(parseManagementRoute(''), { page: 'home' })
+		assert.deepEqual(parseManagementRoute('#'), { page: 'home' })
 	})
 
 	test('supports standard tablist keyboard navigation with wrapping', () => {
@@ -78,9 +59,5 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromNavigationKey('websites', 'Enter'), undefined)
 		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowRight'), 'home')
 		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowLeft'), 'settings')
-	})
-
-	test('hosts the stack view inside the management scroll frame', () => {
-		assert.match(managementViewSource, /<PageContentFrame page = 'simulation-stack' scrollable><SimulationStackView \/><\/PageContentFrame>/)
 	})
 })

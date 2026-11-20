@@ -13,7 +13,7 @@ import { MessageToPopup, PopupMessage, UpdateHomePage, type Settings } from '../
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
 import { waitForRenderedCondition } from './preactRenderWait.js'
-import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { getSimulationStackRoute } from '../../app/ts/utils/simulationStackTargets.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
@@ -541,35 +541,9 @@ function createFailedStackHomePageUpdate(tabId: number, popupRefreshGeneration: 
 
 describe('simulation visualizer open replies', () => {
 	test('stack visualizer view wraps the page in Hint for toolbar feedback', async () => {
-		const entrypointSource = await Bun.file('app/ts/simulationStack.ts').text()
 		const viewSource = await Bun.file('app/ts/components/pages/SimulationStackPage.tsx').text()
 
-		assert.match(entrypointSource, /preact\.createElement\(SimulationStackView,\s*\{\}\)/)
-		assert.match(viewSource, /return <Hint><SimulationStackPage \/><\/Hint>/)
-	})
-
-	test('stack visualizer entrypoint clears the shell loading placeholder before rendering', async () => {
-		const dom = installDomMock()
-		installBrowserMock()
-		const root = dom.document.createElement('div')
-		root.setAttribute('id', 'simulation-stack-root')
-		root.textContent = 'Loading...'
-		dom.document.body.appendChild(root)
-		Object.defineProperty(dom.document, 'getElementById', {
-			configurable: true,
-			value: (id: string) => id === 'simulation-stack-root' ? root : null,
-		})
-		try {
-			await act(async () => {
-				await import(`../../app/ts/simulationStack.ts?entrypoint-test=${ crypto.randomUUID() }`)
-			})
-			assert.equal(root.textContent?.includes('Loading...'), false)
-		} finally {
-			await act(() => {
-				render(null, root)
-			})
-			dom.restore()
-		}
+		assert.match(viewSource, /return <Hint><SimulationStackPage stackTarget = \{ stackTarget \} \/><\/Hint>/)
 	})
 
 	test('Hint resolves copied feedback from nested toolbar click targets', async () => {
@@ -1514,22 +1488,20 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer target hash no-ops when the target element cannot scroll', async () => {
+	const transactionOneTarget = (focus: string) => getSimulationStackRoute({ type: 'Transaction', transactionIdentifier: 1n }, focus).stackTarget
+
+	test('stack visualizer route target no-ops when the target element cannot scroll', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
 		const { dispatchMessage: listener } = installBrowserMock()
-		Object.defineProperty(globalThis.window, 'location', {
-			configurable: true,
-			writable: true,
-			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'no-scroll') },
-		})
+		const stackTarget = transactionOneTarget('no-scroll')
 		Object.defineProperty(dom.document, 'getElementById', {
 			configurable: true,
 			value: (id: string) => findElementById(dom.document.body, id) ?? null,
 		})
 		try {
 			await act(() => {
-				render(h(SimulationStackPage, {}), dom.document.body)
+				render(h(SimulationStackPage, { stackTarget }), dom.document.body)
 			})
 
 			await act(() => {
@@ -1547,22 +1519,18 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer target hash no-ops when target lookup is unavailable', async () => {
+	test('stack visualizer route target no-ops when target lookup is unavailable', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
 		const { dispatchMessage: listener } = installBrowserMock()
-		Object.defineProperty(globalThis.window, 'location', {
-			configurable: true,
-			writable: true,
-			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'no-lookup') },
-		})
+		const stackTarget = transactionOneTarget('no-lookup')
 		Object.defineProperty(dom.document, 'getElementById', {
 			configurable: true,
 			value: undefined,
 		})
 		try {
 			await act(() => {
-				render(h(SimulationStackPage, {}), dom.document.body)
+				render(h(SimulationStackPage, { stackTarget }), dom.document.body)
 			})
 
 			await act(() => {
@@ -1580,16 +1548,12 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer target hash scrolls to and highlights the matching row', async () => {
+	test('stack visualizer route target scrolls to and highlights the matching row', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
 		const { dispatchMessage: listener } = installBrowserMock()
 		const scrollCalls: ScrollIntoViewOptions[] = []
-		Object.defineProperty(globalThis.window, 'location', {
-			configurable: true,
-			writable: true,
-			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'scroll') },
-		})
+		const stackTarget = transactionOneTarget('scroll')
 		Object.defineProperty(dom.document, 'getElementById', {
 			configurable: true,
 			value: (id: string) => {
@@ -1603,7 +1567,7 @@ describe('simulation visualizer open replies', () => {
 		})
 		try {
 			await act(() => {
-				render(h(SimulationStackPage, {}), dom.document.body)
+				render(h(SimulationStackPage, { stackTarget }), dom.document.body)
 			})
 
 			await act(() => {
@@ -1629,24 +1593,12 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer defers a hidden-panel hash target until the management panel can become visible', async () => {
+	test('stack visualizer defers a hidden-panel route target until the management panel can become visible', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
 		const { dispatchMessage: listener } = installBrowserMock()
-		const hashChangeListeners = new Set<EventListenerOrEventListenerObject>()
 		const scrollCalls: ScrollIntoViewOptions[] = []
 		let panelVisible = false
-		globalThis.window.addEventListener = (type, listener) => {
-			if (type === 'hashchange') hashChangeListeners.add(listener)
-		}
-		globalThis.window.removeEventListener = (type, listener) => {
-			if (type === 'hashchange') hashChangeListeners.delete(listener)
-		}
-		Object.defineProperty(globalThis.window, 'location', {
-			configurable: true,
-			writable: true,
-			value: { hash: '#simulation-stack' },
-		})
 		Object.defineProperty(dom.document, 'getElementById', {
 			configurable: true,
 			value: (id: string) => {
@@ -1666,13 +1618,8 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(18, 1, 'Stack tab')) }, {}, () => undefined)
 				flushAnimationFrames()
 			})
-			globalThis.window.location.hash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'hidden-panel')
 			await act(() => {
-				const event = new Event('hashchange')
-				for (const hashChangeListener of hashChangeListeners) {
-					if (typeof hashChangeListener === 'function') hashChangeListener(event)
-					else hashChangeListener.handleEvent(event)
-				}
+				render(h(SimulationStackPage, { stackTarget: transactionOneTarget('hidden-panel') }), dom.document.body)
 			})
 			assert.equal(scrollCalls.length, 0)
 
@@ -1690,16 +1637,12 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer target hash does not replay after same-hash updates', async () => {
+	test('stack visualizer route target does not replay after same-hash updates', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
 		const { dispatchMessage: listener } = installBrowserMock()
 		const scrollCalls: ScrollIntoViewOptions[] = []
-		Object.defineProperty(globalThis.window, 'location', {
-			configurable: true,
-			writable: true,
-			value: { hash: getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'retry') },
-		})
+		const stackTarget = transactionOneTarget('retry')
 		Object.defineProperty(dom.document, 'getElementById', {
 			configurable: true,
 			value: (id: string) => {
@@ -1713,7 +1656,7 @@ describe('simulation visualizer open replies', () => {
 		})
 		try {
 			await act(() => {
-				render(h(SimulationStackPage, {}), dom.document.body)
+				render(h(SimulationStackPage, { stackTarget }), dom.document.body)
 			})
 
 			await act(() => {
@@ -1737,8 +1680,8 @@ describe('simulation visualizer open replies', () => {
 			})
 			assert.equal(scrollCalls.length, 1)
 
-			globalThis.window.location.hash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'retry-again')
 			await act(() => {
+				render(h(SimulationStackPage, { stackTarget: transactionOneTarget('retry-again') }), dom.document.body)
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(17, 3, 'Stack tab retarget')) }, {}, () => undefined)
 			})
 			await act(() => {

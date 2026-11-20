@@ -1,6 +1,6 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
-import { getManagementPageHash, type ManagementPage } from '../utils/managementPages.js'
-import { getSimulationStackManagementHash } from '../utils/simulationStackTargets.js'
+import { formatManagementRoute, getManagementPageHash, type ManagementPage } from '../utils/managementPages.js'
+import { getSimulationStackRoute } from '../utils/simulationStackTargets.js'
 import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { getHtmlFile } from './backgroundUtils.js'
@@ -36,7 +36,7 @@ export async function openManagementPage(page: ManagementPage) {
 }
 
 export async function openManagementSimulationStack(identifier?: TransactionOrMessageIdentifier) {
-	await openManagementTab(`${ managementPagePath() }${ getSimulationStackManagementHash(identifier) }`)
+	await openManagementTab(`${ managementPagePath() }${ formatManagementRoute(getSimulationStackRoute(identifier)) }`)
 }
 
 export async function openManagementSimulationStackReview() {

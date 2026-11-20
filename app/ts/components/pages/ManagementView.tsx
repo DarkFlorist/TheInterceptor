@@ -6,21 +6,21 @@ import { WebsiteAccessView } from './WebsiteAccess.js'
 import { SettingsView } from './SettingsView.js'
 import { SimulationStackView } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
-import { getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
+import { getManagementPageFromNavigationKey, managementPages, type ManagementPage, type ManagementRoute } from '../../utils/managementPages.js'
+import { readManagementRoute, replaceWithCanonicalManagementHash, subscribeToManagementRoute, writeManagementRoute } from '../../utils/managementLocation.js'
 import { assertNever } from '../../utils/typescript.js'
-import { PageContentFrame } from '../subcomponents/PageContentFrame.js'
-import { getManagementPageFromLegacyOrCurrentHash } from '../../utils/legacyManagementHashes.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { getErrorMessage } from '../../utils/caughtErrors.js'
 
-const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string, layoutClass: string }>> = {
-	home: { label: 'Home', icon: '../img/management-home.svg', description: '', layoutClass: '' },
-	websites: { label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.', layoutClass: '' },
-	'address-book': { label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.', layoutClass: ' management-page--contained management-page--address-book' },
-	'simulation-stack': { label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.', layoutClass: ' management-page--contained' },
-	diagnostics: { label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.', layoutClass: '' },
-	settings: { label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.', layoutClass: '' },
+// layoutClass sizes the whole shell for the active section and panelClass styles that section's panel; pages carry no container-specific styling of their own.
+const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string, layoutClass: string, panelClass: string }>> = {
+	home: { label: 'Home', icon: '../img/management-home.svg', description: '', layoutClass: '', panelClass: '' },
+	websites: { label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.', layoutClass: '', panelClass: '' },
+	'address-book': { label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.', layoutClass: ' management-page--contained management-page--address-book', panelClass: '' },
+	'simulation-stack': { label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.', layoutClass: ' management-page--contained', panelClass: ' management-panel--scrollable' },
+	diagnostics: { label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.', layoutClass: '', panelClass: '' },
+	settings: { label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.', layoutClass: '', panelClass: '' },
 }
 
 type ManagementTabParams = {
@@ -70,18 +70,18 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 	</main>
 }
 
-type ManagementPanelContentParams = { page: ManagementPage, selectPage: (page: ManagementPage) => void }
+type ManagementPanelContentParams = { route: ManagementRoute, navigate: (route: ManagementRoute) => void }
 
-function ManagementPanelContent({ page, selectPage }: ManagementPanelContentParams) {
-	// Reuse the page content, while the standalone compatibility entries keep their own shells.
-	switch (page) {
-		case 'home': return <ManagementHome selectPage = { selectPage } />
-		case 'websites': return <WebsiteAccessView />
-		case 'address-book': return <PageContentFrame page = 'address-book'><AddressBook /></PageContentFrame>
-		case 'simulation-stack': return <PageContentFrame page = 'simulation-stack' scrollable><SimulationStackView /></PageContentFrame>
+// Each panel receives its part of the route as props and changes it only through navigate, so the shell stays the single owner of the location.
+function ManagementPanelContent({ route, navigate }: ManagementPanelContentParams) {
+	switch (route.page) {
+		case 'home': return <ManagementHome selectPage = { (page) => navigate({ page }) } />
+		case 'websites': return <WebsiteAccessView websiteOrigin = { route.websiteOrigin } selectWebsite = { (websiteOrigin) => navigate(websiteOrigin === undefined ? { page: 'websites' } : { page: 'websites', websiteOrigin }) } />
+		case 'address-book': return <AddressBook />
+		case 'simulation-stack': return <SimulationStackView stackTarget = { route.stackTarget } />
 		case 'diagnostics': return <DiagnosticsView />
 		case 'settings': return <SettingsView />
-		default: return assertNever(page)
+		default: return assertNever(route)
 	}
 }
 
@@ -118,20 +118,17 @@ export function ManagementView() {
 }
 
 export function ManagementShell({ renderPanel: RenderPanel }: { renderPanel: (params: ManagementPanelContentParams) => JSX.Element }) {
-	const initialPage = getManagementPageFromLegacyOrCurrentHash(globalThis.location.hash)
-	const selectedPage = useSignal<ManagementPage | undefined>(initialPage)
+	const route = useSignal<ManagementRoute | undefined>(readManagementRoute())
+	const selectedPage = route.value?.page
 
 	useEffect(() => {
-		const updateSelectedPage = () => {
-			activatePage(getManagementPageFromLegacyOrCurrentHash(globalThis.location.hash))
-		}
-		globalThis.addEventListener('hashchange', updateSelectedPage)
-		return () => globalThis.removeEventListener('hashchange', updateSelectedPage)
+		replaceWithCanonicalManagementHash()
+		return subscribeToManagementRoute((nextRoute) => { route.value = nextRoute })
 	}, [])
 
 	useEffect(() => {
 		const revealSelectedTab = () => {
-			const tab = globalThis.document.getElementById(`management-tab-${ selectedPage.value }`)
+			const tab = globalThis.document.getElementById(`management-tab-${ selectedPage }`)
 			const tabList = globalThis.document.querySelector<HTMLElement>('.management-tabs')
 			if (tab === null || tabList === null) return
 			const tabBounds = tab.getBoundingClientRect()
@@ -144,26 +141,26 @@ export function ManagementShell({ renderPanel: RenderPanel }: { renderPanel: (pa
 		revealSelectedTab()
 		globalThis.addEventListener('resize', revealSelectedTab)
 		return () => globalThis.removeEventListener('resize', revealSelectedTab)
-	}, [selectedPage.value])
+	}, [selectedPage])
 
-	function activatePage(page: ManagementPage | undefined) {
-		selectedPage.value = page
+	function navigate(nextRoute: ManagementRoute) {
+		route.value = nextRoute
+		writeManagementRoute(nextRoute)
 	}
 
 	function selectPage(page: ManagementPage) {
-		activatePage(page)
-		globalThis.location.hash = getManagementPageHash(page)
+		navigate({ page })
 	}
 
 	function handleTabKeyDown(event: JSX.TargetedKeyboardEvent<HTMLElement>) {
-		const page = getManagementPageFromNavigationKey(selectedPage.value, event.key)
+		const page = getManagementPageFromNavigationKey(selectedPage, event.key)
 		if (page === undefined) return
 		event.preventDefault()
 		selectPage(page)
 		globalThis.document.getElementById(`management-tab-${ page }`)?.focus()
 	}
 
-	const pageLayoutClass = selectedPage.value === undefined ? '' : managementSectionDetails[selectedPage.value].layoutClass
+	const pageLayoutClass = selectedPage === undefined ? '' : managementSectionDetails[selectedPage].layoutClass
 	return <div class = { `management-page${ pageLayoutClass }` }>
 		<header class = 'management-header window-header'>
 			<div class = 'management-brand'>
@@ -171,25 +168,25 @@ export function ManagementShell({ renderPanel: RenderPanel }: { renderPanel: (pa
 				<h1>The Interceptor</h1>
 			</div>
 			<nav class = 'management-tabs' role = 'tablist' aria-label = 'Interceptor management' onKeyDown = { handleTabKeyDown }>
-				{ managementPages.map((page) => <ManagementTab key = { page } page = { page } selectedPage = { selectedPage.value } label = { managementSectionDetails[page].label } icon = { managementSectionDetails[page].icon } selectPage = { selectPage } />) }
+				{ managementPages.map((page) => <ManagementTab key = { page } page = { page } selectedPage = { selectedPage } label = { managementSectionDetails[page].label } icon = { managementSectionDetails[page].icon } selectPage = { selectPage } />) }
 			</nav>
 		</header>
-		{ selectedPage.value === undefined && <main class = 'management-panel management-unavailable'>
+		{ selectedPage === undefined && <main class = 'management-panel management-unavailable'>
 			<h2>Management page unavailable</h2>
 			<p>Choose a tab above to continue.</p>
 		</main> }
 		{ managementPages.map((page) => {
-			const active = selectedPage.value === page
+			const activeRoute = route.value?.page === page ? route.value : undefined
 			return <section
 				key = { page }
 				id = { `management-panel-${ page }` }
-				class = 'management-panel'
+				class = { `management-panel${ managementSectionDetails[page].panelClass }` }
 				role = 'tabpanel'
 				aria-labelledby = { `management-tab-${ page }` }
-				tabIndex = { active ? 0 : -1 }
-				hidden = { !active }
+				tabIndex = { activeRoute !== undefined ? 0 : -1 }
+				hidden = { activeRoute === undefined }
 			>
-				{ active ? <ManagementPanelErrorBoundary key = { page } page = { page }><RenderPanel page = { page } selectPage = { selectPage } /></ManagementPanelErrorBoundary> : <></> }
+				{ activeRoute !== undefined ? <ManagementPanelErrorBoundary key = { page } page = { page }><RenderPanel route = { activeRoute } navigate = { navigate } /></ManagementPanelErrorBoundary> : <></> }
 			</section>
 		}) }
 	</div>

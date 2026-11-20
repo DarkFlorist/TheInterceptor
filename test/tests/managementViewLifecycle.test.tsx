@@ -161,9 +161,9 @@ test('a failing panel keeps the shell header and tabs usable, reports the failur
 	const { dom, storageState, getUnexpectedErrorBroadcasts, restore } = installManagementShellMocks()
 	let diagnosticsPanelFails = true
 	const { ManagementShell } = await import('../../app/ts/components/pages/ManagementView.js')
-	const renderPanel = ({ page }: { page: string }) => {
-		if (page === 'diagnostics' && diagnosticsPanelFails) throw new Error('diagnostics panel exploded')
-		return <main class = 'test-panel'>{ `${ page } panel` }</main>
+	const renderPanel = ({ route }: { route: { page: string } }) => {
+		if (route.page === 'diagnostics' && diagnosticsPanelFails) throw new Error('diagnostics panel exploded')
+		return <main class = 'test-panel'>{ `${ route.page } panel` }</main>
 	}
 	const storedPanelFailureCount = () => {
 		const storedDiagnostics = storageState.interceptorErrorDiagnostics
@@ -205,6 +205,31 @@ test('a failing panel keeps the shell header and tabs usable, reports the failur
 		await click('Try again')
 		assert.match(text(), /diagnostics panel/u)
 		assert.doesNotMatch(text(), /could not be displayed/u)
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		restore()
+	}
+})
+
+test('panels change the route only through navigate, and the shell hands the new route back as props', async () => {
+	const { dom, restore } = installManagementShellMocks()
+	const { ManagementShell } = await import('../../app/ts/components/pages/ManagementView.js')
+	const { formatManagementRoute } = await import('../../app/ts/utils/managementPages.js')
+	const renderPanel = ({ route, navigate }: { route: { page: string }, navigate: (route: { page: 'websites', websiteOrigin?: string }) => void }) => <main>
+		<p>{ `route ${ formatManagementRoute({ page: 'home', ...route }) }` }</p>
+		<button type = 'button' onClick = { () => navigate({ page: 'websites', websiteOrigin: 'example.com' }) }>Open example.com</button>
+	</main>
+
+	try {
+		await act(() => { render(<ManagementShell renderPanel = { renderPanel } />, dom.document.body) })
+		assert.match(dom.document.body.textContent, /route #home/u)
+
+		const openButton = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.textContent === 'Open example.com')
+		assert.ok(openButton)
+		await act(async () => { await clickRenderedElement(openButton) })
+
+		assert.equal(globalThis.location.hash, '#websites?origin=example.com')
+		assert.match(dom.document.body.textContent, /route #websites\?origin=example\.com/u)
 	} finally {
 		await act(() => { render(null, dom.document.body) })
 		restore()

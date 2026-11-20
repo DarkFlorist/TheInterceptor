@@ -22,22 +22,30 @@ import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import { getWebsiteListHash, getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/websiteAccessRoutes.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
 	websiteAccessList: Signal<WebsiteAccessArray>
 	addressAccessMetadata: Signal<AddressBookEntries>
 	selectedDomain: Signal<string | undefined>
+	selectWebsite: (websiteOrigin: string | undefined) => void
+}
+
+const WEBSITE_ORIGIN_RADIO_NAME = 'origin'
+
+// The selected website is part of the management route: the shell passes it in and changes it only through selectWebsite.
+export type WebsiteAccessRouteProps = {
+	websiteOrigin: string | undefined
+	selectWebsite: (websiteOrigin: string | undefined) => void
 }
 
 const WebsiteAccessContext = createContext<WebsiteAccessContext | undefined>(undefined)
 
-const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) => {
+const WebsiteAccessProvider = ({ children, websiteOrigin, selectWebsite }: WebsiteAccessRouteProps & { children: ComponentChildren }) => {
 	const websiteAccessList = useSignal<WebsiteAccessArray>([])
 	const searchQuery = useSignal<string>('')
 	const addressAccessMetadata = useSignal<AddressBookEntries>([])
-	const selectedDomain = useSignal<string | undefined>(undefined)
+	const selectedDomain = useSignal<string | undefined>(websiteOrigin)
 
 	const retrieveWebsiteAccess = (filter?: RetrieveWebsiteAccessFilter) => {
 		const data = filter ? filter : { query: '' }
@@ -69,23 +77,12 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			return false
 		}
 
-	const listenForWindowHashChanges = () => {
-		const handleHashChange = () => {
-			selectedDomain.value = getWebsiteOriginFromHash(window.location.hash)
-		}
-
-		// initially set selectedDomain when the page loads/reloads
-		handleHashChange()
-		window.addEventListener('hashchange', handleHashChange)
-		return () => window.removeEventListener('hashchange', handleHashChange)
-	}
-
 	useSignalEffect(updateListOnSearch)
 	useRuntimeMessageListener(popupMessageListener)
-	useEffect(listenForWindowHashChanges, [])
+	useEffect(() => { selectedDomain.value = websiteOrigin }, [websiteOrigin])
 	useEffect(retrieveWebsiteAccess, [])
 
-	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain } }>{ children }</WebsiteAccessContext.Provider>
+	return <WebsiteAccessContext.Provider value = { { searchQuery, websiteAccessList, addressAccessMetadata, selectedDomain, selectWebsite } }>{ children }</WebsiteAccessContext.Provider>
 }
 
 export function useWebsiteAccess() {
@@ -94,14 +91,14 @@ export function useWebsiteAccess() {
 	return context
 }
 
-export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>) {
+export function clearSelectedWebsite(selectWebsite: (websiteOrigin: string | undefined) => void, selectedDomain: Signal<string | undefined>) {
 	selectedDomain.value = undefined
-	windowObject.location.hash = getWebsiteListHash()
+	selectWebsite(undefined)
 }
 
-export const WebsiteAccessView = () => {
+export const WebsiteAccessView = ({ websiteOrigin, selectWebsite }: WebsiteAccessRouteProps) => {
 	return (
-		<WebsiteAccessProvider>
+		<WebsiteAccessProvider websiteOrigin = { websiteOrigin } selectWebsite = { selectWebsite }>
 			<main>
 				<div class = 'layout'>
 					<header>
@@ -203,8 +200,9 @@ type WebsiteAccessOverviewProps = {
 }
 
 const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
+	const { selectWebsite } = useWebsiteAccess()
 	const handleChange = () => {
-		window.location.hash = getWebsiteOriginHash(websiteAccess.website.websiteOrigin)
+		selectWebsite(websiteAccess.website.websiteOrigin)
 	}
 
 	const getWebsiteStatus = () => {
@@ -254,11 +252,11 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 type Modals = { page: 'noModal' } | { page: 'ModifyAddress', state: Signal<ModifyAddressWindowState> }
 
 const WebsiteSettingsDetail = () => {
-	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
+	const { websiteAccessList, selectedDomain, selectWebsite } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
-	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
+	const closeDetails = () => { clearSelectedWebsite(selectWebsite, selectedDomain) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }

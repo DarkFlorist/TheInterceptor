@@ -19,8 +19,8 @@ import { ImportSafeStack } from './ImportSafeStack.js'
 import { NetworkErrors, NetworkWithoutRpcError } from '../subcomponents/NetworkErrors.js'
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
-import { useEffect } from 'preact/hooks'
-import { getSimulationStackTargetElementIdFromHash } from '../../utils/simulationStackTargets.js'
+import { useEffect, useRef } from 'preact/hooks'
+import type { SimulationStackTarget } from '../../utils/managementPages.js'
 import { SmallAddress, getActiveAddressEntry } from '../subcomponents/address.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { createUnexpectedErrorPopupMessage } from '../../utils/unexpectedErrorPopupMessage.js'
@@ -270,7 +270,12 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 	callback()
 }
 
-export function SimulationStackPage() {
+// The scroll target is part of the management route; the shell passes it in, and a new focus value asks to scroll to the same row again.
+export type SimulationStackRouteProps = { stackTarget?: SimulationStackTarget | undefined }
+
+const getStackTargetKey = (stackTarget: SimulationStackTarget | undefined) => stackTarget === undefined ? undefined : `${ stackTarget.elementId }|${ stackTarget.focus ?? '' }`
+
+export function SimulationStackPage({ stackTarget }: SimulationStackRouteProps) {
 	const {
 		activeSimulationAddress,
 		activeSigningSafeAddress,
@@ -303,7 +308,10 @@ export function SimulationStackPage() {
 	const modalState = useSignal<ModalState>({ page: 'noModal' })
 	const boundaryResetKey = useSignal(0)
 	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
-	const handledStackTargetHash = useSignal<string | undefined>(undefined)
+	const handledStackTargetKey = useSignal<string | undefined>(undefined)
+	const currentStackTarget = useRef(stackTarget)
+	currentStackTarget.current = stackTarget
+	const stackTargetKey = getStackTargetKey(stackTarget)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
 	const modeActiveAddress = useModeActiveAddress({ activeAddresses, simulationMode, activeSimulationAddress, activeSigningSafeAddress, displayedSigningAddress, rpcNetwork, tabState })
 	const visualizedAddress = useComputed(() => simulationMode.value ? modeActiveAddress.value.activeAddress : activeSigningSafeAddress.value)
@@ -328,20 +336,19 @@ export function SimulationStackPage() {
 	})
 
 	const scrollToRequestedStackRow = () => {
-		const browserWindow = globalThis.window
 		const browserDocument = globalThis.document
-		if (browserWindow === undefined || browserDocument === undefined) return
-		const targetHash = browserWindow.location?.hash
-		if (targetHash === undefined) return
-		if (handledStackTargetHash.value === targetHash) return
-		const targetElementId = getSimulationStackTargetElementIdFromHash(targetHash)
-		if (targetElementId === undefined) return
+		if (browserDocument === undefined) return
+		const target = currentStackTarget.current
+		const targetKey = getStackTargetKey(target)
+		if (target === undefined || targetKey === undefined) return
+		if (handledStackTargetKey.value === targetKey) return
+		const targetElementId = target.elementId
 		if (typeof browserDocument.getElementById !== 'function') return
 		const targetElement = browserDocument.getElementById(targetElementId)
 		if (targetElement === null) return
 		if (typeof targetElement.scrollIntoView !== 'function') return
 		targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-		handledStackTargetHash.value = targetHash
+		handledStackTargetKey.value = targetKey
 		highlightedStackTargetId.value = targetElementId
 		scheduleStackTargetTimeout(() => {
 			if (highlightedStackTargetId.value === targetElementId) highlightedStackTargetId.value = undefined
@@ -349,19 +356,9 @@ export function SimulationStackPage() {
 	}
 
 	useEffect(() => {
-		const scrollOnHashChange = () => {
-			handledStackTargetHash.value = undefined
-			scheduleStackTargetFrame(scrollToRequestedStackRow)
-		}
-		const browserWindow = globalThis.window
-		if (browserWindow === undefined || typeof browserWindow.addEventListener !== 'function' || typeof browserWindow.removeEventListener !== 'function') {
-			scheduleStackTargetFrame(scrollOnHashChange)
-			return undefined
-		}
-		browserWindow.addEventListener('hashchange', scrollOnHashChange)
-		scheduleStackTargetFrame(scrollOnHashChange)
-		return () => browserWindow.removeEventListener('hashchange', scrollOnHashChange)
-	}, [])
+		handledStackTargetKey.value = undefined
+		scheduleStackTargetFrame(scrollToRequestedStackRow)
+	}, [stackTargetKey])
 
 	useSignalEffect(() => {
 		simVisResults.value
@@ -500,6 +497,6 @@ export function SimulationStackPage() {
 	</main>
 }
 
-export function SimulationStackView() {
-	return <Hint><SimulationStackPage /></Hint>
+export function SimulationStackView({ stackTarget }: SimulationStackRouteProps) {
+	return <Hint><SimulationStackPage stackTarget = { stackTarget } /></Hint>
 }

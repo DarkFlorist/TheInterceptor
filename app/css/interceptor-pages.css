@@ -792,15 +792,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 	min-height: 0;
 }
 
-.page-content-frame {
-	height: 100%;
-}
-
-.page-content-frame--standalone {
-	height: 100vh;
-}
-
-.page-content-frame--scrollable {
+.management-panel--scrollable {
 	overflow: auto;
 }
 
@@ -1146,9 +1138,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 
 
 @media screen and (max-width: 520px) {
-	.management-page--address-book,
-	.management-page--address-book .page-content-frame,
-	.page-content-frame--standalone.page-content-frame--address-book {
+	.management-page--address-book {
 		height: auto;
 	}
 

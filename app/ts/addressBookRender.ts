@@ -1,12 +1,5 @@
-import * as preact from 'preact'
-import { AddressBook } from './AddressBook.js'
-import { ErrorBoundary } from './components/subcomponents/Error.js'
-import { PageContentFrame } from './components/subcomponents/PageContentFrame.js'
+import { getHtmlFile } from './background/backgroundUtils.js'
+import { redirectStandalonePageToManagementShell } from './utils/managementLocation.js'
 
-function rerender() {
-	// The standalone URL keeps its legacy entry point, but renders only one page root.
-	document.querySelector('body > main')?.remove()
-	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(PageContentFrame, { page: 'address-book', standalone: true }, preact.createElement(AddressBook, {}))), document.body)
-}
-
-rerender()
+// Pre-shell standalone URL kept only so saved links keep working; the page itself renders only inside the management shell.
+redirectStandalonePageToManagementShell('address-book', getHtmlFile('managementView'))
