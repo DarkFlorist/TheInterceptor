@@ -13,12 +13,12 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
-import { isForwardingRequestsToSigner } from '../utils/requestRouting.js'
+import { getRequestRoutingState, isBypassingInterceptorOnNetworkWithoutRpc, isForwardingRequestsToSigner } from '../utils/requestRouting.js'
 
-function getWalletForwardingRoute(request: InterceptedRequest, parsedRequest: EthereumJsonRpcRequest | undefined, hasRpc: boolean, activeAddress: bigint | undefined, activeSafeSigner: bigint | undefined, safeSigningMode: boolean, simulationOverlayEnabled: boolean) {
+function getWalletForwardingRoute(request: InterceptedRequest, parsedRequest: EthereumJsonRpcRequest | undefined, bypassesInterceptor: boolean, activeAddress: bigint | undefined, activeSafeSigner: bigint | undefined, safeSigningMode: boolean, simulationOverlayEnabled: boolean) {
 	const rawForwardingReply = { ...request, type: 'forwardToSigner' as const, replyWithSignersReply: true as const }
 	if (parsedRequest === undefined) return SupportedEthereumJsonRpcRequestMethods.test(request) ? undefined : rawForwardingReply
-	if (!hasRpc && !isAccountOnlyMethod(parsedRequest.method)) return rawForwardingReply
+	if (bypassesInterceptor && !isAccountOnlyMethod(parsedRequest.method)) return rawForwardingReply
 	switch (parsedRequest.method) {
 		case 'wallet_addEthereumChain':
 			return { ...parsedRequest, type: 'forwardToSigner' as const }
@@ -44,14 +44,18 @@ export async function resolveSigningRequest(
 	simulationOverlayEnabled: boolean,
 	confirmation: ConfirmationRequest | undefined,
 ) {
-	const route = getWalletForwardingRoute(request, parsedRequest, settings.activeRpcNetwork.httpsRpc !== undefined, activeAddress, activeSafeSigner, safeSigningMode, simulationOverlayEnabled)
-	const needsBinding = !settings.simulationMode && (isSigningOperation(request.method) || route !== undefined)
+	const browserSignerAvailable = !request.usingInterceptorWithoutSigner
+	const routeFor = (routingState: ReturnType<typeof getRequestRoutingState>) => getWalletForwardingRoute(request, parsedRequest, isBypassingInterceptorOnNetworkWithoutRpc(settings.activeRpcNetwork, routingState), activeAddress, activeSafeSigner, safeSigningMode, simulationOverlayEnabled)
+	// Whether the active address signs directly is only known from its binding, which is read only when a browser wallet could otherwise receive the request.
+	const needsBinding = !settings.simulationMode && (isSigningOperation(request.method) || routeFor(getRequestRoutingState(settings.simulationMode, browserSignerAvailable, false)) !== undefined)
 	const binding = !needsBinding || activeAddress === undefined ? undefined : await getStoredSigningWalletBinding(activeSafeSigner ?? activeAddress)
 	if (binding !== undefined) assertSigningWalletIdentity(binding.wallet)
 	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
 	if (directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
-	// A direct wallet signs inside Interceptor, so nothing is forwarded to a browser wallet for it; otherwise the shared routing rule decides, which also bypasses Interceptor on a network without an RPC (see getWalletForwardingRoute).
-	const forwardToSigner = !directWallet && isForwardingRequestsToSigner({ simulationMode: settings.simulationMode, signerAvailable: !request.usingInterceptorWithoutSigner })
+	// A direct wallet signs inside Interceptor, so nothing is forwarded to a browser wallet for it; otherwise the shared routing rule decides, which also bypasses Interceptor on a network without an RPC.
+	const routingState = getRequestRoutingState(settings.simulationMode, browserSignerAvailable, directWallet)
+	const route = routeFor(routingState)
+	const forwardToSigner = isForwardingRequestsToSigner(routingState)
 	// Signing admission must not depend on Interceptor having a schema for the method: an unparsed signing request is checked against the account it names, and refused when that account cannot be read.
 	const unparsedSigningAccount = parsedRequest === undefined && isSigningOperation(request.method) ? unparsedSigningRequestAccount(request) : undefined
 	const requestedAddress = parsedRequest !== undefined ? browserSigningRequestAccount(parsedRequest) : unparsedSigningAccount?.readable === true ? unparsedSigningAccount.address : undefined

@@ -1,4 +1,5 @@
 import { useSigningWalletBindings } from '../hooks/useSigningWalletBindings.js'
+import { isActiveAddressSigningDirectly } from '../../utils/requestRouting.js'
 import { SafeSigningAccounts } from '../subcomponents/SafeSigningAccounts.js'
 import { SigningWalletSummary } from '../subcomponents/SigningWalletSummary.js'
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
@@ -909,6 +910,7 @@ export function Home(param: HomeParams) {
 	const showPopupVisualisation = useSignal<boolean>(false)
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 	const tabSignerAvailability = useComputed(() => isSignerMissing(param.tabState.value?.signerName ?? 'NoSignerDetected') ? 'missing' : 'available')
+	const wallets = useSigningWalletBindings()
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const modeActiveAddress = useModeActiveAddress(param)
@@ -919,6 +921,8 @@ export function Home(param: HomeParams) {
 		return resolution.activeAddressBookEntry ?? getActiveAddressEntry(resolution.activeAddress, param.activeAddresses.value, param.rpcNetwork.value?.chainId)
 	})
 	const visualizedAddress = useComputed(() => safeStackMode.value ? param.activeSigningSafeAddress.value : modeActiveAddress.value.activeAddress)
+	// The bindings are hook state, so this is recomputed on each render rather than as a signal.
+	const activeAddressSignsDirectly = isActiveAddressSigningDirectly(currentActiveAddress.value, wallets.bindings ?? [])
 
 	useEffect(() => {
 		if ((!param.simulationMode.value && !safeStackMode.value) || visualizedAddress.value === undefined) {
@@ -969,7 +973,7 @@ export function Home(param: HomeParams) {
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
-		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } signerAvailability = { tabSignerAvailability.value }/>
+		<NetworkWithoutRpcError rpcNetwork = { param.rpcNetwork.value } simulationMode = { param.simulationMode.value } signerAvailability = { tabSignerAvailability.value } activeAddressSignsDirectly = { activeAddressSignsDirectly }/>
 
 		<FirstCard
 			isActiveAddressChanging = { param.isActiveAddressChanging }
