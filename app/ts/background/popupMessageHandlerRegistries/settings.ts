@@ -1,8 +1,5 @@
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
-import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { changeSettings, exportSettings, importSettings, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
-import { getSettings } from '../settings.js'
+import { changeSettings, exportSettings, settingsOpened } from '../popupMessageHandlers.js'
 import { openManagementPage } from '../managementNavigation.js'
 
 export const settingsPopupMessageHandlers = {
@@ -11,14 +8,5 @@ export const settingsPopupMessageHandlers = {
 	popup_openManagement: popupMessageHandler('popup_openManagement', async () => {
 		return await openManagementPage('home')
 	}),
-	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
-		const importSettingsReply = await importSettings(request, context.websiteTabConnections)
-		await sendPopupMessageToOpenWindows(importSettingsReply)
-		if (!importSettingsReply.data.success) return
-		const importedSettings = await getSettings()
-		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
-		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
-	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
-	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.simulationServicesOwner, request, context.settings)),
 } satisfies Partial<PopupMessageHandlerMap>
