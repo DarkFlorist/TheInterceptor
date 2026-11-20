@@ -1,9 +1,8 @@
+import type { ProtectorContext } from '../protectorTypes.js'
 import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
-import type { ProtectorChainReads } from '../protectorChainReads.js'
-import type { IdentifyAddress } from '../../types/metadataLookups.js'
-import { getCodeOrError } from './commonTokenOops.js'
+import { getCodeOrError } from './codeVerification.js'
 
-export async function eoaCalldata(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, chainReads: ProtectorChainReads, identify: IdentifyAddress) {
+export async function eoaCalldata(transaction: EthereumUnsignedTransaction, { chainReads, identify }: Pick<ProtectorContext, 'chainReads' | 'identify'>) {
 	if (transaction.to === null) return
 	if (transaction.input.length === 0) return
 	const code = await getCodeOrError(chainReads, identify, transaction.to)

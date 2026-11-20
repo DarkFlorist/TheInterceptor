@@ -1,6 +1,6 @@
+import type { ProtectorContext } from '../protectorTypes.js'
 import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import type { ProtectorChainReads } from '../protectorChainReads.js'
 import type { IdentifyAddress } from '../../types/metadataLookups.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedEthereumEvents, TokenVisualizerResult } from '../../types/EnrichedEthereumData.js'
@@ -63,7 +63,7 @@ export async function getSendToNonContactWarning(transaction: EthereumUnsignedTr
 	return await checkSendToAddress(transferInfo.arguments.to)
 }
 
-export async function sendToNonContact(transaction: EthereumUnsignedTransaction, _connectedChainId: bigint, _chainReads: ProtectorChainReads, identify: IdentifyAddress, eventsPromise: Promise<EnrichedEthereumEvents>) {
+export async function sendToNonContact(transaction: EthereumUnsignedTransaction, { identify, eventsPromise }: Pick<ProtectorContext, 'identify' | 'eventsPromise'>) {
 	const events = await eventsPromise
 	return await getSendToNonContactWarning(transaction, events, identify)
 }

@@ -1,4 +1,4 @@
-import { beforeEach } from 'bun:test'
+import { afterEach, beforeEach } from 'bun:test'
 import { resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
 import './confirmationRequestIdReuse.suite.js'
 import './metadataLookupChain.suite.js'
@@ -15,5 +15,6 @@ import './terminalReplyDelivery.suite.js'
 import './sendAnywayConsent.suite.js'
 
 beforeEach(resetConfirmTransactionTestState)
+afterEach(async () => await (await import('./backgroundTasksTestHarness.js')).waitForBackgroundTasks())
 
 import './requestIdentity.suite.js'

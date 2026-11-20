@@ -1,3 +1,4 @@
+import { getUnsimulatedGasLimitEdit, isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
@@ -10,12 +11,12 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
@@ -231,6 +232,48 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
+export type ConfirmTransactionDialogStateOptions = {
+	// The simulation mode that decides between a simulation visualisation and a passthrough state: the active settings' mode, or a confirmation request's own mode.
+	readonly simulationMode: 'activeSettings' | boolean
+	// How the caller obtains the visualisation in simulation mode, called only then; defaults to the stored popup visualisation.
+	readonly getVisualisation?: () => Promise<CompleteVisualizedSimulation>
+	// 'fetch' asks the node for the current block number; 'cached' uses the cached head, or 0 without one, so a local edit does not wait for RPC work.
+	readonly blockNumberSource: { readonly kind: 'fetch', readonly abortController: AbortController | undefined } | { readonly kind: 'cached' }
+}
+
+// The only builder of the confirmation dialog state: it owns the simulation-mode/passthrough rule, the block number source and the RPC status read.
+export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationState, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
+	const getVisualizedSimulatorState = async () => {
+		const isSimulationMode = simulationMode === 'activeSettings' ? (await getSettings()).simulationMode : simulationMode
+		return isSimulationMode ? await getVisualisation() : createPassthroughCompleteVisualizedSimulation()
+	}
+	const [visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus] = await Promise.all([
+		getVisualizedSimulatorState(),
+		blockNumberSource.kind === 'cached' ? ethereum.getCachedBlock()?.number ?? 0n : ethereum.getBlockNumber(blockNumberSource.abortController),
+		getRpcConnectionStatus(),
+	])
+	return { visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus }
+}
+
+// The only builder of the confirmation dialog's two companion messages: its pending requests and the dialog state shown with them, sent together on every update. Sends nothing for an empty queue, because the dialog expects at least one pending request and closes by itself once the queue is empty.
+export async function publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[], dialog: UpdateConfirmTransactionDialog['data']): Promise<boolean> {
+	if (pendingTransactionAndSignableMessages.length === 0) return false
+	const pendingTransactionsMessage: UpdateConfirmTransactionDialogPendingTransactions = {
+		method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+		data: {
+			pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
+			currentBlockNumber: dialog.currentBlockNumber,
+			rpcConnectionStatus: dialog.rpcConnectionStatus,
+		},
+	}
+	const dialogMessage: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: dialog }
+	await Promise.all([
+		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, pendingTransactionsMessage), 'confirmTransaction'),
+		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, dialogMessage), 'confirmTransaction'),
+	])
+	return true
+}
+
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction':
@@ -274,37 +317,15 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const settingsPromise = getSettings()
-		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
-		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-		if ((await getPendingTransactionsAndMessages()).length === 0) return false // skips the visualisation work below; the requests sent are read after it
-		const settings = await settingsPromise
-		const visualizedSimulatorState = settings.simulationMode
-			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
-			: createPassthroughCompleteVisualizedSimulation()
-		const currentBlockNumber = await currentBlockNumberPromise
-		const rpcConnectionStatus = await rpcConnectionStatusPromise
-		// Read again after every await: a request read before them may have been resolved, or replaced by a new request under the same request id, and the dialog must not be shown it.
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
-		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
-			currentBlockNumber,
-			rpcConnectionStatus,
-			visualizedSimulatorState,
-		} }
-		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: {
-				pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
-				currentBlockNumber,
-				rpcConnectionStatus,
-			}
-		}
-		await Promise.all([
-			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
-			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
-		])
-		return true
+		const dialog = await buildConfirmTransactionDialogState(ethereum, {
+			simulationMode: 'activeSettings',
+			getVisualisation: async () => await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating }),
+			blockNumberSource: { kind: 'fetch', abortController: undefined },
+		})
+		// Read after building the dialog so resolved or replaced requests cannot be published.
+		return await publishConfirmTransactionDialogPendingTransactions(await getPendingTransactionsAndMessages(), dialog)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return false
 		await reportUnexpectedError(error)
@@ -355,6 +376,8 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, accept: { reviewedResultId: string, forceSend: boolean }) {
 	if (getReviewedResultId(pending) !== accept.reviewedResultId) return false
 	if (isRejectOnlyTransaction(pending)) return false
+	// A gas edit is stored before it is simulated again, so only the send-anyway override accepts it without results for the edited gas.
+	if (!accept.forceSend && !isPendingTransactionGasLimitCurrent(pending)) return false
 	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }
 
@@ -382,6 +405,8 @@ async function claimAcceptedRequest(accept: Extract<TransactionConfirmation['dat
 	let acceptedPending: PendingTransactionOrSignableMessage | undefined
 	await updatePendingTransactionOrMessageInstance(expected, async (current) => {
 		if (current.transactionOrMessageCreationStatus !== 'Simulated' || !isAcceptForStoredResult(current, accept)) return undefined
+		// The reviewed-result id leaves out the approval status, so a concurrent accept that already moved the request to the wallet is refused here, inside the lock.
+		if (current.approvalStatus.status === 'WaitingForSigner') return undefined
 		acceptedPending = current.simulationMode ? current : modifyObject(current, { approvalStatus: { status: 'WaitingForSigner' as const } })
 		return acceptedPending
 	})
@@ -412,6 +437,7 @@ async function resolveWithContext(ethereum: EthereumClientService, tokenPriceSer
 async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, pendingTransactionOrMessage: PendingTransactionOrSignableMessage, simulationModeGuard: SimulationModeGuard, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	// A signer reply names only the request id, so it resolves only a request that was forwarded to the signer, never a newer request under a reused id that the user has not approved.
 	if (confirmation.data.action === 'signerIncluded' && pendingTransactionOrMessage.approvalStatus.status !== 'WaitingForSigner') return false
+	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
 	if (confirmation.data.action === 'accept' && !isAcceptForStoredResult(pendingTransactionOrMessage, confirmation.data)) {
 		// Keep the request pending and redraw the popup, so the user reviews the current result before accepting again.
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -482,7 +508,7 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 	}
 	// Derived only when forwarding, after the authorization checks, so rejecting a request never depends on rebuilding its reviewed transaction.
 	const getSignerFacingRequest = (): SendTransactionParams | SendRawTransactionParams | SignMessageParams => safeResolution.signerFacingRequest
-		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage)
+		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage, confirmation.data.action === 'accept' && confirmation.data.forceSend)
 	// Simulation mode can be switched on, and website approval suspended, during any await after the checks above. Both are checked again synchronously right before each post, including the MV2 reconnect retry, so a refusal found there leaves nothing posted.
 	const forwardToSignerIfStillAuthorized = async (): Promise<SignerForwarding> => {
 		const message = { ...getSignerFacingRequest(), type: 'forwardToSigner' as const, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
@@ -601,8 +627,18 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature }, 'changed')
 		}
 		case 'Transaction': {
-			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
-			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
+			const forceSentGasLimit = confirmation.data.action === 'accept' && confirmation.data.forceSend ? getUnsimulatedGasLimitEdit(pendingTransactionOrMessage) : undefined
+			// Keep old visualization results stale; only the explicitly approved stack transaction gets the edited gas.
+			const transactionToSimulate = forceSentGasLimit === undefined
+				? pendingTransactionOrMessage.transactionToSimulate
+				: {
+					...pendingTransactionOrMessage.transactionToSimulate,
+					originalRequestParameters: pendingTransactionOrMessage.originalRequestParameters,
+					transaction: { ...pendingTransactionOrMessage.transactionToSimulate.transaction, gas: forceSentGasLimit },
+					signedTransaction: undefined,
+				}
+			const signedTransaction = getSignedTransactionForSimulation(transactionToSimulate)
+			const transaction = { ...transactionToSimulate, signedTransaction }
 			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
@@ -733,14 +769,17 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 }
 
 // `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the reviewed transaction with the fees the popup displayed so it cannot sign values the user did not see. Gnosis Safe flows are excluded: they are simulated with zero fees for an external executor, and the Safe resolver either supplies its own signer-facing request or re-validates the direct execution route against the reviewed Safe state.
-function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
+function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage, forceSend: boolean): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
 	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
 	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
 	if (getSafePendingFlow(pending) !== undefined) return pending.originalRequestParameters
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
 	// A failed confirmation simulation leaves no reviewed transaction to bind, and resolvePendingTransactionOrMessage refuses every accept for it (isRejectOnlyTransaction), so this request is never forwarded.
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
-	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
+	const simulatedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
+	// Explicit send-anyway consent includes the saved gas edit even while its resimulation is pending; all other envelope fields remain bound to the reviewed result.
+	const editedGas = forceSend ? getUnsimulatedGasLimitEdit(pending) : undefined
+	const reviewedTransaction = editedGas === undefined ? simulatedTransaction : { ...simulatedTransaction, gas: editedGas }
 	// The popup displays this same signer nonce, and notes a different simulated one. Safe flows returned above, so this is a plain transaction.
 	const signerNonce = getSignerNonce(pending, false)
 	switch (signerNonce.kind) {

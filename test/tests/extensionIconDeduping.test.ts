@@ -277,7 +277,6 @@ describe('extension icon deduping', () => {
 			websiteTabConnections,
 			await getSettings(),
 			true,
-			0,
 		)
 		await flushAsyncWork()
 
@@ -304,7 +303,6 @@ describe('extension icon deduping', () => {
 			new Map(),
 			await getSettings(),
 			true,
-			0,
 		)
 		await flushAsyncWork()
 
@@ -359,7 +357,6 @@ describe('extension icon deduping', () => {
 			new Map(),
 			await getSettings(),
 			true,
-			0,
 		)
 		await flushAsyncWork()
 

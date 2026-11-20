@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -131,6 +132,25 @@ export function shouldDisableSignableMessageConfirm(params: {
 	if (!params.isValidMessage) return true
 	if (params.forceSendEnabled) return false
 	return params.quarantined || !params.canProceedWithoutOverride
+}
+
+// Confirming needs the background's copy, a reviewable result and, for a failing or quarantined result or a gas edit not yet simulated, the send-anyway override; it never bypasses creation or signer blockers.
+export function shouldDisableConfirm(pending: ShownPendingTransactionOrSignableMessage | undefined, forceSendEnabled: boolean) {
+	if (!isBackgroundCopy(pending)) return true
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
+	if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
+	if (isRejectOnlyTransaction(pending)) return true
+	if (getSendAnywayOverrideReason(pending) !== undefined && !forceSendEnabled) return true
+	if (!isPendingTransactionGasLimitCurrent(pending) && !forceSendEnabled) return true
+	if (pending.type !== 'Transaction') {
+		return shouldDisableSignableMessageConfirm({
+			isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
+			canProceedWithoutOverride: canSignatureRequestProceedWithoutOverride(pending.visualizedPersonalSignRequest),
+			forceSendEnabled,
+			quarantined: pending.visualizedPersonalSignRequest.quarantine,
+		})
+	}
+	return false
 }
 
 export function getConfirmDialogDeliveryErrorMessage(error: unknown) {
@@ -1021,26 +1041,11 @@ export function ConfirmTransaction() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshConfirmTransactionDialogSimulation' })
 	}
 
-	const isConfirmDisabled = useComputed(() => {
-		const pending = currentPendingTransactionOrSignableMessage.value
-		if (!isBackgroundCopy(pending)) return true
-		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
-		if (shouldDisableConfirmForApprovalStatus(pending.approvalStatus)) return true
-		if (isRejectOnlyTransaction(pending)) return true
-		if (getSendAnywayOverrideReason(pending) !== undefined && !forceSend.value) return true
-		if (pending.type !== 'Transaction') {
-			return shouldDisableSignableMessageConfirm({
-				isValidMessage: pending.visualizedPersonalSignRequest.isValidMessage === true,
-				canProceedWithoutOverride: canSignatureRequestProceedWithoutOverride(pending.visualizedPersonalSignRequest),
-				forceSendEnabled: forceSend.value,
-				quarantined: pending.visualizedPersonalSignRequest.quarantine,
-			})
-		}
-		return false
-	})
+	const isConfirmDisabled = useComputed(() => shouldDisableConfirm(currentPendingTransactionOrSignableMessage.value, forceSend.value))
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
+		if (!isPendingTransactionGasLimitCurrent(pending)) return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated') return true
 		// Adding to the Safe stack offers no send-anyway override, so it needs a located result that succeeds and is not quarantined.
