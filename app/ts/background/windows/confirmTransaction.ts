@@ -10,12 +10,12 @@ import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, 
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
+import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
@@ -229,6 +229,29 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
+export type ConfirmTransactionDialogStateOptions = {
+	// The simulation mode that decides between a simulation visualisation and a passthrough state: the active settings' mode, or a confirmation request's own mode.
+	readonly simulationMode: 'activeSettings' | boolean
+	// How the caller obtains the visualisation in simulation mode, called only then; defaults to the stored popup visualisation.
+	readonly getVisualisation?: () => Promise<CompleteVisualizedSimulation>
+	// 'fetch' asks the node for the current block number; 'cached' uses the cached head, or 0 without one, so a local edit does not wait for RPC work.
+	readonly blockNumberSource: { readonly kind: 'fetch', readonly abortController: AbortController | undefined } | { readonly kind: 'cached' }
+}
+
+// The only builder of the confirmation dialog state: it owns the simulation-mode/passthrough rule, the block number source and the RPC status read.
+export async function buildConfirmTransactionDialogState(ethereum: EthereumClientService, { simulationMode, getVisualisation = getPopupVisualisationState, blockNumberSource }: ConfirmTransactionDialogStateOptions): Promise<UpdateConfirmTransactionDialog['data']> {
+	const getVisualizedSimulatorState = async () => {
+		const isSimulationMode = simulationMode === 'activeSettings' ? (await getSettings()).simulationMode : simulationMode
+		return isSimulationMode ? await getVisualisation() : createPassthroughCompleteVisualizedSimulation()
+	}
+	const [visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus] = await Promise.all([
+		getVisualizedSimulatorState(),
+		blockNumberSource.kind === 'cached' ? ethereum.getCachedBlock()?.number ?? 0n : ethereum.getBlockNumber(blockNumberSource.abortController),
+		getRpcConnectionStatus(),
+	])
+	return { visualizedSimulatorState, currentBlockNumber, rpcConnectionStatus }
+}
+
 // The only builder of the confirmation dialog's two companion messages: its pending requests and the dialog state shown with them, sent together on every update. Sends nothing for an empty queue, because the dialog expects at least one pending request and closes by itself once the queue is empty.
 export async function publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[], dialog: UpdateConfirmTransactionDialog['data']): Promise<boolean> {
 	if (pendingTransactionAndSignableMessages.length === 0) return false
@@ -290,20 +313,13 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const settingsPromise = getSettings()
-		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
-		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
-		const settings = await settingsPromise
-		const visualizedSimulatorState = settings.simulationMode
-			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
-			: createPassthroughCompleteVisualizedSimulation()
-		return await publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages, {
-			currentBlockNumber: await currentBlockNumberPromise,
-			rpcConnectionStatus: await rpcConnectionStatusPromise,
-			visualizedSimulatorState,
-		})
+		return await publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages, await buildConfirmTransactionDialogState(ethereum, {
+			simulationMode: 'activeSettings',
+			getVisualisation: async () => await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating }),
+			blockNumberSource: { kind: 'fetch', abortController: undefined },
+		}))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return false
 		await reportUnexpectedError(error)

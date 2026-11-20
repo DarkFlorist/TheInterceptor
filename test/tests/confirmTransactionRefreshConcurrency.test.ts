@@ -60,7 +60,31 @@ test.each(['dialog view update', 'metadata refresh', 'gas edit'] as const)('%s s
 		assert.equal(pending.data.currentBlockNumber, dialog.data.currentBlockNumber)
 		assert.deepEqual(pending.data.rpcConnectionStatus, dialog.data.rpcConnectionStatus)
 		assert.deepEqual(pending.data.pendingTransactionAndSignableMessages.map(request => request.uniqueRequestIdentifier.requestId), [pendingTransaction.uniqueRequestIdentifier.requestId])
+		// Only the gas edit uses the cached head; the other paths ask the node, as on main.
+		assert.equal(dialog.data.currentBlockNumber, path === 'gas edit' ? ethereum.getCachedBlock()?.number ?? 0n : await ethereum.getBlockNumber(undefined))
 	} finally { await waitForBackgroundTasks() }
+})
+
+test('the dialog state builder owns the passthrough rule and the block number source', async () => {
+	const { buildConfirmTransactionDialogState } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+	const { getRpcConnectionStatus } = await import('../../app/ts/background/storageVariables.js')
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const visualisation = { ...createPassthroughCompleteVisualizedSimulation(9, 'done'), numberOfAddressesMadeRich: 3 }
+	let visualisationReads = 0
+	const getVisualisation = async () => { visualisationReads++; return visualisation }
+	const signing = await buildConfirmTransactionDialogState(ethereum, { simulationMode: false, getVisualisation, blockNumberSource: { kind: 'cached' } })
+	assert.deepEqual(signing.visualizedSimulatorState, createPassthroughCompleteVisualizedSimulation())
+	assert.equal(visualisationReads, 0, 'signing mode never reads the simulation visualisation')
+	assert.equal(signing.currentBlockNumber, ethereum.getCachedBlock()?.number ?? 0n)
+	const simulating = await buildConfirmTransactionDialogState(ethereum, { simulationMode: true, getVisualisation, blockNumberSource: { kind: 'fetch', abortController: undefined } })
+	assert.deepEqual(simulating.visualizedSimulatorState, visualisation)
+	assert.equal(simulating.currentBlockNumber, await ethereum.getBlockNumber(undefined))
+	assert.deepEqual(simulating.rpcConnectionStatus, await getRpcConnectionStatus())
+	await modules.changeSimulationMode({ simulationMode: false })
+	const fromSettings = await buildConfirmTransactionDialogState(ethereum, { simulationMode: 'activeSettings', getVisualisation, blockNumberSource: { kind: 'cached' } })
+	assert.deepEqual(fromSettings.visualizedSimulatorState, createPassthroughCompleteVisualizedSimulation())
+	assert.equal(visualisationReads, 1)
 })
 
 test.each(['pending-state read', 'transaction construction', 'tab-state read'] as const)('a refresh delayed during %s cannot cancel a newer gas simulation', async pauseAt => {
