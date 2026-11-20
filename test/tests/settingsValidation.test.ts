@@ -1,6 +1,7 @@
+import { RpcNetwork, RpcEntries } from '../../app/ts/types/rpc.js'
 import * as assert from 'node:assert/strict'
 import { beforeEach, test } from 'bun:test'
-import { DEFAULT_ACTIVE_ADDRESSES } from '../../app/ts/config/defaults.js'
+import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
@@ -13,10 +14,13 @@ Object.defineProperty(globalThis, 'browser', {
 	} } },
 })
 const { browserStorageLocalSafeParse } = await import('../../app/ts/utils/storageUtils.js')
-const { getSettings } = await import('../../app/ts/background/settings.js')
+const { getSettings, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 
 beforeEach(() => {
 	for (const key of Object.keys(storedItems)) delete storedItems[key]
+	const initialRpc = DEFAULT_RPCS[0]
+	if (initialRpc === undefined) throw new Error('Missing default RPC')
+	Object.assign(storedItems, { rpcEntries: RpcEntries.serialize(DEFAULT_RPCS), activeRpcNetwork: RpcNetwork.serialize(initialRpc) })
 	writes.length = 0
 })
 
@@ -66,4 +70,26 @@ test('corrupt address repairs use the canonical storage encoding and survive sta
 	assert.equal(storedItems.activeSigningSafeAddress, 'missing')
 	assert.deepEqual(await getSettings(), settings)
 	assert.equal(writes.length, 2)
+})
+
+test('required and snapshot reads select the same stored primary when the active network is missing', async () => {
+	delete storedItems.activeRpcNetwork
+	const primary = { name: 'Stored primary', chainId: 10n, httpsRpc: 'https://primary.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	storedItems.rpcEntries = RpcEntries.serialize([primary])
+	const required = await getSettings()
+	const snapshot = await getSettingsSnapshot()
+	assert.equal(snapshot.status, 'available')
+	if (snapshot.status !== 'available') throw new Error('Expected the repaired configuration')
+	assert.equal(required.activeRpcNetwork.chainId, 10n)
+	assert.deepEqual(required.activeRpcNetwork, snapshot.settings.activeRpcNetwork)
+	assert.equal(writes.length, 1)
+})
+
+test('an unavailable active selection never becomes an invented default network', async () => {
+	delete storedItems.activeRpcNetwork
+	storedItems.rpcEntries = []
+	await assert.rejects(getSettings(), /RPC configuration is unavailable/u)
+	assert.equal((await getSettingsSnapshot()).status, 'unavailable')
+	assert.equal(storedItems.activeRpcNetwork, undefined)
+	assert.equal(writes.length, 0)
 })

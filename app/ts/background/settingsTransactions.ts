@@ -97,7 +97,7 @@ export function getWebsiteApprovalChangedOrigins(previous: WebsiteAccessArray, n
 const hasSameWebsiteAccess = (first: WebsiteAccess, second: WebsiteAccess) => hasSameFields(websiteAccessRules, first, second)
 
 async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessArray, updatedWebsiteAccess: WebsiteAccessArray) {
-	await updateWebsiteAccess((currentWebsiteAccess) => {
+	return await updateWebsiteAccess((currentWebsiteAccess) => {
 		const previousByOrigin = new Map(previousWebsiteAccess.map((entry) => [entry.website.websiteOrigin, entry]))
 		const updatedByOrigin = new Map(updatedWebsiteAccess.map((entry) => [entry.website.websiteOrigin, entry]))
 		const changedOrigins = new Set([...previousByOrigin.keys(), ...updatedByOrigin.keys()].filter((origin) => {
@@ -134,9 +134,10 @@ async function restoreWebsiteAccessUpdate(previousWebsiteAccess: WebsiteAccessAr
 	})
 }
 
+type CommittedWebsiteAccessChange = { readonly previousWebsiteAccess: WebsiteAccessArray, readonly updatedWebsiteAccess: WebsiteAccessArray }
 export type WebsiteAccessTransactionOutcome =
-	| (Extract<StorageTransactionOutcome, { readonly status: 'completed' }> & { readonly websiteAccess: WebsiteAccessArray })
-	| Extract<StorageTransactionOutcome, { readonly status: 'failed' }>
+	| (Extract<StorageTransactionOutcome, { readonly status: 'completed' }> & { readonly websiteAccess: WebsiteAccessArray, readonly committedChange: CommittedWebsiteAccessChange })
+	| (Extract<StorageTransactionOutcome, { readonly status: 'failed' }> & { readonly committedChange?: CommittedWebsiteAccessChange })
 
 // The transaction itself owns the commit/rollback phase, including failures; callers never infer it from a callback being invoked.
 export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>): Promise<WebsiteAccessTransactionOutcome> {
@@ -144,11 +145,12 @@ export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: W
 	try {
 		snapshots = await updateWebsiteAccessWithSnapshots(update)
 		await afterUpdate(snapshots.updatedWebsiteAccess)
-		return { status: 'completed', storage: 'written', websiteAccess: snapshots.updatedWebsiteAccess }
+		return { status: 'completed', storage: 'written', websiteAccess: snapshots.updatedWebsiteAccess, committedChange: snapshots }
 	} catch (error: unknown) {
 		if (snapshots === undefined) return { status: 'failed', storage: 'not-written', error }
 		try {
-			await restoreWebsiteAccessUpdate(snapshots.previousWebsiteAccess, snapshots.updatedWebsiteAccess)
+			const restoredWebsiteAccess = await restoreWebsiteAccessUpdate(snapshots.previousWebsiteAccess, snapshots.updatedWebsiteAccess)
+			return { status: 'failed', storage: 'rolled-back', error, committedChange: { previousWebsiteAccess: snapshots.previousWebsiteAccess, updatedWebsiteAccess: restoredWebsiteAccess } }
 		} catch (rollbackError: unknown) {
 			let failure: unknown = error
 			try {
@@ -158,6 +160,5 @@ export async function tryWebsiteAccessRollback(update: (previousWebsiteAccess: W
 			}
 			return { status: 'failed', storage: 'rollback-failed', error: failure }
 		}
-		return { status: 'failed', storage: 'rolled-back', error }
 	}
 }

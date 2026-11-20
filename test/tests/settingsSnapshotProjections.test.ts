@@ -166,3 +166,13 @@ test('only the ready projection produces settings a fail-closed decision accepts
 	assert.equal(expectedLines.length, 2)
 	assert.deepEqual([...new Set(errorLines)].sort((first, second) => first - second), expectedLines)
 })
+
+// Required readers may reject during an expected RPC outage, but generic reporting must not turn that state into an internal-error broadcast.
+test('RPC configuration unavailability is classified as handled', async () => {
+	const { createRpcConfigurationUnavailableError } = await import('../../app/ts/utils/rpcConfigurationError.js')
+	const { classifyCaughtError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
+	const error = createRpcConfigurationUnavailableError()
+	assert.equal(isRpcConfigurationUnavailableError(error), true)
+	assert.equal(classifyCaughtError(error), 'handled')
+	assert.equal(shouldSuppressUnexpectedErrorReport(error), true)
+})

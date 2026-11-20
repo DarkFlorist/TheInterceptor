@@ -1,3 +1,4 @@
+import { withSilencedConsole } from './consoleSilence.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
@@ -422,6 +423,31 @@ describe('popup settings changes', () => {
 		await waitForBackgroundTasks()
 		assert.equal(refreshCount(), afterReplacement)
 	})
+
+	for (const recovery of ['RPC selection', 'settings import'] as const) test(`an unavailable active RPC can be repaired through ${ recovery } without default-network authority`, async () => await withSilencedConsole(async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const modules = await loadModules()
+		const initial = await modules.getSettings()
+		const { popupMessageHandler } = await import('../../app/ts/background/popupMessageRouting.js')
+		const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+		const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+		const { getSettingsForConfigurationChange } = await import('../../app/ts/background/settings.js')
+		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://approved.example' }, access: true, addressAccess: [] }])
+		const backup = await modules.exportSettingsAndAddressBook()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		await assert.rejects(modules.getSettings(), /RPC configuration is unavailable/u)
+		const projection = await getSettingsForConfigurationChange(services.ethereum.getRpcEntry())
+		assert.equal(projection.hasReadableActiveNetwork, false)
+		assert.deepEqual(projection.settings.websiteAccess, [])
+		const reply = await popupMessageHandler(new Map(), services.simulationServicesOwner, PopupMessage.serialize(recovery === 'RPC selection'
+			? { method: 'popup_changeActiveRpc', data: initial.activeRpcNetwork }
+			: { method: 'popup_import_settings', data: { fileContents: JSON.stringify(ExportedSettings.serialize(backup)) } }), async () => undefined)
+		if (recovery === 'RPC selection') assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
+		else assert.ok(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_initiate_export_settings_reply'))
+		assert.equal((await modules.getSettings()).activeRpcNetwork.httpsRpc, initial.activeRpcNetwork.httpsRpc)
+		assert.equal(await modules.getLatestUnexpectedError(), undefined)
+	}))
 
 	test('rich changes request a visualization refresh immediately and unchanged values skip it', async () => {
 		const { runtimeMessages } = installBrowserMock()

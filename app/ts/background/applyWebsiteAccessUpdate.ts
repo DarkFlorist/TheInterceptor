@@ -52,13 +52,12 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 
 // Registration changes retain main's serialized refresh and rollback. Reconcile against storage even if a post-save step fails or rolls back; a failed initial write has no authority change to reconcile.
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
-	let change: CommittedAccessChange = { kind: 'request-block-mode' }
-	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previous) => {
-		const next = sanitizeWebsiteAccess(mutation(previous))
-		const websiteOrigins = getWebsiteApprovalChangedOrigins(previous, next)
-		change = websiteOrigins.length === 0 ? { kind: 'request-block-mode' } : { kind: 'website-access', websiteOrigins }
-		return next
-	})
+	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previous) => sanitizeWebsiteAccess(mutation(previous)))
+	const committedChange = outcome.transaction?.committedChange
+	const origins = committedChange === undefined ? undefined : getWebsiteApprovalChangedOrigins(committedChange.previousWebsiteAccess, committedChange.updatedWebsiteAccess)
+	// Missing outcome metadata must widen fail-closed revocation, never silently claim that no approvals changed.
+	const change: CommittedAccessChange = origins === undefined ? { kind: 'unknown-website-access' }
+		: origins.length === 0 ? { kind: 'non-approval-website-change' } : { kind: 'website-access', websiteOrigins: origins }
 	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error
 	const failures: WorkflowStepFailure[] = outcome.status === 'failed' ? [{ code: 'website_access_injection_update_failed', error: outcome.error }] : []
 	// The injection owner reports whether it already handled the reload, including failed attempts. Only an unchanged configuration may need an additional reload.

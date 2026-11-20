@@ -124,7 +124,7 @@ export type CapturedRpcNetwork = {
 }
 
 // Long-lived mutations use this token only when later settings fields may change but the admitted RPC network must remain pinned.
-export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
+export function captureRpcNetwork(settings: Pick<Settings, 'activeRpcNetwork'>): CapturedRpcNetwork {
 	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
 }
 
@@ -433,11 +433,16 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
 export const getPreSimulationBlockTimeManipulation = async() => (await browserStorageLocalGet('preSimulationBlockTimeManipulation'))?.preSimulationBlockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION
 
-// Legacy startup-default projection retained for existing handlers. It shares the snapshot's field decoder, but does not prove RPC readiness: access reconciliation and tab blocking must use settingsIfRpcConfigurationReady. Migrating general provider/UI admission is a separate layer.
+// The required reader uses the same RPC resolution, repairs and semaphore as snapshots. It never invents a different active network.
 export async function getSettings(): Promise<Settings> {
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([...SETTINGS_STORAGE_KEYS, 'activeRpcNetwork']))
-	const initialRpc = defaultRpcs[0]
-	if (initialRpc === undefined) throw new Error('Default RPC was missing')
-	const activeRpcNetwork = await getStartupStorageValueOrDefault(storedItems, 'activeRpcNetwork', initialRpc)
-	return await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
+	return requireReadableSettings(await getSettingsSnapshot())
+}
+
+// Configuration editors can repair a missing/corrupt active selection using the already-installed service network for comparison. This projection never grants website authority and must not route provider requests.
+export async function getSettingsForConfigurationChange(installedNetwork: RpcNetwork): Promise<{ readonly settings: Settings, readonly hasReadableActiveNetwork: boolean }> {
+	const snapshot = await getSettingsSnapshot()
+	if (snapshot.status === 'available') return { settings: settingsWithoutApprovals(snapshot.settings), hasReadableActiveNetwork: true }
+	const admitted = await getAdmittedRpcNetworkSnapshot(captureRpcNetwork({ activeRpcNetwork: installedNetwork }))
+	if (admitted.status === 'unreadable') throw admitted.error
+	return { settings: settingsWithoutApprovals(withActiveRpcNetwork(admitted.storedFields, installedNetwork)), hasReadableActiveNetwork: false }
 }

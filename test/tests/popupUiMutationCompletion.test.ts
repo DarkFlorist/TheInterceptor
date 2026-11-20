@@ -300,7 +300,7 @@ describe('UI mutation completion', () => {
 			if (failure === 'tab read' && keys === 'tabState_2') { readStarted.resolve(); await releaseRead.promise }
 			return await originalGet(keys)
 		} })
-		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', { configurable: true, value: async () => { throw error } })
+		if (failure === 'blocking rules') Object.defineProperty(browser.declarativeNetRequest, 'getSessionRules', { configurable: true, value: async () => { throw error } })
 		let settled = false
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request = mode === 'bulk'
@@ -328,7 +328,7 @@ describe('UI mutation completion', () => {
 		}
 	})
 
-	test.each(['bulk', 'disable', 'remove'] as const)('%s access change fails closed if content-script setup and reconciliation reject after saving permissions', async operation => {
+	test.each(['bulk', 'disable', 'remove'] as const)('%s access change preserves restored authority when registration rolls back and reconciliation cannot read settings', async operation => {
 		const { runtimeMessages } = installBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
@@ -353,10 +353,10 @@ describe('UI mutation completion', () => {
 				? handlers.disableInterceptor(owner, connections, { method: 'popup_disableInterceptor', data: { website, interceptorDisabled: true } })
 				: handlers.removeWebsiteAccess(owner, connections, { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: website.websiteOrigin } })
 			await assert.rejects(request, caught => caught === error)
-			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, false)
+			assert.equal(Object.values(connections.get(1)?.connections ?? {})[0]?.approved, true)
 			assert.equal(runtimeMessages.some(message => message.method === 'popup_websiteAccess_changed' || message.method === 'popup_interceptor_access_changed' || message.method === 'popup_setDisableInterceptorReply'), false)
 		} finally { restoreStorage() }
-		// The failed content-script setup rolls the saved change back; the approval stays cleared because reconciliation could not read the restored permissions.
+		// Registration rolled back the edit. Its committed before/after authority is unchanged, so an unreadable reconciliation must not revoke that restored approval.
 		const byOrigin = (accesses: typeof entries) => [...accesses].sort((first, second) => first.website.websiteOrigin.localeCompare(second.website.websiteOrigin))
 		assert.deepEqual(byOrigin((await modules.getSettings()).websiteAccess), byOrigin(entries))
 	})

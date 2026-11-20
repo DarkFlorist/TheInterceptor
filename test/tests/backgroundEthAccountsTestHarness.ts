@@ -177,6 +177,7 @@ export async function loadModules() {
 	const safeApps = await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js')
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
+		...await import('../../app/ts/background/requestBlocking.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),

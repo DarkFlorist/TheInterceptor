@@ -1,11 +1,12 @@
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
-import { areWeBlocking } from './accessManagement.js'
+import { areWeBlocking } from './requestBlocking.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
 import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getSettings, getWebsiteAccess } from './settings.js'
+import { getSettingsSnapshot, settingsIfRpcConfigurationReady, approvalsOrNoneIfUnreadable, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -123,8 +124,10 @@ export async function updateExtensionIcon(_websiteTabConnections: WebsiteTabConn
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
-		const settings = await getSettings()
-		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		const snapshot = await getSettingsSnapshot()
+		if (hasAccess(approvalsOrNoneIfUnreadable(snapshot), websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+		const settings = settingsIfRpcConfigurationReady(snapshot)
+		if (settings === undefined) return setIcon(ICON_NOT_ACTIVE, RPC_CONFIGURATION_UNAVAILABLE_MESSAGE)
 		const activeAddress = await getActiveAddress(settings, tabId)
 		if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 		const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)

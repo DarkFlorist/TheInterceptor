@@ -113,7 +113,6 @@ const [
 	{ popupMessageHandler },
 	{ updatePopupVisualisationIfNeeded },
 	{ browserStorageLocalSet },
-	{ getSettings },
 	{ getLatestUnexpectedError, setFetchSimulationStackRequestPromise },
 	{ EthereumClientService },
 	{ TokenPriceService },
@@ -121,7 +120,6 @@ const [
 	import('../../app/ts/background/popupMessageRouting.js'),
 	import('../../app/ts/background/popupVisualisationUpdater.js'),
 	import('../../app/ts/utils/storageUtils.js'),
-	import('../../app/ts/background/settings.js'),
 	import('../../app/ts/background/storageVariables.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -187,7 +185,7 @@ const BACKGROUND_SIMULATION_REQUESTS = new Set(['popup_readyAndListening', 'popu
 async function dispatchToBackground(message: unknown) {
 	const method = getMessageMethod(message)
 	if (method === undefined || !BACKGROUND_SIMULATION_REQUESTS.has(method)) return undefined
-	return await popupMessageHandler(new Map(), simulationServicesOwner, message, await getSettings(), async () => undefined)
+	return await popupMessageHandler(new Map(), simulationServicesOwner, message, async () => undefined)
 }
 
 // Stands in for the home popup or simulation stack page: it answers the open-consumer probe and keeps each published state.

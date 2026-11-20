@@ -242,8 +242,8 @@ describe('website access registration and reconciliation', () => {
 })
 
 
-for (const edit of ['approval', 'blocking', 'new-blocking-record'] as const) test(`an unreadable post-write snapshot preserves unrelated approvals for a ${ edit } edit`, async () => {
-	installBrowserMock()
+for (const edit of ['approval', 'blocking', 'new-blocking-record', 'rolled-back-approval', 'unknown-outcome'] as const) test(`an unreadable post-write snapshot uses the committed authority scope for a ${ edit } edit`, async () => {
+	const { setStorageHooks } = installBrowserMock()
 	const modules = await loadModules()
 	const { applyWebsiteAccessUpdate } = await import('../../app/ts/background/applyWebsiteAccessUpdate.js')
 	const { waitForBackgroundTasks } = await import('./backgroundTasksTestHarness.js')
@@ -255,30 +255,44 @@ for (const edit of ['approval', 'blocking', 'new-blocking-record'] as const) tes
 		const { port } = createPort(tabId)
 		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }] as const
 	}))
-	const originalGet = browser.storage.local.get.bind(browser.storage.local)
-	const originalSet = browser.storage.local.set.bind(browser.storage.local)
 	let committed = false
-	Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async (items: Record<string, unknown>) => {
-		await originalSet(items)
-		if ('websiteAccess' in items) committed = true
-	} })
-	Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (keys?: string | string[] | Record<string, unknown> | null) => {
-		if (committed && Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('post-write settings unavailable')
-		return await originalGet(keys)
-	} })
+	setStorageHooks({
+		afterSet: async (items) => { if ('websiteAccess' in items) committed = true },
+		afterGet: async (keys) => { if (committed && Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('post-write settings unavailable') },
+	})
+	if (edit === 'rolled-back-approval') mockContentScriptInjectionUpdate(new Error('registration failed'))
+	if (edit === 'unknown-outcome') {
+		committed = true
+		spyOn(await import('../../app/ts/background/websiteAccessUpdating.js'), 'tryUpdateWebsiteAccessAndContentScriptInjectionStrategy').mockResolvedValueOnce({ status: 'completed', storage: 'written', reload: 'not-needed', transaction: undefined })
+	}
 	try {
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		await withSilencedConsole(async () => {
-			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] ? entry : edit === 'approval' ? { ...entry, access: false } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
+			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] ? entry : edit === 'approval' || edit === 'rolled-back-approval' ? { ...entry, access: false, ...(edit === 'rolled-back-approval' ? { interceptorDisabled: true } : {}) } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
 			await waitForBackgroundTasks()
 		})
 		assert.equal(committed, true)
 		const approvalOf = (tabId: number) => Object.values(connections.get(tabId)?.connections ?? {})[0]?.approved
-		assert.equal(approvalOf(1), edit !== 'approval')
-		assert.equal(approvalOf(2), true)
+		assert.equal(approvalOf(1), edit !== 'approval' && edit !== 'unknown-outcome')
+		assert.equal(approvalOf(2), edit !== 'unknown-outcome')
 	} finally {
 		await waitForBackgroundTasks()
-		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
-		Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+		setStorageHooks({})
 	}
+})
+
+test('unavailable RPC settings skip deferred access prompts without per-connection internal errors', async () => {
+	const { runtimeMessages } = installBrowserMock()
+	const modules = await loadModules()
+	const settings = await modules.getSettings()
+	await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	const connections = new Map([1, 2, 3].map((tabId) => {
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		return [tabId, { connections: { [modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: `https://prompt-${ tabId }.test`, approved: false, wantsToConnect: true } } }] as const
+	}))
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	await withSilencedConsole(async () => await modules.updateWebsiteApprovalAccesses(simulationServicesOwner, connections, settings, true))
+	assert.equal(await modules.getLatestUnexpectedError(), undefined)
+	assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), false)
 })

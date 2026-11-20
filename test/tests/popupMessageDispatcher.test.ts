@@ -168,7 +168,6 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 	return {
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
-		settings,
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),
@@ -808,9 +807,10 @@ describe('settings import installs the imported network', () => {
 					assert.equal(finished, false)
 				} finally { browser.storage.local.set = originalSet; release.resolve(undefined) }
 				await Promise.all([importing, changing])
-				// Snapshot recovery persists a missing list from its active entry. Replacing that managed entry must install its new endpoint after the import's transition.
-				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, nextNetwork.httpsRpc)
-				assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeRpcNetwork.httpsRpc, nextNetwork.httpsRpc)
+				// A direct list edit preserves the imported custom selection when it was not a member of the pre-import managed list. Explicit RPC selections install the new endpoint.
+				const expectedEndpoint = entryPoint === 'direct list' ? importedSepoliaNetwork.httpsRpc : nextNetwork.httpsRpc
+				assert.equal(context.simulationServicesOwner.getCurrent().ethereum.getRpcEntry().httpsRpc, expectedEndpoint)
+				assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeRpcNetwork.httpsRpc, expectedEndpoint)
 			}
 		})
 	}

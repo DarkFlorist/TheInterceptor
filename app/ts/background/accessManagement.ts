@@ -5,7 +5,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
-import { getSettingsSnapshot, updateWebsiteAccess, requireReadableSettings } from './settings.js'
+import { getSettingsSnapshot, updateWebsiteAccess, settingsIfRpcConfigurationReady } from './settings.js'
 import { grantWithLiveSettings } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -273,7 +273,8 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 			if (!connection.wantsToConnect) continue
 			try {
 				// Reconciliation uses the committed snapshot; deferred prompts must recheck the latest settings.
-				const settings = requireReadableSettings(await getSettingsSnapshot())
+				const settings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
+				if (settings === undefined) continue
 				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
@@ -425,12 +426,14 @@ export async function persistWebsiteAccessChange(
 export type CommittedAccessChange =
 	// Approvals, address consent or interceptor-disabled state of these websites.
 	| { readonly kind: 'website-access', readonly websiteOrigins: readonly string[] }
+	// A committed website change whose outcome could not establish a narrower scope.
+	| { readonly kind: 'unknown-website-access' }
 	// Address-book entries, which can alter any website's effective address policy.
 	| { readonly kind: 'address-book' }
 	// An imported settings file, which replaces every website's approvals.
 	| { readonly kind: 'settings-import' }
-	// A website's request-block mode, which alters no approvals.
-	| { readonly kind: 'request-block-mode' }
+	// A website edit or rollback that changed no approval authority (for example, request-block mode or metadata).
+	| { readonly kind: 'non-approval-website-change' }
 	// A recovered RPC configuration, whose active network decides every website's chain-specific address consent.
 	| { readonly kind: 'rpc-configuration' }
 
@@ -442,10 +445,11 @@ type AffectedWebsites =
 function getAffectedWebsites(change: CommittedAccessChange): AffectedWebsites {
 	switch (change.kind) {
 		case 'website-access': return { kind: 'websites', websiteOrigins: change.websiteOrigins }
+		case 'unknown-website-access': return { kind: 'every' }
 		case 'address-book': return { kind: 'every' }
 		case 'settings-import': return { kind: 'every' }
 		case 'rpc-configuration': return { kind: 'every' }
-		case 'request-block-mode': return { kind: 'none' }
+		case 'non-approval-website-change': return { kind: 'none' }
 		default: return assertNever(change)
 	}
 }
@@ -548,5 +552,3 @@ export async function finalizeWebsiteAccessChange(simulationServicesOwner: Simul
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 	return settings
 }
-export { updateDeclarativeNetRequestBlocks } from './requestBlocking.js'
-export { areWeBlocking } from './requestBlocking.js'

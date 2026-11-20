@@ -480,6 +480,7 @@ describe('settings import', () => {
 			useSignersAddressAsActiveAddress: false,
 		})
 		const { defaultActiveAddresses, getSettings } = await settingsModulePromise
+		await browserStorageLocalSet({ activeRpcNetwork: testRpcNetwork, rpcEntries: [testRpcNetwork] })
 		const storageBeforeRead = await browser.storage.local.get()
 		const firstSettings = await getSettings()
 		const secondSettings = await getSettings()
