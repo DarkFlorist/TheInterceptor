@@ -108,16 +108,16 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		const previousActiveSigningAddress = tabStateChange.previousState.activeSigningAddress
-		if (!signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress) {
-			if (previousActiveSigningAddress === undefined) {
-				// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to an account other than the tab's active address for the reported signer accounts. That address is the selected Safe in Safe signing mode, not the signer's own account.
-				const activeAddress = (await getActiveAddress(settings, tabId))?.address
-				suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, (approvedAddress) => approvedAddress !== undefined && approvedAddress !== activeAddress)
-			} else {
-				suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId)
-			}
-		}
+		const signerAccountChanged = !signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress
+		// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to an account other than the tab's active address for the reported signer accounts. That address is the selected Safe in Safe signing mode, not the signer's own account.
+		const approvalsKeptForAddress = signerAccountChanged && previousActiveSigningAddress === undefined ? { address: (await getActiveAddress(settings, tabId))?.address } : undefined
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+		// Approvals are torn down right after the token check with nothing awaited in between, so a reply superseded by a newer signer state never revokes them.
+		if (signerAccountChanged) {
+			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId, approvalsKeptForAddress === undefined
+				? () => true
+				: (approvedAddress) => approvedAddress !== undefined && approvedAddress !== approvalsKeptForAddress.address)
+		}
 		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.

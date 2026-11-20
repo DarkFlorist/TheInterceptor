@@ -3367,8 +3367,8 @@ describe('background eth_accounts', () => {
 		])
 	})
 
-	async function replyWithSignerAccountsInSigningMode(previousActiveSigningAddress: bigint | undefined) {
-		installBrowserMock()
+	async function replyWithSignerAccountsInSigningMode(previousActiveSigningAddress: bigint | undefined, { supersedeWhileStoringSignerAccounts = false } = {}) {
+		const { setStorageHooks } = installBrowserMock()
 		const { changeSimulationMode, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -3394,6 +3394,15 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(otherAccountSocket)]: { port: otherAccountPort.port, socket: otherAccountSocket, websiteOrigin, approved: true, approvedAddress: otherAccount, wantsToConnect: true },
 		} }]])
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		let superseded = false
+		if (supersedeWhileStoringSignerAccounts) setStorageHooks({ afterSet: async (items) => {
+			if (superseded || !('tabState_1' in items)) return
+			const signerStateOwner = websiteTabConnections.get(1)?.signerStateOwner
+			if (signerStateOwner?.generation === undefined) throw new Error('Missing signer state owner')
+			// A newer signer state (a reconnect of the signer provider) takes ownership while the reply is storing its accounts, so the reply is superseded.
+			signerStateOwner.generation += 1
+			superseded = true
+		} })
 		await handleInterceptedRequest(unbound.port, websiteOrigin, website, simulationServicesOwner, unboundSocket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
@@ -3403,6 +3412,8 @@ describe('background eth_accounts', () => {
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(account)], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const wasDisconnected = (messages: typeof unbound.messages) => messages.some((message) => message.method === 'disconnect')
+		setStorageHooks({})
+		if (supersedeWhileStoringSignerAccounts) assert.equal(superseded, true)
 		return {
 			unboundDisconnected: wasDisconnected(unbound.messages),
 			sameAccountDisconnected: wasDisconnected(sameAccount.messages),
@@ -3424,6 +3435,14 @@ describe('background eth_accounts', () => {
 		assert.equal(result.unboundDisconnected, true)
 		assert.equal(result.sameAccountDisconnected, true)
 		assert.equal(result.otherAccountDisconnected, true)
+	})
+
+	test('a signer account reply superseded by a newer signer state does not revoke approvals', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n, { supersedeWhileStoringSignerAccounts: true })
+		assert.equal(result.unboundDisconnected, false)
+		assert.equal(result.sameAccountDisconnected, false)
+		assert.equal(result.sameAccountApproved, true)
+		assert.equal(result.otherAccountDisconnected, false)
 	})
 
 	test('keeps a port approved for the selected Safe on the first signer account report after a signer reconnect', async () => {
