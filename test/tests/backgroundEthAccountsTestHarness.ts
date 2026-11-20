@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwnerForServices, type SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -10,6 +10,15 @@ import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
 type Listener = () => void
+type StorageGetKeys = string | string[] | Record<string, unknown> | null | undefined
+type StorageHooks = {
+	// Runs after a read has captured its result and before it resolves, so a hook can change storage while the reader still holds the old values.
+	readonly afterGet?: (keys: StorageGetKeys) => Promise<void>
+	// Runs before a write is applied, so a hook can pause a caller that is waiting on that write.
+	readonly beforeSet?: (items: Record<string, unknown>) => Promise<void>
+	// Runs after a write is applied and before it resolves, so a hook can expose the written values while withholding write completion.
+	readonly afterSet?: (items: Record<string, unknown>) => Promise<void>
+}
 export type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
@@ -35,6 +44,7 @@ const requestsStorageKey = (keys: string | string[] | Record<string, unknown> | 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, firstCurrentTabIdReadError }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly firstCurrentTabIdReadError?: Error } = {}) {
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
+	let storageHooks: StorageHooks = {}
 	const runtimeMessages: unknown[] = []
 	const removedWindowIds: number[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
@@ -61,20 +71,27 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		storage: {
 			onChanged: { addListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.add(listener), removeListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.delete(listener) },
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) {
+				async get(keys?: StorageGetKeys) {
 					if (firstCurrentTabIdReadError !== undefined && !currentTabIdReadFailed && requestsStorageKey(keys, 'currentTabId')) {
 						currentTabIdReadFailed = true
 						throw firstCurrentTabIdReadError
 					}
-					if (keys === undefined || keys === null) return { ...storageState }
-					if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-					if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					const readStorage = () => {
+						if (keys === undefined || keys === null) return { ...storageState }
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					}
+					const result = readStorage()
+					if (storageHooks.afterGet !== undefined) await storageHooks.afterGet(keys)
+					return result
 				},
 				async set(items: Record<string, unknown>) {
+					if (storageHooks.beforeSet !== undefined) await storageHooks.beforeSet(items)
 					const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { oldValue: storageState[key], newValue }]))
 					Object.assign(storageState, items)
 					for (const listener of storageListeners) listener(changes, 'local')
+					if (storageHooks.afterSet !== undefined) await storageHooks.afterSet(items)
 				},
 				async remove(keys: string | string[]) {
 					const keysToRemove = Array.isArray(keys) ? keys : [keys]
@@ -152,6 +169,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		reloadedTabIds,
 		removedWindowIds,
 		readStoredValue: (key: string) => storageState[key],
+		setStorageHooks: (hooks: StorageHooks) => { storageHooks = hooks },
 	}
 }
 
@@ -171,6 +189,8 @@ export async function loadModules() {
 		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
+		...await import('../../app/ts/background/settingsImport.js'),
+		...await import('../../app/ts/utils/simulationModeGuard.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
@@ -220,14 +240,16 @@ export function createEthereumWithGetBlockCounter(
 		getCodeResult,
 		getStorageAtResult,
 		getBlockNumberResult,
+		rpcNetwork,
 	}: {
+		readonly rpcNetwork?: RpcEntry
 		readonly initialBlockPolling?: boolean
 		readonly getCodeResult?: Uint8Array
 		readonly getStorageAtResult?: bigint
 		readonly getBlockNumberResult?: bigint
 	} = {},
 ) {
-	const rpcEntry: RpcEntry = {
+	const rpcEntry: RpcEntry = rpcNetwork ?? {
 		name: 'Test RPC',
 		chainId: 1n,
 		httpsRpc: 'http://127.0.0.1:8545',
@@ -248,7 +270,10 @@ export function createEthereumWithGetBlockCounter(
 			get(target, property, receiver) {
 				if (property === 'isBlockPolling') return () => blockPolling
 				if (property === 'setBlockPolling') return (enabled: boolean) => {
+					// Like the real client, a retired one refuses to poll again.
+					if (enabled && target.isRetired()) return false
 					blockPolling = enabled
+					return enabled
 				}
 				if (property === 'getBlock') {
 					return async () => {
@@ -279,10 +304,6 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	return id
 }
 
-export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
-	let current = initial
-	return {
-		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
-	}
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: (network: RpcEntry) => { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }): SimulationServicesOwner {
+	return createSimulationServicesOwnerForServices(initial.ethereum.getRpcEntry(), initial, (_current, network) => reset === undefined ? initial : reset(network))
 }
