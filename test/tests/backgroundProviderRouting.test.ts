@@ -2,11 +2,11 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
-import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
 	test('resolves an access prompt with the services installed after it opened', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { requestAccessFromUser, resolveInterceptorAccess, getPendingAccessRequests, getSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const website = { websiteOrigin: 'https://access-reset.example', icon: undefined, title: undefined }
@@ -41,7 +41,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('uses installed services after waiting for website metadata', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://queued-rpc.example'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -75,7 +75,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('handles wallet_getCapabilities locally and protects capabilities for other accounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -145,7 +145,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('answers Sealwort Safe code and storage inspection without forwarding storage to the signer', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -229,7 +229,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('asks the inpage bridge to settle forwarded EOA storage reads from the signer reply', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -266,7 +266,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 		const address = 0x1111111111111111111111111111111111111111n
 		const socket = { tabId: 1, connectionName: 0n }
@@ -306,7 +306,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { defaultActiveAddresses, handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -341,7 +341,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('returns wallet_watchAsset parse errors before the Safe signing-mode fallback', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -401,7 +401,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('reject public calls to internal provider callback methods', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -442,7 +442,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('allow marked internal eth_accounts_reply callbacks', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -478,7 +478,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('normalizes signer state before access and keeps unavailable discovery out of provider warnings', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -594,7 +594,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('refreshes accounts after signer identity or page ownership changes', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -762,7 +762,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('waits for provisional page ownership before reading or requesting signer accounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getTabState,
@@ -850,7 +850,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('finishes the first account request when the signer changes on the same page port', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -911,7 +911,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('rejects stale account and chain callbacks from an older signer epoch on the current port', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			createInternalMessageListener,
@@ -998,7 +998,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('falls back from an active Safe to a newly selected wallet account without a saved preference', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -1104,7 +1104,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('restores each signer account\'s last Safe-or-EOA choice when MetaMask accounts change', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			createInternalMessageListener,
@@ -1191,7 +1191,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('rejects public message signing while a configured Safe is the dapp-visible account', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getPendingTransactionsAndMessages,
@@ -1272,7 +1272,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('allows only canonical Safe transaction typed data for the active Safe through the Safe signing gate', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { isSafeTransactionCoSignRequest } = await import('../../app/ts/safe/safeRequestPolicy.js')
 		const safeAddress = 0x5555555555555555555555555555555555555555n
 		const safeTx = createSafeTx(1n, safeAddress, {
@@ -1304,7 +1304,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('never forwards Safe signing requests on a signer-only network', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getPendingTransactionsAndMessages,
@@ -1421,7 +1421,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('never exposes a configured Safe selected from another chain while signing', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddressAndChain,
 			changeSimulationMode,
@@ -1483,7 +1483,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('does not reinterpret a selected Safe from another chain as a generic simulation address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -1516,7 +1516,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('falls back to the wallet account when a signing Safe lacks cached owner membership', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddressAndChain,
 			changeSimulationMode,
@@ -1601,7 +1601,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	for (const access of ['denied', 'origin', 'tab'] as const) test(`requires website authorization in addition to a confirmed signer (${ access })`, async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 		const { changeSimulationMode, getSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n })
@@ -1623,7 +1623,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('uses trusted signer state for simulation chain changes without website address access', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getSettings,
@@ -1668,7 +1668,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('follows wallet chain changes when the stored signing Safe is no longer owned', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -1723,7 +1723,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1756,7 +1756,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('site-approved eth_accounts returns empty accounts until address access is approved', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1786,7 +1786,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('site-approved wallet_getPermissions returns no accounts until address access is approved', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1816,7 +1816,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('wallet_getCapabilities advertises the active signer for an approved Gnosis Safe account', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -1885,7 +1885,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('wallet_getPermissions returns empty when signer accounts are cached but address access is missing', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1919,7 +1919,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('wallet_getPermissions returns the approved account when signer accounts are cached without an active signer address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
