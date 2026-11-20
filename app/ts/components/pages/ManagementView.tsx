@@ -106,10 +106,13 @@ function ManagementPanelRenderError({ page, error, retry }: { page: ManagementPa
 	</main>
 }
 
-// Each panel gets its own boundary, so a failing panel leaves the shell header and tab navigation usable; it is keyed by page, so switching tabs starts a fresh boundary.
-function ManagementPanelErrorBoundary({ page, children }: { page: ManagementPage, children: ComponentChildren }) {
+// A failed panel retries on navigation, including another route within its page or reselecting its tab. Healthy panels retain their state across same-page navigation.
+function ManagementPanelErrorBoundary({ route, children }: { route: ManagementRoute, children: ComponentChildren }) {
 	const [error, resetError] = useErrorBoundary()
-	if (error !== undefined) return <ManagementPanelRenderError page = { page } error = { error } retry = { resetError } />
+	useEffect(() => {
+		if (error !== undefined) resetError()
+	}, [route])
+	if (error !== undefined) return <ManagementPanelRenderError page = { route.page } error = { error } retry = { resetError } />
 	return <>{ children }</>
 }
 
@@ -187,7 +190,7 @@ export function ManagementShell({ renderPanel: RenderPanel }: { renderPanel: (pa
 				tabIndex = { activeRoute !== undefined ? 0 : -1 }
 				hidden = { activeRoute === undefined }
 			>
-				{ activeRoute !== undefined ? <ManagementPanelErrorBoundary key = { page } page = { page }><RenderPanel route = { activeRoute } navigate = { navigate } /></ManagementPanelErrorBoundary> : <></> }
+				{ activeRoute !== undefined ? <ManagementPanelErrorBoundary key = { page } route = { activeRoute }><RenderPanel route = { activeRoute } navigate = { navigate } /></ManagementPanelErrorBoundary> : <></> }
 			</section>
 		}) }
 	</div>

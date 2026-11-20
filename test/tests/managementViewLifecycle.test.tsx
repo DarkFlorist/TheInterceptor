@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
+import { useEffect } from 'preact/hooks'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
@@ -266,6 +267,47 @@ test('replace navigation updates the current history entry and still hands the n
 		assert.deepEqual(historyReplacements, ['/html3/managementViewV3.html#websites?origin=auto.example'])
 		assert.equal(getHash(), '#websites?origin=auto.example')
 		assert.match(dom.document.body.textContent, /route #websites\?origin=auto\.example/u)
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		restore()
+	}
+})
+
+
+for (const page of ['websites', 'simulation-stack'] as const) test(`a failed ${ page } panel retries on same-page routes without remounting healthy navigation`, async () => {
+	const { dom, getUnexpectedErrorBroadcasts, restore } = installManagementShellMocks()
+	const { ManagementShell } = await import('../../app/ts/components/pages/ManagementView.js')
+	let mounts = 0
+	const hashFor = (value: string) => page === 'websites'
+		? `#websites?origin=${ value }.example`
+		: `#simulation-stack?simulation-stack-target=simulation-stack-transaction-0x${ value }`
+	const failingHash = hashFor('bad')
+	const renderPanel = ({ route }: { route: { page: string } }) => {
+		useEffect(() => { mounts += 1 }, [])
+		if (globalThis.location.hash === failingHash) throw new Error('route-specific failure')
+		return <main>{ `${ route.page } recovered` }</main>
+	}
+	try {
+		await withSilencedConsole(async () => {
+			globalThis.location.hash = failingHash
+			await act(() => { render(<ManagementShell renderPanel = { renderPanel } />, dom.document.body) })
+			assert.match(dom.document.body.textContent, /could not be displayed/u)
+			await act(() => { globalThis.location.hash = hashFor('1') })
+			assert.match(dom.document.body.textContent, /recovered/u)
+			assert.doesNotMatch(dom.document.body.textContent, /could not be displayed/u)
+			const healthyMounts = mounts
+			await act(() => { globalThis.location.hash = hashFor('2') })
+			assert.equal(mounts, healthyMounts, 'healthy same-page navigation preserves the panel')
+			await act(() => { globalThis.location.hash = failingHash })
+			assert.match(dom.document.body.textContent, /could not be displayed/u)
+			const tab = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.getAttribute('id') === `management-tab-${ page }`)
+			assert.ok(tab)
+			await act(async () => { await clickRenderedElement(tab) })
+			assert.match(dom.document.body.textContent, /recovered/u)
+			// Both failed renders report asynchronously; keep their browser mock installed until persistence and broadcasting finish.
+			for (let attempt = 0; attempt < 20 && getUnexpectedErrorBroadcasts() < 2; attempt++) await act(async () => { await Promise.resolve() })
+			assert.equal(getUnexpectedErrorBroadcasts(), 2)
+		})
 	} finally {
 		await act(() => { render(null, dom.document.body) })
 		restore()
