@@ -1,5 +1,6 @@
 import type { EthereumBlockHeader } from '../types/wire-types.js'
-import type { RpcEntry } from '../types/rpc.js'
+import { getRpcNetworkChange, getRpcEntryIdentityKey, isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
+import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
@@ -63,9 +64,12 @@ export function resetSimulationServices(
 	)
 }
 
+export type SimulationNetworkReconciliation = 'replaced' | 'unchanged' | 'signerOnly'
+
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
-	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+	// Reconcile the installed endpoint; RPC-list edits can also request fresh metadata without mutating captured clients.
+	readonly ensureNetwork: (rpcNetwork: RpcNetwork, options?: { readonly updateMetadata?: boolean }) => SimulationNetworkReconciliation
 }
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
@@ -75,12 +79,26 @@ export function createSimulationServicesOwner(
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ) {
-	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+	return createSimulationServicesOwnerForServices(
+		rpcNetwork,
+		createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks),
+		(current, nextRpc) => resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks),
+	)
+}
+
+// The owner records the installed selection explicitly, so injected services need not spoof client metadata to participate in reconciliation.
+export function createSimulationServicesOwnerForServices(initialNetwork: RpcEntry, initial: SimulationServices, replace: (current: SimulationServices, network: RpcEntry) => SimulationServices): SimulationServicesOwner {
+	let current = initial
+	let installedNetwork = initialNetwork
 	return {
 		getCurrent: () => current,
-		reset: (nextRpc: RpcEntry): SimulationServices => {
-			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-			return current
+		ensureNetwork: (nextNetwork, options = {}) => {
+			if (isSignerOnlyNetwork(nextNetwork)) return 'signerOnly'
+			const entryChanged = options.updateMetadata && getRpcEntryIdentityKey(installedNetwork) !== getRpcEntryIdentityKey(nextNetwork)
+			if (!entryChanged && !getRpcNetworkChange(installedNetwork, nextNetwork).endpointChanged) return 'unchanged'
+			current = replace(current, nextNetwork)
+			installedNetwork = nextNetwork
+			return 'replaced'
 		},
 	}
 }
