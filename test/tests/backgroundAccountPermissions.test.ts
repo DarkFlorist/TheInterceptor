@@ -3,7 +3,7 @@ import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
 
@@ -15,7 +15,7 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 describe('background eth_accounts', () => {
 
 	test('optional lifecycle observers do not block or fail strict access reconciliation', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
 		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
@@ -24,7 +24,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('async lifecycle callback rejection is reported without delaying access reconciliation', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const releaseCallback = createDeferredValue<undefined>()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: async () => {
@@ -38,7 +38,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('access reconciliation invokes only the explicitly supplied connection callbacks', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const calls: string[] = []
 		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
@@ -53,7 +53,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -124,7 +124,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('keeps Safe compatibility disabled when address consent is granted only to an EOA', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -181,7 +181,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			websiteSocketToString,
 			changeSimulationMode,
@@ -260,7 +260,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('site-approved wallet_requestPermissions opens address consent after releasing the popup semaphore', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -349,7 +349,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getPendingAccessRequests, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
