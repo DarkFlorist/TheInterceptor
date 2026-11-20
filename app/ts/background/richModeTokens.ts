@@ -133,5 +133,5 @@ export async function applyRichTokenChange(ethereum: RichTokenStorageClient, req
 		await store.updateRichTokens((tokens) => tokens.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity)) ? tokens : [...tokens, richToken])
 		await addTokenToAccount(richToken)
 		return { success: true as const, richToken }
-	}, chainId, [change.address])
+	})
 }

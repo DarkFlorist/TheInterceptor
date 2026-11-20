@@ -287,7 +287,7 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 				return { ...profile, nativeAmount }
 			}))
 			return changed
-		}, chainId, [address])
+		})
 	}
 	const { add, address } = makeMeRichChange.data
 	if (address === 'CurrentAddress') return await updateMakeCurrentAddressRich(() => add)
@@ -1148,7 +1148,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
 	const settings = await getSettings()
-	const state = await getRichModeState(settings.activeRpcNetwork.chainId)
+	const state = await getRichModeState()
 	const addressBookTokensPromise = silenceChromeUnCaughtPromise(getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
 	const fixedAddressRichList = state.fixedAddressRichList
 	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
@@ -1189,7 +1189,7 @@ export const requestLatestUnexpectedError = async () => ({ method: 'popup_reques
 
 export async function getCachedRichData(settings: Settings) {
 	const chainId = settings.activeRpcNetwork.chainId
-	const state = await getRichModeState(chainId)
+	const state = await getRichModeState()
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
 	return {
 		method: 'popup_requestMakeMeRichData' as const,

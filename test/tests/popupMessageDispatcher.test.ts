@@ -204,12 +204,13 @@ describe('popup message dispatcher seams', () => {
 			method: 'popup_modifyMakeMeRich', data: { address: 1n, nativeAmount: 0n },
 		})
 		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount must be greater than zero and fit within uint256.' })
-		assert.equal(storageState.richAccountBalances, undefined)
+		assert.equal(storageState.richModeState, undefined)
 	})
 
 	test('acknowledges an unchanged native rich amount without refreshing simulation services', async () => {
 		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
-		await browserStorageLocalSet({ richAccountBalances: [{ chainId: 1n, address: 1n, nativeAmount: 123n, tokenBalances: [] }] })
+		const { emptyRichModeState } = await import('../../app/ts/background/richModeSettings.js')
+		await browserStorageLocalSet({ richModeState: { ...emptyRichModeState, accountBalances: [{ chainId: 1n, address: 1n, nativeAmount: 123n, tokenBalances: [] }] } })
 		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_modifyMakeMeRich', data: { address: 1n, nativeAmount: 123n },
 		})

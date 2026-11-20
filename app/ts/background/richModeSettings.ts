@@ -1,89 +1,46 @@
-import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
 import type { RichAccountBalance, RichListElement, RichModeState, RichToken } from '../types/richMode.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { profilesForAddresses, reconcileRichModeStateWithAddressBook, richTokensForPresentation, richTokenLayout } from '../utils/richModeDerivation.js'
-import { browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, getStoredActiveSimulationAddressAndNetwork } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 // All funding mutations, and the address-book edits that can change funding, enter through this owner; they run under the settings storage lock so funding and address-book writes land in one storage set.
-const legacyKeys = ['makeCurrentAddressRich', 'fixedAddressRichList', 'richNativeAmount', 'richTokens', 'richAccountBalances']
+export const emptyRichModeState: RichModeState = { makeCurrentAddressRich: false, fixedAddressRichList: [], defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value, tokenLayouts: [], accountBalances: [] }
 
-// Reads only project legacy data; the next mutation persists migration. Simulation reads never repair storage, prune tokens, or acquire a mutation lock.
-export async function getRichModeState(chainId?: bigint, addresses: readonly bigint[] = []): Promise<RichModeState> {
-	const stored = await browserStorageLocalSafeParseGet('richModeState')
-	if (stored?.richModeState !== undefined) return stored.richModeState
-	const { richModeState: rawState } = await browser.storage.local.get('richModeState')
-	if (rawState !== undefined) {
-		console.warn('richModeState was corrupt; startup or the next mutation will reset funding state.')
-		return { makeCurrentAddressRich: false, fixedAddressRichList: [], defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value, tokenLayouts: [], accountBalances: [] }
-	}
-	const { makeCurrentAddressRich: rawSelection, fixedAddressRichList: rawFixed, richNativeAmount: rawNative, richTokens: rawTokens, richAccountBalances: rawProfiles } = await browser.storage.local.get(legacyKeys)
-	const migrationContext = await getStoredActiveSimulationAddressAndNetwork()
-	const selection = browserStorageLocalSafeParse({ makeCurrentAddressRich: rawSelection })
-	const fixed = browserStorageLocalSafeParse({ fixedAddressRichList: rawFixed })
-	const native = browserStorageLocalSafeParse({ richNativeAmount: rawNative })
-	const tokens = browserStorageLocalSafeParse({ richTokens: rawTokens })?.richTokens ?? []
-	const profiles = browserStorageLocalSafeParse({ richAccountBalances: rawProfiles })?.richAccountBalances ?? []
-	const activeAddress = migrationContext.activeSimulationAddress ?? DEFAULT_ACTIVE_ADDRESSES[0]?.address
-	const fixedAddressRichList = fixed?.fixedAddressRichList ?? []
-	const makeCurrentAddressRich = selection?.makeCurrentAddressRich ?? false
-	const defaultNativeAmount = native?.richNativeAmount ?? MAKE_YOU_RICH_TRANSACTION.transaction.value
-	// Legacy token amounts applied to whichever address was made rich, so every address that can be made rich gets a profile even while it is disabled; otherwise the amounts would be lost when the legacy keys are removed.
-	const migrationAddresses = [...new Set([
-		...addresses,
-		...fixedAddressRichList.map((entry) => entry.address),
-		...(activeAddress === undefined ? [] : [activeAddress]),
-	])]
-	const migrationChains = [...new Set([...(chainId === undefined ? [] : [chainId]), ...(migrationContext.activeRpcNetwork === undefined ? DEFAULT_RPCS.slice(0, 1).map((network) => network.chainId) : [migrationContext.activeRpcNetwork.chainId]), ...tokens.map((token) => token.chainId)])]
-	const accountBalances = rawProfiles === undefined
-		? migrationChains.flatMap((migrationChainId) => migrationAddresses.map((address): RichAccountBalance => ({
-			chainId: migrationChainId,
-			address,
-			nativeAmount: defaultNativeAmount,
-			tokenBalances: tokens.filter((token) => token.chainId === migrationChainId).map((token) => ({ tokenAddress: token.tokenAddress, tokenId: token.tokenId, amount: token.amount })),
-		})))
-		: normalizeRichAccountBalances(profiles)
-	return {
-		makeCurrentAddressRich, fixedAddressRichList, defaultNativeAmount, accountBalances,
-		tokenLayouts: tokens.map(richTokenLayout),
-	}
+// A plain read of the canonical funding state. The startup migration (richModeMigration) converts legacy keys and repairs a corrupt value before anything else runs, so an absent value means no funding is configured.
+export async function getRichModeState(): Promise<RichModeState> {
+	return (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState ?? emptyRichModeState
 }
 
 // The native amount simulated for address: its stored profile's amount, or the default for an address without a profile.
 export async function getRichNativeAmountForAddress(chainId: bigint, address: bigint) {
-	const state = await getRichModeState(chainId, [address])
+	const state = await getRichModeState()
 	return state.accountBalances.find((profile) => profile.chainId === chainId && profile.address === address)?.nativeAmount ?? state.defaultNativeAmount
 }
 
-const richModeStateStorageWrite = (richModeState: RichModeState): StorageWrite => ({ richModeState })
+export const richModeStateStorageWrite = (richModeState: RichModeState): StorageWrite => ({ richModeState })
 
-// Removing obsolete replicas after the canonical write is safe even when interrupted, because reads prefer canonical state.
-export const removeLegacyRichModeKeys = async () => { await browser.storage.local.remove(legacyKeys) }
-
-export async function mutateRichMode<Result>(operation: (store: ReturnType<typeof createRichModeTransaction>) => Promise<Result>, chainId?: bigint, addresses: readonly bigint[] = []) {
-	const { result, wroteRichModeState } = await runSettingsStorageTransaction(async () => {
-		const store = createRichModeTransaction(await getRichModeState(chainId, addresses))
+export async function mutateRichMode<Result>(operation: (store: ReturnType<typeof createRichModeTransaction>) => Promise<Result>) {
+	return await runSettingsStorageTransaction(async () => {
+		const store = createRichModeTransaction(await getRichModeState())
 		const result = await operation(store)
-		const writes = await store.getStorageWrites()
-		return { writes, result: { result, wroteRichModeState: writes.some((write) => 'richModeState' in write) } }
+		return { writes: store.getStorageWrites(), result }
 	})
-	if (wroteRichModeState) await removeLegacyRichModeKeys()
-	return result
 }
 
 // For address-book edits that can remove or change a funded token (removing, editing or replacing an entry); returns whether any account funding changed. Writes that cannot affect token entries, such as adding a missing entry or updating a Safe, use updateUserAddressBookEntries and never touch rich-mode state.
 export const updateAddressBookAndReconcileRichMode = async (update: (entries: AddressBookEntries) => AddressBookEntries) => await mutateRichMode(async (store) => await store.updateAddressBook(update))
 
-// The settings import replaces funding state and the address book in its own storage transaction, so it composes these writes instead of taking the lock again; call removeLegacyRichModeKeys after that transaction commits.
+// The settings import replaces funding state and the address book in its own storage transaction, so it composes these writes instead of taking the lock again.
 export async function getImportedRichModeStorageWrites(state: RichModeState, entries: AddressBookEntries) {
 	const store = createRichModeTransaction(state)
 	store.replace(state)
 	await store.updateAddressBook(() => entries)
-	return await store.getStorageWrites()
+	return store.getStorageWrites()
 }
 
 function createRichModeTransaction(initial: RichModeState) {
@@ -122,11 +79,9 @@ function createRichModeTransaction(initial: RichModeState) {
 			addressBookEntries = entries
 			return await transaction.reconcileAddressBook(entries)
 		},
-		getStorageWrites: async (): Promise<readonly StorageWrite[]> => {
-			// An unchanged state is still written while only legacy keys hold it, so the first mutation persists the migration.
-			const writeRichModeState = changed || (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState === undefined
+		getStorageWrites: (): readonly StorageWrite[] => {
 			return [
-				...writeRichModeState ? [richModeStateStorageWrite(state)] : [],
+				...changed ? [richModeStateStorageWrite(state)] : [],
 				...addressBookEntries === undefined ? [] : [userAddressBookEntriesStorageWrite(addressBookEntries)],
 			]
 		},
@@ -155,7 +110,7 @@ export async function updateMakeCurrentAddressRich(update: (enabled: boolean) =>
 }
 
 export const updateRichAccountBalances = async (update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) => await mutateRichMode(async (store) => await store.updateRichAccountBalances(update))
-export const ensureRichAccountBalances = async (chainId: bigint, addresses: readonly bigint[]) => await mutateRichMode(async (store) => await store.ensureRichAccountBalances(chainId, addresses), chainId, addresses)
+export const ensureRichAccountBalances = async (chainId: bigint, addresses: readonly bigint[]) => await mutateRichMode(async (store) => await store.ensureRichAccountBalances(chainId, addresses))
 export const updateRichTokens = async (update: (tokens: readonly RichToken[]) => readonly RichToken[]) => await mutateRichMode(async (store) => await store.updateRichTokens(update))
 
 function toComparableRichListElement(element: RichListElement): RichListElement {

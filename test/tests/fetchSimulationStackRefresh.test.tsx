@@ -17,6 +17,7 @@ import { type CompleteVisualizedSimulation, createPassthroughCompleteVisualizedS
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
 import { installDomMock } from './domMock.js'
+import { emptyRichModeState } from '../../app/ts/background/richModeSettings.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => unknown
 
@@ -228,7 +229,7 @@ async function setUpSimulationModeWithOpenConsumer() {
 		activeRpcNetwork: rpcNetwork,
 		simulationMode: true,
 		independentActiveSimulationAddress: simulationAddress,
-		makeCurrentAddressRich: true,
+		richModeState: { ...emptyRichModeState, makeCurrentAddressRich: true },
 		interceptorTransactionStack: { operations: [] },
 	})
 	await setFetchSimulationStackRequestPromise(pendingFetchSimulationStackRequest)

@@ -79,6 +79,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/richModeSettings.js'),
 		...await import('../../app/ts/background/richModeTokens.js'),
+		...await import('../../app/ts/background/richModeMigration.js'),
 		...await import('../../app/ts/background/windows/watchAsset.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
@@ -395,50 +396,90 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(afterRemoval.accountBalances[0]?.nativeAmount, 123n)
 	})
 
-	test('migrates global token balances once without adding them to later rich accounts', async () => {
-		const storageState = installBrowserMock()
-		const { ensureRichAccountBalances } = await loadModules()
-		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
-		storageState.richTokens = [{
-			chainId: 1n,
-			tokenAddress,
-			tokenType: 'ERC20' as const,
-			tokenId: undefined,
-			name: 'USD Coin',
-			symbol: 'USDC',
-			decimals: 6n,
-			amount: 1_000_000n,
-			balanceSlot: 9n,
-			erc1155StorageOrder: undefined,
-		}].map((token) => serialize(RichToken, token))
+	const legacyToken = (chainId: bigint, tokenAddress: bigint, amount: bigint) => serialize(RichToken, {
+		chainId, tokenAddress, tokenType: 'ERC20', tokenId: undefined, name: 'Legacy Token', symbol: 'OLD', decimals: 6n, amount, balanceSlot: 9n, erc1155StorageOrder: undefined,
+	})
+	const legacyKeys = ['makeCurrentAddressRich', 'fixedAddressRichList', 'richNativeAmount', 'richTokens', 'richAccountBalances']
 
-		const migrated = await ensureRichAccountBalances(1n, [richAccountAddress])
-		assert.equal(migrated.find((profile) => profile.address === richAccountAddress)?.tokenBalances.length, 1)
-		const laterAddress = 0x2222222222222222222222222222222222222222n
-		const withLaterAccount = await ensureRichAccountBalances(1n, [laterAddress])
-		assert.deepEqual(withLaterAccount.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
+	test('migrates legacy token amounts to every address that can be made rich, so an address made rich later keeps them', async () => {
+		const storageState = installBrowserMock()
+		const { migrateRichMode, ensureRichAccountBalances, getRichModeState } = await loadModules()
+		const mainnetToken = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const optimismToken = 0x4200000000000000000000000000000000000042n
+		const fixedAddress = 0x2222222222222222222222222222222222222222n
+		const addressBookAccount = 0x3333333333333333333333333333333333333333n
+		const unknownAddress = 0x4444444444444444444444444444444444444444n
+		storageState.independentActiveSimulationAddress = addressString(richAccountAddress)
+		storageState.userAddressBookEntriesV3 = [{ type: 'contact', name: 'Later rich account', address: addressString(addressBookAccount), entrySource: 'User', useAsActiveAddress: true }]
+		storageState.makeCurrentAddressRich = false
+		storageState.fixedAddressRichList = [{ address: checksummedAddress(fixedAddress), makingRich: false, type: 'UserAdded' }]
+		storageState.richNativeAmount = '0x7'
+		storageState.richTokens = [legacyToken(1n, mainnetToken, 1_000n), legacyToken(10n, optimismToken, 2_000n)]
+
+		await migrateRichMode()
+		for (const key of legacyKeys) assert.equal(Object.hasOwn(storageState, key), false)
+		const migrated = await getRichModeState()
+		assert.equal(migrated.defaultNativeAmount, 7n)
+		for (const address of [richAccountAddress, fixedAddress, addressBookAccount]) {
+			assert.deepEqual(migrated.accountBalances.find((profile) => profile.chainId === 1n && profile.address === address)?.tokenBalances, [{ tokenAddress: mainnetToken, tokenId: undefined, amount: 1_000n }])
+			assert.deepEqual(migrated.accountBalances.find((profile) => profile.chainId === 10n && profile.address === address)?.tokenBalances, [{ tokenAddress: optimismToken, tokenId: undefined, amount: 2_000n }])
+		}
+
+		const madeRichLater = await ensureRichAccountBalances(1n, [addressBookAccount, unknownAddress])
+		assert.deepEqual(madeRichLater.find((profile) => profile.chainId === 1n && profile.address === addressBookAccount)?.tokenBalances, [{ tokenAddress: mainnetToken, tokenId: undefined, amount: 1_000n }])
+		assert.deepEqual(madeRichLater.find((profile) => profile.chainId === 1n && profile.address === unknownAddress)?.tokenBalances, [])
 	})
 
-	test('keeps legacy token amounts when the first mutation runs before any address is made rich', async () => {
+	test('keeps legacy per-account profiles as they are and treats corrupt ones as none', async () => {
 		const storageState = installBrowserMock()
-		const { ensureRichAccountBalances, getRichModeState, setRichNativeAmount } = await loadModules()
+		const { migrateRichMode, getRichModeState } = await loadModules()
 		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
-		const fixedAddress = 0x2222222222222222222222222222222222222222n
-		storageState.independentActiveSimulationAddress = addressString(richAccountAddress)
-		storageState.fixedAddressRichList = [{ address: checksummedAddress(fixedAddress), makingRich: false, type: 'UserAdded' }]
-		storageState.richTokens = [{
-			chainId: 1n, tokenAddress, tokenType: 'ERC20' as const, tokenId: undefined, name: 'USD Coin', symbol: 'USDC',
-			decimals: 6n, amount: 1_234_567n, balanceSlot: 9n, erc1155StorageOrder: undefined,
-		}].map((token) => serialize(RichToken, token))
+		storageState.richTokens = [legacyToken(1n, tokenAddress, 1_000n)]
+		storageState.richAccountBalances = [{ chainId: '0x1', address: addressString(richAccountAddress), nativeAmount: '0x5', tokenBalances: [{ tokenAddress: addressString(tokenAddress), tokenId: undefined, amount: '0x9' }] }]
+		await migrateRichMode()
+		assert.deepEqual((await getRichModeState()).accountBalances, [{ chainId: 1n, address: richAccountAddress, nativeAmount: 5n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 9n }] }])
 
-		await setRichNativeAmount(5n)
-		for (const key of ['richTokens', 'fixedAddressRichList', 'richAccountBalances']) assert.equal(Object.hasOwn(storageState, key), false)
-		const migrated = await getRichModeState()
-		const legacyBalance = [{ tokenAddress, tokenId: undefined, amount: 1_234_567n }]
-		assert.deepEqual(migrated.accountBalances.find((profile) => profile.address === richAccountAddress)?.tokenBalances, legacyBalance)
-		assert.deepEqual(migrated.accountBalances.find((profile) => profile.address === fixedAddress)?.tokenBalances, legacyBalance)
-		const enabledLater = await ensureRichAccountBalances(1n, [richAccountAddress])
-		assert.deepEqual(enabledLater.find((profile) => profile.address === richAccountAddress)?.tokenBalances, legacyBalance)
+		const corruptStorage = installBrowserMock()
+		const corrupt = await loadModules()
+		corruptStorage.richTokens = [legacyToken(1n, tokenAddress, 1_000n)]
+		corruptStorage.richAccountBalances = null
+		await withSilencedConsole(async () => await corrupt.migrateRichMode())
+		assert.deepEqual((await corrupt.getRichModeState()).accountBalances, [])
+		assert.equal(Object.hasOwn(corruptStorage, 'richAccountBalances'), false)
+	})
+
+	test('reads never migrate or write, and migration keeps existing canonical state', async () => {
+		const writtenKeys: string[] = []
+		const storageState = installBrowserMock({ onStorageSet: (items) => { writtenKeys.push(...Object.keys(items)) } })
+		const { migrateRichMode, getRichModeState, getMakeCurrentAddressRich, setMakeCurrentAddressRich } = await loadModules()
+		storageState.makeCurrentAddressRich = true
+		storageState.richTokens = [legacyToken(1n, 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n, 1_000n)]
+		const first = await getRichModeState()
+		assert.deepEqual(await getRichModeState(), first)
+		assert.equal(await getMakeCurrentAddressRich(), false)
+		assert.deepEqual(writtenKeys, [])
+		assert.equal(Object.hasOwn(storageState, 'richTokens'), true)
+
+		await setMakeCurrentAddressRich(true)
+		const canonical = await getRichModeState()
+		await migrateRichMode()
+		assert.deepEqual(await getRichModeState(), canonical)
+		assert.equal(Object.hasOwn(storageState, 'richTokens'), false)
+		assert.equal(Object.hasOwn(storageState, 'makeCurrentAddressRich'), false)
+	})
+
+	test('migration resets corrupt canonical funding state without reviving obsolete replicas', async () => {
+		const storageState = installBrowserMock()
+		const { getRichModeState, migrateRichMode } = await loadModules()
+		storageState.richModeState = { corrupt: true }
+		storageState.makeCurrentAddressRich = true
+		await withSilencedConsole(async () => await migrateRichMode())
+		const state = await getRichModeState()
+		assert.equal(state.makeCurrentAddressRich, false)
+		assert.deepEqual(state.accountBalances, [])
+		assert.deepEqual(state.tokenLayouts, [])
+		assert.equal(typeof storageState.richModeState, 'object')
+		assert.equal(Object.hasOwn(storageState, 'makeCurrentAddressRich'), false)
 	})
 
 	test('drops a token balance whose layout is missing even when the layouts are unchanged', async () => {
@@ -502,164 +543,6 @@ describe('requestMakeMeRichList resilience', () => {
 		writtenKeys.length = 0
 		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Contact', address: richAccountAddress, entrySource: 'User', useAsActiveAddress: false }])
 		assert.deepEqual(writtenKeys, [['userAddressBookEntriesV3']])
-	})
-
-	test('migrates legacy token balances for every configured chain on the first account migration', async () => {
-		const storageState = installBrowserMock()
-		const { ensureRichAccountBalances } = await loadModules()
-		const mainnetTokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
-		const optimismTokenAddress = 0x4200000000000000000000000000000000000042n
-		storageState.richTokens = [{
-			chainId: 1n,
-			tokenAddress: mainnetTokenAddress,
-			tokenType: 'ERC20' as const,
-			tokenId: undefined,
-			name: 'Mainnet Token',
-			symbol: 'MAIN',
-			decimals: 18n,
-			amount: 1_000n,
-			balanceSlot: 1n,
-			erc1155StorageOrder: undefined,
-		}, {
-			chainId: 10n,
-			tokenAddress: optimismTokenAddress,
-			tokenType: 'ERC20' as const,
-			tokenId: undefined,
-			name: 'Optimism Token',
-			symbol: 'OP',
-			decimals: 18n,
-			amount: 2_000n,
-			balanceSlot: 2n,
-			erc1155StorageOrder: undefined,
-		}].map((token) => serialize(RichToken, token))
-
-		const migrated = await ensureRichAccountBalances(1n, [richAccountAddress, richAccountAddress])
-		assert.equal(migrated.filter((profile) => profile.chainId === 1n && profile.address === richAccountAddress).length, 1)
-		assert.equal(migrated.filter((profile) => profile.chainId === 10n && profile.address === richAccountAddress).length, 1)
-		assert.deepEqual(migrated.find((profile) => profile.chainId === 1n)?.tokenBalances, [{
-			tokenAddress: mainnetTokenAddress,
-			tokenId: undefined,
-			amount: 1_000n,
-		}])
-		assert.deepEqual(migrated.find((profile) => profile.chainId === 10n)?.tokenBalances, [{
-			tokenAddress: optimismTokenAddress,
-			tokenId: undefined,
-			amount: 2_000n,
-		}])
-
-		const laterAddress = 0x2222222222222222222222222222222222222222n
-		const withLaterAccount = await ensureRichAccountBalances(10n, [laterAddress])
-		assert.deepEqual(withLaterAccount.find((profile) => profile.chainId === 10n && profile.address === laterAddress)?.tokenBalances, [])
-	})
-
-	test('preserves pending legacy migration when stale token layouts are reconciled first', async () => {
-		const storageState = installBrowserMock()
-		const { ensureRichAccountBalances, reconcileRichTokensWithAddressBook } = await loadModules()
-		const supportedAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
-		storageState.userAddressBookEntriesV3 = [{
-			type: 'ERC20',
-			name: 'USD Coin',
-			address: addressString(supportedAddress),
-			symbol: 'USDC',
-			decimals: '0x6',
-			entrySource: 'User',
-			chainId: '0x1',
-		}]
-		storageState.richTokens = [{
-			chainId: 1n,
-			tokenAddress: supportedAddress,
-			tokenType: 'ERC20' as const,
-			tokenId: undefined,
-			name: 'USD Coin',
-			symbol: 'USDC',
-			decimals: 6n,
-			amount: 1_000_000n,
-			balanceSlot: 9n,
-			erc1155StorageOrder: undefined,
-		}, {
-			chainId: 1n,
-			tokenAddress: 0x3333333333333333333333333333333333333333n,
-			tokenType: 'ERC20' as const,
-			tokenId: undefined,
-			name: 'Removed Token',
-			symbol: 'OLD',
-			decimals: 18n,
-			amount: 1n,
-			balanceSlot: 2n,
-			erc1155StorageOrder: undefined,
-		}].map((token) => serialize(RichToken, token))
-
-		storageState.fixedAddressRichList = [{ address: checksummedAddress(richAccountAddress), makingRich: true, type: 'UserAdded' }]
-		await reconcileRichTokensWithAddressBook()
-		assert.equal(Object.hasOwn(storageState, 'richAccountBalances'), false)
-		const profiles = await ensureRichAccountBalances(1n, [richAccountAddress])
-		assert.deepEqual(profiles[0]?.tokenBalances.map((balance) => balance.tokenAddress), [supportedAddress])
-	})
-
-	test('serializes concurrent first-time profile creation so legacy tokens migrate once', async () => {
-		let signalFirstProfileWrite = () => undefined
-		const firstProfileWrite = new Promise<void>((resolve) => { signalFirstProfileWrite = resolve })
-		let releaseFirstProfileWrite = () => undefined
-		const firstProfileWriteGate = new Promise<void>((resolve) => { releaseFirstProfileWrite = resolve })
-		let profileWriteCount = 0
-		const storageState = installBrowserMock({ onStorageSet: async (items) => {
-			if (!Object.hasOwn(items, 'richModeState')) return
-			profileWriteCount += 1
-			if (profileWriteCount !== 1) return
-			signalFirstProfileWrite()
-			await firstProfileWriteGate
-		} })
-		const { ensureRichAccountBalances } = await loadModules()
-		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
-		storageState.richTokens = [{
-			chainId: 1n,
-			tokenAddress,
-			tokenType: 'ERC20' as const,
-			tokenId: undefined,
-			name: 'USD Coin',
-			symbol: 'USDC',
-			decimals: 6n,
-			amount: 1_000_000n,
-			balanceSlot: 9n,
-			erc1155StorageOrder: undefined,
-		}].map((token) => serialize(RichToken, token))
-		const laterAddress = 0x2222222222222222222222222222222222222222n
-
-		const firstProfilesPromise = ensureRichAccountBalances(1n, [richAccountAddress])
-		await firstProfileWrite
-		const secondProfilesPromise = ensureRichAccountBalances(1n, [laterAddress])
-		releaseFirstProfileWrite()
-		const [firstProfiles, secondProfiles] = await Promise.all([firstProfilesPromise, secondProfilesPromise])
-
-		assert.equal(firstProfiles.find((profile) => profile.address === richAccountAddress)?.tokenBalances.length, 1)
-		assert.deepEqual(secondProfiles.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
-	})
-
-	test('recovers corrupt canonical funding state without reviving obsolete replicas', async () => {
-		const storageState = installBrowserMock()
-		const { getRichModeState, reconcileRichTokensWithAddressBook } = await loadModules()
-		storageState.richModeState = { corrupt: true }
-		storageState.makeCurrentAddressRich = true
-		await withSilencedConsole(async () => await reconcileRichTokensWithAddressBook())
-		const state = await getRichModeState()
-		assert.equal(state.makeCurrentAddressRich, false)
-		assert.deepEqual(state.accountBalances, [])
-		assert.deepEqual(state.tokenLayouts, [])
-		assert.equal(Object.hasOwn(storageState, 'makeCurrentAddressRich'), false)
-	})
-
-	test('recovers corrupt account-specific rich balances without legacy token migration', async () => {
-		const storageState = installBrowserMock()
-		const { ensureRichAccountBalances } = await loadModules()
-		storageState.richAccountBalances = null
-
-		const profiles = await withSilencedConsole(async () => await ensureRichAccountBalances(1n, [richAccountAddress]))
-
-		assert.equal(profiles.length, 1)
-		assert.equal(profiles[0]?.address, richAccountAddress)
-		assert.deepEqual(profiles[0]?.tokenBalances, [])
-		assert.equal(Object.hasOwn(storageState, 'richModeState'), true)
-		assert.equal(Object.hasOwn(storageState, 'richAccountBalances'), false)
 	})
 
 	test('falls back per address and preserves the underlying error message', async () => {

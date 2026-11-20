@@ -7,7 +7,7 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import { defaultActiveAddresses, defaultRpcs, metamaskCompatibilityModeStorageWrite, pageStorageWrite, safeAppsCompatibilityModeStorageWrite, signingAddressPreferencesStorageWrite, simulationModeStorageWrite, useSignersAddressAsActiveAddressStorageWrite, useTabsInsteadOfPopupStorageWrite, websiteAccessStorageWrite } from './settings.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
-import { getImportedRichModeStorageWrites, removeLegacyRichModeKeys } from './richModeSettings.js'
+import { getImportedRichModeStorageWrites } from './richModeSettings.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 function getImportedAddressBookEntries(exportedSettings: ExportedSettings, previousEntries: AddressBookEntries) {
@@ -75,5 +75,4 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 			...version !== '1.0' && version !== '1.1' ? [metamaskCompatibilityModeStorageWrite(exportedSettings.settings.metamaskCompatibilityMode)] : [],
 		],
 	}))
-	await removeLegacyRichModeKeys()
 }

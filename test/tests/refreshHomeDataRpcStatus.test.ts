@@ -2,6 +2,7 @@ import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHa
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { emptyRichModeState } from '../../app/ts/background/richModeSettings.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -189,8 +190,7 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [] },
 		})
 		await setRpcConnectionStatus({
 			isConnected: false,
@@ -248,8 +248,7 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [] },
 		})
 		await setRpcConnectionStatus({
 			isConnected: false,
@@ -334,8 +333,7 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [{ address: defaultAddress.address, makingRich: true, type: 'UserAdded' }],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [{ address: defaultAddress.address, makingRich: true, type: 'UserAdded' }] },
 		})
 		await updateUserAddressBookEntries(() => [
 			{ type: 'contact', name: 'Wrong-chain rich address', address: defaultAddress.address, chainId: rpcNetwork.chainId + 1n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -554,8 +552,7 @@ describe('refreshHomeData', () => {
 			}],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [] },
 		})
 		await saveCurrentTabId(1)
 		await updateTabState(1, (previousState) => ({
@@ -611,8 +608,7 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [] },
 		})
 		await saveCurrentTabId(1)
 		await updateTabState(1, (previousState) => ({
@@ -715,8 +711,7 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [] },
 		})
 		await setRpcConnectionStatus({
 			isConnected: false,
@@ -771,8 +766,7 @@ describe('refreshHomeData', () => {
 			}],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
-			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			richModeState: { ...emptyRichModeState, makeCurrentAddressRich: false, fixedAddressRichList: [] },
 		})
 		await setRpcConnectionStatus({
 			isConnected: false,

@@ -33,6 +33,7 @@ import { createSimulationServicesOwner, type SimulationServicesOwner } from '../
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { reconcileRichTokensWithAddressBook } from './richModeSettings.js'
 import { migrateAddressBook } from './addressBookMigration.js'
+import { migrateRichMode } from './richModeMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
 import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -284,6 +285,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
+	await migrateRichMode()
 	await reconcileRichTokensWithAddressBook()
 	await migrateWebsiteAccess()
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })

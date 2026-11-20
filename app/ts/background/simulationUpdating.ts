@@ -43,7 +43,7 @@ import { addressesBeingMadeRich } from '../utils/richModeDerivation.js'
 
 export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
 	const settings = settingsSnapshot ?? await getSettings()
-	return [...addressesBeingMadeRich(settings, await getRichModeState(settings.activeRpcNetwork.chainId))]
+	return [...addressesBeingMadeRich(settings, await getRichModeState())]
 }
 
 export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
@@ -52,7 +52,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		getPreSimulationBlockTimeManipulation(),
 	])
 	const stack = await getInterceptorTransactionStack()
-	const richModeState = await getRichModeState(settings.activeRpcNetwork.chainId, richAddresses)
+	const richModeState = await getRichModeState()
 	return buildSimulationStateInput(settings, { richAddresses: richAddresses ?? addressesBeingMadeRich(settings, richModeState), richModeState, preSimulationBlockTimeManipulation }, stack)
 }
 
