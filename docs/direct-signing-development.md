@@ -35,7 +35,7 @@ Settings backups use version 1.7 to include wallet bindings and Safe Apps compat
 
 ### Storage and transport ownership
 
-- `background/addressBookStore.ts` owns contacts, legacy address-book repair, and its mutation lock. Ordinary address-book operations do not read signing configuration.
+- `background/addressBookStore.ts` owns contacts and legacy address-book repair. Its only writer, `updateSafeAddressBookEntryDetails`, takes details that exclude a Safe's type, address and chain, so it cannot change signing eligibility and does not read signing configuration. Every other address-book edit goes through `updateAddressBookAndSigningWalletBindings`.
 - `background/signingWalletStore.ts` owns binding reads and the independent binding lock. `background/directSigningStore.ts` owns request history, transaction serialization, retention, corruption handling, and size limits.
 - `background/signingAddressBookCoordinator.ts` is the explicit cross-repository boundary for onboarding, eligibility-changing edits, and backup restore. It acquires address-book ownership before binding ownership and commits the related values atomically. Ordinary mutations and routing reads do not acquire both locks.
 

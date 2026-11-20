@@ -88,6 +88,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/metadataSearch.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/addressBookStore.js'),
+		...await import('../../app/ts/background/signingAddressBookCoordinator.js'),
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),
 		...await import('../../app/ts/types/interceptor-messages.js'),
 	}
@@ -138,7 +139,7 @@ function createAddingContactWindowState(address: string): ModifyAddressWindowSta
 async function validateAddressWindowState(address: string) {
 	const sentRuntimeMessages = installBrowserMock()
 	const modules = await loadModules()
-	await modules.updateUserAddressBookEntries(() => [createContactEntry(0x1111111111111111111111111111111111111111n, 'Existing contact')])
+	await modules.updateAddressBookAndSigningWalletBindings(() => [createContactEntry(0x1111111111111111111111111111111111111111n, 'Existing contact')])
 	const requestedCodeAddresses: bigint[] = []
 	const newState = createAddingContactWindowState(address)
 	await modules.changeAddOrModifyAddressWindowState(createEthereumClient(modules, requestedCodeAddresses), {
@@ -185,7 +186,7 @@ describe('background handling of user-entered EIP-3770 addresses', () => {
 		installBrowserMock()
 		const modules = await loadModules()
 		const searchedContact = createContactEntry(addressValue, 'Searched contact')
-		await modules.updateUserAddressBookEntries(() => [
+		await modules.updateAddressBookAndSigningWalletBindings(() => [
 			createContactEntry(0x1111111111111111111111111111111111111111n, 'Other contact'),
 			searchedContact,
 		])

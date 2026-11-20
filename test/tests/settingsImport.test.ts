@@ -554,8 +554,8 @@ describe('settings import', () => {
 
 	const storePreImportSettings = async () => {
 		const { changeSimulationMode, persistMetamaskCompatibilityMode, rememberSigningAddressPreference, setPage, setSafeAppsCompatibilityMode, setUseTabsInsteadOfPopup, updateWebsiteAccess } = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await addressBookStoreModulePromise
-		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		await updateAddressBookAndSigningWalletBindings(() => [{ type: 'contact', name: 'Pre-import contact', address: 0x9191919191919191919191919191919191919191n, entrySource: 'User', useAsActiveAddress: true }])
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: testRpcNetwork, activeSimulationAddress: 0x9292929292929292929292929292929292929292n, activeSigningAddress: 0x9393939393939393939393939393939393939393n, activeSigningSafeAddress: 0x9494949494949494949494949494949494949494n })
 		await rememberSigningAddressPreference(preImportSigningPreference)
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'pre-import.example', icon: undefined, title: 'Pre-import' }, access: false }])
@@ -739,7 +739,8 @@ describe('settings import', () => {
 		const laterSignerAddress = 0x9797979797979797979797979797979797979797n
 		const laterContactAddress = 0x9898989898989898989898989898989898989898n
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
-		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { getUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		const currentVersionExport = (await buildImportOfEveryVersion()).at(-1)?.exportedSettings
 		if (currentVersionExport?.version !== '1.7') throw new Error('Expected current settings export version')
 		const exportedSettings: ExportedSettings = {
@@ -757,7 +758,7 @@ describe('settings import', () => {
 
 		const laterWebsiteAccessUpdate = updateWebsiteAccess((entries) => [...entries, { website: { websiteOrigin: 'later.example', icon: undefined, title: 'Later' }, access: false }])
 		const laterPreferenceUpdate = rememberSigningAddressPreference({ signerAddress: laterSignerAddress, selection: 'signer', chainId: testRpcNetwork.chainId })
-		const laterAddressBookUpdate = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'Later contact', address: laterContactAddress, entrySource: 'User', useAsActiveAddress: false }])
+		const laterAddressBookUpdate = updateAddressBookAndSigningWalletBindings((entries) => [...entries, { type: 'contact', name: 'Later contact', address: laterContactAddress, entrySource: 'User', useAsActiveAddress: false }])
 		importWriteGate.release()
 		await Promise.all([settingsImport, laterWebsiteAccessUpdate, laterPreferenceUpdate, laterAddressBookUpdate])
 
@@ -769,11 +770,12 @@ describe('settings import', () => {
 	test('an import queued behind an in-flight address book write replaces its stale value and later writers apply on top of the import', async () => {
 		const laterSignerAddress = 0x9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9an
 		const { getSigningAddressPreferences, getWebsiteAccess, importSettingsAndAddressBook, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
-		const { getUserAddressBookEntries, updateUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { getUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		const version15Import = (await buildImportOfEveryVersion()).find(({ exportedSettings }) => exportedSettings.version === '1.5')
 		if (version15Import === undefined) throw new Error('Expected a version 1.5 import fixture')
 		const inFlightWriteGate = browserMock.blockNextAddressBookWrite()
-		const inFlightAddressBookWrite = updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', name: 'In-flight contact', address: 0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9bn, entrySource: 'User', useAsActiveAddress: false }])
+		const inFlightAddressBookWrite = updateAddressBookAndSigningWalletBindings((entries) => [...entries, { type: 'contact', name: 'In-flight contact', address: 0x9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9b9bn, entrySource: 'User', useAsActiveAddress: false }])
 		await inFlightWriteGate.started
 
 		const settingsImport = importSettingsAndAddressBook(version15Import.exportedSettings)
@@ -789,9 +791,9 @@ describe('settings import', () => {
 
 	test('website access, signing preference and address book writers share the one settings storage lock', async () => {
 		const { getWebsiteAccess, getSigningAddressPreferences, rememberSigningAddressPreference, updateWebsiteAccess } = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await addressBookStoreModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		const addressBookWriteGate = browserMock.blockNextAddressBookWrite()
-		const addressBookWrite = updateUserAddressBookEntries((entries) => entries)
+		const addressBookWrite = updateAddressBookAndSigningWalletBindings((entries) => entries)
 		await addressBookWriteGate.started
 
 		const websiteAccessUpdate = updateWebsiteAccess(() => [{ website: { websiteOrigin: 'queued.example', icon: undefined, title: 'Queued' }, access: true }])

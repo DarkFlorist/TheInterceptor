@@ -20,3 +20,12 @@ test('signing modules do not import background modules', async () => {
 	}
 	assert.deepEqual(violations, [], 'signing/ is used by the background and by extension pages, so the background owns the stores signing state lives in')
 })
+
+test('only the signing coordinator and the Safe details writer write the address book', async () => {
+	const writers: string[] = []
+	for await (const file of new Bun.Glob('**/*.{ts,tsx}').scan({ cwd: sourceRoot, absolute: true })) {
+		if (/\buserAddressBookEntriesStorageWrite\(/u.test(await Bun.file(file).text())) writers.push(relative(sourceRoot, file))
+	}
+	// Address-book edits can change which addresses may keep a signing wallet; addressBookStore only exports the definition, the narrowly typed Safe details writer and legacy repair.
+	assert.deepEqual(writers.sort(), ['background/addressBookStore.ts', 'background/signingAddressBookCoordinator.ts'])
+})

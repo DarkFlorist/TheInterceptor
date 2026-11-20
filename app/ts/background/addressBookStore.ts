@@ -1,4 +1,4 @@
-import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal, type SafeEntry } from '../types/addressBookTypes.js'
 import { browserStorageLocalGet, browserStorageLocalSet, browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -41,9 +41,21 @@ export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainI
 
 export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
 
-/** Address-book-only writes. Callers removing addresses or introducing Safe classifications must use signingAddressBookCoordinator. */
-export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
+// The fields of a saved Safe that do not identify it. Which entries exist, and their types and addresses, decide which ordinary addresses may keep a signing wallet, so this type leaves them out.
+export type SafeEntryDetails = Omit<SafeEntry, 'type' | 'address' | 'chainId'>
+
+/** The only address-book write outside signingAddressBookCoordinator: it changes details of one saved Safe and cannot add, remove or reclassify an entry, so signing wallet eligibility stays the same. Every other edit goes through updateAddressBookAndSigningWalletBindings. Returns the updated Safe, or undefined when it is no longer saved. */
+export async function updateSafeAddressBookEntryDetails(chainId: bigint, address: bigint, update: (details: SafeEntryDetails) => SafeEntryDetails) {
+	return await runSettingsStorageTransaction(async () => {
+		let updated: SafeEntry | undefined
+		const entries = (await getUserAddressBookEntries()).map((entry) => {
+			if (entry.type !== 'safe' || entry.address !== address || entry.chainId !== chainId) return entry
+			const { type, address: safeAddress, chainId: safeChainId, ...details } = entry
+			updated = { ...update(details), type, address: safeAddress, chainId: safeChainId }
+			return updated
+		})
+		return { writes: updated === undefined ? [] : [userAddressBookEntriesStorageWrite(entries)], result: updated }
+	})
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {

@@ -226,13 +226,18 @@ test('routing binding reads neither wait for address-book mutations nor load add
 	}
 })
 
-test('address-book-only additions do not depend on signing-wallet storage', async () => {
-	const { updateUserAddressBookEntries } = await import('../../app/ts/background/addressBookStore.js')
+test('Safe detail updates, the only address-book writes outside the coordinator, do not depend on signing-wallet storage', async () => {
+	const { updateSafeAddressBookEntryDetails } = await import('../../app/ts/background/addressBookStore.js')
+	const safe = { type: 'safe', name: 'Treasury', address: 7n, chainId: 1n, entrySource: 'User', useAsActiveAddress: true } as const
+	await updateAddressBookAndSigningWalletBindings(() => [safe])
 	stored.signingWalletBindings = 'corrupt signing configuration'
-	await updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', address: 5n, name: 'Unrelated contact', entrySource: 'User' }])
-	expect((await getUserAddressBookEntries()).some((entry) => entry.address === 5n)).toBe(true)
+	writes.length = 0
+	expect(await updateSafeAddressBookEntryDetails(1n, 7n, (details) => ({ ...details, safeVersion: '1.4.1' }))).toEqual({ ...safe, safeVersion: '1.4.1' })
+	expect(await getUserAddressBookEntries()).toEqual([{ ...safe, safeVersion: '1.4.1' }])
 	expect(stored.signingWalletBindings).toBe('corrupt signing configuration')
-	expect(Object.keys(writes.at(-1) ?? {})).toEqual(['userAddressBookEntriesV3'])
+	expect(writes.map((write) => Object.keys(write))).toEqual([['userAddressBookEntriesV3']])
+	expect(await updateSafeAddressBookEntryDetails(5n, 7n, (details) => details)).toBeUndefined()
+	expect(writes).toHaveLength(1)
 })
 
 const bindingsChangedBroadcasts = () => broadcasts.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_signingWalletBindingsChanged').length

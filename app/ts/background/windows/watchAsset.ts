@@ -7,7 +7,8 @@ import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
 import { getPendingWatchAssetRequests, getTabState, updatePendingWatchAssetRequests } from '../storageVariables.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updateUserAddressBookEntries } from '../addressBookStore.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from '../addressBookStore.js'
+import { updateAddressBookAndSigningWalletBindings } from '../signingAddressBookCoordinator.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
@@ -241,7 +242,8 @@ export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabCo
 type ResolutionDependencies = {
 	getRequests: typeof getPendingWatchAssetRequests
 	updateRequests: typeof updatePendingWatchAssetRequests
-	updateAddressBook: typeof updateUserAddressBookEntries
+	// An added asset can replace another entry at its address, so the edit goes through the coordinator that keeps signing wallet bindings eligible.
+	updateAddressBook: typeof updateAddressBookAndSigningWalletBindings
 	publishAddressBookChanged: () => Promise<void>
 	publish: typeof publishWatchAssetRequest
 	closeDialog: typeof closePopupOrTabById
@@ -253,7 +255,7 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 	return {
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
-		updateAddressBook: updateUserAddressBookEntries,
+		updateAddressBook: updateAddressBookAndSigningWalletBindings,
 		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,
