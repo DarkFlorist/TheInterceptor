@@ -300,7 +300,9 @@ describe('content script registration with Safe Apps hosting', () => {
 		const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
 		const { EthereumClientService: EthereumClient } = await import('../../app/ts/simulation/services/EthereumClientService.js')
 		const { TokenPriceService: TokenPriceClient } = await import('../../app/ts/simulation/services/priceEstimator.js')
-		const ethereum: EthereumClientService = Object.create(EthereumClient.prototype)
+		const { DEFAULT_RPCS } = await import('../../app/ts/config/defaults.js')
+		// The services owner reads the client's network when it is created, so the stub client reports the default network.
+		const ethereum: EthereumClientService = Object.assign(Object.create(EthereumClient.prototype), { getRpcEntry: () => DEFAULT_RPCS[0] })
 		const tokenPriceService: TokenPriceService = Object.create(TokenPriceClient.prototype)
 		const services = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: recordAccessRefresh } })
