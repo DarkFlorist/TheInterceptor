@@ -296,7 +296,8 @@ describe('active address selection', () => {
 	})
 
 	test('keeps activation choreography in the shared background orchestrator', () => {
-		assert.match(activeSettingsSource, /async function runActiveSettingsChange[\s\S]*?setUseSignersAddressAsActiveAddress[\s\S]*?changeSimulationMode[\s\S]*?rememberSigningAddressSelection/u)
+		assert.match(activeSettingsSource, /async function runActiveSettingsChange[\s\S]*?runActiveSettingsTransition[\s\S]*?setUseSignersAddressAsActiveAddress[\s\S]*?changeSimulationMode/u)
+		assert.match(activeSettingsSource, /async function runActiveSettingsTransition[\s\S]*?await commit\(\)[\s\S]*?rememberSigningAddressSelection/u)
 		assert.doesNotMatch(activeSettingsSource, /inferredSafeEntryOnActiveChain/u)
 		assert.match(activeSettingsSource, /Signing address changes must identify whether the selection is the signer or a Safe\./u)
 		assert.match(providerMessageHandlersSource, /!settings\.simulationMode \? \{ signingAddressSelection: 'signer'/u)
