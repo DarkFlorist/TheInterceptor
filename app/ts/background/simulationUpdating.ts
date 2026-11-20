@@ -14,6 +14,7 @@ import { mockSignTransaction } from '../simulation/services/simulationTransactio
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
+import { createLiveProtectorChainReads } from '../simulation/protectorChainReads.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types/EnrichedEthereumData.js'
 import type { FailedTransactionPreview, PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
@@ -572,7 +573,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController, eventsForTransactionPromise)
+				return await runProtectorsForTransaction(createLiveProtectorChainReads(ethereum, requestAbortController, slicedSimulationState), transaction, ethereum.getChainId(), identifyAddressWith(ethereum, requestAbortController), eventsForTransactionPromise)
 			})
 		}
 	)

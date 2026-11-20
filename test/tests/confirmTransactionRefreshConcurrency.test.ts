@@ -175,3 +175,28 @@ test.each(['Crafting', 'Simulating'] as const)('a no-op refresh leaves an initia
 	} finally { release.resolve() }
 	assert.notEqual(await initial, undefined, 'The initial simulation must still produce its result after an ineligible refresh')
 })
+
+
+test.each(['resolved', 'replaced'] as const)('gas edit does not publish a request %s during dialog storage reads', async outcome => {
+	const { forceSetGasLimitForTransaction } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
+	let changed = false
+	browserMock.setStorageGetHandler(async (keys, readStoredItems) => {
+		if (!changed && Array.isArray(keys) && keys.includes('rpcConnectionStatus')) {
+			changed = true
+			await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: outcome === 'resolved' ? [] : [{ ...pendingTransaction, instanceId: 'replacement during dialog build' }] })
+		}
+		return readStoredItems()
+	})
+	try {
+		await forceSetGasLimitForTransaction(ethereum, tokenPriceService, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: pendingTransaction.transactionIdentifier, gasLimit: 30_000n } })
+		assert.equal(changed, true)
+		const updates = browserMock.sentMessages.filter(message => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		const shown = updates.flatMap(message => UpdateConfirmTransactionDialogPendingTransactions.parse(JSON.parse(JSON.stringify(message))).data.pendingTransactionAndSignableMessages)
+		assert.deepEqual(shown.map(request => request.instanceId), outcome === 'resolved' ? [] : ['replacement during dialog build'])
+	} finally {
+		browserMock.setStorageGetHandler(undefined)
+		await waitForBackgroundTasks()
+	}
+})

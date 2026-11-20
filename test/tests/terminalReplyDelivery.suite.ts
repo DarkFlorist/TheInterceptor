@@ -184,7 +184,7 @@ test('reject and result replies remain durable after their pending request is re
 		{
 			name: 'result',
 			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
-			transaction: { ...pendingTransaction, simulationMode: false as const },
+			transaction: { ...pendingTransaction, simulationMode: false as const, approvalStatus: { status: 'WaitingForSigner' as const } },
 		},
 	]
 
@@ -219,7 +219,7 @@ test('terminal replies are persisted before removing the pending rejection or re
 		{
 			name: 'result',
 			confirmation: { method: 'popup_confirmDialog' as const, data: { action: 'signerIncluded' as const, signerReply: modules.EthereumBytes32.serialize(signedTransaction.hash), uniqueRequestIdentifier } },
-			transaction: { ...pendingTransaction, simulationMode: false as const },
+			transaction: { ...pendingTransaction, simulationMode: false as const, approvalStatus: { status: 'WaitingForSigner' as const } },
 		},
 	]
 
@@ -1129,7 +1129,7 @@ test.each(['Crafting', 'Simulating', 'gas edited'] as const)('closing a confirma
 
 test('wallet result settles a request even if its gas simulation is stale', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [{
-		...pendingTransaction, simulationMode: false,
+		...pendingTransaction, simulationMode: false, approvalStatus: { status: 'WaitingForSigner' },
 		originalRequestParameters: {
 			...pendingTransaction.originalRequestParameters,
 			params: [{ ...pendingTransaction.originalRequestParameters.params[0], gas: 30_000n }],

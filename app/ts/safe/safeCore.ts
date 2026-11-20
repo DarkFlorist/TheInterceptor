@@ -11,7 +11,7 @@ import { isAbiDataDecodeError, recoverAddress } from '../utils/ethereumPrimitive
 import { getMessageAndDomainHash, getSafeTxHash } from '../utils/eip712.js'
 import { EIP712Message } from '../types/eip721.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
-import { JsonRpcResponseError } from '../utils/errors.js'
+import { isExecutionRevert } from '../utils/errors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
@@ -189,9 +189,6 @@ export async function getSafeContractSnapshot(ethereum: EthereumClientService, s
 	const blockNumber = await ethereum.getBlockNumber(undefined)
 	return { blockNumber, state: await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber) }
 }
-
-// Nodes report a revert as code 3, or with their own code and the word in the message. Any other JSON-RPC error says nothing about the contract.
-const isExecutionRevert = (error: unknown) => error instanceof JsonRpcResponseError && (error.code === 3 || /revert/iu.test(error.message))
 
 // A page's SafeTx is simulated as the address it names, which runs code as that address and spends its real balance, so the address must be a Safe the user can sign for. Owners are read from the chain, never the stack, so code a page put on the stack cannot answer. The active address counts as signer when it is the named Safe, because the user chose that Safe and its signer was validated when configured. A contract built to answer still passes, but it then runs as itself, so only its own balance and logs can appear.
 export async function assertSafeTxPreviewAllowed(ethereum: EthereumClientService, safeAddress: EthereumAddress, activeAddress: EthereumAddress, messageChainId: bigint | undefined) {

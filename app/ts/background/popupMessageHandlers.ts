@@ -6,7 +6,7 @@ import { type ConfirmTransactionSimulationRefresh, reserveConfirmTransactionSimu
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, withFailedTransactionPreviewUnlessCancelled } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
-import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import type { ChangeActiveAddress, ModifyMakeMeRich, ChangePage, RemoveTransaction, RequestAccountsFromSigner, TransactionConfirmation, InterceptorAccess, ChangeInterceptorAccess, ChainChangeConfirmation, WatchAssetConfirmation, EnableSimulationMode, ChangeActiveChain, AddOrEditAddressBookEntry, GetAddressBookData, RemoveAddressBookEntry, InterceptorAccessRefresh, InterceptorAccessChangeAddress, Settings, ChangeSettings, UpdateHomePage, SimulateGovernanceContractExecution, ChangeAddOrModifyAddressWindowState, OpenWebPage, SetEnsNameForHash, ForceSetGasLimitForTransaction, ChangePreSimulationBlockTimeManipulation, SetTransactionOrMessageBlockTimeManipulator, FetchSimulationStackRequestConfirmation, ImportSimulationStack, PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, prepareUnformedSafeProposalAgain, beginPendingTransactionResolution, runWithPendingConfirmationLock, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage, publishConfirmTransactionDialogPendingTransactions, buildConfirmTransactionDialogState } from './windows/confirmTransaction.js'
@@ -170,12 +170,13 @@ export async function popupReadyAndListening(ethereum: EthereumClientService, we
 			}
 		}
 		case 'confirmTransaction': {
-			const pendingTransactions = await getPendingTransactionsAndMessages()
-			const firstPendingTransaction = pendingTransactions[0]
-			if (firstPendingTransaction === undefined) return undefined
 			const currentBlockNumber = await ethereum.getBlockNumber(undefined)
 			const rpcConnectionStatus = await getRpcConnectionStatus()
 			const visualizedSimulatorState = await getPopupVisualisationState()
+			// The request may be replaced during the lookups; bootstrap carries only the queue stored after them.
+			const pendingTransactions = await getPendingTransactionsAndMessages()
+			const firstPendingTransaction = pendingTransactions[0]
+			if (firstPendingTransaction === undefined) return undefined
 			return {
 				method: 'popup_readyAndListening' as const,
 				data: {
@@ -569,7 +570,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			silenceChromeUnCaughtPromise(visualizedPersonalSignRequestPromise)
 			const visualizedPersonalSignRequest = await visualizedPersonalSignRequestPromise
 			// Persisting the refreshed visualization means the popup only shows content the background will match an accept against. A message still being crafted is left to its creation flow.
-			await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+			await updatePendingTransactionOrMessageInstance(first, async (current) => {
 				if (current.type !== 'SignableMessage' || current.transactionOrMessageCreationStatus !== 'Simulated') return current
 				if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh || getReviewedResultId(current) !== getReviewedResultId(first)) return current
 				return { ...current, visualizedPersonalSignRequest }
@@ -579,7 +580,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 			const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 			if (thisConfirmationMetadataRefresh !== latestConfirmationMetadataRefresh) return
 			const [currentFirst] = pendingTransactionAndSignableMessages
-			if (currentFirst === undefined || !doesUniqueRequestIdentifiersMatch(currentFirst.uniqueRequestIdentifier, first.uniqueRequestIdentifier)) return
+			if (currentFirst === undefined || !isSamePendingRequestInstance(currentFirst, first)) return
 			await publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages, dialog)
 			return
 		}
@@ -594,7 +595,7 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 						data: modifyObject(popupVisualisation.data, { ...await (dependencies.visualize ?? visualizeSimulatorState)(popupVisualisation.data.simulationState, ethereum, tokenPriceService, requestAbortController) })
 					}
 				if (refreshedPopupVisualisation === undefined) return
-				await updatePendingTransactionOrMessage(first.uniqueRequestIdentifier, async (current) => {
+				await updatePendingTransactionOrMessageInstance(first, async (current) => {
 					if (current.type !== 'Transaction' || (current.transactionOrMessageCreationStatus !== 'Simulated' && current.transactionOrMessageCreationStatus !== 'FailedToSimulate')) return current
 					// A simulation run stored during the metadata lookups has another id even within the same second or after a background restart, so the metadata of the older run must not replace it. See "Confirmation dialog staleness" in docs/popup-simulation-refresh.md.
 					if (!isSameConfirmationRun(current.popupVisualisation.data.confirmationRunId, popupVisualisation.data.confirmationRunId)) return current
@@ -673,7 +674,7 @@ async function simulateAndStoreRefreshedTransaction(
 		simulationRefresh,
 	)
 	if (refreshMessage === undefined) return
-	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (transactionOrMessage) => {
+	await updatePendingTransactionOrMessageInstance(pending, async (transactionOrMessage) => {
 		if (!simulationRefresh.isCurrent()) return transactionOrMessage
 		switch (transactionOrMessage.type) {
 			case 'SignableMessage': throw new Error('Tried to refresh simulation of a message')
@@ -1044,7 +1045,11 @@ export async function forceSetGasLimitForTransaction(ethereum: EthereumClientSer
 	await startPopupSimulationRefreshInBackground({ ethereum, tokenPriceService, invalidateOldState: true })
 	// Published after the local invalidation above with the cached block, so the dialog shows the edited gas limit with the invalidated visualisation instead of waiting for RPC work. Stack-only edits have no pending request to show.
 	const pending = await getPendingTransactionsAndMessages()
-	if (pending.length > 0) await publishConfirmTransactionDialogPendingTransactions(pending, await buildConfirmTransactionDialogState(ethereum, { simulationMode: 'activeSettings', blockNumberSource: { kind: 'cached' } }))
+	if (pending.length > 0) {
+		const dialog = await buildConfirmTransactionDialogState(ethereum, { simulationMode: 'activeSettings', blockNumberSource: { kind: 'cached' } })
+		// Requests can resolve or be replaced during the builder's storage reads.
+		await publishConfirmTransactionDialogPendingTransactions(await getPendingTransactionsAndMessages(), dialog)
+	}
 	backgroundTaskSupervisor.start({ source: 'popup_forceSetGasLimitForTransaction', details: parsedRequest.data }, async () => await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService))
 }
 
