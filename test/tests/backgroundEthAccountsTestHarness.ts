@@ -273,6 +273,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/windows/changeChain.js'),
 		...await import('../../app/ts/background/windows/interceptorAccess.js'),
+		...await import('../../app/ts/background/websiteRequestBlocking.js'),
 		...await import('../../app/ts/background/signerStateOwnership.js'),
 	}
 }
