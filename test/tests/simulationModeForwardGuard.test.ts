@@ -4,7 +4,7 @@ import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlow
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED } from '../../app/ts/utils/constants.js'
 import { withSilencedConsole } from './consoleSilence.js'
-import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const ACCOUNT = 0x1111111111111111111111111111111111111111n
 const SIMULATION_ONLY_ACCOUNT = 0x2222222222222222222222222222222222222222n
@@ -15,7 +15,7 @@ type RpcCall = { readonly method: string, readonly params: readonly unknown[] }
 const ADD_ETHEREUM_CHAIN: RpcCall = { method: 'wallet_addEthereumChain', params: [{ chainId: '0x2105', chainName: 'Base', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://mainnet.base.org'] }] }
 
 async function setUpSigningModeWebsite({ initialBlockPolling = true }: { readonly initialBlockPolling?: boolean } = {}) {
-	const { setStorageHooks, readStoredValue } = installBrowserMock()
+	const { setStorageHooks, readStoredValue } = installLegacyBackgroundBrowserMock()
 	const modules = await loadModules()
 	await modules.changeSimulationMode({ simulationMode: false, activeSimulationAddress: ACCOUNT, activeSigningAddress: ACCOUNT })
 	// Both modes resolve the signer's address, so the website keeps access to the same account after the switch.
@@ -283,7 +283,7 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test('a guard refuses the signer forward after any write that enables simulation mode, including settings import', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { captureSimulationModeGuard, changeSimulationMode, exportSettingsAndAddressBook, importSettingsAndAddressBook, refuseSignerForwardGuard } = await loadModules()
 		const guardBeforeSigningModeWrite = captureSimulationModeGuard()
 		await changeSimulationMode({ simulationMode: false })
@@ -300,7 +300,7 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test('a guard posts the forward only while it allows it, in the same synchronous step as the check', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { captureSimulationModeGuard, changeSimulationMode } = await loadModules()
 		await changeSimulationMode({ simulationMode: false })
 		const guard = captureSimulationModeGuard()
@@ -315,7 +315,7 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test('a multi-key write through the canonical setter cannot bypass the forwarding guard', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { captureSimulationModeGuard } = await loadModules()
 		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 		const guard = captureSimulationModeGuard()
@@ -326,7 +326,7 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test('tracking an enabling write preserves storage-call order with a following disabling write', async () => {
-		const { readStoredValue } = installBrowserMock()
+		const { readStoredValue } = installLegacyBackgroundBrowserMock()
 		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 		const enable = browserStorageLocalSet({ simulationMode: true })
 		const disable = browserStorageLocalSet({ simulationMode: false })
@@ -335,7 +335,7 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test.each(GUARD_WRITE_CASES)('a mode write with $description reads back through the canonical settings schema', async ({ simulationMode, activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress }) => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { getSettings, getSigningAddressPreferences } = await loadModules()
 		const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 		await browserStorageLocalSet({ simulationMode, activeRpcNetwork: GUARD_WRITTEN_RPC_NETWORK, independentActiveSimulationAddress: activeSimulationAddress, activeSigningAddress, activeSigningSafeAddress, signingAddressPreferences: GUARD_WRITTEN_SIGNING_PREFERENCES })
@@ -355,7 +355,7 @@ describe('simulation mode forward guard', () => {
 	})
 
 	test('browserStorageLocalSet2 cannot write simulationMode because the key is not in its runtype', async () => {
-		const { readStoredValue } = installBrowserMock()
+		const { readStoredValue } = installLegacyBackgroundBrowserMock()
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		await browserStorageLocalSet2(Object.fromEntries([['simulationMode', true]]))
 		assert.equal(readStoredValue('simulationMode'), undefined)

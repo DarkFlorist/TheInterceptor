@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { isObjectWithOptionalProperties, isRecord, readProperty, requireDefined } from './assertions.js'
+import { canReadObjectProperties, isRecord, readProperty, requireDefined } from './assertions.js'
 
 describe('requireDefined', () => {
 	test('returns defined values, including falsy ones', () => {
@@ -32,13 +32,15 @@ describe('readProperty', () => {
 	})
 })
 
-describe('isObjectWithOptionalProperties', () => {
-	test('narrows every object so the listed properties can be read', () => {
+describe('canReadObjectProperties', () => {
+	test('permits reads without promising that keys exist or values are validated', () => {
 		const message: unknown = { method: 'popup_requestSettings' }
-		if (!isObjectWithOptionalProperties<'method' | 'data'>(message)) throw new Error('Expected an object')
+		if (!canReadObjectProperties<'method' | 'data'>(message)) throw new Error('Expected an object')
 		assert.equal(message.method, 'popup_requestSettings')
 		assert.equal(message.data, undefined)
-		assert.equal(isObjectWithOptionalProperties(null), false)
-		assert.equal(isObjectWithOptionalProperties(5), false)
+		assert.equal(canReadObjectProperties(null), false)
+		assert.equal(canReadObjectProperties(5), false)
+		assert.equal(canReadObjectProperties({}), true)
+		assert.equal(canReadObjectProperties([]), true)
 	})
 })

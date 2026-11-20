@@ -3,7 +3,7 @@ import { describe, spyOn, test } from 'bun:test'
 import { parseSafeTypedMessage } from '../../app/ts/safe/safeMessage.js'
 import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 // Far past the deepest limit measured on any engine (about 4600 levels), so these tests do not depend on the stack size.
@@ -68,7 +68,7 @@ describe('typed data nested past the call stack limit', () => {
 	})
 
 	test('a deep document gets the parse failure reply instead of an unknown error', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://deep-typed-data.example'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
