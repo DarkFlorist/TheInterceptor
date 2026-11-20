@@ -134,7 +134,7 @@ async function getLatestDisplayedTransaction() {
 		.find((transaction) => transaction.transactionIdentifier === displayedRequest.transactionIdentifier)?.transaction
 	if (displayedTransaction?.type !== '1559') throw new Error('The popup did not display the reviewed EIP-1559 transaction')
 	// The same helpers the raw-transaction card uses to render the nonce row.
-	const displayedNonceText = getNonceDisplayText(displayedTransaction.nonce, getSignerNonce(displayedRequest, getSafeTransactionPendingFlow(displayedRequest)?.kind))
+	const displayedNonceText = getNonceDisplayText(displayedTransaction.nonce, getSignerNonce(displayedRequest, getSafeTransactionPendingFlow(displayedRequest)?.kind === 'proposal'))
 	return { displayedTransaction, displayedNonceText, preparedTransaction: displayedRequest.transactionToSimulate.transaction }
 }
 
@@ -399,7 +399,7 @@ async function prepareAcceptAndRenderFeeFields(requestFields: Record<string, unk
 				parsedInputData: simTx.parsedInputData,
 				addressMetaData: new Signal([]),
 				transactionIdentifier: simTx.transactionIdentifier,
-				signerNonce: getSignerNonce(displayedRequest, getSafeTransactionPendingFlow(displayedRequest)?.kind),
+				signerNonce: getSignerNonce(displayedRequest, getSafeTransactionPendingFlow(displayedRequest)?.kind === 'proposal'),
 			}), dom.document.body)
 		})
 		const cardHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes('Raw transaction information') === true)

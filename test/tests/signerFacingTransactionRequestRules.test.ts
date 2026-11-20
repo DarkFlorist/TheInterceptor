@@ -27,27 +27,25 @@ function sendRawTransaction(simulationMode: boolean): TransactionRequest {
 
 describe('signer-facing transaction request rules', () => {
 	test('forwards signing-mode requests to the wallet unless they are Safe proposals', () => {
-		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), undefined), true)
-		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), 'directExecution'), true)
-		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), 'proposal'), false)
-		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(true), undefined), false)
-		assert.equal(isTransactionRequestForwardedToWallet(sendRawTransaction(false), undefined), true)
+		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), false), true)
+		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(false), true), false)
+		assert.equal(isTransactionRequestForwardedToWallet(sendTransaction(true), false), false)
+		assert.equal(isTransactionRequestForwardedToWallet(sendRawTransaction(false), false), true)
 	})
 
 	test('lets the wallet select the nonce only when the website omitted it', () => {
-		assert.deepEqual(getSignerNonce(sendTransaction(false), undefined), { kind: 'wallet-selected' })
-		assert.deepEqual(getSignerNonce(sendTransaction(false), 'directExecution'), { kind: 'wallet-selected' })
+		assert.deepEqual(getSignerNonce(sendTransaction(false), false), { kind: 'wallet-selected' })
 	})
 
 	test('forwards the nonce the website requested unchanged', () => {
-		assert.deepEqual(getSignerNonce(sendTransaction(false, 7n), undefined), { kind: 'website-requested', nonce: 7n })
-		assert.deepEqual(getSignerNonce(sendTransaction(false, 0n), undefined), { kind: 'website-requested', nonce: 0n })
+		assert.deepEqual(getSignerNonce(sendTransaction(false, 7n), false), { kind: 'website-requested', nonce: 7n })
+		assert.deepEqual(getSignerNonce(sendTransaction(false, 0n), false), { kind: 'website-requested', nonce: 0n })
 	})
 
 	test('keeps the simulated nonce for requests the wallet does not sign as this transaction', () => {
-		assert.deepEqual(getSignerNonce(sendTransaction(true, 7n), undefined), { kind: 'simulated' })
-		assert.deepEqual(getSignerNonce(sendTransaction(true), undefined), { kind: 'simulated' })
-		assert.deepEqual(getSignerNonce(sendTransaction(false, 7n), 'proposal'), { kind: 'simulated' })
-		assert.deepEqual(getSignerNonce(sendRawTransaction(false), undefined), { kind: 'simulated' })
+		assert.deepEqual(getSignerNonce(sendTransaction(true, 7n), false), { kind: 'simulated' })
+		assert.deepEqual(getSignerNonce(sendTransaction(true), false), { kind: 'simulated' })
+		assert.deepEqual(getSignerNonce(sendTransaction(false, 7n), true), { kind: 'simulated' })
+		assert.deepEqual(getSignerNonce(sendRawTransaction(false), false), { kind: 'simulated' })
 	})
 })

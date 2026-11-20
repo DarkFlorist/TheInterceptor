@@ -723,7 +723,7 @@ function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMes
 	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
 	const reviewedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
 	// The popup displays this same signer nonce, and notes a different simulated one. Safe flows returned above, so this is a plain transaction.
-	const signerNonce = getSignerNonce(pending, undefined)
+	const signerNonce = getSignerNonce(pending, false)
 	switch (signerNonce.kind) {
 		case 'simulated': throw new Error('Only transactions forwarded to the wallet have a signer-facing request')
 		case 'wallet-selected': return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')
