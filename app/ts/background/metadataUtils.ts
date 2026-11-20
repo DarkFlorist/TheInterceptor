@@ -12,6 +12,7 @@ import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import type { RpcNetwork } from '../types/rpc.js'
+import type { IdentifyAddress, LookUpEnsName, MetadataLookups } from '../types/metadataLookups.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
 const LOGO_URI_PREFIX = '../vendor/@darkflorist/address-metadata'
@@ -75,12 +76,15 @@ export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20Toke
 async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork | undefined, useLocalStorage = true) : Promise<AddressBookEntry | undefined> {
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
+	const chainId = rpcEntry?.chainId ?? 1n
 	if (useLocalStorage) {
-		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId ?? 1n)).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
-	const addressData = contractMetadata.get(addrString)
+	// bundled @darkflorist/address-metadata entries describe Ethereum mainnet contracts only
+	const useBundledMetadata = chainId === 1n
+	const addressData = useBundledMetadata ? contractMetadata.get(addrString) : undefined
 	if (addressData) {
 		const { logoUri, ...rest } = addressData
 		return {
@@ -93,7 +97,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const tokenData = tokenMetadata.get(addrString)
+	const tokenData = useBundledMetadata ? tokenMetadata.get(addrString) : undefined
 	if (tokenData) {
 		const { logoUri, ...rest } = tokenData
 		return {
@@ -106,7 +110,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc721TokenData = erc721Metadata.get(addrString)
+	const erc721TokenData = useBundledMetadata ? erc721Metadata.get(addrString) : undefined
 	if (erc721TokenData) {
 		const { logoUri, ...rest } = erc721TokenData
 		return {
@@ -119,7 +123,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		}
 	}
 
-	const erc1155TokenData = erc1155Metadata.get(addrString)
+	const erc1155TokenData = useBundledMetadata ? erc1155Metadata.get(addrString) : undefined
 	if (erc1155TokenData) {
 		const { logoUri, ...rest } = erc1155TokenData
 		return {
@@ -149,6 +153,12 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 		...(rpcEntry?.chainId !== undefined ? { chainId: rpcEntry.chainId } : {}),
 	}
 	return undefined
+}
+
+// Duplicate form validation needs only existence, never a locally inferred contract type or Safe owners.
+export async function hasAddressBookDuplicate(address: bigint, rpcEntry: RpcNetwork | undefined): Promise<boolean> {
+	const entry = await identifyAddressWithoutNode(address, rpcEntry)
+	return entry !== undefined && entry.entrySource !== 'OnChain' && entry.entrySource !== 'FilledIn'
 }
 
 export async function identifyAddress(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, address: bigint, useLocalStorage = true) : Promise<AddressBookEntry> {
@@ -224,6 +234,16 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	return entry
 }
 
+// Identifies addresses as identifyAddress does: from the address book and bundled metadata, else on chain, caching what it finds in the address book.
+export const identifyAddressWith = (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): IdentifyAddress => async (address) => await identifyAddress(ethereumClientService, requestAbortController, address)
+
+// A simulation run's lookups, which reach the chain for what local data does not know.
+export const lookUpMetadataOnChain = (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined): MetadataLookups => ({
+	chainId: ethereumClientService.getChainId(),
+	identifyAddress: identifyAddressWith(ethereumClientService, requestAbortController),
+	lookUpEnsName: async (nameHash) => await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, nameHash),
+})
+
 const getAddressesForSolidityType = (typeValue: PureGroupedSolidityType): readonly bigint[] => {
 	switch(typeValue.type) {
 		case 'address': return [typeValue.value]
@@ -250,27 +270,58 @@ export const getAddressesForSolidityTypes = (variables: readonly SolidityVariabl
 	return variables.flatMap((argumentVariable) => getAddressesForSolidityType(argumentVariable.typeValue))
 }
 
-export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
-	const addressesToFetchMetadata = [
+// A formed transaction, or just the sender and recipient the failure view shows (FailedTransactionAddresses).
+type TransactionAddressFields = {
+	readonly from?: bigint
+	readonly to?: bigint | null
+	readonly nonce?: bigint
+	readonly authorizationList?: readonly { readonly address: bigint }[]
+}
+
+// The sender, the recipient or the contract the transaction deploys, and the EIP-7702 delegation targets it authorizes.
+const getTransactionAddresses = ({ from, to, nonce, authorizationList }: TransactionAddressFields) => {
+	const recipientOrDeployedContract = to ?? (from === undefined || nonce === undefined ? undefined : getDeployedContractAddress(from, nonce))
+	return [from, recipientOrDeployedContract, ...(authorizationList ?? []).map((authorization) => authorization.address)]
+		.filter((address): address is bigint => address !== undefined)
+}
+
+// Which addresses the visualiser names for transactions, their calldata and the events they emitted. Both the simulation view and the failure view of a transaction without simulation results collect their addresses here.
+function getAddressesToIdentifyForVisualiser(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], transactions: readonly TransactionAddressFields[]) {
+	return Array.from(new Set<bigint>([
 		...events.flatMap((event) => [event.address, ...(event.type === 'NonParsed' ? [] : getAddressesForSolidityTypes(event.args))]),
 		...getAddressesForSolidityTypes(inputData.flatMap((event) => event.type !== 'NonParsed' ? event.args : [])),
-	]
-
-	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
-		addressesToFetchMetadata.push(tx.signedTransaction.from)
-		addressesToFetchMetadata.push(tx.signedTransaction.to ?? getDeployedContractAddress(tx.signedTransaction.from, tx.signedTransaction.nonce))
-		if (tx.signedTransaction.type === '7702') addressesToFetchMetadata.push(...tx.signedTransaction.authorizationList.map((authorization) => authorization.address))
-	}
-
-	return Array.from(new Set<bigint>([...addressesToFetchMetadata, ETHEREUM_LOGS_LOGGER_ADDRESS]).values())
+		...transactions.flatMap(getTransactionAddresses),
+		ETHEREUM_LOGS_LOGGER_ADDRESS,
+	]).values())
 }
 
-export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
+export function getAddressesToIdentifyForVisualiserFromTransactions(events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput) {
+	return getAddressesToIdentifyForVisualiser(events, inputData, simulationStateInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction)))
+}
+
+
+export async function getAddressBookEntriesForVisualiserFromTransactions(identify: IdentifyAddress, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
 	const addressesToIdentify = getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput)
-	return await promiseAllMapAbortSafe(addressesToIdentify, async (address) => await identifyAddress(ethereumClientService, requestAbortController, address))
+	return await promiseAllMapAbortSafe(addressesToIdentify, async (address) => await identify(address))
 }
 
-export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {
+// The sender and recipient the failure view shows (FailedTransactionPreviewDetails). A website's request that could not be formed into a transaction may omit the sender.
+type FailedTransactionAddresses = {
+	readonly from?: bigint
+	readonly to?: bigint | null
+}
+
+/**
+ * Names what the failure view of a transaction without simulation results shows, such as one whose simulation failed: its sender, its recipient and its calldata arguments, collected and looked up as in getAddressBookEntriesForVisualiserFromTransactions.
+ * Naming an address can probe it on-chain and keep what it finds in the address book (identifyAddress). So of the addresses a website chooses, this names only those the view shows, leaving out the contract a creation would deploy and EIP-7702 delegation targets. The sender and recipient are copied field by field, because callers pass the whole transaction or request.
+ * Keeping these website-chosen addresses adds no way to plant a trusted name: a website can already have any address named and kept by sending a transaction that forms and simulates with that address as its recipient or a calldata argument (getAddressBookEntriesForVisualiserFromTransactions), and an entry kept from chain stays marked entrySource 'OnChain', which the token label flags as untrusted, the send-to-non-contact protector warns about and the address book search leaves out.
+ */
+export async function getAddressBookEntriesForTransactionWithoutSimulation(identify: IdentifyAddress, transaction: FailedTransactionAddresses, inputData: EnrichedEthereumInputData): Promise<AddressBookEntry[]> {
+	const shownAddresses = { from: transaction.from, to: transaction.to }
+	return await promiseAllMapAbortSafe(getAddressesToIdentifyForVisualiser([], [inputData], [shownAddresses]), identify)
+}
+
+export async function nameTokenIds(lookups: Pick<MetadataLookups, 'chainId' | 'lookUpEnsName'>, events: EnrichedEthereumEvents) {
 	type TokenAddressTokenIdPair = { tokenAddress: bigint, tokenId: bigint }
 	const tokenAddresses = events.map((event) => {
 		if (event.type !== 'TokenEvent' || event.logInformation.type !== 'ERC1155') return undefined
@@ -279,8 +330,8 @@ export async function nameTokenIds(ethereumClientService: EthereumClientService,
 
 	const pairs = getUniqueItemsByProperties(tokenAddresses, ['tokenAddress', 'tokenId'])
 	const namedPairs = (await Promise.all(pairs.map(async (pair) => {
-		if (pair.tokenAddress === ENS_TOKEN_WRAPPER && ethereumClientService.getChainId() === 1n) {
-			const tokenIdName = (await getAndCacheEnsNodeHash(ethereumClientService, pair.tokenId, [])).name
+		if (pair.tokenAddress === ENS_TOKEN_WRAPPER && lookups.chainId === 1n) {
+			const tokenIdName = (await getAndCacheEnsNodeHash(lookups.lookUpEnsName, pair.tokenId, [])).name
 			if (tokenIdName === undefined) return undefined
 			return { ...pair, tokenIdName }
 		}
@@ -296,7 +347,7 @@ export const extractEnsEvents = (events: readonly EnrichedEthereumEventWithMetad
 	return events.filter((tokenEvent): tokenEvent is EnsEvent => tokenEvent.type === 'ENS')
 }
 
-export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) => {
+export const retrieveEnsNodeAndLabelHashes = async (lookUpEnsName: LookUpEnsName, events: EnrichedEthereumEvents, addressBookEntriesToMatchReverseResolutions: readonly AddressBookEntry[]) => {
 	const labelHashesToRetrieve = events.map((event) => 'logInformation' in event && 'labelHash' in event.logInformation ? event.logInformation.labelHash : undefined).filter((labelHash): labelHash is bigint => labelHash !== undefined)
 	const reverseEnsLabelHashes = addressBookEntriesToMatchReverseResolutions.map((entry) => addressStringWithout0x(entry.address)).map((label) => ({ label, labelHash: BigInt(keccak256(stringToBytes(label))) }))
 	const newLabels = [...events.map((event) => 'logInformation' in event && 'name' in event.logInformation ? event.logInformation.name : undefined).filter((label): label is string => label !== undefined)]
@@ -307,11 +358,11 @@ export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: Ether
 
 	// return the label hashes that we have now available
 	const currentLabelHashes = [...reverseEnsLabelHashes, ...await getEnsLabelHashes()]
-	const ensLabelHashes = Array.from(new Set(labelHashesToRetrieve)).map((labelHash) => {
+	const ensLabelHashes = await Promise.all(Array.from(new Set(labelHashesToRetrieve)).map(async (labelHash) => {
 		const found = currentLabelHashes.find((entry) => entry.labelHash === labelHash)
-		if (found) addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
+		if (found) await addEnsLabelHash(found.label) // if we actally use the label, add to our cache. This should already be there unless it was a reverse ens label hash that we guessed
 		return { labelHash, label: found?.label }
-	})
+	}))
 
 	const hashes = new Set<bigint>()
 	for (const event of events) {
@@ -319,7 +370,7 @@ export const retrieveEnsNodeAndLabelHashes = async (ethereumClientService: Ether
 		hashes.add(event.logInformation.node)
 	}
 	const reverseEnsNameHashes = addressBookEntriesToMatchReverseResolutions.map((addressBookEntry) => getEnsReverseNodeHash(addressBookEntry.address))
-	const ensNameHashes = await Promise.all([...hashes].map((hash) => getAndCacheEnsNodeHash(ethereumClientService, hash, reverseEnsNameHashes)))
+	const ensNameHashes = await Promise.all([...hashes].map((hash) => getAndCacheEnsNodeHash(lookUpEnsName, hash, reverseEnsNameHashes)))
 
 	return { ensNameHashes, ensLabelHashes }
 }
@@ -330,7 +381,7 @@ const addNewEnsNameEntry = async (name: string) => {
 	await addEnsNodeHash(name)
 }
 
-const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientService, ensNameHash: EthereumBytes32, extraNameHashes: ENSNameHashes) => {
+const getAndCacheEnsNodeHash = async (lookUpEnsName: LookUpEnsName, ensNameHash: EthereumBytes32, extraNameHashes: ENSNameHashes) => {
 	const currentHashes = [ENS_ADDR_REVERSE_NODE, ...await getEnsNodeHashes()]
 	const entry = currentHashes.find((entry) => entry.nameHash === ensNameHash)
 	if (entry !== undefined) return entry
@@ -341,7 +392,7 @@ const getAndCacheEnsNodeHash = async (ethereumClientService: EthereumClientServi
 		return extraNameEntry
 	}
 
-	const name = await getEthereumNameServiceNameFromTokenId(ethereumClientService, undefined, ensNameHash)
+	const name = await lookUpEnsName(ensNameHash)
 	if (name !== undefined) await addNewEnsNameEntry(name)
 	return { nameHash: ensNameHash, name }
 }

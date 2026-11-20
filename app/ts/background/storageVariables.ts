@@ -22,6 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -67,28 +68,48 @@ async function updatePendingTransactionOrMessages(update: (pendingTransactionsOr
 	})
 }
 
-export async function updatePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+// For signer replies, which name only the request id. The wallet answers over the page's own connection, so the page owns that channel and could forge a reply for any of its ids; this is no defence against the page itself. It does make sure a reply only reaches the request under that id once it was forwarded to the signer, never a newer request under a reused id that the user has not approved. Work that read a pending request and writes back uses updatePendingTransactionOrMessageInstance.
+export async function updatePendingRequestWaitingForSigner(uniqueRequestIdentifier: UniqueRequestIdentifier, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
 		const match = pendingTransactionsOrMessages.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
 		if (match < 0) return pendingTransactionsOrMessages
 		const found = pendingTransactionsOrMessages[match]
-		if (found === undefined) return pendingTransactionsOrMessages
+		if (found === undefined || found.approvalStatus.status !== 'WaitingForSigner') return pendingTransactionsOrMessages
 		const updated = await update(found)
 		if (updated === undefined) return pendingTransactionsOrMessages
 		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
 	})
 }
 
+type PendingRequestInstance = Pick<PendingTransactionOrSignableMessage, 'uniqueRequestIdentifier' | 'instanceId'>
+
+export const isSamePendingRequestInstance = (first: PendingRequestInstance, second: PendingRequestInstance) => {
+	return first.instanceId === second.instanceId && doesUniqueRequestIdentifiersMatch(first.uniqueRequestIdentifier, second.uniqueRequestIdentifier)
+}
+
+// Updates only the pending request instance that was read earlier, so work that awaited in between never stores into a different request the page sent under the same request id. Returns whether that instance is still pending.
+export async function updatePendingTransactionOrMessageInstance(instance: PendingRequestInstance, update: (pendingTransactionOrMessage: PendingTransactionOrSignableMessage) => Promise<PendingTransactionOrSignableMessage | undefined>) {
+	let instanceIsPending = false
+	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
+		const match = pendingTransactionsOrMessages.findIndex((pending) => isSamePendingRequestInstance(pending, instance))
+		if (match < 0) return pendingTransactionsOrMessages
+		const found = pendingTransactionsOrMessages[match]
+		if (found === undefined) return pendingTransactionsOrMessages
+		instanceIsPending = true
+		const updated = await update(found)
+		if (updated === undefined) return pendingTransactionsOrMessages
+		return replaceElementInReadonlyArray(pendingTransactionsOrMessages, match, updated)
+	})
+	return instanceIsPending
+}
+
 export async function appendPendingTransactionOrMessage(pendingTransactionOrMessage: PendingTransactionOrSignableMessage) {
 	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => [...pendingTransactionsOrMessages, pendingTransactionOrMessage])
 }
 
-export async function removePendingTransactionOrMessage(uniqueRequestIdentifier: UniqueRequestIdentifier) {
-	await updatePendingTransactionOrMessages(async (pendingTransactionsOrMessages) => {
-		const foundPromise = pendingTransactionsOrMessages.find((pendingTransactionsOrMessages) => doesUniqueRequestIdentifiersMatch(pendingTransactionsOrMessages.uniqueRequestIdentifier, uniqueRequestIdentifier))
-		if (foundPromise === undefined) return pendingTransactionsOrMessages
-		return pendingTransactionsOrMessages.filter((pendingTransactionOrMessage) => !doesUniqueRequestIdentifiersMatch(pendingTransactionOrMessage.uniqueRequestIdentifier, uniqueRequestIdentifier))
-	})
+// Removes only the instance read by the caller, so an awaited rejection or terminal-reply write cannot delete a replacement under the same page request id.
+export async function removePendingTransactionOrMessage(instance: PendingRequestInstance) {
+	await updatePendingTransactionOrMessages(async (pending) => pending.filter((request) => !isSamePendingRequestInstance(request, instance)))
 }
 
 export const getChainChangeConfirmationPromise = async() => (await browserStorageLocalGet('chainChangeConfirmationPromise'))?.chainChangeConfirmationPromise ?? undefined
@@ -97,10 +118,18 @@ export async function setChainChangeConfirmationPromise(chainChangeConfirmationP
 	return await browserStorageLocalSet({ chainChangeConfirmationPromise })
 }
 
-export const getFetchSimulationStackRequestPromise = async() => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined
-export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
-	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
-	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+const fetchSimulationStackRequestRepository = createStoredValueRepository<PendingFetchSimulationStackRequestPromise | undefined>({
+	read: async () => (await browserStorageLocalGet('fetchSimulationStackRequestPromise'))?.fetchSimulationStackRequestPromise ?? undefined,
+	write: async (fetchSimulationStackRequestPromise) => {
+		if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
+		await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+	},
+	getDefault: () => undefined,
+})
+export const getFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.get
+export const setFetchSimulationStackRequestPromise = fetchSimulationStackRequestRepository.set
+export async function clearFetchSimulationStackRequestPromiseIfOwnedBy(uniqueRequestIdentifier: UniqueRequestIdentifier) {
+	await fetchSimulationStackRequestRepository.update((storedRequest) => storedRequest !== undefined && doesUniqueRequestIdentifiersMatch(storedRequest.uniqueRequestIdentifier, uniqueRequestIdentifier) ? undefined : storedRequest)
 }
 
 const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
@@ -123,19 +152,29 @@ export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
 // Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
+// Advanced by every committed write in updatePopupVisualisationWithCallBack, the only writer of the popup visualisation, even when the written state equals the old one. Kept in memory because readers compare it within one background lifetime, and a restart discards both the counter and every in-flight reader.
+let popupVisualisationRevision = 0
+
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
+// Reads the state and its revision under the write lock, so the revision always names the state returned with it.
+export async function getPopupVisualisationStateWithRevision() {
+	return await simulationResultsSemaphore.execute(async () => ({ visualisation: await getPopupVisualisationState(), revision: popupVisualisationRevision }))
+}
+
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
+// The callback receives the current revision, so a caller can commit only onto the state it read with getPopupVisualisationStateWithRevision.
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation, revision: number) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
-		const newRequests = await update(oldResults)
+		const newRequests = await update(oldResults, popupVisualisationRevision)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
 		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
+		popupVisualisationRevision += 1
 		return newRequests
 	})
 }
@@ -298,27 +337,24 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-const userAddressBookEntriesSemaphore = new Semaphore(1)
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
+
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
-		const entries = await getUserAddressBookEntries()
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(entries) })
-	})
+	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
-		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
+		return { writes: [{ userAddressBookEntriesV2: updateFunc(entries) }], result: undefined }
 	})
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
+	await runSettingsStorageTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
-		if (existingEntry !== undefined) return
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
+		return { writes: existingEntry === undefined ? [userAddressBookEntriesStorageWrite(entries.concat(newEntry))] : [], result: undefined }
 	})
 }
 

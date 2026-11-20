@@ -1,11 +1,11 @@
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
-import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList, ImportSettingsReply } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
@@ -79,9 +79,7 @@ const ErrorReturn = funtypes.ReadonlyObject({
 	error: ErrorWithCodeAndOptionalData
 })
 
-export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
-export const InpageScriptCallBack = funtypes.Union(
-	ErrorReturn,
+const InpageScriptSuccessCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
@@ -93,6 +91,13 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ canRequestAccess: funtypes.Boolean })) }),
+)
+
+export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
+export const InpageScriptCallBack = funtypes.Union(
+	ErrorReturn,
+	// Keep the literal-method union nested so a generic error method does not disable dispatch by method for every callback.
+	funtypes.Intersect(funtypes.ReadonlyObject({ method: funtypes.String }), InpageScriptSuccessCallBack),
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -115,6 +120,11 @@ const WalletCapabilities = funtypes.ReadonlyRecord(
 const WalletCapabilitiesReply = funtypes.Intersect(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
 	funtypes.ReadonlyObject({ result: WalletCapabilities }),
+)
+// The sync progress object also carries a record of client-specific fields, so it needs the same separate discriminant member as WalletCapabilitiesReply.
+const EthSyncingReply = funtypes.Intersect(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_syncing') }),
+	funtypes.ReadonlyObject({ result: EthSyncingResponse }),
 )
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
@@ -139,6 +149,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	WalletCapabilitiesReply,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
+	EthSyncingReply,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_maxPriorityFeePerGas'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getStorageAt'), result: EthGetStorageAtResponse }),
@@ -157,19 +168,26 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
-const SubscriptionReturnValue = funtypes.ReadonlyObject({
-	method: funtypes.Literal('newHeads'),
-	result: funtypes.ReadonlyObject({
-		subscription: funtypes.String,
-		result: EthereumBlockHeaderWithTransactionHashes
-	})
-})
-
-type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
-const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
-	funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
+const SubscriptionReturnValue = funtypes.Union(
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('newHeads'),
+		result: funtypes.ReadonlyObject({
+			subscription: funtypes.String,
+			result: EthereumBlockHeaderWithTransactionHashes
+		})
+	}),
+	// Always `false`; see the syncing entry of ethSubscriptionTypes.
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('syncing'),
+		result: funtypes.ReadonlyObject({
+			subscription: funtypes.String,
+			result: funtypes.Literal(false)
+		})
+	}),
 )
+
+const ResultReplyType = funtypes.ReadonlyObject({ type: funtypes.Literal('result') })
+const RPCErrorReply = funtypes.Intersect(ResultReplyType, ErrorReturn)
 
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
@@ -193,20 +211,25 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	),
 )
 
-export type RPCReply = funtypes.Static<typeof RPCReply>
-export const RPCReply = funtypes.Union(
-	NonForwardingRPCRequestReturnValue,
+const NonErrorRPCReply = funtypes.Union(
+	// The intersection keeps funtypes from flattening the success union into generic-method branches, preserving dispatch by method for successful replies.
+	funtypes.Intersect(ResultReplyType, NonForwardingRPCRequestSuccessfullReturnValue),
 	ReplyWithSignersReplyForward,
 	ForwardToWallet,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
-export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
-export const SubscriptionReplyOrCallBack = funtypes.Intersect(
-	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
-	funtypes.ReadonlyPartial({ requestId: funtypes.Number }),
+export type RPCReply = funtypes.Static<typeof RPCReply>
+// Errors have no method-specific result. Match them before success schemas when the caller does not already know the reply kind.
+export const RPCReply = funtypes.Union(RPCErrorReply, NonErrorRPCReply)
+
+const CallbackRequestId = funtypes.ReadonlyPartial({ requestId: funtypes.Number })
+const ErrorSubscriptionReplyOrCallBack = funtypes.Intersect(ResultReplyType, CallbackRequestId, ErrorReturn)
+const NonErrorSubscriptionReplyOrCallBack = funtypes.Intersect(
+	ResultReplyType,
+	CallbackRequestId,
 	funtypes.Union(
-		InpageScriptCallBack,
+		funtypes.Intersect(ResultReplyType, InpageScriptSuccessCallBack),
 		funtypes.Intersect(
 			funtypes.ReadonlyObject({
 				method: funtypes.String,
@@ -217,11 +240,12 @@ export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 	)
 )
 
-type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>
-const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
+export type SubscriptionReplyOrCallBack = funtypes.Static<typeof SubscriptionReplyOrCallBack>
+export const SubscriptionReplyOrCallBack = funtypes.Union(ErrorSubscriptionReplyOrCallBack, NonErrorSubscriptionReplyOrCallBack)
+
+const InpageReplyIdentifier = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
 	funtypes.ReadonlyPartial({ bridgeRequestSettled: funtypes.Literal(true) }),
-	funtypes.Union(RPCReply, funtypes.Intersect(funtypes.ReadonlyObject({ type: funtypes.Literal('result') }), InpageScriptRequestWithoutIdentifier)),
 )
 
 export type InterceptedRequestForward = funtypes.Static<typeof InterceptedRequestForward>
@@ -231,10 +255,35 @@ export const InterceptedRequestForward = funtypes.Intersect(
 )
 
 export type InterceptorMessageToInpage = funtypes.Static<typeof InterceptorMessageToInpage>
-export const InterceptorMessageToInpage = funtypes.Intersect(
-	funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) }),
-	funtypes.Union(InterceptedRequestForwardWithRequestId, SubscriptionReplyOrCallBack)
+const InterceptorApproval = funtypes.ReadonlyObject({ interceptorApproved: funtypes.Literal(true) })
+// Background senders know whether they are sending a reply or a callback. Keep separate codecs so hot paths do not construct failures for unrelated message shapes.
+const InterceptorErrorReplyToInpage = funtypes.Intersect(InterceptorApproval, InpageReplyIdentifier, RPCErrorReply)
+const InterceptorNonErrorReplyToInpage = funtypes.Intersect(
+	InterceptorApproval,
+	InpageReplyIdentifier,
+	funtypes.Union(NonErrorRPCReply, funtypes.Intersect(ResultReplyType, InpageScriptRequestWithoutIdentifier)),
 )
+const InterceptorErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, ErrorSubscriptionReplyOrCallBack)
+const InterceptorNonErrorCallbackToInpage = funtypes.Intersect(InterceptorApproval, NonErrorSubscriptionReplyOrCallBack)
+// The full wire contract is exactly the union of the codecs used by the serializers below. Senders select a known category to avoid probing unrelated union branches.
+export const InterceptorMessageToInpage = funtypes.Union(
+	InterceptorErrorReplyToInpage,
+	InterceptorNonErrorReplyToInpage,
+	InterceptorErrorCallbackToInpage,
+	InterceptorNonErrorCallbackToInpage,
+)
+
+export function serializeInpageReply(message: funtypes.Static<typeof InterceptorErrorReplyToInpage> | funtypes.Static<typeof InterceptorNonErrorReplyToInpage>) {
+	return message.type === 'result' && 'error' in message
+		? InterceptorErrorReplyToInpage.serialize(message)
+		: InterceptorNonErrorReplyToInpage.serialize(message)
+}
+
+export function serializeInpageCallback(message: funtypes.Static<typeof InterceptorErrorCallbackToInpage> | funtypes.Static<typeof InterceptorNonErrorCallbackToInpage>) {
+	return 'error' in message
+		? InterceptorErrorCallbackToInpage.serialize(message)
+		: InterceptorNonErrorCallbackToInpage.serialize(message)
+}
 
 type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
 const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
@@ -255,7 +304,13 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
+					action: funtypes.Literal('accept'),
+					// Names the reviewed content the user saw (getReviewedResultId) and whether they ticked send-anyway for it, so the background can refuse stale or unacknowledged accepts.
+					reviewedResultId: funtypes.String,
+					forceSend: funtypes.Boolean,
+				}),
+				funtypes.ReadonlyObject({
+					action: funtypes.Union(funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),
@@ -693,26 +748,9 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	})
 })
 
-export type ImportSettings = funtypes.Static<typeof ImportSettings>
-export const ImportSettings = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_import_settings'),
-	data: funtypes.ReadonlyObject({ fileContents: funtypes.String })
-})
+export { ImportSettings, ImportSettingsReply } from './popupSettingsRequests.js'
 
-export type ImportSettingsReply = funtypes.Static<typeof ImportSettingsReply>
-export const ImportSettingsReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_initiate_export_settings_reply'),
-	data: funtypes.Union(
-		funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
-		funtypes.ReadonlyObject({ success: funtypes.Literal(false), errorMessage: funtypes.String })
-	)
-})
-
-export type SetRpcList = funtypes.Static<typeof SetRpcList>
-export const SetRpcList = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('popup_set_rpc_list')),
-	data: RpcEntries,
-})
+export { SetRpcList } from './popupSettingsRequests.js'
 
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({

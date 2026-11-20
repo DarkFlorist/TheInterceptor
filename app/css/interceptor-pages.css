@@ -269,6 +269,7 @@ header:has(form[role='search']) h1 {
 	--text-size: 1em;
 	--min-text-width: calc(var(--text-size) * 2.5);
 
+	color: var(--text-color);
 	font: inherit;
 	display: inline-grid;
 	align-items: baseline;
@@ -285,7 +286,9 @@ header:has(form[role='search']) h1 {
 
 	data {
 		line-height: 1em;
-		color: var(--text-color);
+		color: inherit;
+		/* The global data rule sets font-weight: normal on the element itself, so the card's weight is inherited explicitly. */
+		font-weight: inherit;
 		padding-inline: 0.25em;
 		padding-right: 0px;
 		text-align: center;
@@ -307,14 +310,17 @@ header:has(form[role='search']) h1 {
 
 	> [role=img] {
 		grid-area: start / start / end / copy;
-		:focus-within > &, :hover > & { opacity: 0 }
+		:hover > & { opacity: 0 }
 	}
 
 	> data {
 		grid-area: start / copy / end / end;
 		font-size: var(--text-size);
-		:focus-within > &, :hover > & { opacity: 0 }
+		:hover > & { opacity: 0 }
 	}
+
+	/* Keyboard focus on the copy and edit buttons hides the card's own icon and label behind the actions, while focus left on the warning sign does not */
+	&:has(> .inline-card-actions:focus-within) > :is([role=img], data) { opacity: 0 }
 
 	> .inline-card-actions {
 		background: var(--bg-status-color, var(--bg-color));
@@ -327,9 +333,11 @@ header:has(form[role='search']) h1 {
 		}
 
 		opacity: 0;
-		:hover > &, :focus-within > & { opacity: 1 }
+		/* Focus on the copy and edit buttons reveals them; focus left on the warning sign after a click does not keep them shown */
+		:hover > &, &:focus-within { opacity: 1 }
 
 		> :is(button, .inline-card-static-action) {
+			color: inherit;
 			font: inherit;
 			appearance: none;
 			background: transparent;
@@ -351,7 +359,8 @@ header:has(form[role='search']) h1 {
 				font-size: var(--text-size);
 			}
 
-			> :has(svg):has(span) {
+			/* The Copy and Edit chips, matched by class rather than by their svg icon and span label because an entry icon such as a Blockie with a ticker holds an svg and a span too */
+			> .inline-card-action-chip {
 				font-size: 0.9em;
 				background: var(--inline-action-color);
 				color: var(--text-color);
@@ -399,18 +408,21 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	&:has([role=alert]) {
+	/* Warning signs are matched by class rather than by the alert role, because only the leading sign is an alert and the trailing one is aria-hidden without a role */
+	&:has(.inline-card-warning-sign) {
 		--bg-status-color: var(--status-dimmed-bg-color); /* dark red */
+		data { color: var(--text-color); }
 		min-width: calc(var(--image-size) + var(--min-text-width) + (var(--bg-inline-padding) * 2) + 4ch);
 
 	}
 
-	[role=alert] {
+	.inline-card-warning-sign {
 		color: var(--status-alert-text-color); /* bright yellow */
-		cursor: pointer;
+		cursor: help;
+		margin-right: 0.25em;
 
-		&:has(+ *) { margin-right: 0.25em }
-		&:is(* + [role=alert]) { margin-left: 0.25em }
+		/* The trailing sign is the aria-hidden one; matching it directly keeps these margins independent of what the card renders around its signs */
+		&[aria-hidden] { margin-left: 0.25em }
 	}
 }
 

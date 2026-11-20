@@ -1,22 +1,22 @@
-import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import { EthereumAddress, EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
 import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
-import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
-import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
-import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
+import { addressString, bytes32String } from '../../utils/bigint.js'
+import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params, type StateOverrides } from '../../types/ethSimulate-types.js'
+import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthSyncingResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { getNextBlockTimeStampOverride, getSimulatedBlockBaseFeePerGas } from './simulationBlockParameters.js'
 import { simulatePersonalSign } from './simulationPersonalSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import type { BlockTimeManipulation, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import type { SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
-import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { getDelegateFromCode, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -31,6 +31,65 @@ const parseSignatureHex = (signature: `0x${ string }`) => {
 		yParity: rawV >= 27 ? rawV - 27 : rawV,
 	}
 }
+
+export type RpcTransaction = SimulationStateInputMinimalDataBlock['transactions'][number]
+
+// The call the node runs for a transaction: its executedTransaction when the simulation input was prepared with one, otherwise its signedTransaction. signedTransaction stays the call the transaction shows, which transaction lookups and receipts return.
+export const getExecutedTransaction = (transaction: RpcTransaction) => transaction.executedTransaction ?? transaction.signedTransaction
+
+// How a simulation input that reached the node breaks the executed-call invariant of prepareEthSimulateV1Input.
+export type UnpreparedSimulationInputViolation = 'missing-executed-call' | 'unauthorized-executed-call'
+const UNPREPARED_SIMULATION_INPUT_ERROR_NAME = 'UnpreparedSimulationInputError'
+
+// A distinctly named error for an input whose preparation a caller skipped, so it reads apart from a node failure in logs and error reports. A plain Error with a name, not an InterceptorInternalError, so it is still reported as unexpected. The precondition is checked here at runtime rather than encoded in the parameter type, because SimulationStateInputMinimalData is projected from the simulation input at many call sites, so a separate prepared type would have to wrap all of them.
+export const createUnpreparedSimulationInputError = (violation: UnpreparedSimulationInputViolation, message: string) => Object.assign(new Error(message), { name: UNPREPARED_SIMULATION_INPUT_ERROR_NAME, violation })
+
+export const isUnpreparedSimulationInputError = (error: unknown): error is Error & { readonly violation: UnpreparedSimulationInputViolation } => error instanceof Error
+	&& error.name === UNPREPARED_SIMULATION_INPUT_ERROR_NAME
+	&& 'violation' in error
+	&& (error.violation === 'missing-executed-call' || error.violation === 'unauthorized-executed-call')
+
+export const getTotalExecutedGasLimit = (transactions: readonly RpcTransaction[]) => transactions.reduce((totalGasLimit, transaction) => totalGasLimit + getExecutedTransaction(transaction).gas, 0n)
+
+const ECRECOVER_ADDRESS = 1n
+const ECRECOVER_MOVED_TO_ADDRESS = 0x123456n
+
+const isHexSignature = (value: string): value is `0x${ string }` => value.startsWith('0x')
+const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
+	if (!isHexSignature(messageHashAndSignature.signature)) throw new Error('Signature must be hex encoded')
+	const sig = parseSignatureHex(messageHashAndSignature.signature)
+	const packed = BigInt(keccak256(encodeAbiValues(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v ?? BigInt(sig.yParity), sig.r, sig.s])))
+	return packed
+}
+
+// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
+const getMappingsMemorySlot = (hash: EthereumBytes32) => keccak256(encodeAbiValues(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
+
+// eth_simulateV1 restores every precompile at the start of each block and a `state` override replaces the account's whole storage, so every block that runs after a simulated signature needs this override built from all signed messages up to that block, not only its own.
+export const getSignedMessagesEcRecoverOverride = async (signedMessages: SimulationStateInputMinimalDataBlock['signedMessages']): Promise<StateOverrides> => {
+	if (signedMessages.length === 0) return {}
+	const signatureSlots = await Promise.all(signedMessages.map(async (sign) => {
+		const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
+		return [getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), sign.fakeSignedFor] satisfies [string, bigint]
+	}))
+	return {
+		[addressString(ECRECOVER_ADDRESS)]: {
+			movePrecompileToAddress: ECRECOVER_MOVED_TO_ADDRESS,
+			code: getEcRecoverOverride(),
+			state: Object.fromEntries(signatureSlots),
+		}
+	}
+}
+
+const isEcRecoverOverrideAddress = (address: bigint) => address === ECRECOVER_ADDRESS || address === ECRECOVER_MOVED_TO_ADDRESS
+const touchesEcRecoverOverrideAddresses = (stateOverrides: StateOverrides) => Object.entries(stateOverrides).some(([address, accountOverride]) => {
+	const parsedAddress = EthereumAddress.safeParse(address)
+	const movePrecompileToAddress = accountOverride?.movePrecompileToAddress
+	return (parsedAddress.success && isEcRecoverOverrideAddress(parsedAddress.value)) || (movePrecompileToAddress !== undefined && isEcRecoverOverrideAddress(movePrecompileToAddress))
+})
+
+// Explicit overrides of address 1, 0x123456, or relocations involving either address take precedence over simulated signatures. Applying both would change the caller's requested precompile behavior or make eth_simulateV1 reject the relocation; this is the single collision policy for stack blocks and appended calls.
+export const mergeEcRecoverOverridePreservingExplicitPrecompiles = (ecRecoverOverride: StateOverrides, stateOverrides: StateOverrides): StateOverrides => touchesEcRecoverOverrideAddresses(stateOverrides) ? stateOverrides : { ...ecRecoverOverride, ...stateOverrides }
 
 const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	const commonFields = {
@@ -96,11 +155,7 @@ const toEthSimulateCall = (transaction: EthereumSendableSignedTransaction) => {
 	}
 }
 
-export const getNextBlockTimeStampOverride = (previousBlockTimeStamp: Date, blockTimeManipulation: BlockTimeManipulation) => {
-	const prevTime = dateToBigintSeconds(previousBlockTimeStamp)
-	if (blockTimeManipulation.type === 'AddToTimestamp') return bigintSecondsToDate(prevTime + getBlockTimeManipulationSeconds(blockTimeManipulation.deltaToAdd, blockTimeManipulation.deltaUnit))
-	return bigintSecondsToDate(max(prevTime + 1n, blockTimeManipulation.timeToSet))
-}
+export { getNextBlockTimeStampOverride } from './simulationBlockParameters.js'
 
 export type IEthereumClientService = Pick<EthereumClientService, keyof EthereumClientService>
 export type PreparedEthSimulateV1InputBlock = {
@@ -110,6 +165,7 @@ export type PreparedEthSimulateV1InputBlock = {
 export type PreparedEthSimulateV1Input = {
 	readonly request: EthSimulateV1Params
 	readonly inputBlocks: readonly PreparedEthSimulateV1InputBlock[]
+	// Gas splitting preserves transaction identity and flat inputBlocks order; each RPC-block transaction has one corresponding request call.
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }
@@ -117,6 +173,7 @@ export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
 	private retrievingBlock = false
+	private retired = false
 	private newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
@@ -142,11 +199,18 @@ export class EthereumClientService {
 		if ((Date.now() - this.cachedBlock.timestamp.getTime()) > TIME_BETWEEN_BLOCKS * MAX_BLOCK_CACHE * 1000) return undefined
 		return this.cachedBlock
 	}
-	public cleanup = () => this.setBlockPolling(false)
+	// Retiring is permanent: requests that captured this client keep its RPC methods, but its block polling never restarts.
+	public cleanup = () => {
+		this.retired = true
+		this.setBlockPolling(false)
+	}
 
 	public readonly isBlockPolling = () => this.cacheRefreshTimer !== undefined
+	public readonly isRetired = () => this.retired
 
+	// Returns whether the client polls now. A client retired by a network switch never polls again, so it refuses.
 	public readonly setBlockPolling = (enabled: boolean) => {
+		if (enabled && this.retired) return false
 		if (enabled && this.cacheRefreshTimer === undefined) {
 			const now = Date.now()
 
@@ -157,15 +221,16 @@ export class EthereumClientService {
 				this.updateCache()
 				this.cacheRefreshTimer = setInterval(this.updateCache, TIME_BETWEEN_BLOCKS * 1000)
 			}, timeToTarget > 0 ? timeToTarget : timeToTarget + TIME_BETWEEN_BLOCKS * 1000 )
-			return
+			return true
 		}
 		if (!enabled) {
 			clearTimeout(this.cacheRefreshTimer)
 			clearInterval(this.cacheRefreshTimer)
 			this.cacheRefreshTimer = undefined
 			this.cachedBlock = undefined
-			return
+			return false
 		}
+		return enabled
 	}
 
 	private readonly updateCache = async () => {
@@ -219,9 +284,7 @@ export class EthereumClientService {
 	}
 
 	public readonly getDelegation = async (address: bigint, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		const code = await this.getCode(address, blockTag, requestAbortController)
-		if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
-		return BigInt(`0x${ dataString(code.slice(3)) }`)
+		return getDelegateFromCode(await this.getCode(address, blockTag, requestAbortController))
 	}
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
@@ -275,6 +338,12 @@ export class EthereumClientService {
 		return EthereumQuantity.parse(response)
 	}
 
+	// Bypass the response cache: it is only cleared when the latest block changes, and a stalled or syncing node's status can change while its latest block does not.
+	public readonly getSyncingStatus = async(requestAbortController: AbortController | undefined) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_syncing' }, requestAbortController, true)
+		return EthSyncingResponse.parse(response)
+	}
+
 	public readonly getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
 		if (response === null) return null
@@ -320,27 +389,36 @@ export class EthereumClientService {
 	}
 
 	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+		// Every simulation input reaches the node through here, so this enforces, in both directions, that a transaction runs a call other than its signedTransaction exactly when its executedCallAuthorized marker authorizes one. A transaction that asks for an executed call but whose input was not prepared with one would otherwise run as the call it shows. Both throws are internal invariant failures (a caller skipped preparing its input), not user-facing errors, so they stay reported as unexpected errors. Their messages stay protocol-agnostic so this RPC layer names no Safe or background helper.
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedCallAuthorized && transaction.executedTransaction === undefined))) throw createUnpreparedSimulationInputError('missing-executed-call', 'A transaction that requires a prepared executed call reached the node without one.')
+		if (simulationStateInput.some((block) => block.transactions.some((transaction) => transaction.executedTransaction !== undefined && !transaction.executedCallAuthorized))) throw createUnpreparedSimulationInputError('unauthorized-executed-call', 'A transaction reached the node with an executed call other than its signed transaction, which it does not authorize.')
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
 		const blockOverrides: BlockOverrides[] = []
-		const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
+		const baseFeePerGas = getSimulatedBlockBaseFeePerGas(parentBlock)
 
-		const gasLimitTransaction = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+		const clampGasToBlock = (transaction: EthereumSendableSignedTransaction) => ({ ...transaction, gas: transaction.gas > parentBlock.gasLimit ? parentBlock.gasLimit : transaction.gas })
+		const gasLimitTransaction = (transaction: RpcTransaction): RpcTransaction => ({
+			signedTransaction: clampGasToBlock(transaction.signedTransaction),
+			...(transaction.executedTransaction === undefined ? {} : { executedTransaction: clampGasToBlock(transaction.executedTransaction) }),
+			executedCallAuthorized: transaction.executedCallAuthorized,
+		})
 
-		const splitTransactionsByGasLimit = (currentTransactions: EthereumSendableSignedTransaction[], gasLimit: bigint): EthereumSendableSignedTransaction[][] => {
-			const transactionChunks: EthereumSendableSignedTransaction[][] = []
-			let currentChunk: EthereumSendableSignedTransaction[] = []
+		const splitTransactionsByGasLimit = (currentTransactions: readonly RpcTransaction[], gasLimit: bigint): RpcTransaction[][] => {
+			const transactionChunks: RpcTransaction[][] = []
+			let currentChunk: RpcTransaction[] = []
 			let currentChunkGasSum = 0n
 			for (const transaction of currentTransactions) {
-				if (transaction.gas > gasLimit) throw new Error(`Transaction gas ${ transaction.gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
-				if (currentChunkGasSum + transaction.gas <= gasLimit) {
+				const { gas } = getExecutedTransaction(transaction)
+				if (gas > gasLimit) throw new Error(`Transaction gas ${ gas.toString() } exceeds gas limit ${ gasLimit.toString() }`)
+				if (currentChunkGasSum + gas <= gasLimit) {
 					currentChunk.push(transaction)
-					currentChunkGasSum = currentChunkGasSum + transaction.gas
+					currentChunkGasSum = currentChunkGasSum + gas
 				} else {
 					transactionChunks.push(currentChunk)
 					currentChunk = [ transaction ]
-					currentChunkGasSum = transaction.gas
+					currentChunkGasSum = gas
 				}
 			}
 			if (currentChunk.length > 0) transactionChunks.push(currentChunk)
@@ -348,16 +426,13 @@ export class EthereumClientService {
 		}
 
 		// if transactions spend more gas in a block than the block allows, split them into multiple blocks. Also clamp a single transaction to take at most one block worth of gas
-		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map((transaction) => ({ signedTransaction: gasLimitTransaction(transaction.signedTransaction) })) }))
-		const calculateTotalGasUsed = (currentTransactions: { gas: bigint }[]) => currentTransactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.gas, 0n)
+		const gasLimitedInput: SimulationStateInputMinimalData = simulationStateInput.map((block) => ({ ...block, transactions: block.transactions.map(gasLimitTransaction) }))
 		const preparedBlocks: PreparedEthSimulateV1InputBlock[] = []
 		const rpcBlocks: SimulationStateInputMinimalDataBlock[] = []
 		for (const inputBlock of gasLimitedInput) {
-			const signedTransactions = inputBlock.transactions.map((x) => x.signedTransaction)
-			if (calculateTotalGasUsed(signedTransactions) > parentBlock.gasLimit) {
-				const splitted = splitTransactionsByGasLimit(signedTransactions, parentBlock.gasLimit)
-				for (const [index, newTransactions] of splitted.entries()) {
-					const transactions = newTransactions.map((transaction) => ({ signedTransaction: transaction }))
+			if (getTotalExecutedGasLimit(inputBlock.transactions) > parentBlock.gasLimit) {
+				const splitted = splitTransactionsByGasLimit(inputBlock.transactions, parentBlock.gasLimit)
+				for (const [index, transactions] of splitted.entries()) {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
@@ -382,49 +457,19 @@ export class EthereumClientService {
 			previousBlockOverride = newBlockOverride
 		}
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides) => {
-			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(transaction.signedTransaction))
-			const ecRecoverMovedToAddress = 0x123456n
-			const ecRecoverAddress = 1n
-
-			const isHexSignature = (value: string): value is `0x${ string }` => value.startsWith('0x')
-			const encodePackedHash = (messageHashAndSignature: MessageHashAndSignature) => {
-				if (!isHexSignature(messageHashAndSignature.signature)) throw new Error('Signature must be hex encoded')
-				const sig = parseSignatureHex(messageHashAndSignature.signature)
-				const packed = BigInt(keccak256(encodeAbiValues(['bytes32', 'uint8', 'bytes32', 'bytes32'], [messageHashAndSignature.messageHash, sig.v ?? BigInt(sig.yParity), sig.r, sig.s])))
-				return packed
-			}
-
-			// set mapping storage mapping() (instructed here: https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html)
-			const getMappingsMemorySlot = (hash: EthereumBytes32) => keccak256(encodeAbiValues(['bytes32', 'uint256'], [bytes32String(hash), 0n]))
-			const signatureStructs = await Promise.all(block.signedMessages.map(async (sign) => {
-				const messageHashAndSignature = await simulatePersonalSign(sign.originalRequestParameters, sign.fakeSignedFor)
-				return { key: getMappingsMemorySlot(encodePackedHash(messageHashAndSignature)), value: sign.fakeSignedFor }
-			}))
-			const stateSets = signatureStructs.reduce((acc, current) => {
-				acc[current.key] = current.value
-				return acc
-			}, {} as { [key: string]: bigint } )
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, signedMessagesUpToBlock: SimulationStateInputMinimalDataBlock['signedMessages']) => {
+			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(getExecutedTransaction(transaction)))
 			return {
 				calls: rpcCalls,
 				blockOverrides,
-				stateOverrides: {
-					...block.signedMessages.length > 0 ? {
-						[addressString(ecRecoverAddress)]: {
-							movePrecompileToAddress: ecRecoverMovedToAddress,
-							code: getEcRecoverOverride(),
-							state: stateSets,
-						}
-					} : {},
-					...block.stateOverrides,
-				}
+				stateOverrides: mergeEcRecoverOverridePreservingExplicitPrecompiles(await getSignedMessagesEcRecoverOverride(signedMessagesUpToBlock), block.stateOverrides),
 			}
 		}
 
 		const blockStateCalls = await Promise.all(rpcBlocks.map(async (block, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
-			return await getBlockStateCall(block, blockOverrideForBlock)
+			return await getBlockStateCall(block, blockOverrideForBlock, rpcBlocks.slice(0, index + 1).flatMap((earlierBlock) => earlierBlock.signedMessages))
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {

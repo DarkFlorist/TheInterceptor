@@ -1,4 +1,4 @@
-import type { RpcEntries, RpcEntry } from '../../app/ts/types/rpc.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getRpcEntryIdentityKey } from '../../app/ts/utils/rpcNetworkChange.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -9,7 +9,7 @@ import { render } from 'preact'
 import { act } from 'preact/test-utils'
 import { findChainEntryByName, findRpcEntryByIdentityKey, getRpcEntryLabel } from '../../app/ts/components/subcomponents/ChainSelector.js'
 import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu.js'
-import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
+import { InlineCard, WARNING_TOOLTIP_ATTRIBUTE } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { hasValidTimePickerValue, parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
@@ -225,6 +225,28 @@ describe('UI boundary fixes', () => {
 		}
 	})
 
+	for (const signerOnly of [false, true]) test(`unrelated RPC add, edit and removal preserve an external selection (signer-only=${ signerOnly })`, async () => {
+		const entry: RpcEntry = { name: 'Configured', chainId: 1n, httpsRpc: 'https://configured.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const active: RpcNetwork = signerOnly ? { name: 'Independent selection', chainId: entry.chainId, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } : { ...entry, name: 'Independent selection' }
+		const edited = { ...entry, name: 'Edited entry' }
+		const persisted: RpcEntries[] = []
+		const persist = async (entries: RpcEntries) => { persisted.push(entries) }
+		const change = async () => { throw new Error('Unrelated edit must not select a network') }
+		await saveRpcEntryAndKeepActiveRpcConsistent(edited, undefined, [entry], active, persist, change)
+		await saveRpcEntryAndKeepActiveRpcConsistent(edited, entry, [entry], active, persist, change)
+		await removeRpcEntryAndKeepActiveRpcConsistent(entry, [entry], active, persist, change)
+		assert.deepEqual(persisted, [[entry, edited], [edited], []])
+	})
+
+	test('removing the active RPC uses the shared primary-first fallback', async () => {
+		const active: RpcEntry = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
+		const first = { ...active, name: 'First', httpsRpc: 'https://first.example' }
+		const primary = { ...active, name: 'Primary', httpsRpc: 'https://primary.example', primary: true }
+		const changes: RpcEntry[] = []
+		await removeRpcEntryAndKeepActiveRpcConsistent(active, [active, first, primary], active, async () => undefined, async entry => { changes.push(entry) })
+		assert.deepEqual(changes, [primary])
+	})
+
 	test('rejects stale RPC edits and duplicate connections before persistence', async () => {
 		const entry: RpcEntry = { name: 'Original', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 		const stale = { ...entry, name: 'Stale' }
@@ -236,7 +258,7 @@ describe('UI boundary fixes', () => {
 
 	test('does not broadcast an active RPC edit before its active-network update succeeds', async () => {
 		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-		const editedRpc = { ...activeRpc, name: 'Edited active RPC' }
+		const editedRpc = { ...activeRpc, name: 'Edited active RPC', httpsRpc: 'https://edited.example' }
 		const operations: string[] = []
 
 		await assert.rejects(saveRpcEntryAndKeepActiveRpcConsistent(editedRpc, activeRpc, [activeRpc], activeRpc,
@@ -287,7 +309,7 @@ describe('UI boundary fixes', () => {
 			const persist = async () => { persisted = true }
 			const change = async (entry: typeof active) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 			await assert.rejects(completeRpcFormMutation(async () => {
-				if (operation === 'edit') await saveRpcEntryAndKeepActiveRpcConsistent({ ...active, name: 'Edited' }, active, [active, fallback], active, persist, change)
+				if (operation === 'edit') await saveRpcEntryAndKeepActiveRpcConsistent({ ...active, name: 'Edited', httpsRpc: 'https://edited.example' }, active, [active, fallback], active, persist, change)
 				else await removeRpcEntryAndKeepActiveRpcConsistent(active, [active, fallback], active, persist, change)
 			}, () => { closed = true }), /Another popup/)
 			assert.equal(persisted, false)
@@ -343,12 +365,24 @@ describe('UI boundary fixes', () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
-				render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = 'Untrusted address' noCopy noExpandButtons />, dom.document.body)
+				render(<InlineCard icon = { () => <span>Token</span> } label = 'TKN' warningMessage = 'Token warning details' noCopy noExpandButtons />, dom.document.body)
 			})
 
-			const warningSigns = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('role') === 'alert')
+			const warningSigns = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('class') === 'inline-card-warning-sign')
 			assert.equal(warningSigns.length, 2)
-			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === 'Untrusted address'), true)
+			// The card's own hint shows the warning attribute; carrying no data-tooltip keeps a page Hint from showing the explanation a second time.
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.(WARNING_TOOLTIP_ATTRIBUTE) === 'Token warning details'), true)
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('data-tooltip') === null), true)
+			assert.equal(warningSigns.every((warningSign) => warningSign.getAttribute?.('title') === ''), true)
+			const [leadingSign, trailingSign] = warningSigns
+			// The leading sign must stay an alert so screen readers proactively announce the warning, named by the full explanation; the trailing sign stays silent so it is announced once.
+			assert.equal(leadingSign?.getAttribute?.('role'), 'alert')
+			assert.equal(leadingSign?.getAttribute?.('aria-label'), 'Token warning details')
+			assert.equal(leadingSign?.getAttribute?.('tabIndex'), 0)
+			assert.equal(trailingSign?.getAttribute?.('role'), null)
+			assert.equal(trailingSign?.getAttribute?.('aria-label'), null)
+			assert.equal(trailingSign?.getAttribute?.('aria-hidden'), true)
+			assert.equal(trailingSign?.getAttribute?.('tabIndex'), null)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

@@ -3,7 +3,8 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
+import { withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../websiteConnectionEvents.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
@@ -498,10 +499,7 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 
 	if (pendingRequests.current.length > 0) {
 		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current) } })
-		return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
-	}
-
-	if (openedDialog) {
+	} else if (openedDialog) {
 		removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 		await closePopupOrTabById(openedDialog.popupOrTab)
 		openedDialog = undefined

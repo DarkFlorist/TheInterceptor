@@ -2,6 +2,17 @@ import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
 import { createInterceptorInternalError, getErrorMessage, isBrowserFetchTransportError } from './caughtErrors.js'
+import type { InterceptorError } from '../types/JsonRpc-types.js'
+
+// The non-module inpage sender cannot import this descriptor; contentScriptReconnect.test.ts checks its emitted diagnostic request against it.
+export const INTERCEPTOR_DIAGNOSTIC_REQUEST = { requestId: -1, method: 'InterceptorError' } as const satisfies { readonly requestId: number, readonly method: InterceptorError['method'] }
+
+// Request identity policy: ordered page requests participate in replay deduplication; diagnostics have no reply promise and must never advance that watermark.
+export function classifyRequestId(request: { readonly requestId: number, readonly method: string }): 'ordered' | 'diagnostic' | 'invalid' {
+	if (Number.isSafeInteger(request.requestId) && request.requestId >= 0) return 'ordered'
+	if (request.requestId === INTERCEPTOR_DIAGNOSTIC_REQUEST.requestId && request.method === INTERCEPTOR_DIAGNOSTIC_REQUEST.method) return 'diagnostic'
+	return 'invalid'
+}
 
 export type WebsiteSocket = funtypes.Static<typeof WebsiteSocket>
 export const WebsiteSocket = funtypes.ReadonlyObject({
@@ -158,6 +169,12 @@ export const getHostWithPort = (urlString: string): string => {
 	const url = new URL(urlString)
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
+
+// `getHostWithPort` with the scheme of the URL in front, such as `https://example.com:8443`, so the host and port are normalized in one place. Unlike `URL.origin`, URLs without a tuple origin do not all collapse to the same 'null', so two different origins never compare equal.
+export const getSchemeAndHostWithPort = (urlString: string): string => `${ new URL(urlString).protocol }//${ getHostWithPort(urlString) }`
+
+// Both origins of a requesting frame, derived from its URL in one place: `websiteOrigin` is the scheme-less host and port that website access settings are keyed by, and `requestOrigin` is the same host and port with the frame's scheme.
+export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getHostWithPort(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
 
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)

@@ -51,10 +51,12 @@ function parseExactMajorMinor(version: string) {
 }
 
 describe('package scripts', () => {
-	test('test script compiles Solidity contracts, isolates test files and uses the CI-safe timeout before starting the test runner', () => {
+	test('test script checks recovery dependencies, compiles contracts and isolates test files and uses the CI-safe timeout', () => {
 		const scripts = getPackageScripts()
 
+		assert.equal(getScript(scripts, 'typecheck').split(' && ')[0], 'bun run check:recovery-dependency')
 		assert.deepEqual(getScript(scripts, 'test').split(' && '), [
+			'bun run check:recovery-dependency',
 			'bun run compile-contracts',
 			'bun test --isolate --timeout 60000',
 		])
@@ -114,6 +116,12 @@ describe('package scripts', () => {
 		assert.equal(getScript(scripts, 'test:chrome-safe-cosigning-communication'), 'bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts')
 	})
 
+	test('provides the browser-level Firefox provider injection check', () => {
+		const scripts = getPackageScripts()
+
+		assert.equal(getScript(scripts, 'test:firefox-provider-injection'), 'bun ./test/benchmarks/firefoxProviderInjection.ts')
+	})
+
 	test('typescript is new enough for micro-eth-signer declarations', () => {
 		const packageJson = getPackageJson()
 		assert.equal(getDependencyVersion(packageJson, 'micro-eth-signer'), '0.19.0')
@@ -139,7 +147,7 @@ describe('package scripts', () => {
 		}
 	})
 
-	test('app compilation builds Solidity contracts and keeps declaration output enabled', () => {
+	test('app compilation checks recovery dependencies, builds contracts and keeps declarations', () => {
 		const scripts = getPackageScripts()
 		const configFile = ts.readConfigFile(path.join(repositoryRoot, 'tsconfig.json'), ts.sys.readFile)
 		assert.equal(configFile.error, undefined)
@@ -149,6 +157,7 @@ describe('package scripts', () => {
 		const { declaration, declarationMap } = compilerOptions
 
 		assert.deepEqual(getScript(scripts, 'compile-app').split(' && '), [
+			'bun run check:recovery-dependency',
 			'bun run compile-contracts',
 			'bun run clean-js-output',
 			'bun --bun tsc --project tsconfig.json',

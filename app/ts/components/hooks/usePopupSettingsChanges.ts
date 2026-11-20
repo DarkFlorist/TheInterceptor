@@ -16,6 +16,7 @@ const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, stri
 	mode: 'Changing mode...',
 	rpc: 'Changing network. Check your wallet if approval is required.',
 	rich: 'Updating balances...',
+	import: 'Importing settings...',
 }
 
 type SettingsChangeHomeData = Pick<ReturnType<typeof useLiveSimulationHomeData>, 'isSettingsLoaded' | 'activeAddresses' | 'simulationMode' | 'rpcNetwork' | 'tabState'>

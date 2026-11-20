@@ -11,8 +11,10 @@ export function requireDefined<T>(value: T | undefined, description: string): T 
 	return value
 }
 
-// The app's guard for plain objects such as parsed JSON objects; arrays are rejected.
-export { isRecord } from '../../app/ts/utils/runtimeTypeGuards.js'
+// Test-owned JSON object guard: the generic harness has no application dependencies.
+export function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 export function readProperty(value: unknown, property: PropertyKey): unknown {
 	if (typeof value !== 'object' || value === null) return undefined
