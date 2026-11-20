@@ -1,6 +1,6 @@
-import { useEffect } from 'preact/hooks'
+import { useEffect, useErrorBoundary } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
-import type { JSX } from 'preact'
+import type { ComponentChildren, JSX } from 'preact'
 import { AddressBook } from '../../AddressBook.js'
 import { WebsiteAccessView } from './WebsiteAccess.js'
 import { SettingsView } from './SettingsView.js'
@@ -10,6 +10,9 @@ import { getManagementPageFromNavigationKey, getManagementPageHash, managementPa
 import { assertNever } from '../../utils/typescript.js'
 import { PageContentFrame } from '../subcomponents/PageContentFrame.js'
 import { getManagementPageFromLegacyOrCurrentHash } from '../../utils/legacyManagementHashes.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
+import { reportUnexpectedError } from '../../utils/errors.js'
+import { getErrorMessage } from '../../utils/caughtErrors.js'
 
 const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string, layoutClass: string }>> = {
 	home: { label: 'Home', icon: '../img/management-home.svg', description: '', layoutClass: '' },
@@ -67,7 +70,9 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 	</main>
 }
 
-function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, selectPage: (page: ManagementPage) => void }) {
+type ManagementPanelContentParams = { page: ManagementPage, selectPage: (page: ManagementPage) => void }
+
+function ManagementPanelContent({ page, selectPage }: ManagementPanelContentParams) {
 	// Reuse the page content, while the standalone compatibility entries keep their own shells.
 	switch (page) {
 		case 'home': return <ManagementHome selectPage = { selectPage } />
@@ -80,7 +85,39 @@ function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, se
 	}
 }
 
+function ManagementPanelRenderError({ page, error, retry }: { page: ManagementPage, error: unknown, retry: () => void }) {
+	useEffect(() => {
+		const reportPanelRenderError = async () => {
+			await reportUnexpectedError(error, {
+				source: 'managementView',
+				code: 'management_panel_render_failed',
+				displayMessage: `The ${ managementSectionDetails[page].label } section failed to display.`,
+				details: { page },
+				suppressExpectedHandledErrors: false,
+			})
+		}
+		void reportPanelRenderError()
+	}, [error])
+
+	return <main class = 'management-unavailable management-panel-error' role = 'alert'>
+		<h2>{ managementSectionDetails[page].label } could not be displayed</h2>
+		<ErrorComponent text = { getErrorMessage(error) ?? 'An unexpected error occurred while rendering this section.' } containerStyle = { { margin: '1rem 0' } } />
+		<button type = 'button' class = 'button is-primary' onClick = { retry }>Try again</button>
+	</main>
+}
+
+// Each panel gets its own boundary, so a failing panel leaves the shell header and tab navigation usable; it is keyed by page, so switching tabs starts a fresh boundary.
+function ManagementPanelErrorBoundary({ page, children }: { page: ManagementPage, children: ComponentChildren }) {
+	const [error, resetError] = useErrorBoundary()
+	if (error !== undefined) return <ManagementPanelRenderError page = { page } error = { error } retry = { resetError } />
+	return <>{ children }</>
+}
+
 export function ManagementView() {
+	return <ManagementShell renderPanel = { ManagementPanelContent } />
+}
+
+export function ManagementShell({ renderPanel: RenderPanel }: { renderPanel: (params: ManagementPanelContentParams) => JSX.Element }) {
 	const initialPage = getManagementPageFromLegacyOrCurrentHash(globalThis.location.hash)
 	const selectedPage = useSignal<ManagementPage | undefined>(initialPage)
 
@@ -152,7 +189,7 @@ export function ManagementView() {
 				tabIndex = { active ? 0 : -1 }
 				hidden = { !active }
 			>
-				{ active ? <ManagementPanelContent page = { page } selectPage = { selectPage } /> : <></> }
+				{ active ? <ManagementPanelErrorBoundary key = { page } page = { page }><RenderPanel page = { page } selectPage = { selectPage } /></ManagementPanelErrorBoundary> : <></> }
 			</section>
 		}) }
 	</div>

@@ -3,6 +3,7 @@ import { test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
+import { withSilencedConsole } from './consoleSilence.js'
 
 function replaceGlobal(name: string, value: unknown) {
 	const previous = Object.getOwnPropertyDescriptor(globalThis, name)
@@ -19,7 +20,9 @@ function installManagementShellMocks() {
 	const runtimeListeners = new Set<(message: unknown) => unknown>()
 	let diagnosticsLoads = 0
 	let websiteLoads = 0
+	let unexpectedErrorBroadcasts = 0
 	let hash = '#home'
+	const storageState: Record<string, unknown> = {}
 	const location = {
 		get hash() { return hash },
 		set hash(nextHash: string) {
@@ -56,6 +59,7 @@ function installManagementShellMocks() {
 					return { method: 'popup_requestDiagnostics', diagnostics: [] }
 				}
 				if (message.method === 'popup_retrieveWebsiteAccess') websiteLoads += 1
+				if (message.method === 'popup_UnexpectedErrorOccured') unexpectedErrorBroadcasts += 1
 				return undefined
 			},
 			onMessage: {
@@ -63,7 +67,16 @@ function installManagementShellMocks() {
 				removeListener(listener: (message: unknown) => unknown) { runtimeListeners.delete(listener) },
 			},
 		},
-		storage: { local: { async get() { return {} } } },
+		storage: {
+			local: {
+				async get(keys?: string | string[]) {
+					const requestedKeys = keys === undefined ? Object.keys(storageState) : Array.isArray(keys) ? keys : [keys]
+					return Object.fromEntries(requestedKeys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+				},
+				async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
+				async remove(keys: string | string[]) { for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key] },
+			},
+		},
 	})
 
 	const restore = () => {
@@ -73,7 +86,7 @@ function installManagementShellMocks() {
 		restoreLocation()
 		dom.restore()
 	}
-	return { dom, runtimeListeners, tabListLayout, getDiagnosticsLoads: () => diagnosticsLoads, getWebsiteLoads: () => websiteLoads, restore }
+	return { dom, runtimeListeners, tabListLayout, storageState, getUnexpectedErrorBroadcasts: () => unexpectedErrorBroadcasts, getDiagnosticsLoads: () => diagnosticsLoads, getWebsiteLoads: () => websiteLoads, restore }
 }
 
 test('management tabs reveal clipped selection, reload Diagnostics, and release hidden website listeners', async () => {
@@ -138,6 +151,60 @@ test('every management panel releases its runtime message listeners when it is h
 		assert.equal(runtimeListeners.size > 0, true)
 		await act(() => { render(null, dom.document.body) })
 		assert.equal(runtimeListeners.size, 0, 'unmounting the shell left runtime message listeners registered')
+	} finally {
+		await act(() => { render(null, dom.document.body) })
+		restore()
+	}
+})
+
+test('a failing panel keeps the shell header and tabs usable, reports the failure, and recovers on retry', async () => {
+	const { dom, storageState, getUnexpectedErrorBroadcasts, restore } = installManagementShellMocks()
+	let diagnosticsPanelFails = true
+	const { ManagementShell } = await import('../../app/ts/components/pages/ManagementView.js')
+	const renderPanel = ({ page }: { page: string }) => {
+		if (page === 'diagnostics' && diagnosticsPanelFails) throw new Error('diagnostics panel exploded')
+		return <main class = 'test-panel'>{ `${ page } panel` }</main>
+	}
+	const storedPanelFailureCount = () => {
+		const storedDiagnostics = storageState.interceptorErrorDiagnostics
+		if (!Array.isArray(storedDiagnostics)) return 0
+		return storedDiagnostics.filter((diagnostic) => typeof diagnostic === 'object' && diagnostic !== null && 'code' in diagnostic && diagnostic.code === 'management_panel_render_failed').length
+	}
+	const findButton = (label: string) => findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.textContent === label)
+	const click = async (label: string) => {
+		const button = findButton(label)
+		assert.ok(button, `Missing ${ label } button`)
+		await act(async () => { await clickRenderedElement(button) })
+	}
+
+	try {
+		await withSilencedConsole(async () => {
+			await act(() => { render(<ManagementShell renderPanel = { renderPanel } />, dom.document.body) })
+			await click('Diagnostics')
+			for (let attempt = 0; attempt < 20 && getUnexpectedErrorBroadcasts() < 1; attempt++) await act(async () => { await Promise.resolve() })
+		})
+
+		const text = () => dom.document.body.textContent
+		assert.match(text(), /Diagnostics could not be displayed/u)
+		assert.match(text(), /diagnostics panel exploded/u)
+		assert.ok(findRenderedElement(dom.document.body, (node) => node.tagName === 'NAV' && node.getAttribute('role') === 'tablist'), 'tab navigation was unmounted by the panel failure')
+		assert.ok(findButton('Settings'), 'tabs were unmounted by the panel failure')
+		assert.equal(storedPanelFailureCount(), 1, 'the panel failure was not reported')
+
+		await click('Settings')
+		assert.match(text(), /settings panel/u)
+		assert.doesNotMatch(text(), /could not be displayed/u)
+
+		await withSilencedConsole(async () => {
+			await click('Diagnostics')
+			for (let attempt = 0; attempt < 20 && getUnexpectedErrorBroadcasts() < 2; attempt++) await act(async () => { await Promise.resolve() })
+		})
+		assert.match(text(), /Diagnostics could not be displayed/u)
+		assert.equal(storedPanelFailureCount(), 2)
+		diagnosticsPanelFails = false
+		await click('Try again')
+		assert.match(text(), /diagnostics panel/u)
+		assert.doesNotMatch(text(), /could not be displayed/u)
 	} finally {
 		await act(() => { render(null, dom.document.body) })
 		restore()
