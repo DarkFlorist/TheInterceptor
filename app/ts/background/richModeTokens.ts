@@ -5,9 +5,10 @@ import { richFundingRejected, richFundingSaved, type RichFundingResult, type Ric
 import { getDefaultRichTokenAmount, getRichTokenEligibility, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity } from '../utils/richTokens.js'
 import { getUserAddressBookEntries } from './addressBookStorage.js'
 import { getRichModeState, mutateRichMode } from './richModeSettings.js'
+import type { DistributiveOmit } from '../utils/typescript.js'
 import { richTokensForPresentation } from '../utils/richModeDerivation.js'
 
-export type RichTokenChange = ModifyRichTokenRequest['data']
+export type RichTokenChange = DistributiveOmit<ModifyRichTokenRequest['data'], 'chainId'>
 type RichTokenStorageClient = Pick<IEthereumClientService, 'ethSimulateV1'>
 
 // The active-chain eligibility of a token, by the shared rule in utils/richTokens.

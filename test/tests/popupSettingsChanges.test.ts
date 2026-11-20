@@ -441,7 +441,7 @@ describe('popup settings changes', () => {
 			entered.resolve(undefined)
 			await release.promise
 		} })
-		const request = { method: 'popup_modifyRichToken' as const, data: { action: 'Remove' as const, address: account, tokenAddress: token } }
+		const request = { method: 'popup_modifyRichToken' as const, data: { chainId: 1n, action: 'Remove' as const, address: account, tokenAddress: token } }
 		const pending = dispatchPopupMessage(context, request)
 		try {
 			await entered.promise

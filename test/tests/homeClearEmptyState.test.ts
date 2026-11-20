@@ -262,6 +262,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		setRichState: async () => undefined,
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
+		richFundingChainId: new Signal(rpcNetwork.chainId),
 		richNativeAmount: new Signal(MAKE_YOU_RICH_TRANSACTION.transaction.value),
 		richTokenOptions: new Signal([]),
 		richAccountBalances: new Signal([]),

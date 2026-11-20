@@ -274,7 +274,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 }
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich): Promise<RichFundingResult> {
-	if (makeMeRichChange.data.action === 'set-native-amount') return await updateRichNativeAmountForAddress((await getSettings()).activeRpcNetwork.chainId, makeMeRichChange.data.address, makeMeRichChange.data.nativeAmount)
+	if (makeMeRichChange.data.action === 'set-native-amount') return await updateRichNativeAmountForAddress(makeMeRichChange.data.chainId, makeMeRichChange.data.address, makeMeRichChange.data.nativeAmount)
 	const { add, address } = makeMeRichChange.data
 	if (address === 'CurrentAddress') return await updateMakeCurrentAddressRich(() => add)
 	return await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
@@ -292,7 +292,7 @@ export async function modifyRichToken(
 	requestAbortController: AbortController | undefined,
 	request: ModifyRichTokenRequest,
 ): Promise<RichFundingResult> {
-	const chainId = ethereum.getChainId()
+	const chainId = request.data.chainId
 	try {
 		return await applyRichTokenChange(ethereum, requestAbortController, chainId, request.data)
 	} catch (error: unknown) {
@@ -1221,6 +1221,7 @@ async function buildHomePageUpdate(
 			walletSelectedAddressBookEntry,
 			richList: richData.richList,
 			makeCurrentAddressRich: richData.makeCurrentAddressRich,
+			richFundingChainId: richData.richFundingChainId,
 			richNativeAmount: richData.richNativeAmount,
 			richTokenOptions: richData.richTokenOptions,
 			richAccountBalances: richData.richAccountBalances,

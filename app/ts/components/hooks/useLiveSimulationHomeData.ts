@@ -70,6 +70,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const popupIconRefreshGeneration = useSignal(0)
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
+	const richFundingChainId = useSignal<bigint | undefined>(undefined)
 	const richNativeAmount = useSignal(MAKE_YOU_RICH_TRANSACTION.transaction.value)
 	const richTokenOptions = useSignal<readonly RichTokenOption[]>([])
 	const richAccountBalances = useSignal<readonly RichAccountBalance[]>([])
@@ -190,6 +191,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
 			interceptorDisabled.value = data.interceptorDisabled
 			makeCurrentAddressRich.value = data.makeCurrentAddressRich
+			richFundingChainId.value = data.richFundingChainId
 			if (data.richNativeAmount !== undefined) richNativeAmount.value = data.richNativeAmount
 			richTokenOptions.value = data.richTokenOptions ?? []
 			richAccountBalances.value = data.richAccountBalances ?? []
@@ -357,6 +359,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richFundingChainId,
 		richNativeAmount,
 		richTokenOptions,
 		richAccountBalances,

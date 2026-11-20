@@ -12,7 +12,6 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { getRichModeState } from './richModeSettings.js'
-import { richTokensForPresentation } from '../utils/richModeDerivation.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -183,7 +182,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const [settings, signingAddressPreferences, richModeState] = await Promise.all([getSettings(), getSigningAddressPreferences(), getRichModeState()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		// Keep the 1.7 backup format as a computed compatibility projection.
+		// Layouts and account balances are exported separately, as they are stored.
 		version: '1.7' as const,
 		exportedDate: exportDate,
 		settings: {
@@ -201,7 +200,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			makeCurrentAddressRich: richModeState.makeCurrentAddressRich,
 			richNativeAmount: richModeState.defaultNativeAmount,
 			fixedAddressRichList: richModeState.fixedAddressRichList,
-			richTokens: richTokensForPresentation(richModeState),
+			richTokens: richModeState.tokenLayouts,
 			richAccountBalances: richModeState.accountBalances,
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
 		}

@@ -635,7 +635,7 @@ function FirstCard(param: FirstCardParams) {
 				</> : !param.isFreshHomeDataLoaded.value ?
 					<SimulationControlsLoadingSkeleton/>
 				: <div class = 'popup-simulation-controls popup-data-reveal'>
-					<RichModeAccountManager isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } richNativeAmount = { param.richNativeAmount } nativeCurrencyTicker = { param.rpcNetwork.value?.currencyTicker ?? 'ETH' } chainId = { param.rpcNetwork.value?.chainId ?? 1n } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } richTokenOptions = { param.richTokenOptions } richAccountBalances = { param.richAccountBalances } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
+					<RichModeAccountManager isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } richNativeAmount = { param.richNativeAmount } nativeCurrencyTicker = { param.rpcNetwork.value?.currencyTicker ?? 'ETH' } richFundingChainId = { param.richFundingChainId } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } richTokenOptions = { param.richTokenOptions } richAccountBalances = { param.richAccountBalances } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -893,6 +893,7 @@ export function Home(param: HomeParams) {
 			simulationMode = { param.simulationMode }
 			changeActiveAddress = { param.changeActiveAddress }
 			makeCurrentAddressRich = { param.makeCurrentAddressRich }
+			richFundingChainId = { param.richFundingChainId }
 			richNativeAmount = { param.richNativeAmount }
 			richList = { param.fixedAddressRichList }
 			richTokenOptions = { param.richTokenOptions }

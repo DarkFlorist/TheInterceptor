@@ -4,7 +4,7 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, Optio
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
-import { RichAccountBalances, RichToken } from './richMode.js'
+import { RichAccountBalances, RichToken, RichTokenLayout } from './richMode.js'
 import { SigningAddressPreferences } from './signerTypes.js'
 
 export type Page = funtypes.Static<typeof Page>
@@ -160,6 +160,8 @@ export const ExportedSettings = funtypes.Union(
 		settings: funtypes.ReadonlyObject({
 			...independentAddressExportedSettingsFields,
 			...richExportedSettingsFields,
+			// Amounts belong exclusively to per-account balances; layouts describe how to apply them.
+			richTokens: funtypes.ReadonlyArray(RichTokenLayout),
 			safeAppsCompatibilityMode: funtypes.Boolean,
 		})
 	}),

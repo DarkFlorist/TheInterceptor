@@ -283,6 +283,7 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 	homeDataSource: 'fresh',
 	popupRefreshGeneration,
 	data: {
+		richFundingChainId: '0x1',
 		visualizedSimulatorState: createPassthroughCompleteVisualizedSimulation(),
 		activeAddresses: [],
 		richList: [],
@@ -1171,7 +1172,7 @@ describe('popup icon sync', () => {
 		try {
 			await act(() => {
 				render(h(RichModeAccountManager, {
-					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(previousAmount), richTokenOptions: signal([]),
 					setRichState: async () => undefined,
@@ -1226,7 +1227,7 @@ describe('popup icon sync', () => {
 		})
 		await act(() => {
 			render(h(RichModeAccountManager, {
-				activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+				activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 				makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 				richAccountBalances: profiles,
 				richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option, daiOption]),
@@ -1372,7 +1373,7 @@ describe('popup icon sync', () => {
 		try {
 			await act(() => {
 				render(h(RichModeAccountManager, {
-					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5n }] }]),
 					richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
@@ -1407,7 +1408,7 @@ describe('popup icon sync', () => {
 		try {
 			await act(() => {
 				render(h(RichModeAccountManager, {
-					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
 					setRichState: async () => undefined,
@@ -1441,7 +1442,7 @@ describe('popup icon sync', () => {
 		try {
 			await act(() => {
 				render(h(RichModeAccountManager, {
-					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					activeAddress: signal(account), richFundingChainId: signal(1n), isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
 					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
 					setRichState: async () => undefined,
@@ -1496,6 +1497,7 @@ describe('popup icon sync', () => {
 					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
 						activeAddresses: [loadedAddressBookEntry],
 						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						richFundingChainId: '0x1',
 						richNativeAmount: '0xad78ebc5ac620000',
 						makeCurrentAddressRich: true,
 						richList: [{ addressBookEntry: { type: 'contact', name: 'Second Account', address: secondAddress, entrySource: 'User' }, makingRich: true, type: 'UserAdded' }],

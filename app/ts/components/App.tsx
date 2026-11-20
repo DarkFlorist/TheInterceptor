@@ -52,6 +52,7 @@ export function App() {
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richFundingChainId,
 		richNativeAmount,
 		richTokenOptions,
 		richAccountBalances,
@@ -244,6 +245,7 @@ export function App() {
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
+						richFundingChainId = { richFundingChainId }
 						richNativeAmount = { richNativeAmount }
 						richTokenOptions = { richTokenOptions }
 						richAccountBalances = { richAccountBalances }

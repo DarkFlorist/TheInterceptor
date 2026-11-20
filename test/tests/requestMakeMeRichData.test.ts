@@ -266,7 +266,7 @@ describe('requestMakeMeRichList resilience', () => {
 		const configuredAmount = 12_345_678_000_000_000_000n
 
 		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: true, address: richAddress } })
-		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', nativeAmount: configuredAmount, address: richAddress } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { chainId: 1n, action: 'set-native-amount', nativeAmount: configuredAmount, address: richAddress } })
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(richAddress)], { balance: configuredAmount })
@@ -278,7 +278,7 @@ describe('requestMakeMeRichList resilience', () => {
 		const configuredAmount = 9_876_543_210_000_000_000n
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: richAccountAddress })
 		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { action: 'set-address-rich', add: true, address: 'CurrentAddress' } })
-		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', nativeAmount: configuredAmount, address: richAccountAddress } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { chainId: 1n, action: 'set-native-amount', nativeAmount: configuredAmount, address: richAccountAddress } })
 		const simulationState: ResolvedSimulationState = {
 			kind: 'simulated',
 			value: {
@@ -331,7 +331,7 @@ describe('requestMakeMeRichList resilience', () => {
 		await updateRichTokens(() => [{ chainId: 1n, tokenAddress, tokenType: 'ERC20', tokenId: undefined, name: 'USD Coin', symbol: 'USDC', decimals: 6n, amount: 999n, balanceSlot: 9n, erc1155StorageOrder: undefined }])
 		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 123n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 456n }] }])
 		const before = await getRichModeState()
-		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', address: richAccountAddress, nativeAmount: 789n } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { chainId: 1n, action: 'set-native-amount', address: richAccountAddress, nativeAmount: 789n } })
 		const after = await getRichModeState()
 		assert.deepEqual(after.tokenLayouts, before.tokenLayouts)
 		assert.equal(Object.hasOwn(after.tokenLayouts[0] ?? {}, 'amount'), false)
@@ -366,7 +366,7 @@ describe('requestMakeMeRichList resilience', () => {
 		})
 		let probeCount = 0
 		Object.defineProperty(ethereum, 'ethSimulateV1', { value: async () => { probeCount += 1; throw new Error('A cached layout should not need another storage probe') } })
-		const reply = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { action: 'Add', address: secondAccount, tokenAddress } })
+		const reply = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { chainId: 1n, action: 'Add', address: secondAccount, tokenAddress } })
 		assert.equal(reply.ok, true)
 		if (!reply.ok) throw new Error(reply.error)
 		assert.equal((reply.ok ? reply.richToken : undefined)?.name, 'USD Coin')
@@ -646,7 +646,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await withSilencedConsole(async () => await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
 		}))
 
 		assert.equal(reply.ok, false)
@@ -668,7 +668,7 @@ describe('requestMakeMeRichList resilience', () => {
 		let refreshes = 0
 		const simulation = { isStoredSimulationAvailable: async () => true, refresh: async () => { refreshes += 1; return { status: 'observed' as const, available: false } } }
 		for (const change of [{ action: 'Remove' as const, tokenAddress: 0x999n }, { action: 'SetAmount' as const, tokenAddress, amount: 5n }]) {
-			const result = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { ...change, address: richAccountAddress, tokenId: undefined } })
+			const result = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { chainId: 1n, ...change, address: richAccountAddress, tokenId: undefined } })
 			assert.equal(result.ok, true)
 			if (!result.ok) throw new Error(result.error)
 			assert.equal(result.fundingChanged, false)
@@ -693,7 +693,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(rejected.ok, false)
 		const requestHandler = new MockRequestHandler()
 		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, { name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false })
-		const result = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { action: 'SetAmount', address: richAccountAddress, tokenAddress, amount: 5n } })
+		const result = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { chainId: 1n, action: 'SetAmount', address: richAccountAddress, tokenAddress, amount: 5n } })
 		assert.deepEqual(result, { ok: false, error: 'Add the token to this account before changing its amount.' })
 		await completeRichFundingMutation(result, {
 			refresh: async () => { throw new Error('A rejected edit must not refresh') },
@@ -715,7 +715,7 @@ describe('requestMakeMeRichList resilience', () => {
 			refresh: async () => { refreshCount += 1; storedSimulationAvailable = refreshAvailable.current; return { status: 'observed' as const, available: refreshAvailable.current } },
 			isStoredSimulationAvailable: async () => storedSimulationAvailable,
 		}
-		const setNative = async (nativeAmount: bigint) => await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', address: richAccountAddress, nativeAmount } })
+		const setNative = async (nativeAmount: bigint) => await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { chainId: 1n, action: 'set-native-amount', address: richAccountAddress, nativeAmount } })
 
 		const rejected = await setNative(0n)
 		assert.deepEqual(rejected, { ok: false, error: 'Native amount must be greater than zero and fit within uint256.' })
@@ -873,7 +873,7 @@ describe('requestMakeMeRichList resilience', () => {
 		const tokensBefore = await getRichTokens()
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
 		})
 
 		assert.deepEqual(reply, { ok: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' })
@@ -919,7 +919,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0x3333333333333333333333333333333333333333n },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress: 0x3333333333333333333333333333333333333333n },
 		})
 
 		assert.deepEqual(reply, { ok: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' })
@@ -976,7 +976,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(richData.richTokenOptions[0]?.decimals, 6n)
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress },
 		})
 
 		assert.equal(reply.ok, true)
@@ -1038,7 +1038,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(richData.richTokenOptions.some((option) => option.tokenType === 'ERC1155' && option.tokenId === 42n && option.name === 'Exact Game Items'), true)
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
 		})
 
 		assert.equal(reply.ok, true)
@@ -1102,7 +1102,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
 		})
 
 		assert.equal(reply.ok, true)
@@ -1339,7 +1339,7 @@ describe('requestMakeMeRichList resilience', () => {
 		})
 		const addPromise = modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', address: richAccountAddress, tokenAddress },
+			data: { chainId: 1n, action: 'Add', address: richAccountAddress, tokenAddress },
 		})
 		await probeStarted
 		const removePromise = removeAddressBookEntry(

@@ -679,11 +679,13 @@ describe('settings import', () => {
 		const exported = await exportSettingsAndAddressBook()
 		assert.equal(exported.version, '1.7')
 		if (exported.version !== '1.7') throw new Error('Expected a version 1.7 settings export')
-		assert.deepEqual(exported.settings.richTokens, [richToken])
+		const { amount: _amount, ...layout } = richToken
+		assert.deepEqual(exported.settings.richTokens, [layout])
+		assert.equal(Object.hasOwn(exported.settings.richTokens[0] ?? {}, 'amount'), false)
 		assert.deepEqual(exported.settings.richAccountBalances, [richAccountBalance])
 
 		browserMock.reset()
-		await importSettingsAndAddressBook(exported)
+		await importSettingsAndAddressBook(ExportedSettings.parse(ExportedSettings.serialize(exported)))
 
 		assert.equal(await getMakeCurrentAddressRich(), true)
 		assert.equal(await getDefaultRichNativeAmount(), richAccountBalance.nativeAmount)

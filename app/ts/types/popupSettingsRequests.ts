@@ -7,7 +7,7 @@ export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyMakeMeRich'),
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({ action: funtypes.Literal('set-address-rich'), add: funtypes.Boolean, address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress) }),
-		funtypes.ReadonlyObject({ action: funtypes.Literal('set-native-amount'), nativeAmount: EthereumQuantity, address: EthereumAddress }),
+		funtypes.ReadonlyObject({ action: funtypes.Literal('set-native-amount'), chainId: EthereumQuantity, nativeAmount: EthereumQuantity, address: EthereumAddress }),
 	)
 }).asReadonly()
 

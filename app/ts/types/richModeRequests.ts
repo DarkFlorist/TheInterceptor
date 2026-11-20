@@ -8,16 +8,19 @@ export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
 	data: funtypes.Union(
 		funtypes.ReadonlyObject({
 			action: funtypes.Literal('Add'),
+			chainId: EthereumQuantity,
 			tokenAddress: EthereumAddress,
 			address: EthereumAddress,
 		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
 		funtypes.ReadonlyObject({
 			action: funtypes.Literal('Remove'),
+			chainId: EthereumQuantity,
 			tokenAddress: EthereumAddress,
 			address: EthereumAddress,
 		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
 		funtypes.ReadonlyObject({
 			action: funtypes.Literal('SetAmount'),
+			chainId: EthereumQuantity,
 			tokenAddress: EthereumAddress,
 			address: EthereumAddress,
 			amount: EthereumQuantity,

@@ -6,7 +6,11 @@ import { getDefaultRichTokenAmount, getRichTokenOptions, reconcileRichTokenMetad
 // Pure derivations of rich-mode state, shared by the storage owner (richModeSettings), the popup payloads and the storage-free simulation input builder. Nothing here reads or writes storage.
 
 // The stored layout of a presented token, which never carries a funding amount.
-export const richTokenLayout = ({ amount: _amount, ...layout }: RichToken): RichTokenLayout => layout
+export const richTokenLayout = (token: RichToken | RichTokenLayout): RichTokenLayout => {
+	if (!('amount' in token)) return token
+	const { amount: _amount, ...layout } = token
+	return layout
+}
 
 export const richTokensForPresentation = (state: RichModeState): readonly RichToken[] => state.tokenLayouts.map((layout) => ({ ...layout, amount: getDefaultRichTokenAmount(layout.decimals) }))
 
@@ -48,6 +52,7 @@ export function reconcileRichModeStateWithAddressBook(state: RichModeState, entr
 export const buildRichModePresentation = (settings: Settings, state: RichModeState, addressBookEntries: readonly AddressBookEntry[]) => {
 	const chainId = settings.activeRpcNetwork.chainId
 	return {
+		richFundingChainId: chainId,
 		makeCurrentAddressRich: state.makeCurrentAddressRich,
 		richNativeAmount: state.defaultNativeAmount,
 		richAccountBalances: dropTokenBalancesWithoutLayout(profilesForAddresses(state, chainId, addressesBeingMadeRich(settings, state)), state.tokenLayouts),

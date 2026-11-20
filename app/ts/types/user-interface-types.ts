@@ -41,6 +41,7 @@ export type HomeParams = {
 	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
+	richFundingChainId: ReadonlySignal<bigint | undefined>
 	richNativeAmount: Signal<bigint>
 	activeAddresses: Signal<AddressBookEntries>
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
@@ -97,6 +98,7 @@ export type FirstCardParams = {
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
+	richFundingChainId: ReadonlySignal<bigint | undefined>
 	richNativeAmount: Signal<bigint>
 	richList: Signal<readonly EnrichedRichListElement[]>
 	richTokenOptions: Signal<readonly RichTokenOption[]>

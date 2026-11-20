@@ -8,6 +8,7 @@ import { getSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, importSettingsAndRefresh, modifyMakeMeRich, modifyRichToken, popupChangeActiveRpc, setNewRpcList } from './popupMessageHandlers.js'
 import { isPopupSimulationAvailable, runPopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply } from './richFundingReplies.js'
+import { validateRichFundingChain } from './richFundingContext.js'
 import { getPopupVisualisationState } from './storageVariables.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
@@ -44,16 +45,17 @@ export const popupSettingsCommandHandlers = {
 	}),
 	popup_modifyRichToken: settingsCommand('popup_modifyRichToken', async (context, request) => {
 		const services = context.simulationServicesOwner.getCurrent()
-		const result = await modifyRichToken(services.ethereum, context.simulationAbortController, request)
+		const result = validateRichFundingChain(context.settings, services.ethereum, request.data.chainId) ?? await modifyRichToken(services.ethereum, context.simulationAbortController, request)
 		return toModifyRichTokenReply(await completeRichFundingMutation(result, {
 			refresh: async () => await runPopupSimulationRefresh({ ...services, invalidateOldState: true }),
 			isStoredSimulationAvailable: async () => isPopupSimulationAvailable(await getPopupVisualisationState()),
 		}))
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
-		const result = await modifyMakeMeRich(request)
+		const services = context.simulationServicesOwner.getCurrent()
+		const result = validateRichFundingChain(context.settings, services.ethereum, request.data.action === 'set-native-amount' ? request.data.chainId : undefined) ?? await modifyMakeMeRich(request)
 		return toRichSettingsChangeReply(await completeRichFundingMutation(result, {
-			refresh: async () => await runPopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true }),
+			refresh: async () => await runPopupSimulationRefresh({ ...services, invalidateOldState: true }),
 			isStoredSimulationAvailable: async () => isPopupSimulationAvailable(await getPopupVisualisationState()),
 		}))
 	}),

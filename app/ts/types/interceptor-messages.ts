@@ -690,6 +690,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	}).And(funtypes.ReadonlyPartial({
 		richTokenOptions: RichTokenOptions,
+		richFundingChainId: EthereumQuantity,
 		richNativeAmount: EthereumQuantity,
 		richAccountBalances: RichAccountBalances,
 		walletSelectedAddressBookEntry: AddressBookEntry,
