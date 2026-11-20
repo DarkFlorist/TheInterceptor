@@ -751,17 +751,49 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(stringifyDiagnosticDetails(unreadable), '[Error details could not be inspected]')
 	})
 
-	test('omits arbitrary nested context without invoking getters', async () => {
+	test('bounds deep and repeated nested context without invoking getters', async () => {
 		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
 		let leafReads = 0
 		let branch: unknown = { get value() { leafReads += 1; return 'leaf' } }
 		for (let depth = 0; depth < 8; depth++) branch = { first: branch, second: branch, third: branch, fourth: branch, fifth: branch }
 
-		const diagnostic = stringifyDiagnosticDetails(branch)
+		const diagnostic = stringifyDiagnosticDetails(branch) ?? ''
 
-		assert.ok(leafReads < 1_000)
-		assert.equal(diagnostic, '[Structured diagnostic context omitted]')
 		assert.equal(leafReads, 0)
+		assert.ok(diagnostic.length <= 16_000)
+		assert.match(diagnostic, /Maximum context depth reached/u)
+		assert.match(diagnostic, /Repeated or circular context reference/u)
+	})
+
+	test('keeps the context that existing callers pass, omitting only getters and unserializable values', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let getterReads = 0
+		const lifecycleContext = {
+			callbackName: 'onRequestFailed',
+			request: { method: 'eth_call', params: [{ to: '0x1111111111111111111111111111111111111111', value: 10n }, 'latest'] },
+			get secret() { getterReads += 1; return 'never read' },
+			callback: () => undefined,
+		}
+
+		const lifecycleDiagnostic = JSON.parse(stringifyDiagnosticDetails(lifecycleContext) ?? '')
+
+		assert.deepEqual(lifecycleDiagnostic, {
+			callbackName: 'onRequestFailed',
+			request: { method: 'eth_call', params: [{ to: '0x1111111111111111111111111111111111111111', value: '10' }, 'latest'] },
+			secret: '[Getter omitted]',
+			callback: '[function omitted]',
+		})
+		assert.equal(getterReads, 0)
+	})
+
+	test('stores caller context such as an explorer API URL with the reported error', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+
+		await withSilencedConsole(async () => await reportUnexpectedError(new Error('explorer lookup failed'), { details: { address: '0xabc', apiUrl: 'https://api.etherscan.io/api' } }))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostic?.details, '{"address":"0xabc","apiUrl":"https://api.etherscan.io/api"}')
 	})
 
 	test('bounds repeated and distinct AggregateError children before serializing them', async () => {

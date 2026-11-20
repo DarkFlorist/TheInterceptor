@@ -4,7 +4,9 @@ const MAX_ERROR_CAUSE_DEPTH = 8
 const MAX_ERROR_SNAPSHOT_NODES = 128
 const MAX_ERROR_SNAPSHOT_TEXT = 12_000
 const TRUNCATION_NOTICE = '\n[Diagnostic text truncated]'
-const SAFE_DIAGNOSTIC_CONTEXT_KEYS = ['address', 'senderAddress', 'callbackName', 'popupRefreshGeneration', 'tokenId'] as const
+const MAX_CONTEXT_DEPTH = 6
+const MAX_CONTEXT_ENTRIES = 50
+const MAX_CONTEXT_NODES = 256
 type ErrorSnapshotBudget = { remainingNodes: number, remainingText: number }
 const UNREADABLE_ERROR_FIELD = '[Error field could not be read]'
 type ErrorSnapshot = { className?: string, name?: string, message?: string, stack?: string, cause?: ErrorSnapshot | string, errors?: unknown[], omitted?: string }
@@ -74,27 +76,50 @@ function snapshotError(error: Error, seen: WeakSet<object>, budget: ErrorSnapsho
 	return snapshot
 }
 
+// Context is caller-supplied and may hold website data, so it is copied generically but defensively: own data properties only (getters are never run), with bounded depth, entries, nodes and text.
+function snapshotContextValue(value: unknown, seen: WeakSet<object>, budget: ErrorSnapshotBudget, depth: number): unknown {
+	if (value === undefined || value === null || typeof value === 'boolean') return value
+	if (typeof value === 'number') return Number.isFinite(value) ? value : String(value)
+	if (typeof value === 'bigint') return String(value)
+	if (typeof value === 'string') return budgetedErrorText(value, budget) ?? (value === '' ? '' : '[Diagnostic inspection limit reached]')
+	if (typeof value === 'symbol' || typeof value === 'function') return `[${ typeof value } omitted]`
+	if (value instanceof Error) return snapshotError(value, seen, budget, depth)
+	if (seen.has(value)) return '[Repeated or circular context reference]'
+	if (depth >= MAX_CONTEXT_DEPTH) return '[Maximum context depth reached]'
+	if (budget.remainingNodes === 0) return '[Diagnostic inspection limit reached]'
+	budget.remainingNodes -= 1
+	seen.add(value)
+	if (value instanceof Date) return Number.isNaN(value.getTime()) ? '[Invalid Date]' : value.toISOString()
+	if (Array.isArray(value)) {
+		const length = ownDataProperty(value, 'length')
+		const entryCount = typeof length === 'number' ? length : 0
+		const entries = Array.from({ length: Math.min(entryCount, MAX_CONTEXT_ENTRIES) }, (_, index) => snapshotOwnProperty(value, String(index), seen, budget, depth + 1))
+		return entryCount > MAX_CONTEXT_ENTRIES ? [...entries, `[${ entryCount - MAX_CONTEXT_ENTRIES } more entries omitted]`] : entries
+	}
+	const keys = Object.keys(value)
+	const snapshot: Record<string, unknown> = {}
+	for (const key of keys.slice(0, MAX_CONTEXT_ENTRIES)) snapshot[key] = snapshotOwnProperty(value, key, seen, budget, depth + 1)
+	if (keys.length > MAX_CONTEXT_ENTRIES) snapshot['[omitted]'] = `${ keys.length - MAX_CONTEXT_ENTRIES } more properties omitted`
+	return snapshot
+}
+
+function snapshotOwnProperty(value: object, key: string, seen: WeakSet<object>, budget: ErrorSnapshotBudget, depth: number): unknown {
+	const descriptor = Object.getOwnPropertyDescriptor(value, key)
+	if (descriptor === undefined) return undefined
+	if (!('value' in descriptor)) return '[Getter omitted]'
+	return snapshotContextValue(descriptor.value, seen, budget, depth)
+}
+
 export function stringifyDiagnosticDetails(details: unknown): string | undefined {
-	// Inspect only known fields and bound both traversal and output before untrusted errors reach the UI.
 	if (details === undefined) return undefined
 	if (typeof details === 'string') return limitDiagnosticText(details)
 	if (details === null || typeof details === 'boolean' || typeof details === 'number' || typeof details === 'bigint') return limitDiagnosticText(String(details))
 	try {
 		if (details instanceof Error) return limitDiagnosticText(JSON.stringify(snapshotError(details, new WeakSet<object>(), { remainingNodes: MAX_ERROR_SNAPSHOT_NODES, remainingText: MAX_ERROR_SNAPSHOT_TEXT })))
-		if (typeof details === 'object' && details !== null) {
-			const context: Record<string, string | number | boolean> = {}
-			for (const key of SAFE_DIAGNOSTIC_CONTEXT_KEYS) {
-				const value = ownDataProperty(details, key)
-				if (typeof value === 'string') context[key] = limitDiagnosticText(value, MAX_DIAGNOSTIC_FIELD_LENGTH)
-				else if (typeof value === 'number' || typeof value === 'boolean') context[key] = value
-				else if (typeof value === 'bigint') context[key] = String(value)
-			}
-			if (Object.keys(context).length > 0) return JSON.stringify(context)
-		}
+		return limitDiagnosticText(JSON.stringify(snapshotContextValue(details, new WeakSet<object>(), { remainingNodes: MAX_CONTEXT_NODES, remainingText: MAX_ERROR_SNAPSHOT_TEXT }, 0)) ?? '[Structured diagnostic context omitted]')
 	} catch {
 		return '[Error details could not be inspected]'
 	}
-	return '[Structured diagnostic context omitted]'
 }
 
 export function stringifyErrorForDiagnostic(error: unknown): string | undefined {
