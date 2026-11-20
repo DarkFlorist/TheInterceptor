@@ -1,0 +1,69 @@
+diff --git a/abstract/weierstrass.js b/abstract/weierstrass.js
+index 21b5ad782d93593488fcb220106f31999831f2a4..f4065741195183cbf07efe8270d3ee49a57ab0c1 100644
+--- a/abstract/weierstrass.js
++++ b/abstract/weierstrass.js
+@@ -333,7 +333,7 @@ export function weierstrass(params, extraOpts = {}) {
+             }
+             catch (sqrtError) {
+                 const err = sqrtError instanceof Error ? ': ' + sqrtError.message : '';
+-                throw new Error('bad point: is not on curve, sqrt error' + err);
++                throw new Error('bad point: is not on curve, sqrt error' + err, { cause: sqrtError });
+             }
+             assertCompressionIsSupported();
+             const evenY = Fp.isOdd(y);
+@@ -1208,7 +1208,7 @@ export function ecdsa(Point, hash, ecdsaOpts = {}) {
+             // (sr^-1)R-(hr^-1)G = -(hr^-1)G + (sr^-1). unsafe is fine: there is no private data.
+             const Q = Point.BASE.multiplyUnsafe(u1).add(R.multiplyUnsafe(u2));
+             if (Q.is0())
+-                throw new Error('invalid recovery: point at infinify');
++                throw Object.assign(new Error('invalid recovery: point at infinify'), { code: 'ERR_SECP256K1_INVALID_POINT' });
+             Q.assertValidity();
+             return Q;
+         }
+diff --git a/secp256k1.js b/secp256k1.js
+index fc6cf702ac4f9de4f811ae6c6b26a3bb09058871..f75510838f48334ab085652123992da4f794ce01 100644
+--- a/secp256k1.js
++++ b/secp256k1.js
+@@ -60,7 +60,7 @@ function sqrtMod(y) {
+     const t2 = (pow2(t1, _6n, P) * b2) % P;
+     const root = pow2(t2, _2n, P);
+     if (!Fpk1.eql(Fpk1.sqr(root), y))
+-        throw new Error('Cannot find square root');
++        throw Object.assign(new Error('Cannot find square root'), { code: 'ERR_SECP256K1_INVALID_POINT' });
+     return root;
+ }
+ const Fpk1 = Field(secp256k1_CURVE.p, { sqrt: sqrtMod });
+diff --git a/src/abstract/weierstrass.ts b/src/abstract/weierstrass.ts
+index 62ae5b4c13c97a22a3fb6b26ad7ac50d61e78694..a5cde995ed755fcd7a58f5873b566c18ab28c3e8 100644
+--- a/src/abstract/weierstrass.ts
++++ b/src/abstract/weierstrass.ts
+@@ -757,7 +757,7 @@ export function weierstrass<T>(
+         y = Fp.sqrt(y2); // y = y² ^ (p+1)/4
+       } catch (sqrtError) {
+         const err = sqrtError instanceof Error ? ': ' + sqrtError.message : '';
+-        throw new Error('bad point: is not on curve, sqrt error' + err);
++        throw new Error('bad point: is not on curve, sqrt error' + err, { cause: sqrtError });
+       }
+       assertCompressionIsSupported();
+       const evenY = Fp.isOdd!(y);
+@@ -1734,7 +1734,7 @@ export function ecdsa(
+       const u2 = Fn.create(s * ir); // sr^-1
+       // (sr^-1)R-(hr^-1)G = -(hr^-1)G + (sr^-1). unsafe is fine: there is no private data.
+       const Q = Point.BASE.multiplyUnsafe(u1).add(R.multiplyUnsafe(u2));
+-      if (Q.is0()) throw new Error('invalid recovery: point at infinify');
++      if (Q.is0()) throw Object.assign(new Error('invalid recovery: point at infinify'), { code: 'ERR_SECP256K1_INVALID_POINT' });
+       Q.assertValidity();
+       return Q;
+     }
+diff --git a/src/secp256k1.ts b/src/secp256k1.ts
+index 4380a2774cf163315bb1d495ea9d9e771e3488c9..4ace813f82c13c5478bb16e476a0fe7d611af5b6 100644
+--- a/src/secp256k1.ts
++++ b/src/secp256k1.ts
+@@ -85,6 +85,6 @@ function sqrtMod(y: bigint): bigint {
+   const t1 = (pow2(b223, _23n, P) * b22) % P;
+   const t2 = (pow2(t1, _6n, P) * b2) % P;
+   const root = pow2(t2, _2n, P);
+-  if (!Fpk1.eql(Fpk1.sqr(root), y)) throw new Error('Cannot find square root');
++  if (!Fpk1.eql(Fpk1.sqr(root), y)) throw Object.assign(new Error('Cannot find square root'), { code: 'ERR_SECP256K1_INVALID_POINT' });
+   return root;
+ }
