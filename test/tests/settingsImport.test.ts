@@ -1,3 +1,4 @@
+import { classifyExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import * as fs from 'node:fs'
@@ -312,6 +313,10 @@ describe('settings import', () => {
 				version: backupKind === 'signing-1.6' ? '1.6' : '1.5',
 				settings: Object.fromEntries(Object.entries(current.settings).filter(([key]) => !omittedFields.includes(key))),
 			})
+			const classified = classifyExportedSettings(historical)
+			assert.equal(classified.kind, backupKind === 'rich-1.5' ? 'legacy-rich' : 'independent-addresses')
+			assert.equal(classified.richFunding !== undefined, backupKind === 'rich-1.5')
+			assert.equal(classified.independentAddresses !== undefined, backupKind !== 'rich-1.5')
 			browserMock.reset()
 			await importSettingsAndAddressBook(historical)
 			assert.equal(await getMakeCurrentAddressRich(), backupKind === 'rich-1.5')

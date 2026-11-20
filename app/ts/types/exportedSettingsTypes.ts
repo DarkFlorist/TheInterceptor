@@ -164,3 +164,23 @@ export const ExportedSettings = funtypes.Union(
 		})
 	}),
 )
+
+
+// Historical branches both exported 1.5. This schema-owned classifier is the only shape-based distinction; import consumers receive the same funding and independent-address decision.
+export function classifyExportedSettings(exported: ExportedSettings) {
+	switch (exported.version) {
+		case '1.7': return { kind: 'current' as const, richFunding: exported.settings, independentAddresses: exported.settings }
+		case '1.6': return { kind: 'independent-addresses' as const, richFunding: undefined, independentAddresses: exported.settings }
+		case '1.5': {
+			const settings = exported.settings
+			return 'richTokens' in settings
+				? { kind: 'legacy-rich' as const, richFunding: settings, independentAddresses: undefined }
+				: { kind: 'independent-addresses' as const, richFunding: undefined, independentAddresses: settings }
+		}
+		case '1.0':
+		case '1.1':
+		case '1.2':
+		case '1.3':
+		case '1.4': return { kind: 'legacy' as const, richFunding: undefined, independentAddresses: undefined }
+	}
+}
