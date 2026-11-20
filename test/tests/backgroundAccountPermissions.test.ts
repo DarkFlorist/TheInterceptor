@@ -3220,4 +3220,25 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
 		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
 	})
+	test('selecting a Safe that shares its address with a contact activates the Safe and its saved signing accounts', async () => {
+		installBrowserMock()
+		const { changeActiveAddress, changeSimulationMode, getSettings, saveCurrentTabId, updateTabState, updateAddressBookAndSigningWalletBindings } = await loadModules()
+		const signerAddress = 0x1111111111111111111111111111111111111111n
+		const executionAddress = 0x5555555555555555555555555555555555555555n
+		const sharedAddress = 0x6666666666666666666666666666666666666666n
+		const tabId = 201
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
+		await updateAddressBookAndSigningWalletBindings(() => [
+			{ type: 'contact', name: 'Shadowing contact', address: sharedAddress, entrySource: 'User', useAsActiveAddress: true, chainId: 'AllChains' },
+			{ type: 'safe', name: 'Shared-address Safe', address: sharedAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSigningSignerAddress: signerAddress, safeExecutionAddress: executionAddress, safeSignerAddresses: [signerAddress] },
+		])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [signerAddress], activeSigningAddress: signerAddress }))
+		await saveCurrentTabId(tabId)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const reply = await changeActiveAddress(simulationServicesOwner, new Map(), { method: 'popup_changeActiveAddress', data: { activeAddress: sharedAddress, simulationMode: false, activeAddressKind: 'safe' } })
+		assert.deepEqual(reply, { type: 'ChangeActiveAddressReply', ok: true })
+		const settings = await getSettings()
+		assert.equal(settings.activeSigningSafeAddress, sharedAddress)
+		assert.equal(settings.selectedSigningAddress, undefined)
+	})
 })

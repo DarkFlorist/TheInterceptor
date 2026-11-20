@@ -3,6 +3,7 @@ import { SigningWalletSummary, openSigningWalletSetup } from '../subcomponents/S
 import { useState } from 'preact/hooks'
 
 import type { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
+import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BigAddress } from '../subcomponents/address.js'
 import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
@@ -10,9 +11,9 @@ import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcompon
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	const wallets = useSigningWalletBindings()
 	const [error, setError] = useState<string>()
-	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
+	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer', entry?: AddressBookEntry) {
 		param.close()
-		param.setActiveAddressAndInformAboutIt(activeAddress)
+		param.setActiveAddressAndInformAboutIt(activeAddress, entry)
 	}
 
 	function getSignerAccount() {
@@ -76,8 +77,8 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					</li> }
 
 					{ activeAddresses.map((activeAddress) => (
-						<li key = { activeAddress.address.toString() }>
-							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
+						<li key = { `${ activeAddress.type }:${ activeAddress.address.toString() }` }>
+							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address, activeAddress) } }>
 								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
 									<BigAddress
 										addressBookEntry = { activeAddress }

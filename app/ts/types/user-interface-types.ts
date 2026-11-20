@@ -71,7 +71,8 @@ export type HomeParams = {
 export type ChangeActiveAddressParam = {
 	activeAddresses: ReadonlySignal<AddressBookEntries>
 	close: () => void,
-	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
+	// entry is the picked address-book entry; the signer row has none.
+	setActiveAddressAndInformAboutIt: (address: bigint | 'signer', entry?: AddressBookEntry) => void,
 	signerAccounts: readonly bigint[] | undefined,
 	signerName: SignerName,
 	renameAddressCallBack: RenameAddressCallBack,

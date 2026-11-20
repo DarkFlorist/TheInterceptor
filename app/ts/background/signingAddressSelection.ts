@@ -27,7 +27,7 @@ async function getWalletAccountSigningSelection(signerAddress: bigint, settings:
 	if (signerSelection === undefined) throw new Error('The connected signing wallet does not expose an active account.')
 	if (preference === undefined || preference.selection === 'signer') return signerSelection
 	if (preference.chainId !== settings.activeRpcNetwork.chainId) return signerSelection
-	const selection = getActiveAddressSelection(preference.safeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress])
+	const selection = getActiveAddressSelection(preference.safeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress], 'safe')
 	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection : signerSelection
 }
 

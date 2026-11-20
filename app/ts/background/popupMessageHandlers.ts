@@ -241,7 +241,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 	const signerAccount = await getSignerAccount()
 	const activeAddresses = await getActiveAddresses()
 	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
-	const selection = getActiveAddressSelection(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
+	const selection = getActiveAddressSelection(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts, addressChange.data.activeAddressKind)
 	if (selection === undefined) {
 		if (!addressChange.data.simulationMode) {
 			if (addressChange.data.activeAddress === 'signer') {
@@ -253,7 +253,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 			}
 		}
 		try {
-			assertActiveAddressSelectionAllowed(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
+			assertActiveAddressSelectionAllowed(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts, addressChange.data.activeAddressKind)
 		} catch (error) {
 			return {
 				type: 'ChangeActiveAddressReply',

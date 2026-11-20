@@ -242,9 +242,34 @@ describe('active address selection', () => {
 		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, selectableAddresses, false, 1n, [EOA_ADDRESS]), true)
 	})
 
+	test('a Safe row resolves to the Safe when a contact shares its address', () => {
+		const sharedAddress = 0x6000000000000000000000000000000000000006n
+		const contact = { type: 'contact' as const, name: 'Shadowing contact', address: sharedAddress, entrySource: 'User' as const, useAsActiveAddress: true, chainId: 'AllChains' as const }
+		const safe = { type: 'safe' as const, name: 'Shared-address Safe', address: sharedAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSigningSignerAddress: EOA_ADDRESS, safeExecutionAddress: OTHER_EOA_ADDRESS, safeSignerAddresses: [EOA_ADDRESS] }
+		const sharedAddressEntries: AddressBookEntries = [contact, safe]
+		// Signing mode: an address saved as a Safe cannot hold a signing wallet, so only the Safe is offered, whichever kind or none is named.
+		assert.deepEqual(getSelectableActiveAddresses(sharedAddressEntries, false, 1n, [EOA_ADDRESS]), [safe])
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, false, 1n, [EOA_ADDRESS], 'safe'), { type: 'addressBookEntry', entry: safe })
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, false, 1n, [EOA_ADDRESS]), { type: 'addressBookEntry', entry: safe })
+		assert.equal(getActiveAddressSelection(sharedAddress, sharedAddressEntries, false, 1n, [EOA_ADDRESS], 'account'), undefined)
+		// Simulation mode offers both, and the picked entry's kind decides.
+		assert.deepEqual(getSelectableActiveAddresses(sharedAddressEntries, true, 1n, [EOA_ADDRESS]), [contact, safe])
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, true, 1n, [EOA_ADDRESS], 'safe'), { type: 'addressBookEntry', entry: safe })
+		assert.deepEqual(getActiveAddressSelection(sharedAddress, sharedAddressEntries, true, 1n, [EOA_ADDRESS], 'account'), { type: 'addressBookEntry', entry: contact })
+	})
+
+	test('an active-address change names the kind of the picked entry', async () => {
+		let sentMessage: unknown
+		await requestActiveAddressChange({ activeAddress: SAFE_ADDRESS, activeAddressKind: 'safe' }, false, async (message) => {
+			sentMessage = message
+			return { type: 'ChangeActiveAddressReply', ok: true }
+		})
+		assert.deepEqual(sentMessage, { method: 'popup_changeActiveAddress', data: { activeAddress: SAFE_ADDRESS, simulationMode: false, activeAddressKind: 'safe' } })
+	})
+
 	test('waits for the background to accept an active-address change', async () => {
 		let sentMessage: unknown
-		await requestActiveAddressChange(EOA_ADDRESS, true, async (message) => {
+		await requestActiveAddressChange({ activeAddress: EOA_ADDRESS }, true, async (message) => {
 			sentMessage = message
 			return { type: 'ChangeActiveAddressReply', ok: true }
 		})
@@ -257,7 +282,7 @@ describe('active address selection', () => {
 
 	test('surfaces background rejection of an active-address change', async () => {
 		await assert.rejects(
-			requestActiveAddressChange(EOA_ADDRESS, true, async () => ({
+			requestActiveAddressChange({ activeAddress: EOA_ADDRESS }, true, async () => ({
 				type: 'ChangeActiveAddressReply',
 				ok: false,
 				message: 'The address is not available yet.',
@@ -268,7 +293,7 @@ describe('active address selection', () => {
 
 	test('surfaces a missing background active-address reply', async () => {
 		await assert.rejects(
-			requestActiveAddressChange(EOA_ADDRESS, true, async () => undefined),
+			requestActiveAddressChange({ activeAddress: EOA_ADDRESS }, true, async () => undefined),
 			/Changing the active address failed because the background page did not return a reply\./u,
 		)
 	})

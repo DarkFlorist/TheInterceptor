@@ -6,7 +6,7 @@ import type { PopupSettingsRequestWithSharedReply } from '../../types/popupSetti
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { getActiveSigningAddress, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
+import { type ActiveAddressEntryKind, getActiveAddressEntryKind, getActiveSigningAddress, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from '../activeAddressChange.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
@@ -22,7 +22,7 @@ const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, stri
 type SettingsChangeHomeData = Pick<ReturnType<typeof useLiveSimulationHomeData>, 'isSettingsLoaded' | 'activeAddresses' | 'simulationMode' | 'rpcNetwork' | 'tabState'>
 
 export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState }: SettingsChangeHomeData) {
-	const pendingAddressSelection = useSignal<{ address: bigint | 'signer', simulationMode: boolean } | undefined>(undefined)
+	const pendingAddressSelection = useSignal<{ address: bigint | 'signer', entryKind: ActiveAddressEntryKind | undefined, simulationMode: boolean } | undefined>(undefined)
 	const isActiveAddressChanging = useSignal(false)
 	// Local state covers dispatch latency; shared status coordinates other and reopened popups.
 	const pendingSettingsChange = useSignal(false)
@@ -31,15 +31,17 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 	const sharedStatusLabel = useComputed(() => !pendingSettingsChange.value && !isActiveAddressChangePending.value && backgroundSettingsChange.value.operation !== undefined ? popupSettingsOperationLabels[backgroundSettingsChange.value.operation] : undefined)
 	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value || backgroundSettingsChange.value.operation !== undefined)
 
-	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
+	// selectedEntry is the picked or just saved address-book entry; its kind keeps a Safe apart from an ordinary entry at the same address.
+	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', selectedEntry?: AddressBookEntry) {
 		if (!isSettingsLoaded.value) return
 		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
-		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
-		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
-		pendingAddressSelection.value = { address, simulationMode: simulationMode.value }
+		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, selectedEntry)
+		const entryKind = selectedEntry === undefined ? undefined : getActiveAddressEntryKind(selectedEntry)
+		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [], entryKind)) return
+		pendingAddressSelection.value = { address, entryKind, simulationMode: simulationMode.value }
 		isActiveAddressChanging.value = true
 		try {
-			await requestActiveAddressChange(address, simulationMode.value)
+			await requestActiveAddressChange({ activeAddress: address, ...entryKind === undefined ? {} : { activeAddressKind: entryKind } }, simulationMode.value)
 			// Recover a missed commit notification from current background state, never from the original selection.
 			if (isActiveAddressChanging.value) {
 				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: true } })
@@ -89,10 +91,13 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 			const settings = update.data
 			if (settings.simulationMode !== pending.simulationMode) return
 			// Reveal canonical settings as soon as they match the selection; the request reply still owns completion and errors.
-			const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : getActiveSigningAddress(settings)?.address
+			const signingAddress = settings.simulationMode ? undefined : getActiveSigningAddress(settings)
+			const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : signingAddress?.address
+			// In signing mode the committed selection also says whether a Safe or an ordinary account was selected.
+			const matchesSigningKind = pending.entryKind === undefined || signingAddress === undefined || (signingAddress.type === 'safe') === (pending.entryKind === 'safe')
 			const matchesSelection = pending.address === 'signer'
 				? settings.simulationMode ? settings.useSignersAddressAsActiveAddress : settings.activeSigningSafeAddress === undefined && settings.selectedSigningAddress === undefined
-				: selectedAddress === pending.address
+				: selectedAddress === pending.address && matchesSigningKind
 			if (!matchesSelection) return
 			isActiveAddressChanging.value = false
 		}

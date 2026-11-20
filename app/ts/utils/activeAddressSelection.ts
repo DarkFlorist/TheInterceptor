@@ -7,6 +7,10 @@ export type ActiveAddressSelection =
 	| { readonly type: 'signer', readonly address: bigint | undefined }
 	| { readonly type: 'addressBookEntry', readonly entry: AddressBookEntry }
 
+// Which address-book entry a selection means when a Safe and an ordinary account entry share an address.
+export type ActiveAddressEntryKind = 'safe' | 'account'
+export const getActiveAddressEntryKind = (entry: AddressBookEntry): ActiveAddressEntryKind => entry.type === 'safe' ? 'safe' : 'account'
+
 export type OptimisticActiveAddressSelection =
 	| { readonly mode: 'simulation', readonly activeSimulationAddress: bigint | undefined, readonly useSignersAddressAsActiveAddress: boolean }
 	| { readonly mode: 'signing', readonly displayedSigningAddress: bigint | undefined }
@@ -126,28 +130,31 @@ export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries
 
 	// Selection is a display preference, not signing authority; admission rejects unbound contacts and revalidates wallet revisions.
 	const selectedSignerAddress = signerAccounts[0]
+	// An address saved as a Safe cannot hold a signing wallet, so in signing mode the Safe is the only selectable entry for it and an ordinary entry sharing its address is not offered.
+	const safeAddresses = new Set(activeAddresses.filter((entry) => entry.type === 'safe').map((entry) => entry.address))
 	return activeAddresses.filter((entry) =>
-		entry.type !== 'safe' ? entry.chainId === 'AllChains' || (entry.chainId ?? 1n) === activeChainId : entry.type === 'safe'
+		entry.type !== 'safe' ? !safeAddresses.has(entry.address) && (entry.chainId === 'AllChains' || (entry.chainId ?? 1n) === activeChainId) : entry.type === 'safe'
 		&& entry.chainId === activeChainId
 		&& (entry.safeSigningSignerAddress !== undefined && entry.safeSignerAddresses?.includes(entry.safeSigningSignerAddress) === true || selectedSignerAddress !== undefined && entry.safeSignerAddresses?.includes(selectedSignerAddress) === true)
 	)
 }
 
-export function isActiveAddressSelectionAllowed(address: bigint | 'signer', activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]) {
-	return getActiveAddressSelection(address, activeAddresses, simulationMode, activeChainId, signerAccounts) !== undefined
+export function isActiveAddressSelectionAllowed(address: bigint | 'signer', activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], entryKind?: ActiveAddressEntryKind) {
+	return getActiveAddressSelection(address, activeAddresses, simulationMode, activeChainId, signerAccounts, entryKind) !== undefined
 }
 
-export function getActiveAddressSelection(address: bigint | 'signer', activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]): ActiveAddressSelection | undefined {
+// entryKind names the picked entry, so a Safe row resolves to the Safe even when an ordinary entry shares its address. Without it, the first selectable entry at the address is used; in signing mode that is the Safe, since an ordinary entry sharing a Safe's address is not selectable there.
+export function getActiveAddressSelection(address: bigint | 'signer', activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], entryKind?: ActiveAddressEntryKind): ActiveAddressSelection | undefined {
 	const selectedSignerAddress = signerAccounts[0]
 	if (address === 'signer' && selectedSignerAddress !== undefined) {
 		return { type: 'signer', address: selectedSignerAddress }
 	}
-	const entry = getSelectableActiveAddresses(activeAddresses, simulationMode, activeChainId, signerAccounts).find((candidate) => candidate.address === address)
+	const entry = getSelectableActiveAddresses(activeAddresses, simulationMode, activeChainId, signerAccounts).find((candidate) => candidate.address === address && (entryKind === undefined || getActiveAddressEntryKind(candidate) === entryKind))
 	return entry === undefined ? undefined : { type: 'addressBookEntry', entry }
 }
 
-export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]): ActiveAddressSelection {
-	const selection = getActiveAddressSelection(address, activeAddresses, simulationMode, activeChainId, signerAccounts)
+export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], entryKind?: ActiveAddressEntryKind): ActiveAddressSelection {
+	const selection = getActiveAddressSelection(address, activeAddresses, simulationMode, activeChainId, signerAccounts, entryKind)
 	if (selection !== undefined) return selection
 	if (address !== 'signer') {
 		const safeEntries = activeAddresses.filter((entry) => entry.type === 'safe' && entry.address === address)
