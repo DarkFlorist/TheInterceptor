@@ -12,7 +12,8 @@ function managementPagePath() {
 
 async function openManagementTab(targetUrl: string): Promise<browser.tabs.Tab | undefined> {
 	const pagePath = managementPagePath()
-	const pageUrl = browser.runtime.getURL(pagePath)
+	// A migrated settings tab still has its old URL until this first navigation. Only extension-owned shell/settings pages may be reused.
+	const reusableUrls = [browser.runtime.getURL(pagePath), browser.runtime.getURL(getHtmlFile('settingsView'))]
 	const openInNewTab = async () => {
 		const tab = await browser.tabs.create({ url: targetUrl })
 		if (tab.id !== undefined) await setManagementTabId(tab.id)
@@ -24,7 +25,7 @@ async function openManagementTab(targetUrl: string): Promise<browser.tabs.Tab | 
 	const allTabs = await browser.tabs.query({})
 	const managementTab = allTabs.find((tab) => tab.id === tabId)
 
-	if (managementTab?.id === undefined || (managementTab.url !== undefined && managementTab.url.split('#', 1)[0] !== pageUrl)) return await openInNewTab()
+	if (managementTab?.id === undefined || (managementTab.url !== undefined && !reusableUrls.includes(managementTab.url.split('#', 1)[0] ?? ''))) return await openInNewTab()
 	const tab = await updateTabIfExists(managementTab.id, { active: true, highlighted: true, url: targetUrl })
 	if (tab === undefined) return await openInNewTab()
 	if (tab.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })

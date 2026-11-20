@@ -118,6 +118,18 @@ async function loadGetLastKnownCurrentTabId() {
 const emptyOpenedTabs = (): OpenedTabIds => ({})
 
 describe('open management tab', () => {
+	test('migrates and reuses a legacy settings tab on its original URL', async () => {
+		const { createdTabs, updatedTabs, storageState } = installBrowserMock(
+			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#settings' }],
+			{ settingsView: 42 },
+		)
+		await (await import('../../app/ts/background/managementTabMigration.js')).migrateManagementTabId()
+		await (await loadManagementNavigation()).openManagementPage('settings')
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#settings' } }])
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 42 })
+	})
+
 	test('reuses the tracked management tab across management sections', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
 			[{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites' }],

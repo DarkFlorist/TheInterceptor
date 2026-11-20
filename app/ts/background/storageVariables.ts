@@ -29,18 +29,13 @@ const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(error)
 }
 
-// Only a failed schema parse proves the stored value is corrupt; storage API failures propagate so callers do not act on a guessed default.
-const reportInvalidStoredValueOrRethrow = (label: string) => async (error: unknown) => {
-	if (!(error instanceof funtypes.ValidationError)) throw error
-	await reportCorruptStoredValue(label)(error)
-}
-
 // Legacy per-page tab IDs are rewritten to managementTabId by migrateManagementTabId at startup.
 const idsOfOpenedTabsRepository = createStoredValueRepository<IdsOfOpenedTabs>({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
 	write: async (idsOfOpenedTabs) => { await browserStorageLocalSet({ idsOfOpenedTabs }) },
 	getDefault: () => ({}),
-	recover: reportInvalidStoredValueOrRethrow('Opened tab IDs'),
+	canRecover: (error) => error instanceof funtypes.ValidationError,
+	recover: reportCorruptStoredValue('Opened tab IDs'),
 })
 
 export const getManagementTabId = async () => (await idsOfOpenedTabsRepository.get()).managementTabId

@@ -1,3 +1,5 @@
+import { isSimulationStackElementId } from './simulationStackTargets.js'
+
 export const managementPages = ['home', 'websites', 'address-book', 'simulation-stack', 'diagnostics', 'settings'] as const
 export type ManagementPage = (typeof managementPages)[number]
 
@@ -13,7 +15,6 @@ const SIMULATION_STACK_TARGET_KEY = 'simulation-stack-target'
 const SIMULATION_STACK_FOCUS_KEY = 'focus'
 const LEGACY_WEBSITE_ORIGIN_PREFIX = '#origin:'
 const LEGACY_SIMULATION_STACK_TARGET_PREFIX = `#${ SIMULATION_STACK_TARGET_KEY }=`
-const SIMULATION_STACK_ELEMENT_ID_PATTERN = /^simulation-stack-(transaction|message)-0x[a-f0-9]+$/
 
 export function getManagementPageHash(page: ManagementPage) {
 	return `#${ page }`
@@ -25,7 +26,7 @@ function isManagementPage(value: string): value is ManagementPage {
 
 function parseSimulationStackTarget(parameters: URLSearchParams): SimulationStackTarget | undefined {
 	const elementId = parameters.get(SIMULATION_STACK_TARGET_KEY)
-	if (elementId === null || !SIMULATION_STACK_ELEMENT_ID_PATTERN.test(elementId)) return undefined
+	if (elementId === null || !isSimulationStackElementId(elementId)) return undefined
 	const focus = parameters.get(SIMULATION_STACK_FOCUS_KEY) ?? undefined
 	return focus === undefined ? { elementId } : { elementId, focus }
 }

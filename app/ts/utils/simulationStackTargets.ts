@@ -1,6 +1,8 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
 import type { SimulationStackRoute } from './managementPages.js'
 
+export const isSimulationStackElementId = (value: string) => /^simulation-stack-(transaction|message)-0x[a-f0-9]+$/.test(value)
+
 const bigintToQuantityString = (value: bigint) => `0x${ value.toString(16) }`
 
 export function getSimulationStackElementId(identifier: TransactionOrMessageIdentifier) {
