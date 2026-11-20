@@ -24,12 +24,12 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/con
 import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressWith, lookUpMetadataOnChain, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
-import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array, stringifyJSONWithBigInts } from '../utils/bigint.js'
+import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
-import { getInterceptorTransactionStack, getPopupVisualisationState, updatePopupVisualisationWithCallBack } from './storageVariables.js'
+import { getInterceptorTransactionStack, getPopupVisualisationState, getPopupVisualisationStateWithRevision, updatePopupVisualisationWithCallBack } from './storageVariables.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, getErrorMessage } from '../utils/errors.js'
 import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
@@ -408,10 +408,9 @@ type SimulationMetadataDependencies = {
 }
 
 export const updateSimulationMetadata = async (ethereum: EthereumClientService, requestAbortController: AbortController | undefined, dependencies: SimulationMetadataDependencies = {}) => {
-	const prevState = await getPopupVisualisationState()
+	const { visualisation: prevState, revision: capturedRevision } = await getPopupVisualisationStateWithRevision()
 	if (prevState.simulationState.kind === 'passthrough' || prevState.simulationState.value.success === false) return prevState
 	// Metadata can require remote reads; leave the storage lock available for local invalidation.
-	const capturedState = stringifyJSONWithBigInts(prevState)
 	let metadata: Awaited<ReturnType<typeof getMetadataForSimulation>>
 	try {
 		const eventsForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
@@ -437,11 +436,8 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error)
 		return await getPopupVisualisationState()
 	}
-	return await updatePopupVisualisationWithCallBack(async current => {
-		// An execution can publish progress and results with the same ID; compare its state too.
-		if (current.simulationId !== prevState.simulationId || stringifyJSONWithBigInts(current) !== capturedState) return undefined
-		return { ...current, ...metadata }
-	})
+	// Any write since the read advances the revision, including progress and results stored under the same simulation ID.
+	return await updatePopupVisualisationWithCallBack(async (current, currentRevision) => currentRevision === capturedRevision ? { ...current, ...metadata } : undefined)
 }
 
 // Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.

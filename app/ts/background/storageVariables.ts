@@ -132,19 +132,29 @@ export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
 // Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
+// Advanced by every committed write in updatePopupVisualisationWithCallBack, the only writer of the popup visualisation, even when the written state equals the old one. Kept in memory because readers compare it within one background lifetime, and a restart discards both the counter and every in-flight reader.
+let popupVisualisationRevision = 0
+
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
 	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
+// Reads the state and its revision under the write lock, so the revision always names the state returned with it.
+export async function getPopupVisualisationStateWithRevision() {
+	return await simulationResultsSemaphore.execute(async () => ({ visualisation: await getPopupVisualisationState(), revision: popupVisualisationRevision }))
+}
+
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
 
-export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation) => Promise<CompleteVisualizedSimulation | undefined>) {
+// The callback receives the current revision, so a caller can commit only onto the state it read with getPopupVisualisationStateWithRevision.
+export async function updatePopupVisualisationWithCallBack(update: (oldResults: CompleteVisualizedSimulation, revision: number) => Promise<CompleteVisualizedSimulation | undefined>) {
 	return await simulationResultsSemaphore.execute(async () => {
 		const oldResults = await getPopupVisualisationState()
-		const newRequests = await update(oldResults)
+		const newRequests = await update(oldResults, popupVisualisationRevision)
 		if (newRequests === undefined || newRequests.simulationId < oldResults.simulationId) return oldResults // do not update state with older state
 		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, newRequests)
+		popupVisualisationRevision += 1
 		return newRequests
 	})
 }

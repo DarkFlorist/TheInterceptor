@@ -4,7 +4,7 @@ import { createPassthroughCompleteVisualizedSimulation, type CompleteVisualizedS
 import { createDeferredSignal, createEthereumWithGetBlockCounter, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { pendingTransaction } from './confirmTransactionTestHarness.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
-import { getPopupVisualisationState, setPopupVisualisationState } from '../../app/ts/background/storageVariables.js'
+import { getPopupVisualisationState, getPopupVisualisationStateWithRevision, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
 import { updateSimulationMetadata } from '../../app/ts/background/simulationUpdating.js'
 import { startPopupSimulationRefreshInBackground } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
@@ -66,6 +66,51 @@ describe('simulation metadata concurrency', () => {
 		}
 		assert.deepEqual(await getPopupVisualisationState(), committed)
 		assert.deepEqual(await metadata, committed)
+	})
+
+	test('drops metadata after a concurrent write that leaves the stored state unchanged', async () => {
+		installBrowserMock()
+		await setPopupVisualisationState(capturedVisualisation)
+		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
+		const started = createDeferredSignal()
+		const release = createDeferredSignal()
+		const metadata = updateSimulationMetadata(ethereum, undefined, {
+			getMetadata: async () => { started.resolve(); await release.promise; return refreshedMetadata },
+		})
+		await started.promise
+		await setPopupVisualisationState(await getPopupVisualisationState())
+		release.resolve()
+		assert.deepEqual(await metadata, capturedVisualisation)
+		assert.deepEqual((await getPopupVisualisationState()).addressBookEntries, capturedVisualisation.addressBookEntries)
+	})
+
+	test('drops metadata after a concurrent write to a field unrelated to the enrichment', async () => {
+		installBrowserMock()
+		await setPopupVisualisationState(capturedVisualisation)
+		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
+		const started = createDeferredSignal()
+		const release = createDeferredSignal()
+		const metadata = updateSimulationMetadata(ethereum, undefined, {
+			getMetadata: async () => { started.resolve(); await release.promise; return refreshedMetadata },
+		})
+		await started.promise
+		const concurrent = await setPopupVisualisationState({ ...capturedVisualisation, numberOfAddressesMadeRich: capturedVisualisation.numberOfAddressesMadeRich + 1 })
+		release.resolve()
+		assert.deepEqual(await metadata, concurrent)
+		assert.deepEqual(await getPopupVisualisationState(), concurrent)
+	})
+
+	test('advances the visualisation revision on every committed write, including one that changes nothing', async () => {
+		installBrowserMock()
+		await setPopupVisualisationState(capturedVisualisation)
+		const before = await getPopupVisualisationStateWithRevision()
+		await setPopupVisualisationState(before.visualisation)
+		const afterUnchangedWrite = await getPopupVisualisationStateWithRevision()
+		assert.deepEqual(afterUnchangedWrite.visualisation, before.visualisation)
+		assert.ok(afterUnchangedWrite.revision > before.revision)
+		await updatePopupVisualisationWithCallBack(async () => undefined)
+		await setPopupVisualisationState({ ...capturedVisualisation, simulationId: capturedVisualisation.simulationId - 1 })
+		assert.equal((await getPopupVisualisationStateWithRevision()).revision, afterUnchangedWrite.revision, 'skipped and rejected older writes store nothing, so the revision stays')
 	})
 
 	test('commits metadata when the captured visualization is still current', async () => {
