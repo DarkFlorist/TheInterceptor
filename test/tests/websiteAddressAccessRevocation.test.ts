@@ -1,9 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 async function setUpApprovedConnection() {
-	installBrowserMock()
+	installLegacyBackgroundBrowserMock()
 	const modules = await loadModules()
 	const websiteOrigin = 'https://example.test'
 	const website = { websiteOrigin, icon: undefined, title: undefined }

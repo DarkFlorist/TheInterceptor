@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { afterEach, describe, test } from 'bun:test'
 import { createPassthroughCompleteVisualizedSimulation, type CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import { createDeferredSignal, createEthereumWithGetBlockCounter, installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredSignal, createEthereumWithGetBlockCounter, installLegacyBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { pendingTransaction } from './confirmTransactionTestHarness.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { getPopupVisualisationState, getPopupVisualisationStateWithRevision, setPopupVisualisationState, updatePopupVisualisationWithCallBack } from '../../app/ts/background/storageVariables.js'
@@ -32,7 +32,7 @@ async function completesPromptly<T>(result: Promise<T>) {
 
 describe('simulation metadata concurrency', () => {
 	test.each(['pending invalidation', 'new result with same ID'] as const)('remote metadata does not delay or overwrite %s', async update => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		await setPopupVisualisationState(capturedVisualisation)
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const started = createDeferredSignal()
@@ -69,7 +69,7 @@ describe('simulation metadata concurrency', () => {
 	})
 
 	test('drops metadata after a concurrent write that leaves the stored state unchanged', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		await setPopupVisualisationState(capturedVisualisation)
 		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
 		const started = createDeferredSignal()
@@ -85,7 +85,7 @@ describe('simulation metadata concurrency', () => {
 	})
 
 	test('drops metadata after a concurrent write to a field unrelated to the enrichment', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		await setPopupVisualisationState(capturedVisualisation)
 		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
 		const started = createDeferredSignal()
@@ -101,7 +101,7 @@ describe('simulation metadata concurrency', () => {
 	})
 
 	test('advances the visualisation revision on every committed write, including one that changes nothing', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		await setPopupVisualisationState(capturedVisualisation)
 		const before = await getPopupVisualisationStateWithRevision()
 		await setPopupVisualisationState(before.visualisation)
@@ -114,7 +114,7 @@ describe('simulation metadata concurrency', () => {
 	})
 
 	test('commits metadata when the captured visualization is still current', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		await setPopupVisualisationState(capturedVisualisation)
 		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
 		const updated = await updateSimulationMetadata(ethereum, undefined, { getMetadata: async () => refreshedMetadata })

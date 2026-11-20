@@ -2,7 +2,7 @@ import * as assert from 'node:assert'
 import { test } from 'bun:test'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
-import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { installLegacyBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -18,7 +18,7 @@ const buttonsIn = (node: TestNode): readonly TestNode[] => [
 ]
 
 test('RPC restore shows a rejected admission reply and keeps the retry action available', async () => {
-	installBrowserMock()
+	installLegacyBackgroundBrowserMock()
 	await browser.storage.local.set({ rpcEntries: [] })
 	const busy = 'Another popup is changing settings. Please wait for it to finish, then try again.'
 	let requests = 0
