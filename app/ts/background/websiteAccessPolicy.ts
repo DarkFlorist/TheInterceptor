@@ -1,14 +1,20 @@
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
+import type { WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { doesStoredWebsiteOriginApplyTo, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
-function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
+export function getWebsiteAccessAuthorityForOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
 	const match = findWebsiteAccessEntryForOrigin(websiteAccess, websiteOrigin)
 	const exactAccess = match?.kind === 'exact' ? match.entry : undefined
-	const legacyAccessEntries = websiteAccess.filter((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin))
+	const legacyAccessEntries = websiteAccess.filter((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)).map(legacyWebsiteRestrictions)
 	return { exactAccess, legacyAccessEntries }
+}
+
+// Scheme-ambiguous records carry only restrictions until explicit consent rebinds them. Policy reads and consent mutations share this projection so legacy grants cannot leak through either path.
+export function legacyWebsiteRestrictions(entry: WebsiteAccess): WebsiteAccess {
+	const denials = entry.addressAccess?.filter((address) => !address.access)
+	return { ...entry, access: entry.access === false ? false : undefined, addressAccess: denials?.length === 0 ? undefined : denials }
 }
 
 // Lookup preserves whether the details belong to this exact origin or require explicit legacy rebinding; only exact records can grant access.
@@ -28,7 +34,7 @@ export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAcce
 }
 
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	const { exactAccess, legacyAccessEntries } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
+	const { exactAccess, legacyAccessEntries } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
 	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	// Only an exact, scheme-bound record can grant access. Legacy approval remains pending until the user explicitly rebinds it.
 	if (exactAccess?.access === true) return 'hasAccess'
@@ -38,7 +44,7 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	const { exactAccess, legacyAccessEntries } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
+	const { exactAccess, legacyAccessEntries } = getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin)
 	if (isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin)) return 'interceptorDisabled'
 	if (exactAccess?.access === false) return 'noAccess'
 	if (exactAccess?.access === true) {

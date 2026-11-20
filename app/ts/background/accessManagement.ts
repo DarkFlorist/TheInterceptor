@@ -19,9 +19,9 @@ import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
-import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
+import { hasAccess, hasAddressAccess, getWebsiteAccessAuthorityForOrigin, type ApprovalState } from './websiteAccessPolicy.js'
 import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
-import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getWebsiteBlockingHostname, getWebsiteOrigin } from '../utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin, getWebsiteOrigin } from '../utils/websiteOrigin.js'
 import { applyWebsiteAccessDecision } from './websiteAccessMutations.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
@@ -78,7 +78,7 @@ export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socke
 
 // Only the exact record's address decisions: approving the origin rebinds a legacy host-only record without its address grants (applyWebsiteAccessDecision), so those grants never become associated addresses.
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
-	return websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)?.addressAccess ?? []
+	return getWebsiteAccessAuthorityForOrigin(websiteAccess, websiteOrigin).exactAccess?.addressAccess ?? []
 }
 function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: AddressBookEntries) : AddressBookEntries {
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
@@ -224,6 +224,14 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 	}
 	return approvedTabs
 }
+// Declarative net request initiatorDomains are hostnames, without scheme or port. Match its host-wide blocking semantics in both registration and the icon.
+function getWebsiteBlockingHostname(storedOrigin: string): string | undefined {
+	const normalized = normalizeStoredWebsiteOrigin(storedOrigin)
+	if (normalized === undefined || normalized === '') return undefined
+	const url = new URL(isCanonicalWebsiteOrigin(normalized) ? normalized : `https://${ normalized }`)
+	return url.protocol === 'file:' ? undefined : url.hostname
+}
+
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)

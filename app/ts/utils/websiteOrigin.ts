@@ -88,23 +88,6 @@ export function doesStoredWebsiteOriginApplyTo(storedOrigin: string, websiteOrig
 	return storedOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin, websiteOrigin)
 }
 
-export function getWebsiteHostWithPortFromStoredOrigin(websiteOrigin: string): string | undefined {
-	const normalizedOrigin = normalizeStoredWebsiteOrigin(websiteOrigin)
-	if (normalizedOrigin === undefined || normalizedOrigin === '') return undefined
-	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) return normalizedOrigin
-	const url = new URL(normalizedOrigin)
-	if (url.protocol === 'file:') return undefined
-	return getHostWithPort(normalizedOrigin)
-}
-
-// Declarative net request initiatorDomains are hostnames, without scheme or port. Match its host-wide blocking semantics in both registration and the icon.
-export function getWebsiteBlockingHostname(storedOrigin: string): string | undefined {
-	const normalized = normalizeStoredWebsiteOrigin(storedOrigin)
-	if (normalized === undefined || normalized === '') return undefined
-	const url = new URL(isCanonicalWebsiteOrigin(normalized) ? normalized : `https://${ normalized }`)
-	return url.protocol === 'file:' ? undefined : url.hostname
-}
-
 export function normalizeWebsiteAccessOrigins(websiteAccess: WebsiteAccessArray): WebsiteAccessArray {
 	let changed = false
 	const normalized = websiteAccess.flatMap((entry) => {

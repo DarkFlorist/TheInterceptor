@@ -108,7 +108,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		const previousActiveSigningAddress = tabStateChange.previousState.activeSigningAddress
-		const signerAccountChanged = !signerAccountsReply.requestAccounts && isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress
+		const signerAccountChanged = isActiveAddressBoundToSigner(settings) && previousActiveSigningAddress !== activeSigningAddress
 		// The first report after signer state was cleared (page load, reload, or signer reconnect) is not an account switch, so it only suspends approvals bound to an account other than the tab's active address for the reported signer accounts. That address is the selected Safe in Safe signing mode, not the signer's own account.
 		const approvalsKeptForAddress = signerAccountChanged && previousActiveSigningAddress === undefined ? { address: (await getActiveAddress(settings, tabId))?.address } : undefined
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue

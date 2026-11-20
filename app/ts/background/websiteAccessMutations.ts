@@ -1,6 +1,6 @@
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import { findWebsiteAccessEntryForOrigin } from './websiteAccessPolicy.js'
+import { findWebsiteAccessEntryForOrigin, legacyWebsiteRestrictions } from './websiteAccessPolicy.js'
 import type { Website, WebsiteAccess, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -64,8 +64,8 @@ export function applyWebsiteAccessDecision(previousWebsiteAccess: WebsiteAccessA
 	const websiteData = { ...mergedWebsiteMetadata, websiteOrigin: website.websiteOrigin }
 	if (match.kind === 'exact') return applyDecisionToEntry(previousWebsiteAccess, foundEntryIndex, foundEntry, websiteData, access, address)
 	// Rebinding a scheme-ambiguous legacy record to this exact origin keeps only its denials. Its per-address grants were never shown in this decision's consent dialog, so carrying them over would authorize accounts the user did not approve for this origin; the user approves those accounts again.
-	const legacyDenials = foundEntry.addressAccess?.filter((entry) => entry.access === false) ?? []
-	const reboundEntry = { ...foundEntry, addressAccess: legacyDenials.length === 0 ? undefined : legacyDenials }
+	const reboundEntry = legacyWebsiteRestrictions(foundEntry)
+	const legacyDenials = reboundEntry.addressAccess ?? []
 	if (access === false) {
 		// A denial identifies the exact origin but does not authorize carrying the legacy page-level grant into that origin either.
 		const nextAddressAccess = address === undefined ? legacyDenials : [...legacyDenials.filter((entry) => entry.address !== address), { address, access: false }]

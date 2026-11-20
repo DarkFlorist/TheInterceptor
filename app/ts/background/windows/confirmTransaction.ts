@@ -975,7 +975,7 @@ async function createConfirmationForMessage(
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
-	if (activeAddressEntry?.type !== 'safe' && getRequestedSignMessageAccount(transactionParams) !== activeAddress) {
+	if (getRequestedSignMessageAccount(transactionParams) !== activeAddress) {
 		return formRejectMessage(METAMASK_ERROR_NOT_AUTHORIZED, 'The requested signing account has not been authorized by the user.')
 	}
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)

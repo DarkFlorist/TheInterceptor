@@ -3369,7 +3369,7 @@ describe('background eth_accounts', () => {
 		])
 	})
 
-	async function replyWithSignerAccountsInSigningMode(previousActiveSigningAddress: bigint | undefined, { supersedeWhileStoringSignerAccounts = false } = {}) {
+	async function replyWithSignerAccountsInSigningMode(previousActiveSigningAddress: bigint | undefined, { supersedeWhileStoringSignerAccounts = false, requestAccounts = false } = {}) {
 		const { setStorageHooks } = installBrowserMock()
 		const { changeSimulationMode, handleInterceptedRequest, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -3411,7 +3411,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 501, requestSocket: unboundSocket },
 			method: 'eth_accounts_reply',
-			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(account)], requestAccounts: false }],
+			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(account)], requestAccounts }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const wasDisconnected = (messages: typeof unbound.messages) => messages.some((message) => message.method === 'disconnect')
 		setStorageHooks({})
@@ -3434,6 +3434,13 @@ describe('background eth_accounts', () => {
 
 	test('suspends every approved port when the signer switches between two accounts', async () => {
 		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n)
+		assert.equal(result.unboundDisconnected, true)
+		assert.equal(result.sameAccountDisconnected, true)
+		assert.equal(result.otherAccountDisconnected, true)
+	})
+
+	test('an eth_requestAccounts reply also suspends approvals when the signer account changed', async () => {
+		const result = await replyWithSignerAccountsInSigningMode(0x5353535353535353535353535353535353535353n, { requestAccounts: true })
 		assert.equal(result.unboundDisconnected, true)
 		assert.equal(result.sameAccountDisconnected, true)
 		assert.equal(result.otherAccountDisconnected, true)

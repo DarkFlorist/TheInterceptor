@@ -1353,3 +1353,17 @@ test('refuses a Safe proposal whose domain chain and connected chain are both th
 	assert.match(refusedProposal.approvalStatus.message, /Gnosis Safe transactions require a chain ID\./u)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
+
+for (const simulationMode of [false, true]) {
+	test(`an active Safe does not authorize a message naming an unrelated EOA (simulationMode=${ simulationMode })`, async () => {
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+		await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+		const { SignMessageParams } = await import('../../app/ts/types/jsonRpc-signing-types.js')
+		const parameters = SignMessageParams.parse({ method: 'personal_sign', params: ['hello', addressString(recipientAddress)] })
+		const reply = await modules.openConfirmTransactionDialogForMessage(ethereum, simulator.tokenPriceService, {
+			interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier, ...parameters,
+		}, { kind: 'message', parameters }, simulationMode, activeAddress, { websiteOrigin: 'https://example.com', icon: undefined, title: undefined }, new Map())
+		assert.equal('error' in reply ? reply.error.code : undefined, 4100)
+		assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	})
+}
