@@ -1,6 +1,6 @@
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { RichToken } from '../types/richMode.js'
-import { addressesBeingMadeRich, getRichModeState, profilesForAddresses, richTokensForPresentation } from './richModeSettings.js'
+import { addressesBeingMadeRich, dropTokenBalancesWithoutLayout, getRichModeState, profilesForAddresses, richTokensForPresentation, updateAddressBookAndReconcileRichMode } from './richModeSettings.js'
 import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenOptions, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
@@ -436,12 +436,10 @@ export async function modifyRichToken(
 }
 
 export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
-	const fundingChanged = await mutateRichMode(async (store) => {
-		return await store.updateAddressBook((previousContacts) => previousContacts.filter((contact) =>
-			!(contact.address === removeAddressBookEntry.data.address
-			&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
-		)
-	})
+	const fundingChanged = await updateAddressBookAndReconcileRichMode((previousContacts) => previousContacts.filter((contact) =>
+		!(contact.address === removeAddressBookEntry.data.address
+		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
+	)
 	if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
@@ -486,13 +484,11 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				}
 			}
 		}
-		const fundingChanged = await mutateRichMode(async (store) => {
-			return await store.updateAddressBook((previousContacts) => {
-				if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
-					return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
-				}
-				return previousContacts.concat([entryToStore])
-			})
+		const fundingChanged = await updateAddressBookAndReconcileRichMode((previousContacts) => {
+			if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
+				return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
+			}
+			return previousContacts.concat([entryToStore])
 		})
 		if (fundingChanged) await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
@@ -1254,7 +1250,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 	const state = await getRichModeState(settings.activeRpcNetwork.chainId)
 	const addressBookTokensPromise = silenceChromeUnCaughtPromise(getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
 	const fixedAddressRichList = state.fixedAddressRichList
-	const richAccountBalances = profilesForAddresses(state, settings.activeRpcNetwork.chainId, addressesBeingMadeRich(settings, state))
+	const richAccountBalances = dropTokenBalancesWithoutLayout(profilesForAddresses(state, settings.activeRpcNetwork.chainId, addressesBeingMadeRich(settings, state)), state.tokenLayouts)
 	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
 		try {
 			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
@@ -1302,7 +1298,7 @@ async function getCachedRichData(settings: Settings) {
 	const chainId = settings.activeRpcNetwork.chainId
 	const state = await getRichModeState(chainId)
 	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
-	const richAccountBalances = profilesForAddresses(state, chainId, addressesBeingMadeRich(settings, state))
+	const richAccountBalances = dropTokenBalancesWithoutLayout(profilesForAddresses(state, chainId, addressesBeingMadeRich(settings, state)), state.tokenLayouts)
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(state.fixedAddressRichList.map(async(element) => (

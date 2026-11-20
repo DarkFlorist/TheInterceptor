@@ -1,4 +1,3 @@
-import { mutateRichMode } from './richModeSettings.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -22,6 +21,7 @@ import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 export { getUserAddressBookEntries, getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst, repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
+import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
 import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
@@ -274,7 +274,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 }
 
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await mutateRichMode(async (store) => { await store.updateAddressBook(updateFunc) })
+	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
 }
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
@@ -285,7 +285,11 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await updateUserAddressBookEntries((entries) => entries.some((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId)) ? entries : entries.concat(newEntry))
+	await runSettingsStorageTransaction(async () => {
+		const entries = await getUserAddressBookEntries()
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
+		return { writes: existingEntry === undefined ? [userAddressBookEntriesStorageWrite(entries.concat(newEntry))] : [], result: undefined }
+	})
 }
 
 export async function setLatestUnexpectedError(latestUnexpectedError: UnexpectedErrorOccured | undefined) {

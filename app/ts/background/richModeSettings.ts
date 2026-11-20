@@ -1,15 +1,17 @@
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
-import type { RichAccountBalance, RichModeState, RichToken } from '../types/richMode.js'
+import type { RichAccountBalance, RichModeState, RichToken, RichTokenLayout } from '../types/richMode.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { reconcileRichTokenMetadata, getDefaultRichTokenAmount, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
 import { browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, getStoredActiveSimulationAddressAndNetwork } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStorage.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
-// All funding and address-book mutations enter through this owner; they run under the settings storage lock so funding and address-book writes land in one storage set.
+// All funding mutations, and the address-book edits that can change funding, enter through this owner; they run under the settings storage lock so funding and address-book writes land in one storage set.
 const legacyKeys = ['makeCurrentAddressRich', 'fixedAddressRichList', 'richNativeAmount', 'richTokens', 'richAccountBalances']
+
+const withoutAmount = ({ amount: _amount, ...layout }: RichToken): RichTokenLayout => layout
 
 export const richTokensForPresentation = (state: RichModeState): readonly RichToken[] => state.tokenLayouts.map((layout) => ({ ...layout, amount: getDefaultRichTokenAmount(layout.decimals) }))
 
@@ -44,10 +46,11 @@ export async function getRichModeState(chainId?: bigint, addresses: readonly big
 	const fixedAddressRichList = fixed?.fixedAddressRichList ?? []
 	const makeCurrentAddressRich = selection?.makeCurrentAddressRich ?? false
 	const defaultNativeAmount = native?.richNativeAmount ?? MAKE_YOU_RICH_TRANSACTION.transaction.value
+	// Legacy token amounts applied to whichever address was made rich, so every address that can be made rich gets a profile even while it is disabled; otherwise the amounts would be lost when the legacy keys are removed.
 	const migrationAddresses = [...new Set([
 		...addresses,
-		...fixedAddressRichList.filter((entry) => entry.makingRich).map((entry) => entry.address),
-		...(makeCurrentAddressRich && activeAddress !== undefined ? [activeAddress] : []),
+		...fixedAddressRichList.map((entry) => entry.address),
+		...(activeAddress === undefined ? [] : [activeAddress]),
 	])]
 	const migrationChains = [...new Set([...(chainId === undefined ? [] : [chainId]), ...(migrationContext.activeRpcNetwork === undefined ? DEFAULT_RPCS.slice(0, 1).map((network) => network.chainId) : [migrationContext.activeRpcNetwork.chainId]), ...tokens.map((token) => token.chainId)])]
 	const accountBalances = rawProfiles === undefined
@@ -60,8 +63,31 @@ export async function getRichModeState(chainId?: bigint, addresses: readonly big
 		: normalizeRichAccountBalances(profiles)
 	return {
 		makeCurrentAddressRich, fixedAddressRichList, defaultNativeAmount, accountBalances,
-		tokenLayouts: tokens.map(({ amount: _amount, ...layout }) => layout),
+		tokenLayouts: tokens.map(withoutAmount),
 	}
+}
+
+// addRichAccountBalanceOverrides cannot fund a token balance without a layout on the profile's chain, so such balances are dropped instead of being shown as funded.
+export const dropTokenBalancesWithoutLayout = (accountBalances: readonly RichAccountBalance[], tokenLayouts: readonly RichTokenLayout[]): readonly RichAccountBalance[] => {
+	let changed = false
+	const reconciled = accountBalances.map((profile) => {
+		const tokenBalances = profile.tokenBalances.filter((balance) => tokenLayouts.some((layout) => layout.chainId === profile.chainId && sameRichTokenIdentity(layout, balance)))
+		if (tokenBalances.length === profile.tokenBalances.length) return profile
+		changed = true
+		return { ...profile, tokenBalances }
+	})
+	return changed ? reconciled : accountBalances
+}
+
+// Layout metadata follows the address book and unsupported layouts are removed; balances are checked even when the layouts are unchanged. Returns the same state object when nothing changed.
+export function reconcileRichModeStateWithAddressBook(state: RichModeState, entries: AddressBookEntries): RichModeState {
+	const current = richTokensForPresentation(state)
+	const supported = reconcileRichTokenMetadata(current, entries)
+	const layoutsChanged = supported.length !== current.length || supported.some((token, index) => token !== current[index])
+	const tokenLayouts = layoutsChanged ? supported.map(withoutAmount) : state.tokenLayouts
+	const accountBalances = dropTokenBalancesWithoutLayout(state.accountBalances, tokenLayouts)
+	if (!layoutsChanged && accountBalances === state.accountBalances) return state
+	return { ...state, tokenLayouts, accountBalances }
 }
 
 export async function getRichAccountBalancesForAddresses(chainId: bigint, addresses: readonly bigint[]) {
@@ -78,11 +104,14 @@ export async function mutateRichMode<Result>(operation: (store: ReturnType<typeo
 		const store = createRichModeTransaction(await getRichModeState(chainId, addresses))
 		const result = await operation(store)
 		const writes = await store.getStorageWrites()
-		return { writes, result: { result, wroteRichModeState: writes.length > 0 } }
+		return { writes, result: { result, wroteRichModeState: writes.some((write) => 'richModeState' in write) } }
 	})
 	if (wroteRichModeState) await removeLegacyRichModeKeys()
 	return result
 }
+
+// For address-book edits that can remove or change a funded token (removing, editing or replacing an entry); returns whether any account funding changed. Writes that cannot affect token entries, such as adding a missing entry or updating a Safe, use updateUserAddressBookEntries and never touch rich-mode state.
+export const updateAddressBookAndReconcileRichMode = async (update: (entries: AddressBookEntries) => AddressBookEntries) => await mutateRichMode(async (store) => await store.updateAddressBook(update))
 
 // The settings import replaces funding state and the address book in its own storage transaction, so it composes these writes instead of taking the lock again; call removeLegacyRichModeKeys after that transaction commits.
 export async function getImportedRichModeStorageWrites(state: RichModeState, entries: AddressBookEntries) {
@@ -113,25 +142,14 @@ function createRichModeTransaction(initial: RichModeState) {
 		},
 		updateRichTokens: async (update: (tokens: readonly RichToken[]) => readonly RichToken[]) => {
 			const tokens = update(richTokensForPresentation(state))
-			replace({ ...state, tokenLayouts: tokens.map(({ amount: _amount, ...layout }) => layout) })
+			replace({ ...state, tokenLayouts: tokens.map(withoutAmount) })
 			return tokens
 		},
 		reconcileAddressBook: async (entries: AddressBookEntries) => {
-			const current = richTokensForPresentation(state)
-			const supported = reconcileRichTokenMetadata(current, entries)
-			if (supported.length === current.length && supported.every((token, index) => token === current[index])) return false
-			let fundingChanged = false
-			const accountBalances = state.accountBalances.map((profile) => {
-				const tokenBalances = profile.tokenBalances.filter((balance) => supported.some((token) => token.chainId === profile.chainId && sameRichTokenIdentity(token, balance)))
-				if (tokenBalances.length === profile.tokenBalances.length) return profile
-				fundingChanged = true
-				return { ...profile, tokenBalances }
-			})
-			replace({
-				...state,
-				tokenLayouts: supported.map(({ amount: _amount, ...layout }) => layout),
-				accountBalances: fundingChanged ? accountBalances : state.accountBalances,
-			})
+			const reconciled = reconcileRichModeStateWithAddressBook(state, entries)
+			if (reconciled === state) return false
+			const fundingChanged = reconciled.accountBalances !== state.accountBalances
+			replace(reconciled)
 			return fundingChanged
 		},
 		updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => {
@@ -140,8 +158,12 @@ function createRichModeTransaction(initial: RichModeState) {
 			return await transaction.reconcileAddressBook(entries)
 		},
 		getStorageWrites: async (): Promise<readonly StorageWrite[]> => {
-			if (!changed && addressBookEntries === undefined && (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState !== undefined) return []
-			return addressBookEntries === undefined ? [richModeStateStorageWrite(state)] : [richModeStateStorageWrite(state), userAddressBookEntriesStorageWrite(addressBookEntries)]
+			// An unchanged state is still written while only legacy keys hold it, so the first mutation persists the migration.
+			const writeRichModeState = changed || (await browserStorageLocalSafeParseGet('richModeState'))?.richModeState === undefined
+			return [
+				...writeRichModeState ? [richModeStateStorageWrite(state)] : [],
+				...addressBookEntries === undefined ? [] : [userAddressBookEntriesStorageWrite(addressBookEntries)],
+			]
 		},
 	}
 	return transaction

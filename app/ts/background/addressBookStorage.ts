@@ -5,7 +5,7 @@ import { isValidErc20Decimals } from '../utils/erc20.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import type { StorageWrite } from './settingsStorageTransaction.js'
 
-// Storage reads and legacy recovery stay independent of the funding transaction owner; user-requested mutations enter through mutateRichMode.
+// Storage reads and legacy recovery stay independent of the funding transaction owner; address-book edits that can change funded tokens enter through updateAddressBookAndReconcileRichMode.
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
 	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
 	if (parsedEntry.success) return parsedEntry.value

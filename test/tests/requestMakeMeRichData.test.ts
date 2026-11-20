@@ -77,6 +77,7 @@ function installBrowserMock(options: { onRuntimeSendMessage?: (message: unknown)
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/background/richModeSettings.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
@@ -414,6 +415,61 @@ describe('requestMakeMeRichList resilience', () => {
 		const laterAddress = 0x2222222222222222222222222222222222222222n
 		const withLaterAccount = await ensureRichAccountBalances(1n, [laterAddress])
 		assert.deepEqual(withLaterAccount.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('keeps legacy token amounts when the first mutation runs before any address is made rich', async () => {
+		const storageState = installBrowserMock()
+		const { ensureRichAccountBalances, getRichModeState, setRichNativeAmount } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const fixedAddress = 0x2222222222222222222222222222222222222222n
+		storageState.independentActiveSimulationAddress = addressString(richAccountAddress)
+		storageState.fixedAddressRichList = [{ address: checksummedAddress(fixedAddress), makingRich: false, type: 'UserAdded' }]
+		storageState.richTokens = [{
+			chainId: 1n, tokenAddress, tokenType: 'ERC20' as const, tokenId: undefined, name: 'USD Coin', symbol: 'USDC',
+			decimals: 6n, amount: 1_234_567n, balanceSlot: 9n, erc1155StorageOrder: undefined,
+		}].map((token) => serialize(RichToken, token))
+
+		await setRichNativeAmount(5n)
+		for (const key of ['richTokens', 'fixedAddressRichList', 'richAccountBalances']) assert.equal(Object.hasOwn(storageState, key), false)
+		const migrated = await getRichModeState()
+		const legacyBalance = [{ tokenAddress, tokenId: undefined, amount: 1_234_567n }]
+		assert.deepEqual(migrated.accountBalances.find((profile) => profile.address === richAccountAddress)?.tokenBalances, legacyBalance)
+		assert.deepEqual(migrated.accountBalances.find((profile) => profile.address === fixedAddress)?.tokenBalances, legacyBalance)
+		const enabledLater = await ensureRichAccountBalances(1n, [richAccountAddress])
+		assert.deepEqual(enabledLater.find((profile) => profile.address === richAccountAddress)?.tokenBalances, legacyBalance)
+	})
+
+	test('drops a token balance whose layout is missing even when the layouts are unchanged', async () => {
+		const storageState = installBrowserMock()
+		const { getRichModeState, requestMakeMeRichList, updateAddressBookAndReconcileRichMode, updateRichAccountBalances, setMakeCurrentAddressRich, changeSimulationMode } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		storageState.userAddressBookEntriesV3 = [{ type: 'ERC20', address: addressString(tokenAddress), name: 'USD Coin', symbol: 'USDC', decimals: '0x6', entrySource: 'User', chainId: '0x1' }]
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: richAccountAddress })
+		await setMakeCurrentAddressRich(true)
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 1n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 5n }] }])
+		assert.deepEqual((await getRichModeState()).tokenLayouts, [])
+
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, {
+			name: 'Ethereum', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true,
+		})
+		Object.defineProperty(ethereum, 'getCode', { value: async () => new Uint8Array() })
+		const presented = await withSilencedConsole(async () => await requestMakeMeRichList(ethereum, undefined))
+		assert.deepEqual(presented.richAccountBalances?.find((profile) => profile.address === richAccountAddress)?.tokenBalances, [])
+		assert.equal(presented.richTokenOptions?.find((option) => option.tokenAddress === tokenAddress)?.enabled, false)
+
+		assert.equal(await updateAddressBookAndReconcileRichMode((entries) => entries), true)
+		assert.deepEqual((await getRichModeState()).accountBalances[0]?.tokenBalances, [])
+	})
+
+	test('plain address-book writes leave rich-mode state untouched', async () => {
+		const writtenKeys: string[][] = []
+		installBrowserMock({ onStorageSet: (items) => { writtenKeys.push(Object.keys(items)) } })
+		const { updateUserAddressBookEntries, updateRichTokens } = await loadModules()
+		await updateRichTokens(() => [])
+		writtenKeys.length = 0
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Contact', address: richAccountAddress, entrySource: 'User', useAsActiveAddress: false }])
+		assert.deepEqual(writtenKeys, [['userAddressBookEntriesV3']])
 	})
 
 	test('migrates legacy token balances for every configured chain on the first account migration', async () => {
@@ -965,7 +1021,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 	test('reconciles removed ERC-1155 token IDs on address-book changes before simulation reads', async () => {
 		const storageState = installBrowserMock()
-		const { changeSimulationMode, getCurrentSimulationInput, getRichTokens, modifyMakeMeRich, updateRichTokens, updateUserAddressBookEntries } = await loadModules()
+		const { changeSimulationMode, getCurrentSimulationInput, getRichTokens, modifyMakeMeRich, updateRichTokens, updateAddressBookAndReconcileRichMode } = await loadModules()
 		const activeAddress = 0x8000000000000000000000000000000000000008n
 		const tokenAddress = 0x4444444444444444444444444444444444444444n
 		storageState.userAddressBookEntriesV3 = [{
@@ -993,7 +1049,7 @@ describe('requestMakeMeRichList resilience', () => {
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
 		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
 
-		await updateUserAddressBookEntries((entries) => entries)
+		await updateAddressBookAndReconcileRichMode((entries) => entries)
 		const simulationInput = await getCurrentSimulationInput()
 
 		assert.deepEqual(await getRichTokens(), [])
