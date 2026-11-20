@@ -50,7 +50,7 @@ import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalan
 import { prepareSafeTransactionConfirmation, type SafeTransactionConfirmationPreparation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { createSafeOffChainMessageSnapshot, persistSafeConfirmationRefresh, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
-import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPayment } from '../../safe/safePendingFlow.js'
+import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPayment, getPendingRequestWebsiteAddress } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
@@ -387,10 +387,7 @@ type SignerForwarding = { readonly status: 'delivered' } | { readonly status: 'n
 // Why a signing-mode accept must not reach the wallet, or undefined when it may. The website connection must still be approved for the account the request was created under, and a request that asks the wallet to sign a transaction must be from that account. A raw transaction is already signed, so broadcasting it grants no authority over its sender: the website could submit the same bytes to any public RPC. A request that is not simulated yet is refused by claimAcceptedRequest instead.
 function getSignerAuthorizationFailure(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage) {
 	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
-	const safeFlow = getSafePendingFlow(pending)
-	const authorizedWebsiteAddress = safeFlow?.kind === 'directExecution'
-		? safeFlow.pending.safeFlow.safeExecutionOriginalRequestParameters.params[0].from ?? pending.activeAddress
-		: pending.activeAddress
+	const authorizedWebsiteAddress = getPendingRequestWebsiteAddress(pending)
 	if (!isWebsiteSocketApprovedForAddress(websiteTabConnections, pending.uniqueRequestIdentifier.requestSocket, authorizedWebsiteAddress)) {
 		return 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.'
 	}
@@ -803,6 +800,8 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	}
 	const requestedType = getSupportedSendTransactionType(transactionDetails)
 	const paidByExecutor = gasPayment !== 'transaction-sender'
+	// Executor-paid calls are internal zero-fee simulation inputs. The Safe execution pipeline expects EIP-1559; ordinary wallet requests retain the website's envelope.
+	const formedType = paidByExecutor && requestedType !== '7702' ? '1559' : requestedType
 	const simulationState = simulationMode || paidByExecutor
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
@@ -850,11 +849,11 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const desiredGasPrice = paidByExecutor
 		? 0n
 		: transactionDetails.gasPrice ?? getInitialMaxFeePerGas()
-	const transactionWithoutGas = requestedType === 'legacy'
+	const transactionWithoutGas = formedType === 'legacy'
 		? { ...transactionWithoutGasBase, type: 'legacy' as const, gasPrice: desiredGasPrice }
-		: requestedType === '2930'
+		: formedType === '2930'
 			? { ...transactionWithoutGasBase, type: '2930' as const, gasPrice: desiredGasPrice, accessList }
-			: requestedType === '7702'
+			: formedType === '7702'
 				? {
 					...transactionWithoutGasBase,
 					type: '7702' as const,

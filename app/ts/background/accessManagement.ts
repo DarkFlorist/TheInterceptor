@@ -246,7 +246,8 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 function isWebsiteOriginBlocked(blocked: { readonly originsToBlock: readonly string[], readonly initiatorHostsToBlock: readonly string[] }, websiteOrigin: string) {
 	const websiteHost = getWebsiteBlockingHostname(websiteOrigin)
 	if (websiteHost !== undefined && blocked.initiatorHostsToBlock.includes(websiteHost)) return true
-	return blocked.originsToBlock.some((blockedOrigin) => doesStoredWebsiteOriginApplyTo(blockedOrigin, websiteOrigin))
+	// Only MV2 webRequest supports origin-only blocks, including file pages. MV3 DNR supports the hostname match above.
+	return browser.runtime.getManifest().manifest_version === 2 && blocked.originsToBlock.some((blockedOrigin) => doesStoredWebsiteOriginApplyTo(blockedOrigin, websiteOrigin))
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined
@@ -315,9 +316,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const toBlock = await getTabsAndAddressesToBlock(websiteTabConnections)
 	const { tabIdsToBlock } = toBlock
-	// MV3 rules cannot block a file page, so its block-all setting only takes effect on MV2.
-	const blocked = browser.runtime.getManifest().manifest_version === 3 ? { ...toBlock, originsToBlock: [] } : toBlock
-	if (isWebsiteOriginBlocked(blocked, websiteOrigin)) return true
+	if (isWebsiteOriginBlocked(toBlock, websiteOrigin)) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

@@ -98,3 +98,11 @@ export function getSafeFlowSignerAddress(flow: SafePendingFlow) {
 		case 'proposal': return flow.pending.safeFlow.safeTransaction.safeSignerAddress
 	}
 }
+
+// Direct executions replace the Safe sender with its executor for wallet review. Website authority remains bound to the original Safe account, not that executor.
+export function getPendingRequestWebsiteAddress(pending: PendingTransactionOrSignableMessage): bigint {
+	const flow = getSafePendingFlow(pending)
+	return flow?.kind === 'directExecution'
+		? flow.pending.safeFlow.safeExecutionOriginalRequestParameters.params[0].from ?? pending.activeAddress
+		: pending.activeAddress
+}
