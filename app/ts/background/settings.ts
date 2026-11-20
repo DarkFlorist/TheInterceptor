@@ -11,6 +11,7 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
+import { findWebsiteAccessEntryForOrigin } from './websiteAccessPolicy.js'
 import { toCanonicalWebsiteAccess } from '../utils/canonicalWebsiteAccess.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 
@@ -208,9 +209,11 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 
 export async function updateKnownWebsiteMetadata(website: Website) {
 	await updateWebsiteAccess((previousWebsiteAccess) => {
+		const match = findWebsiteAccessEntryForOrigin(previousWebsiteAccess, website.websiteOrigin)
+		if (match === undefined) return previousWebsiteAccess
 		let changed = false
-		const nextWebsiteAccess = previousWebsiteAccess.map((entry) => {
-			if (entry.website.websiteOrigin !== website.websiteOrigin) return entry
+		const nextWebsiteAccess = previousWebsiteAccess.map((entry, index) => {
+			if (index !== match.index) return entry
 			const mergedWebsite = mergeStoredWebsiteMetadata(entry.website, website)
 			if (mergedWebsite === entry.website) return entry
 			changed = true

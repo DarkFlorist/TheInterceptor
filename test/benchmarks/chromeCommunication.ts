@@ -114,7 +114,11 @@ async function verifyExactFileExclusions(chrome: ChromeSession, extensionId: str
 	const filePath = join(fileDirectory, 'dapp.html')
 	const siblingPath = `${ filePath }.backup.html`
 	const fileUrl = pathToFileURL(filePath).href
-	const excludeMatches = getManifestV3ExcludeMatches([fileUrl])
+	const cases = [
+		{ origins: [fileUrl], visits: [[fileUrl, false], [`${ fileUrl }?variant=1`, false], [pathToFileURL(siblingPath).href, true]] },
+		{ origins: [pathToFileURL(join(fileDirectory, '*.html')).href], visits: [[fileUrl, true], [pathToFileURL(siblingPath).href, true]] },
+		{ origins: ['file://'], visits: [[fileUrl, false], [pathToFileURL(siblingPath).href, false]] },
+	] as const
 	const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 	const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 	try {
@@ -131,23 +135,26 @@ async function verifyExactFileExclusions(chrome: ChromeSession, extensionId: str
 			await closeTarget(chrome.browserConnection, settingsTargetId)
 		}
 		// Apply production patterns to the real registered provider scripts, then test Chromium's URL matching.
-		await workerConnection.evaluate(`browser.scripting.updateContentScripts(['inpage', 'inpage2'].map((id) => ({ id, excludeMatches: ${ JSON.stringify(excludeMatches) } })))`)
-		for (const [url, shouldInject] of [[fileUrl, false], [`${ fileUrl }?variant=1`, false], [pathToFileURL(siblingPath).href, true]] as const) {
-			const targetId = await createTargetPage(chrome.browserConnection, url)
-			try {
-				const connection = await connectTarget(chrome.browserDebugPort, targetId)
+		for (const { origins, visits } of cases) {
+			const excludeMatches = getManifestV3ExcludeMatches(origins)
+			await workerConnection.evaluate(`browser.scripting.updateContentScripts(['inpage', 'inpage2'].map((id) => ({ id, excludeMatches: ${ JSON.stringify(excludeMatches) } })))`)
+			for (const [url, shouldInject] of visits) {
+				const targetId = await createTargetPage(chrome.browserConnection, url)
 				try {
-					await waitForCondition(async () => await connection.evaluate<boolean>(`document.readyState === 'complete'`), 10_000, 'file document load')
-					if (shouldInject) {
-						await waitForCondition(async () => await connection.evaluate<boolean>('globalThis.ethereum?.isInterceptor === true'), 10_000, 'sibling file provider injection')
-					} else if (await connection.evaluate<boolean>('globalThis.ethereum?.isInterceptor === true')) {
-						throw new Error(`Interceptor injected into disabled file ${ url }`)
+					const connection = await connectTarget(chrome.browserDebugPort, targetId)
+					try {
+						await waitForCondition(async () => await connection.evaluate<boolean>(`document.readyState === 'complete'`), 10_000, 'file document load')
+						if (shouldInject) {
+							await waitForCondition(async () => await connection.evaluate<boolean>('globalThis.ethereum?.isInterceptor === true'), 10_000, 'sibling file provider injection')
+						} else if (await connection.evaluate<boolean>('globalThis.ethereum?.isInterceptor === true')) {
+							throw new Error(`Interceptor injected into disabled file ${ url }`)
+						}
+					} finally {
+						connection.close()
 					}
 				} finally {
-					connection.close()
+					await closeTarget(chrome.browserConnection, targetId)
 				}
-			} finally {
-				await closeTarget(chrome.browserConnection, targetId)
 			}
 		}
 	} finally {

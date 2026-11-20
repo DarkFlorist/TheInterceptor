@@ -47,8 +47,8 @@ function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 			.map(getExactOriginMatchPattern)
 	}
 	const url = new URL(normalizedOrigin)
-	// Match patterns include the query string, while file identity uses only the path.
-	if (url.protocol === 'file:') return [normalizedOrigin, `${ normalizedOrigin }?*`]
+	// Match patterns include queries, while file identity uses only the path. Literal stars cannot be escaped in a pattern, so leave those files injected rather than excluding other paths.
+	if (url.protocol === 'file:') return url.pathname.includes('*') || hasMatchPatternWildcardHost(url) ? [] : [normalizedOrigin, `${ normalizedOrigin }?*`]
 	if (hasMatchPatternWildcardHost(url)) return []
 	return [getExactOriginMatchPattern(url)]
 }

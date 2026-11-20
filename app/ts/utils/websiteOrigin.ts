@@ -50,6 +50,8 @@ function normalizeLegacyWebsiteOrigin(websiteOrigin: string): string | undefined
 }
 
 export function normalizeStoredWebsiteOrigin(websiteOrigin: string): string | undefined {
+	// Imported bare file:// records used to disable every file page, like the empty legacy marker. Do not turn them into authority for the root path.
+	if (/^file:\/\/$/iu.test(websiteOrigin)) return ''
 	if (/^(?:file|https?):\/\//iu.test(websiteOrigin)) return normalizeCanonicalWebsiteOrigin(websiteOrigin)
 	return normalizeLegacyWebsiteOrigin(websiteOrigin)
 }

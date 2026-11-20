@@ -334,6 +334,51 @@ describe('content script injection strategy', () => {
 		])
 	})
 
+	test('keeps literal wildcard file identities from excluding other files in Chrome', async () => {
+		const { getRegisteredContentScripts, storageState } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV3, getManifestV3ExcludeMatches } = await loadModules()
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'file:///tmp/*.html' }, interceptorDisabled: true }]
+		await updateContentScriptInjectionStrategyManifestV3()
+		for (const script of getRegisteredContentScripts()) assert.deepEqual(script.excludeMatches, [])
+		assert.deepEqual(getManifestV3ExcludeMatches(['file:///tmp/%2A.html']), ['file:///tmp/%2A.html', 'file:///tmp/%2A.html?*'])
+	})
+
+	test('retains bare legacy file restrictions across canonical storage and both injection strategies', async () => {
+		const { getCommittedListener, getExecuteScriptCalls, getRegisteredContentScripts } = installBrowserMock({
+			tabUrl: 'file:///tmp/page.html',
+			websiteAccess: [{ website: { websiteOrigin: 'file://' }, access: true, interceptorDisabled: true }],
+		})
+		const { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		const { getWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		const { hasAccess } = await import('../../app/ts/background/websiteAccessPolicy.js')
+		const entries = await getWebsiteAccess()
+		assert.equal(entries[0]?.website.websiteOrigin, '')
+		assert.equal(hasAccess(entries.map((entry) => ({ ...entry, interceptorDisabled: false })), 'file:///tmp/page.html'), 'askAccess')
+		await updateContentScriptInjectionStrategyManifestV3()
+		for (const script of getRegisteredContentScripts()) assert.deepEqual(script.excludeMatches, ['file:///*'])
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()({ ...committedDetails, url: 'file:///tmp/page.html' })
+		assert.equal(getExecuteScriptCalls(), 0)
+	})
+
+	test('fills legacy website metadata through shared identity lookup without rebinding its authority', async () => {
+		installBrowserMock({ websiteAccess: [{ website: { websiteOrigin: 'example.test' }, access: true, addressAccess: [{ address: '0x0000000000000000000000000000000000000001', access: true }] }] })
+		const { getWebsiteAccess, updateKnownWebsiteMetadata } = await import('../../app/ts/background/settings.js')
+		const before = await getWebsiteAccess()
+		await updateKnownWebsiteMetadata({ websiteOrigin: 'https://example.test', title: 'Example', icon: 'data:image/png;base64,aGVsbG8=' })
+		const after = await getWebsiteAccess()
+		assert.deepEqual(after, [{ ...before[0], website: { websiteOrigin: 'example.test', title: 'Example', icon: 'data:image/png;base64,aGVsbG8=' } }])
+	})
+
+	test('website metadata prefers the exact record and leaves unrelated and legacy records intact', async () => {
+		installBrowserMock({ websiteAccess: [{ website: { websiteOrigin: 'example.test' }, access: false }, { website: { websiteOrigin: 'https://example.test' }, access: true }, { website: { websiteOrigin: 'other.test' }, access: true }] })
+		const { getWebsiteAccess, updateKnownWebsiteMetadata } = await import('../../app/ts/background/settings.js')
+		const before = await getWebsiteAccess()
+		await updateKnownWebsiteMetadata({ websiteOrigin: 'https://example.test', title: 'Exact' })
+		const after = await getWebsiteAccess()
+		assert.deepEqual(after, [before[0], { ...before[1], website: { websiteOrigin: 'https://example.test', title: 'Exact' } }, before[2]])
+	})
+
 	test('preserves legacy manifest v2 interceptor-disabled behavior without treating it as an access grant', async () => {
 		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()

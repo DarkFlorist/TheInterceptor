@@ -14,7 +14,7 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
+import { captureSimulationSnapshot, getTransactionFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
 import { getHtmlFile, getWebsiteSocketConnection, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
@@ -767,14 +767,13 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	}
 	const requestedType = getSupportedSendTransactionType(transactionDetails)
 	const paidByExecutor = gasPayment !== 'transaction-sender'
-	// Executor-paid calls are internal zero-fee simulation inputs. The Safe execution pipeline expects EIP-1559; ordinary wallet requests retain the website's envelope.
-	const formedType = paidByExecutor && requestedType !== '7702' ? '1559' : requestedType
+	const formation = getTransactionFormation(ethereumClientService, gasPayment, requestedType)
 	const simulationState = simulationMode || paidByExecutor
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	// Defined by the Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe proposal, or in simulation mode a Safe's own call), so this function picks no Safe-specific option or nonce source itself. Otherwise a website-requested nonce is kept, so the reviewed transaction is the one the wallet is asked to sign.
-	const executedCallFormation = getExecutedCallFormation(ethereumClientService, gasPayment)
+	const { executedCallFormation } = formation
 	const transactionCountPromise = silenceChromeUnCaughtPromise(executedCallFormation !== undefined
 		? executedCallFormation.getNonce(requestAbortController, simulationState, from)
 		: transactionDetails.nonce !== undefined
@@ -813,7 +812,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		input: getInputFieldFromDataOrInput(transactionDetails),
 	}
 	const transactionWithoutGas = await createSignerTransactionEnvelope(transactionWithoutGasBase, transactionDetails, {
-		type: formedType,
+		type: formation.type,
 		gasPrice: paidByExecutor ? 0n : transactionDetails.gasPrice ?? getInitialMaxFeePerGas(),
 		maxFeePerGas: getInitialMaxFeePerGas(),
 		maxPriorityFeePerGas,
