@@ -1,6 +1,6 @@
 import { SiweMessage } from '../types/personal-message-definitions.js'
 import { isAddress } from './ethereumBytes.js'
-import { getSchemeAndHostWithPort } from './requests.js'
+import { getSchemeAndHostWithPort } from './websiteOrigin.js'
 
 // EIP-4361 Sign-In with Ethereum. The parser follows the EIP's ABNF line by line and returns undefined for anything that does not conform exactly, so near-misses keep being shown as plain messages.
 

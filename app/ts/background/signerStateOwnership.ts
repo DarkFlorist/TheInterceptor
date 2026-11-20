@@ -176,13 +176,18 @@ export function isSignerStateTokenCurrent(websiteTabConnections: WebsiteTabConne
 	return currentToken !== undefined && doSignerStateTokensMatch(currentToken, token)
 }
 
+// Outside simulation mode, or when simulation follows the signer, the active address is the signer's account, so signer state decides it and a signer account change invalidates approvals bound to the previous account.
+export function isActiveAddressBoundToSigner(settings: Pick<Settings, 'simulationMode' | 'useSignersAddressAsActiveAddress'>) {
+	return !settings.simulationMode || settings.useSignersAddressAsActiveAddress
+}
+
 export async function getActiveAddressForCurrentSignerState<T>(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Pick<Settings, 'simulationMode' | 'useSignersAddressAsActiveAddress'>,
 	tabId: number,
 	getAddress: () => Promise<T | undefined>,
 ): Promise<T | undefined> {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return await getAddress()
+	if (!isActiveAddressBoundToSigner(settings)) return await getAddress()
 	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
 	if (signerStateToken === undefined) return undefined
 	const activeAddress = await getAddress()

@@ -26,6 +26,7 @@ function createSignerConnection() {
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -132,9 +133,9 @@ test('the canonical encoding sorts nested keys, keeps array order, encodes bigin
 	assert.equal(encoded, '{"a":{"y":"0x","z":"0x00ff"},"b":"0xff","list":[{"c":null,"d":"0x-1"},null,["0x2","0x1"]],"when":"1970-01-01T00:00:00.000Z"}')
 })
 
-// Pinned so encoding changes are deliberate. This fixture includes the persisted confirmationRunId added with failed-transaction previews; update the digest only with the fixture or reviewed fields. The instance id is reviewed so an identical replacement needs its own approval.
+// Pinned so encoding changes are deliberate. This fixture includes the persisted confirmationRunId added with failed-transaction previews and the reviewed transaction in its own confirmation simulation input. The instance id is also reviewed so a replacement needs its own approval; update the digest only with the fixture or reviewed fields.
 test('the reviewed-result id of a fixed request does not change', () => {
-	assert.equal(getReviewedResultId(pendingTransaction), '0x3b0179fe20c86d4f0044bceb17c6c3db3a5430df3519501c67782880b1b26eb9')
+	assert.equal(getReviewedResultId(pendingTransaction), '0xd89cde67c1fb67279aa7bea07cac89a3657fdb4c50461b7c71cd3a5452dee87a')
 })
 
 test('the background stamps the reviewed-result id of the stored request on the popup copy of a transaction, a signature request and a Safe co-signing request', async () => {

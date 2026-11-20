@@ -39,7 +39,7 @@ function Title({ icon, title} : {icon: string | undefined, title: string}) {
 function AccessRequestHeader(website: Website) {
 	return <header class = 'card-header' style = 'height: 40px'>
 		<div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
-			<WebsiteOriginText website = { website } />
+			<WebsiteOriginText website = { website } displayFullOrigin = { true } />
 		</div>
 	</header>
 }

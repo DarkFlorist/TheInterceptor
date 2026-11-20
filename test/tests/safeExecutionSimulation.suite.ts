@@ -999,6 +999,30 @@ test('keeps a Gnosis Safe execution\'s hash apart from an ordinary transaction f
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 })
 
+const executorPaidEnvelopeCases = [
+	{ name: 'legacy', fields: { type: '0x0', gasPrice: '0x7' } },
+	{ name: 'EIP-2930', fields: { type: '0x1', gasPrice: '0x7', accessList: [] } },
+	{ name: 'inferred legacy', fields: { gasPrice: '0x7' } },
+]
+
+for (const { name, fields } of executorPaidEnvelopeCases) {
+	test(`simulates and refreshes a Safe call requested with a ${ name } envelope`, async () => {
+		configureSafe()
+		const simulator = createRecordingSimulator()
+		const request = await createTransferParams(fields)
+		const pending = await openSimulationModeConfirmation(simulator, SAFE_ADDRESS, request, createWebsiteTabConnections([]))
+		assert.equal(pending.transactionToSimulate.transaction.type, '1559')
+		assert.equal(pending.popupVisualisation.statusCode, 'success')
+		assert.deepEqual(pending.originalRequestParameters, request, 'the website request remains available unchanged')
+		assert.ok(simulator.simulatedCalls.some((call) => call.from === SAFE_EXECUTION_SIMULATION_EXECUTOR))
+		await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+		const [refreshed] = await modules.getPendingTransactionsAndMessages()
+		if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Expected the refreshed Safe call')
+		assert.equal(refreshed.transactionToSimulate.transaction.type, '1559')
+		assert.equal(refreshed.popupVisualisation.statusCode, 'success')
+	})
+}
+
 test('simulates a configured Gnosis Safe that the page names as the sender, while another account is active, as an ordinary transaction from the Safe, through refresh', async () => {
 	configureSafe()
 	const simulator = createRecordingSimulator()

@@ -10,8 +10,9 @@ const SIMULATION_MODE_ENABLED_AFTER_REQUEST_MESSAGE = 'The Interceptor switched 
 const socket = uniqueRequestIdentifier.requestSocket
 const signingModeTransaction = withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false }, { transactionStatus: 'Transaction Succeeded' })
 
+// The connection is approved for the request's account, so only the simulation mode decides whether an approval reaches the signer.
 const websiteTabConnection = (port: browser.runtime.Port) => ({ connections: {
-	[modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+	[modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'https://example.com', approved: true, approvedAddress: activeAddress, wantsToConnect: true },
 } })
 
 const connectWebsite = (port: browser.runtime.Port) => new Map([[socket.tabId, websiteTabConnection(port)]])

@@ -18,7 +18,8 @@ import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcC
 import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getFrameOrigins, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getFrameOrigins, getWebsiteOrigin } from '../utils/websiteOrigin.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { refreshContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
@@ -334,7 +335,7 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await waitForBackgroundStartup()
 	if (changeInfo.status !== 'complete') return
 	if (tab.url === undefined) return
-	const websiteOrigin = getHostWithPort(tab.url)
+	const websiteOrigin = getWebsiteOrigin(tab.url)
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId, websiteOrigin) }
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))

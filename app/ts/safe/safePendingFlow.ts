@@ -1,3 +1,4 @@
+import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { PendingTransactionOrSignableMessage, PendingTransactionSafeFlow } from '../types/accessRequest.js'
 import type { SafeMessageCoSignSnapshot, SafeTransactionRequestContext, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { TransactionGasPayment } from '../types/visualizer-types.js'
@@ -97,4 +98,25 @@ export function getSafeFlowSignerAddress(flow: SafePendingFlow) {
 		case 'messageCoSign': return flow.pending.safeMessageCoSignSnapshot.safeSignerAddress
 		case 'proposal': return flow.pending.safeFlow.safeTransaction.safeSignerAddress
 	}
+}
+
+// A direct execution has two account roles: website approval for the original Safe and a prepared transaction from its executor. Ordinary requests use the active account for both; pre-signed raw broadcasts have no sender-authorization requirement.
+export function getPendingRequestAccountBinding(pending: PendingTransactionOrSignableMessage) {
+	const flow = getSafePendingFlow(pending)
+	const websiteAccount = flow?.kind === 'directExecution'
+		? flow.pending.safeFlow.safeExecutionOriginalRequestParameters.params[0].from ?? pending.activeAddress
+		: pending.activeAddress
+	return {
+		websiteAccount,
+		...pending.type === 'Transaction' && pending.transactionOrMessageCreationStatus === 'Simulated' && pending.originalRequestParameters.method === 'eth_sendTransaction'
+			? { transactionSender: { requested: pending.transactionToSimulate.transaction.from, authorized: pending.activeAddress } }
+			: {},
+	}
+}
+
+// A direct execution's gas and fees belong to its wallet request, not the zero-fee simulation. The popup and Safe resolver consume this same immutable projection; originalRequestParameters is bound by the reviewed-result id.
+export function getDirectSafeExecutionSignerRequest(pending: Pick<PendingTransaction, 'safeFlow' | 'originalRequestParameters'>): SendTransactionParams | undefined {
+	if (pending.safeFlow.kind !== 'directExecution') return undefined
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('A direct Safe execution must have a wallet transaction request')
+	return pending.originalRequestParameters
 }

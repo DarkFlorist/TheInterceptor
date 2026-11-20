@@ -15,6 +15,7 @@ import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAcce
 import { resolveChainChange } from './windows/changeChain.js'
 import { changeActiveRpc } from './walletSwitch.js'
 import { reconcileCommittedWebsiteAccessOrFailClosed, startWebsiteAccessUiUpdateInBackground } from './accessManagement.js'
+import { isInterceptorDisabledForWebsiteOrigin } from './websiteAccessPolicy.js'
 import { applyWebsiteAccessUpdate } from './applyWebsiteAccessUpdate.js'
 import { withWebsiteAccessChanges } from './websiteAccessMutations.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -85,7 +86,7 @@ const importSimulationStackFailure = (message: string): ImportSimulationStackRep
 
 function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
 	if (websiteOrigin === undefined) return false
-	return settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+	return isInterceptorDisabledForWebsiteOrigin(settings.websiteAccess, websiteOrigin)
 }
 
 async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: WebsiteTabConnections, tabId: number | undefined, tabState: TabState, shouldRefreshSignerAccounts: boolean) {

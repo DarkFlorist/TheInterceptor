@@ -32,7 +32,7 @@ test('the confirmation window delegates Gnosis Safe resolution, persistence, and
 test('the Safe layer alone decides how a simulated Gnosis Safe execution is formed', async () => {
 	const safeExecutionSimulationSource = await Bun.file(new URL('../../app/ts/safe/safeExecutionSimulation.ts', import.meta.url)).text()
 	assert.doesNotMatch(confirmTransactionSource, /executeThroughSafe: true|getSimulatedSafeCallNonce|'simulated-safe-executor'/u)
-	assert.match(confirmTransactionSource, /const executedCallFormation = getExecutedCallFormation\(ethereumClientService, gasPayment\)/u)
+	assert.match(confirmTransactionSource, /const formation = getTransactionFormation\(ethereumClientService, gasPayment, requestedType\)/u)
 	assert.equal(safeExecutionSimulationSource.match(/executeThroughSafe: true/gu)?.length, 1, 'one factory builds the options that forming and estimating share')
 	assert.match(safeExecutionSimulationSource, /simulationOptions: createSafeExecutionSimulationOptions\(ethereum\.getChainId\(\)\),\n\t\}/u)
 })

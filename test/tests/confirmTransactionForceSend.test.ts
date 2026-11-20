@@ -38,7 +38,7 @@ function recordingConnections(postedMessages: unknown[]) {
 	const socket = uniqueRequestIdentifier.requestSocket
 	return new Map([[socket.tabId, { connections: {
 		[modules.websiteSocketToString(socket)]: {
-			port: createRecordingPort(postedMessages), socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true,
+			port: createRecordingPort(postedMessages), socket, websiteOrigin: 'https://example.com', approved: true, approvedAddress: pendingTransaction.activeAddress, wantsToConnect: true,
 		},
 	} }]])
 }

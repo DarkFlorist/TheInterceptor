@@ -1,5 +1,6 @@
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
+import { checkAndThrowRuntimeLastError, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { doesStoredWebsiteOriginApplyTo, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
 import type { ContentScriptRegistrationConfiguration } from './contentScriptInjectionConfiguration.js'
 
@@ -22,27 +23,34 @@ function getExactOriginMatchPattern(url: URL) {
 	return `${ url.protocol }//${ url.hostname }:${ url.port === '' ? defaultPort : url.port }/*`
 }
 
-// Website access, including a disabled Interceptor, is stored per getHostWithPort origin and compared as an exact string, as the MV2 injection also does. A disabled site is excluded on exactly the URLs with that origin: excluding its subdomains or other ports too would leave pages that the popup and the access policy treat as enabled without the Interceptor provider (#1701).
+// URL parsing keeps a * in a hostname, also one decoded from %2A, but a match pattern reads a leading *. as every subdomain and rejects a * anywhere else, which fails the whole registration, so no pattern can name such a host exactly.
+const hasMatchPatternWildcardHost = (url: URL) => url.hostname.includes('*')
+
+// A disabled site is excluded on exactly the origins that the MV2 injection and the access policy treat as disabled: excluding its subdomains or other ports too would leave pages that the popup treats as enabled without the Interceptor provider (#1701).
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
-	if (origin === '') return ['file:///*']
-	try {
-		const hasExplicitScheme = origin.includes('://')
-		const url = new URL(hasExplicitScheme ? origin : `http://${ origin }`)
-		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
-		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
-		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		if (url.hostname === '') return []
-		// URL parsing keeps a * in a hostname, also one decoded from %2A, but a match pattern reads a leading *. as every subdomain and rejects a * anywhere else, which fails the whole registration, so no pattern can name such a host exactly.
-		if (url.hostname.includes('*')) return []
-		if (hasExplicitScheme) return [getExactOriginMatchPattern(url)]
-		// Keep each scheme whose URLs getHostWithPort maps back to this origin. It leaves out a scheme's default port, so for example a stored port 80 only comes from an https URL.
-		return ['http:', 'https:']
-			.map((scheme) => new URL(`${ scheme }//${ origin }/`))
-			.filter((schemeUrl) => getHostWithPort(schemeUrl.href) === origin)
-			.map(getExactOriginMatchPattern)
-	} catch {
-		return []
+	if (/^https?:\/\//iu.test(origin)) {
+		try {
+			const url = new URL(origin)
+			if (url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
+		} catch {
+			return []
+		}
 	}
+	const normalizedOrigin = normalizeStoredWebsiteOrigin(origin)
+	if (normalizedOrigin === undefined) return []
+	if (normalizedOrigin === '') return ['file:///*']
+	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) {
+		// A legacy origin has no scheme, so keep each scheme whose origin the MV2 injection matches with it. A URL leaves out its scheme's default port, so for example a stored port 443 matches both an explicit-port http URL and a default-port https URL.
+		return ['http:', 'https:']
+			.map((scheme) => new URL(`${ scheme }//${ normalizedOrigin }/`))
+			.filter((url) => !hasMatchPatternWildcardHost(url) && isLegacyWebsiteOriginForCanonicalOrigin(normalizedOrigin, url.origin))
+			.map(getExactOriginMatchPattern)
+	}
+	const url = new URL(normalizedOrigin)
+	// Match patterns include queries, while file identity uses only the path. Literal stars cannot be escaped in a pattern, so leave those files injected rather than excluding other paths.
+	if (url.protocol === 'file:') return url.pathname.includes('*') || hasMatchPatternWildcardHost(url) ? [] : [normalizedOrigin, `${ normalizedOrigin }?*`]
+	if (hasMatchPatternWildcardHost(url)) return []
+	return [getExactOriginMatchPattern(url)]
 }
 
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
@@ -134,9 +142,8 @@ const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScr
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = interceptorDisabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
-	if (!noMatches) return false
+	const origins = urls.map((url) => getWebsiteOrigin(url))
+	if (interceptorDisabledSites.some((disabledSite) => origins.some((origin) => doesStoredWebsiteOriginApplyTo(disabledSite, origin)))) return false
 	try {
 		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
 			await browser.tabs.executeScript(content.tabId, { file: `/${ injection.file }`, allFrames: false, runAt: 'document_start' })

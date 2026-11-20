@@ -120,6 +120,15 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
   return true
 })
 
+// Only eth_sendTransaction consumes these envelope fields. Calls and gas estimates retain their narrower shared parameter contract.
+export type PartialEthereumSendTransaction = funtypes.Static<typeof PartialEthereumSendTransaction>
+export const PartialEthereumSendTransaction = PartialEthereumTransaction.And(funtypes.ReadonlyPartial({
+	chainId: EthereumQuantity,
+	nonce: EthereumQuantity,
+	maxFeePerBlobGas: EthereumQuantity,
+	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
+}))
+
 export type EthTransactionReceiptResponse = funtypes.Static<typeof EthTransactionReceiptResponse>
 export const EthTransactionReceiptResponse = funtypes.Union(
 	funtypes.Null,
@@ -197,7 +206,7 @@ export const TransactionByHashParams = funtypes.ReadonlyObject({
 export type SendTransactionParams = funtypes.Static<typeof SendTransactionParams>
 export const SendTransactionParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_sendTransaction'),
-	params: funtypes.ReadonlyTuple(PartialEthereumTransaction)
+	params: funtypes.ReadonlyTuple(PartialEthereumSendTransaction)
 })
 
 export type SendRawTransactionParams = funtypes.Static<typeof SendRawTransactionParams>

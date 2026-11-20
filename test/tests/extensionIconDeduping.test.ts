@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { getNetworkWithoutRpcWarningText } from '../../app/ts/utils/networkWithoutRpcUi.js'
 
 type BrowserStorageState = Record<string, unknown>
@@ -195,7 +195,7 @@ describe('extension icon deduping', () => {
 		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 
 		await updateWebsiteAccess(() => [{
-			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
+			website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Example' },
 			addressAccess: undefined,
 			access: false,
 			declarativeNetRequestBlockMode: 'block-all',
@@ -208,10 +208,53 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(new Map(), 1, 'https://example.test', 0)
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
+	})
+
+	test.each(['example.test', 'example.test:8080', 'example.test:443', 'example.test:80'])('refreshes blocking icons for persisted legacy tab origin %s without requiring a reload', async (websiteOrigin) => {
+		const { setTitleCalls } = installBrowserMock([{ id: 1, url: `https://${ websiteOrigin }`, status: 'complete' }])
+		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await updateTabState(1, (previousState) => ({ ...previousState, website: { websiteOrigin } }))
+
+		await updateExtensionIcon(new Map(), 1, websiteOrigin, 0)
+
+		assert.match(setTitleCalls.at(-1)?.title ?? '', /blocking external requests/u)
+	})
+
+	for (const storedOrigin of ['example.test:443', 'example.test:80']) test(`default-port legacy blocking covers the canonical origin for ${ storedOrigin }`, async () => {
+		const { setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { updateExtensionIcon, updateWebsiteAccess } = await loadModules()
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: storedOrigin }, access: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await updateExtensionIcon(new Map(), 1, 'https://example.test', 0)
+		assert.match(setTitleCalls.at(-1)?.title ?? '', /blocking external requests/u)
+	})
+
+	test('legacy interceptor-disabled sites use the disabled icon for the current canonical origin', async () => {
+		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+
+		await updateWebsiteAccess(() => [{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy disabled site' },
+			addressAccess: undefined,
+			access: true,
+			interceptorDisabled: true,
+		}])
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			tabIconDetails: {
+				icon: ICON_SIMULATING,
+				iconReason: 'The Interceptor simulates your sent transactions.',
+			},
+		}))
+
+		await updateExtensionIcon(new Map(), 1, 'https://example.test', 0)
+
+		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_INTERCEPTOR_DISABLED })
+		assert.match(setTitleCalls.at(-1)?.title ?? '', /disabled for https:\/\/example\.test/u)
 	})
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {

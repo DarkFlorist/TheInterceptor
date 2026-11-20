@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { getHostWithPort } from '../../utils/websiteOrigin.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -12,6 +13,16 @@ import { AddressBookEntryIcon } from './AddressBookEntryIcon.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
 import { type ActionableIconProps, type ActionableTextProps, MultilineCard } from './MultilineCard.js'
+
+const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
+	try {
+		const url = new URL(websiteOrigin)
+		if (url.protocol === 'http:' || url.protocol === 'https:') return getHostWithPort(websiteOrigin)
+		return websiteOrigin
+	} catch {
+		return websiteOrigin
+	}
+}
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries, chainId: bigint | undefined = undefined): AddressBookEntry {
 	const selectableAddresses = chainId === undefined ? activeAddresses : getAddressBookEntriesForChainIdMorePreciseFirst(activeAddresses, chainId)
@@ -165,10 +176,11 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } nonInteractive = { nonInteractive } copyOnActionOnly = { copyOnActionOnly } style = { style } />
 }
 
-export function WebsiteOriginText({ website, class: cssClass, style }: {
+export function WebsiteOriginText({ website, class: cssClass, style, displayFullOrigin }: {
 	website: SignalOrValue<Website | undefined>
 	class?: string
 	style?: JSX.CSSProperties | string
+	displayFullOrigin?: boolean
 }) {
 	const currentWebsite = resolveSignal(website)
 	if (currentWebsite === undefined) return <></>
@@ -180,7 +192,7 @@ export function WebsiteOriginText({ website, class: cssClass, style }: {
 		</span>
 
 		<div class = 'media-content website-origin-text-body'>
-			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ websiteOrigin }</p>
+			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ displayFullOrigin ? websiteOrigin : getWebsiteOriginForDisplay(websiteOrigin) }</p>
 			<p class = 'subtitle is-7 website-origin-text-title'> { title } </p>
 		</div>
 	</div>

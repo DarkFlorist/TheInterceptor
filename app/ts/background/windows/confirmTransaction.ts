@@ -7,25 +7,23 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type CompleteVisualizedSimulation, type InterceptorTransactionStack, PASSTHROUGH_STATE, type TransactionGasPayment, type TransactionSimulationOptions, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { createInterruptedConfirmTransactionSimulation, refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
-import { captureSimulationSnapshot, getExecutedCallFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
-import { getHtmlFile, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { captureSimulationSnapshot, getTransactionFormation, getUpdatedSimulationState } from '../simulationUpdating.js'
+import { getHtmlFile, getWebsiteSocketConnection, getWebsiteSocketRequestOrigin, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getPopupVisualisationState, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, isSamePendingRequestInstance, updatePendingTransactionOrMessageInstance } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import { replyToInterceptedRequest } from '../messageSending.js'
-import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import { createPendingRequestInstanceId, type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage, type SimulatedPendingTransaction } from '../../types/accessRequest.js'
-import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import { getRequestedSignMessageAccount, type SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { InterceptedRequestForward } from '../../types/interceptor-messages.js'
 import type { SimulationStackChange } from '../../types/visualizer-types.js'
 import type { SafeSignerErrorDetails, SafeTransactionRequestContext } from '../../types/safeTypes.js'
@@ -41,13 +39,16 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
-import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
+import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
+import { createSignerTransactionEnvelope, finalizeSignerTransactionEnvelope, getReviewedTransactionForSigning, getSupportedSendTransactionType, toCanonicalSendTransactionParams } from '../../utils/signerTransactionEnvelope.js'
+import { getRequestAccountAuthorizationFailure, isAccountBoundToAddress, WEBSITE_CONNECTION_INTERRUPTED_MESSAGE } from '../../utils/requestAccountAuthorization.js'
+import { forwardAuthorizedSignerRequest, SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../authorizedSignerForwarding.js'
 import { identifyAddress, identifyAddressWith } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation, type SafeTransactionConfirmationPreparation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { createSafeOffChainMessageSnapshot, persistSafeConfirmationRefresh, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
-import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPayment } from '../../safe/safePendingFlow.js'
+import { getCreatedSafeProposal, getSafePendingFlow, getSafeTransactionFlowGasPayment, getPendingRequestAccountBinding } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
@@ -59,12 +60,6 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 // Runs work that creates a pending confirmation's Gnosis Safe proposal, as opening a confirmation does, one at a time, so each proposal reserves its Safe nonce against the pending proposals stored before it (createSafeSigningRequestForTransaction).
 export const runWithPendingConfirmationLock = async <T>(work: () => Promise<T>) => await pendingConfirmationSemaphore.execute(work)
 const pendingNoResponseRetries = new Map<string, ReturnType<typeof createBackoffRetryScheduler>>()
-
-// A request created in signing mode is not forwarded once the Interceptor has switched to simulation mode; it stays pending so the user can reject it.
-const SIMULATION_MODE_ENABLED_AFTER_REQUEST: PendingTransactionOrSignableMessage['approvalStatus'] = {
-	status: 'SignerError',
-	...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error,
-}
 
 // Shows a proposal that was just stored in the Gnosis Safe stack: the simulation is refreshed with it and the simulation stack window opens, where the user continues with the proposal.
 async function showStoredSafeProposal(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
@@ -378,6 +373,12 @@ function isAcceptForStoredResult(pending: PendingTransactionOrSignableMessage, a
 	return accept.forceSend || getSendAnywayOverrideReason(pending) === undefined
 }
 
+// Why a signing-mode accept must not reach the wallet, or undefined when it may. The website connection must still be approved for the account the request was created under, and a request that asks the wallet to sign a transaction must be from that account. A raw transaction is already signed, so broadcasting it grants no authority over its sender: the website could submit the same bytes to any public RPC. A request that is not simulated yet is refused by claimAcceptedRequest instead.
+function getSignerAuthorizationFailure(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage) {
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
+	return getRequestAccountAuthorizationFailure(getWebsiteSocketConnection(websiteTabConnections, pending.uniqueRequestIdentifier.requestSocket), getPendingRequestAccountBinding(pending))
+}
+
 // Checks the accept against the stored request and claims it in the same locked storage update, so a refresh committed in between cannot become the accepted request. Signing-mode requests move to WaitingForSigner; simulation-mode ones are removed once added to the simulation. Returns the accepted snapshot, or undefined when the accept no longer matches.
 async function claimAcceptedRequest(accept: Extract<TransactionConfirmation['data'], { action: 'accept' }>, expected: PendingTransactionOrSignableMessage) {
 	let acceptedPending: PendingTransactionOrSignableMessage | undefined
@@ -466,6 +467,15 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 	pendingTransactionOrMessage = safeResolution.pending
 	if (safeResolution.pendingChanged && !await persistSafeConfirmationRefresh(pendingTransactionOrMessage)) return false
 	if (confirmation.data.action === 'accept') {
+		const signerAuthorizationFailure = pendingTransactionOrMessage.simulationMode ? undefined : getSignerAuthorizationFailure(websiteTabConnections, pendingTransactionOrMessage)
+		if (signerAuthorizationFailure !== undefined) {
+			// Keep the request in front of the user, who can still reject it, instead of throwing, which the popup message router would report as an unexpected error.
+			await updatePendingTransactionOrMessageInstance(pendingTransactionOrMessage, async (transaction) => modifyObject(transaction, {
+				approvalStatus: { status: 'SignerError', code: METAMASK_ERROR_BLANKET_ERROR, message: signerAuthorizationFailure },
+			}))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
 		// The Safe signer refresh and resolution above, or a concurrent result refresh, may have stored new content, so the accept is checked again while claiming the request.
 		const acceptedPending = await claimAcceptedRequest(confirmation.data, pendingTransactionOrMessage)
 		if (acceptedPending === undefined) {
@@ -475,8 +485,15 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 		// The claimed snapshot has the reviewed content, so forwarding it is unaffected by refreshes stored after the claim.
 		pendingTransactionOrMessage = acceptedPending
 	}
-	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
-		?? pendingTransactionOrMessage.originalRequestParameters
+	// Derived only when forwarding, after the authorization checks, so rejecting a request never depends on rebuilding its reviewed transaction.
+	const getSignerFacingRequest = (): SendTransactionParams | SendRawTransactionParams | SignMessageParams => safeResolution.signerFacingRequest
+		?? getReviewedSignerFacingRequest(pendingTransactionOrMessage, confirmation.data.action === 'accept' && confirmation.data.forceSend)
+	const forwardToSignerIfStillAuthorized = async () => await forwardAuthorizedSignerRequest(
+		websiteTabConnections,
+		{ ...getSignerFacingRequest(), type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier },
+		getPendingRequestAccountBinding(pendingTransactionOrMessage),
+		simulationModeGuard,
+	)
 	const updateViewAfterPendingRequestRemoved = async (simulationStack: SimulationStackChange) => await updateViewAfterPendingRequestLeftQueue(ethereum, tokenPriceService, pendingTransactionOrMessage, simulationStack)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(pendingTransactionOrMessage)
@@ -493,16 +510,17 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 			await updateViewAfterPendingRequestRemoved(simulationStack)
 		}
 	}
+	// Terminal replies to the website only: a request reaches the wallet solely through forwardToSignerIfStillAuthorized.
 	const reply = async (message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, simulationStack: SimulationStackChange = 'unchanged') => {
-		if (!('error' in message)) {
-			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-				return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
-			}
-			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+		if ('error' in message) {
+			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
 			return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
 		}
-		const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+		if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
+			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
+			return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
+		}
+		const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
 		return await removePendingRequestAndDeliverTerminalReply(terminalReply, simulationStack)
 	}
 	if (confirmation.data.action === 'addToSafeStack') {
@@ -518,10 +536,6 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result }, safeReply.simulationStack)
 		return false
 	}
-	if (
-		confirmation.data.action === 'accept'
-		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
-	) return false
 	if (confirmation.data.action === 'noResponse') {
 		const noResponseDelivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
 			...pendingTransactionOrMessage.originalRequestParameters,
@@ -556,25 +570,13 @@ async function resolveReadPendingRequest(ethereum: EthereumClientService, tokenP
 			return false
 		}
 		await setApprovalStatusAndUpdateView({ status: 'WaitingForSigner' })
-		const forward = { ...signerFacingRequest, type: 'forwardToSigner' as const, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-		let simulationModeEnabledBeforeDelivery = false
-		const requestWasForwarded = await attemptDeliveryAfterManifestV2Reconnect(websiteTabConnections, forward, () => {
-			// The guard checks and posts in one synchronous step, so simulation mode was either enabled before the check or only after the request was posted. This also runs before the retry after a Manifest V2 content script reconnect.
-			const delivery = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, forward))
-			if (delivery.posted) return delivery.result
-			simulationModeEnabledBeforeDelivery = true
-			// Only a false result makes the reconnect helper retry, so returning undefined ends the delivery without posting.
-			return undefined
-		})
-		if (simulationModeEnabledBeforeDelivery) {
-			await setApprovalStatusAndUpdateView(SIMULATION_MODE_ENABLED_AFTER_REQUEST)
-			return false
-		}
-		if (requestWasForwarded) return true
-		await setApprovalStatusAndUpdateView({
+		const forwarding = await forwardToSignerIfStillAuthorized()
+		if (forwarding.status === 'delivered') return true
+		// Either way the request stays in front of the user, who can reject it.
+		await setApprovalStatusAndUpdateView(forwarding.status === 'refused' ? forwarding.approvalStatus : {
 			status: 'SignerError',
 			code: METAMASK_ERROR_BLANKET_ERROR,
-			message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+			message: WEBSITE_CONNECTION_INTERRUPTED_MESSAGE,
 		})
 		return false
 	}
@@ -730,19 +732,55 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
+// `originalRequestParameters` keeps the website's own inputs so refreshes regenerate omitted fields (nonce, gas and fees) against current chain state, while the wallet receives the reviewed transaction with the fees the popup displayed so it cannot sign values the user did not see. The Safe resolver supplies typed-data requests and direct execution requests separately; direct executions display the wallet's actual gas and fee choices alongside the zero-fee simulation.
+function getReviewedSignerFacingRequest(pending: PendingTransactionOrSignableMessage, forceSend: boolean): SendTransactionParams | SendRawTransactionParams | SignMessageParams {
+	if (pending.type === 'SignableMessage') return pending.originalRequestParameters
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction') return pending.originalRequestParameters
+	const safeFlow = getSafePendingFlow(pending)
+	if (safeFlow?.kind === 'proposal') return pending.originalRequestParameters
+	if (safeFlow?.kind === 'directExecution') throw new Error('The Safe resolver must supply the reviewed direct execution request')
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return pending.originalRequestParameters
+	// A failed confirmation simulation leaves no reviewed transaction to bind, and resolvePendingTransactionOrMessage refuses every accept for it (isRejectOnlyTransaction), so this request is never forwarded.
+	if (pending.popupVisualisation.statusCode !== 'success') return pending.originalRequestParameters
+	const simulatedTransaction = getReviewedTransactionForSigning(pending.transactionToSimulate.transaction, pending.popupVisualisation, pending.transactionIdentifier)
+	// Explicit send-anyway consent includes the saved gas edit even while its resimulation is pending; all other envelope fields remain bound to the reviewed result.
+	const editedGas = forceSend ? getUnsimulatedGasLimitEdit(pending) : undefined
+	const reviewedTransaction = editedGas === undefined ? simulatedTransaction : { ...simulatedTransaction, gas: editedGas }
+	// The popup displays this same signer nonce, and notes a different simulated one. Safe flows returned above, so this is a plain transaction.
+	const signerNonce = getSignerNonce(pending, false)
+	switch (signerNonce.kind) {
+		case 'simulated': throw new Error('Only transactions forwarded to the wallet have a signer-facing request')
+		case 'wallet-selected': return toCanonicalSendTransactionParams(reviewedTransaction, 'wallet-selects-nonce')
+		case 'website-requested': {
+			if (reviewedTransaction.nonce !== signerNonce.nonce) throw new Error('The reviewed transaction nonce does not match the nonce the website requested')
+			return toCanonicalSendTransactionParams(reviewedTransaction, 'forward-reviewed-nonce')
+		}
+		default: return assertNever(signerNonce)
+	}
+}
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+	const transactionDetails = sendTransactionParams.params[0]
+	if (activeAddress === undefined) throw new Error('Access to active address is denied')
+	// Signing mode binds the sender to the authorized account. Simulation mode signs nothing, so a page may still simulate the sender it names, such as a configured Gnosis Safe while another account is active.
+	if (!simulationMode && !isAccountBoundToAddress(transactionDetails.from, activeAddress)) throw new Error('The transaction sender is not the active authorized address')
+	if (transactionDetails.chainId !== undefined && transactionDetails.chainId !== ethereumClientService.getChainId()) throw new Error('The transaction chain does not match the active chain')
+	if (transactionDetails.maxFeePerBlobGas !== undefined || transactionDetails.blobVersionedHashes !== undefined) {
+		throw new Error('EIP-4844 eth_sendTransaction requests are not supported')
+	}
+	const requestedType = getSupportedSendTransactionType(transactionDetails)
 	const paidByExecutor = gasPayment !== 'transaction-sender'
+	const formation = getTransactionFormation(ethereumClientService, gasPayment, requestedType)
 	const simulationState = simulationMode || paidByExecutor
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
-	const transactionDetails = sendTransactionParams.params[0]
-	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	// Defined by the Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe proposal, or in simulation mode a Safe's own call), so this function picks no Safe-specific option or nonce source itself.
-	const executedCallFormation = getExecutedCallFormation(ethereumClientService, gasPayment)
-	const transactionCountPromise = silenceChromeUnCaughtPromise(executedCallFormation === undefined
-		? getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from)
-		: executedCallFormation.getNonce(requestAbortController, simulationState, from))
+	// Defined by the Safe layer for a transaction the simulation runs as an executor's call (a Gnosis Safe proposal, or in simulation mode a Safe's own call), so this function picks no Safe-specific option or nonce source itself. Otherwise a website-requested nonce is kept, so the reviewed transaction is the one the wallet is asked to sign.
+	const { executedCallFormation } = formation
+	const transactionCountPromise = silenceChromeUnCaughtPromise(executedCallFormation !== undefined
+		? executedCallFormation.getNonce(requestAbortController, simulationState, from)
+		: transactionDetails.nonce !== undefined
+			? Promise.resolve(transactionDetails.nonce)
+			: getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
 	const parentBlockPromise = !paidByExecutor
 		? silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // the latest real block is the parent of the transaction being prepared
 		: undefined
@@ -771,14 +809,16 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
-		maxFeePerGas: getInitialMaxFeePerGas(),
-		maxPriorityFeePerGas,
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
 		value,
 		input: getInputFieldFromDataOrInput(transactionDetails),
-		accessList: transactionDetails.accessList ?? [],
 	}
-	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
+	const transactionWithoutGas = await createSignerTransactionEnvelope(transactionWithoutGasBase, transactionDetails, {
+		type: formation.type,
+		gasPrice: paidByExecutor ? 0n : transactionDetails.gasPrice ?? getInitialMaxFeePerGas(),
+		maxFeePerGas: getInitialMaxFeePerGas(),
+		maxPriorityFeePerGas,
+	})
 	const extraParams = {
 		website,
 		created,
@@ -806,7 +846,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					success: false,
 				}
 			}
-			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, ...simulationOptionsField, success: true }
+			return { transaction: await finalizeSignerTransactionEnvelope(transactionWithoutGas, estimateGas.gas, getFeePerGas), ...extraParams, ...simulationOptionsField, success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
@@ -815,7 +855,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, ...simulationOptionsField, success: true }
+	return { transaction: await finalizeSignerTransactionEnvelope(transactionWithoutGas, transactionDetails.gas, getFeePerGas), ...extraParams, ...simulationOptionsField, success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
@@ -875,6 +915,9 @@ async function createConfirmationForMessage(
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
+	if (!isAccountBoundToAddress(getRequestedSignMessageAccount(transactionParams), activeAddress)) {
+		return formRejectMessage(METAMASK_ERROR_NOT_AUTHORIZED, 'The requested signing account has not been authorized by the user.')
+	}
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
 		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : getWalletSelectedAccount(signerTabState)
