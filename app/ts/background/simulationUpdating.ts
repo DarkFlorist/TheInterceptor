@@ -5,11 +5,10 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI, validateSafeDelegateSimulationInput } from '../safe/safeSimulation.js'
 import { assertSafeTxPreviewAllowed } from '../safe/safeCore.js'
-import { createSafeExecutionCallFormation, prepareSafeExecutionSimulationInput } from '../safe/safeExecutionSimulation.js'
+import { createSafeExecutionCallFormation, prepareSafeExecutionsOnParentBlock } from '../safe/safeExecutionSimulation.js'
 import { getSafeSignatureRequirement } from '../safe/safeSignatureRequirement.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getInputFieldFromDataOrInput, getNonceFixedSimulationStateInput, getSimulatedCode, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { getSimulatedBlockBaseFeePerGas } from '../simulation/services/simulationBlockParameters.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -24,7 +23,7 @@ import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressWith, lookUpMetadataOnChain, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
-import { simulateGovernanceProposalExecution } from '../simulation/governanceProposalExecution.js'
+import { prepareStackOnPinnedBlock, simulateGovernanceProposalExecution } from '../simulation/governanceProposalExecution.js'
 import { pinToLatestBlock } from '../simulation/services/blockPinning.js'
 import { decodeGovernanceVote } from '../utils/governanceVote.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
@@ -214,11 +213,10 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (vote === undefined) return returnError('Could not identify the transaction as a vote')
 		// The stack's preparation, the preview and the visualisation all work on one parent block, whatever blocks arrive meanwhile.
 		const pinnedEthereum = await pinToLatestBlock(liveEthereum, undefined)
-		const { ethereum } = pinnedEthereum
-		const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereum)
-		const execution = await simulateGovernanceProposalExecution(pinnedEthereum, simulationInput, governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
+		const stack = await prepareStackOnPinnedBlock(pinnedEthereum, await getCurrentSimulationInput())
+		const execution = await simulateGovernanceProposalExecution(stack, governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
 		if (!execution.success) return returnError(execution.errorMessage)
-		return { success: true as const, result: await visualizeSimulatorState(execution.simulationState, ethereum, tokenPriceService, undefined) }
+		return { success: true as const, result: await visualizeSimulatorState(execution.simulationState, pinnedEthereum.ethereum, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
@@ -332,13 +330,13 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export, the Safe transaction preview and the governance execution preview on top of the stack. EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview. The governance execution preview prepares it with prepareSafeExecutionsOnParentBlock, as this does, on the block it pins (prepareStackOnPinnedBlock). EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
 export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	// The simulation reads the latest block again. If a newer block arrives in between, the executor's maximum fee of twice the base fee leaves room for the base fee to rise, as EIP-1559 wallets do.
-	return await prepareSafeExecutionSimulationInput(simulationInput, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+	return await prepareSafeExecutionsOnParentBlock(simulationInput, ethereum, parentBlock)
 }
 
 // The formation of a transaction with this gas payment that the simulation runs as an executor's call, or undefined for one it runs as itself. The Safe layer owns it (createSafeExecutionCallFormation); confirmTransaction.ts reaches it through this orchestration module, as it does the rest of the Safe execution simulation.

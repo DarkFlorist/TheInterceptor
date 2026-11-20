@@ -8,8 +8,7 @@ import { encodeFunctionCall } from '../app/ts/utils/abiRuntime.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../app/ts/simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../app/ts/config/defaults.js'
-import { prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
-import { getSimulatedBlockBaseFeePerGas } from '../app/ts/simulation/services/simulationBlockParameters.js'
+import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
 import { type GovernanceFixture, type RecordedExchange, sha256Digest } from './governanceFixtureFiles.js'
 
 const FIXTURE_RPC_URL = 'https://recorded.governance.fixture.invalid'
@@ -107,7 +106,7 @@ export const EXAMPLE_STACKS = {
 		simulationMode: true,
 		messageIdentifier: 1n,
 	}] })],
-	// 1 ether sent by EXAMPLE_SAFE, a Gnosis Safe 1.3.0 deployed on the fork the fixture was recorded on, as the simulation stack holds a Safe's own call before prepareExampleStack prepares it.
+	// 1 ether sent by EXAMPLE_SAFE, a Gnosis Safe 1.3.0 deployed on the fork the fixture was recorded on, as the simulation stack holds a Safe's own call before prepareStackOnPinnedBlock prepares it.
 	safeExecution: (_governor: bigint): SimulationStateInput => [stackBlock({ transactions: [{ ...exampleTransfer(EXAMPLE_SAFE), simulationOptions: { requiredChainId: 1n, executeThroughSafe: true } }] })],
 	// vitalik.eth sends the governor 2 ether earlier in the stack.
 	fundsTheGovernor: (governor: bigint): SimulationStateInput => [stackBlock({ transactions: [exampleTransfer(EXAMPLE_STACK_SENDER, governor, 2n * 10n ** 18n, 100_000n)] })],
@@ -134,11 +133,3 @@ export const EXAMPLE_STACKS = {
 } as const
 export type ExampleStackName = keyof typeof EXAMPLE_STACKS
 export const isExampleStackName = (name: string): name is ExampleStackName => name in EXAMPLE_STACKS
-
-// Prepares an example stack for the node as prepareSafeExecutionsForRpc prepares the user's stack, with the real Gnosis Safe preparation.
-export const prepareExampleStack = async (ethereum: EthereumClientService, stack: SimulationStateInput) => {
-	if (stack.every((block) => block.transactions.length === 0)) return stack
-	const parentBlock = await ethereum.getBlock(undefined)
-	if (parentBlock === null) throw new Error('The latest block is null')
-	return await prepareSafeExecutionSimulationInput(stack, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
-}

@@ -6,6 +6,7 @@ const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const governanceProposalExecutionSource = await Bun.file(new URL('../../app/ts/simulation/governanceProposalExecution.ts', import.meta.url)).text()
 const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
@@ -58,7 +59,8 @@ test('everything that sends the simulation stack to the node runs its Gnosis Saf
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,2}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(stackSimulationInput, ethereumClientService\)/u)
 	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereumClientService\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereum\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst stack = await prepareStackOnPinnedBlock\(pinnedEthereum, await getCurrentSimulationInput\(\)\)/u)
+	assert.match(governanceProposalExecutionSource, /preparedStack: await prepareSafeExecutionsOnParentBlock\(stack, pinnedEthereum\.ethereum, pinnedEthereum\.block\)/u)
 })
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {

@@ -138,6 +138,12 @@ function createExecutorTransaction(execution: SafeExecution, safeCall: EthereumS
  * The nonce read can still differ from the nonce the execution runs at: a contract can build its own execTransaction call without being handed one in calldata, and the read sees only the approvals of the executions before it, while the final simulation sets every execution's approvals in the first block, so an earlier contract that branches on a later execution's approval acts differently in the two. Either way the execution runs at a nonce it was not prepared for. It then fails the signature check (GS025) in the preview unless its SafeTx hash at that nonce is approved anyway: by the approvals of another execution in the input with the same SafeTx, or by an owner's approveHash on-chain. Each of those approvals is one the owners can also give on-chain, so the preview never relies on an approval that cannot exist. This is narrower than verifying that every execution runs at the nonce it was prepared for, which would take another simulation per execution. Approving every nonce the Safe might have instead would let a page plant approvals at nonces the Safe never reaches, which a called contract could read to tell the preview from the real execution.
  * The first block also funds the executor for every execution's gas at its maximum fee.
  */
+// Prepares the input's Gnosis Safe executions for a simulation on top of parentBlock, reading the Safes at that block and funding the executor for its base fee.
+export const prepareSafeExecutionsOnParentBlock = async (input: SimulationStateInput, ethereum: EthereumClientService, parentBlock: { readonly number: bigint, readonly baseFeePerGas?: bigint | undefined }) => {
+	if (input.every((block) => block.transactions.length === 0)) return input
+	return await prepareSafeExecutionSimulationInput(input, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
+}
+
 export async function prepareSafeExecutionSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, parentBlockNumber: bigint, baseFeePerGas: bigint, readSafeNonceAfterInput: SafeNonceAfterInputReader = createSafeNonceAfterInputReader(ethereum)): Promise<SimulationStateInput> {
 	const safeAddresses = new Set(input.flatMap((block) => block.transactions.filter(authorizesExecutedCall).map((transaction) => getSafeExecution(transaction).safeAddress)))
 	if (safeAddresses.size === 0 && input.every((block) => block.transactions.every((transaction) => transaction.executedTransaction === undefined))) return input
