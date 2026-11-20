@@ -32,6 +32,8 @@ export const SigningPageRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_get'), id: funtypes.String }),
 	// The approval names the reviewed result the page showed and whether the user ticked send-anyway for it, the same as a confirmation accept.
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_approve'), id: funtypes.String, revision: funtypes.String, reviewedResultId: funtypes.String, forceSend: funtypes.Boolean }),
+	// Asked immediately before the page sends an approved request to its device, so the background can refuse it after a switch into simulation mode.
+	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_authorizeDevice'), id: funtypes.String, revision: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_result'), id: funtypes.String, revision: funtypes.String, result: funtypes.String.withConstraint((value) => value.length <= 131074) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_broadcast'), id: funtypes.String, revision: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_cancel'), id: funtypes.String }),

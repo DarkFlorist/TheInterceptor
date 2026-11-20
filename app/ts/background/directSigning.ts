@@ -24,6 +24,7 @@ import { getHtmlFile } from './backgroundUtils.js'
 import { getAcceptRefusal } from './reviewedResult.js'
 import { getSettings } from './settings.js'
 import { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
+import { captureSimulationModeGuard, type SimulationModeGuard } from '../utils/simulationModeGuard.js'
 
 /** Read afresh at each lifecycle boundary; a request can disappear while a device is signing. */
 async function findPendingSigningRequest(record: DirectSigningRecord) {
@@ -145,6 +146,7 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 				return await records.store({ ...edited, reviewReady: true })
 			}
 			case 'signing_approve': return await approveSigningRequest(record, records, request)
+			case 'signing_authorizeDevice': return await authorizeDeviceRequest(record)
 			case 'signing_result': return await acceptSigningResult(record, request.result, records)
 			case 'signing_broadcast': return await broadcast(record, records)
 			default: throw signingOperationError('Unsupported signing operation')
@@ -172,14 +174,29 @@ async function assertApprovalForReviewedResult(record: DirectSigningRecord, appr
 	if (pending === undefined || pending.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The original signing request is no longer active')
 	const refusal = getAcceptRefusal(pending, approval)
 	if (refusal !== undefined) throw signingOperationError(approvalRefusalMessages[refusal])
-	// Like a browser wallet forward, a direct wallet receives no request created in signing mode once the Interceptor has switched to simulation mode.
-	if ((await getSettings()).simulationMode) throw signingOperationError(ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error.message)
+}
+
+// Like a browser wallet forward, a direct wallet receives no request created in signing mode once the Interceptor has switched to simulation mode. The guard was captured before the settings read, and this check has no await before the caller's write, so a switch during any earlier await refuses too.
+function assertSigningModeStillCurrent(simulationModeGuard: SimulationModeGuard, simulationMode: boolean) {
+	if (simulationMode || !simulationModeGuard.allowsSignerForward()) throw signingOperationError(ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error.message)
+}
+
+// The only grant for the signing page to send an approved request to its device, a Ledger signing request or an AirGap request QR, including a request resumed after a reload. The page asks for it immediately before producing the device request.
+async function authorizeDeviceRequest(record: DirectSigningRecord) {
+	const simulationModeGuard = captureSimulationModeGuard()
+	if (record.phase !== 'approved') throw signingOperationError('This request is no longer waiting for a signature')
+	const { simulationMode } = await getSettings()
+	assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
+	return record
 }
 
 async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction, approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {
+	const simulationModeGuard = captureSimulationModeGuard()
 	if (record.phase !== 'review') throw signingOperationError('Request has already been approved; resume or cancel its current signing operation')
 	if (record.input.method === 'eth_sendTransaction' && record.reviewReady !== true) throw signingOperationError('Wait for the refreshed transaction explanation before approving')
 	await assertApprovalForReviewedResult(record, approval)
+	const { simulationMode } = await getSettings()
+	assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
 	const pending = await getPendingTransactionsAndMessages()
 	const conflictingTransaction = (await records.read()).find((candidate) => {
 		if (candidate.id === record.id || candidate.input.method !== 'eth_sendTransaction') return false
@@ -191,6 +208,7 @@ async function approveSigningRequest(record: DirectSigningRecord, records: Direc
 	})
 	if (record.input.method === 'eth_sendTransaction' && conflictingTransaction !== undefined) throw signingOperationError('Finish or cancel this account’s pending transaction before approving another nonce')
 	await checkTransactionFreshness(record)
+	assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
 	return await records.store({ ...record, phase: 'approved' })
 }
 

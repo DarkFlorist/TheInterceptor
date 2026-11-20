@@ -96,14 +96,15 @@ export function useDirectSigning() {
 			setStatus('Unlock Ledger and open Ethereum. Check the account and approve on your device.')
 			controller.current = new AbortController()
 			const signed = await withLedgerDevice(device, controller.current.signal, async (exchange) => {
-				const current = (await sendSigningPageRequest({ method: 'signing_get', id })).record
-				if (current.phase !== 'approved' || current.revision !== approved.revision) throw new Error('Another signing window completed or cancelled this approval')
+				// The background refuses when another signing window completed or cancelled this approval, or Interceptor switched to simulation mode.
+				await sendSigningPageRequest({ method: 'signing_authorizeDevice', id, revision: approved.revision })
 				const result = await signWithLedger(exchange, { address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath }, payload)
 				setStatus('Verifying signature against the approved account and exact payload…')
 				return await command({ method: 'signing_result', id, revision: approved.revision, result })
 			})
 			setStatus(signed.signatureRefusalReason !== undefined ? signatureRefusedStatus : payload.method === 'eth_sendTransaction' ? 'Signature verified. Review the fees and broadcast when ready.' : 'Message signature verified and returned to the originating application.')
 		} else if (wallet.type === 'airgap') {
+			await sendSigningPageRequest({ method: 'signing_authorizeDevice', id, revision: approved.revision })
 			setQr(encodeAirGapSigningRequest({ address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath, sourceFingerprint: wallet.sourceFingerprint }, payload, approved.input.chainId, approved.revision))
 			decoder.current = createAirGapUrDecoder('eth-signature')
 			setStatus('Scan the request with AirGap Vault, review it offline, and sign. Then scan its response here.')

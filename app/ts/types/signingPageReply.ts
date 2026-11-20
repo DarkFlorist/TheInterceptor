@@ -21,6 +21,7 @@ export const signingPageReplyCodecs = {
 	signing_saveWallet: MutationReply,
 	signing_get: RecordReply,
 	signing_approve: RecordReply,
+	signing_authorizeDevice: RecordReply,
 	signing_result: RecordReply,
 	signing_broadcast: RecordReply,
 	signing_cancel: RecordReply,

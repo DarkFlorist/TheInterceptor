@@ -12,6 +12,15 @@ import { bytesFromHex, bytesToHex, ensureHex, type Hex } from '../../app/ts/util
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { parseTransaction, serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
 import { assembleSignedTransaction, prepareTransactionSigningPayload } from '../../app/ts/signing/exactPayload.js'
+import { h, render } from 'preact'
+import { act } from 'preact/test-utils'
+import { useDirectSigning } from '../../app/ts/components/hooks/useDirectSigning.js'
+import { changeSimulationMode } from '../../app/ts/background/settings.js'
+import { SigningPageRequest } from '../../app/ts/types/directSigning.js'
+import { SigningPageReply } from '../../app/ts/types/signingPageReply.js'
+import { isSigningOperationError } from '../../app/ts/signing/signingOperationError.js'
+import type { LedgerHid, LedgerHidDevice } from '../../app/ts/signing/ledgerHid.js'
+import { installDomMock } from './domMock.js'
 
 const privateKey: Hex = '0x0000000000000000000000000000000000000000000000000000000000000001'
 const account = privateKeyToAccount(privateKey)
@@ -21,6 +30,8 @@ let liveNonce = '0x0'
 let broadcasts = 0
 let broadcastFails = false
 let submittedHash: string | undefined
+// Runs while the background waits for an RPC reply, so a test can change settings during that await.
+let duringRpcRequest: ((method: string) => Promise<void>) | undefined
 let record: DirectSigningRecord
 
 beforeEach(async () => {
@@ -28,10 +39,11 @@ beforeEach(async () => {
 	await resetConfirmTransactionTestState()
 	await clearPendingTransactions()
 	await browser.storage.local.remove('directSigningRequestsV1')
-	liveNonce = '0x0'; broadcasts = 0; broadcastFails = false; submittedHash = undefined
+	liveNonce = '0x0'; broadcasts = 0; broadcastFails = false; submittedHash = undefined; duringRpcRequest = undefined
 	globalThis.fetch = async (_input, init) => {
 		if (typeof init?.body !== 'string') throw new Error('Expected RPC JSON')
 		const request = JSON.parse(init.body)
+		await duringRpcRequest?.(request.method)
 		let result: unknown
 		switch (request.method) {
 			case 'eth_chainId': result = '0x1'; break
@@ -293,4 +305,88 @@ test('a refresh that leaves the transaction without a reviewable result blocks a
 	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, storeRefreshedResult((pending) => ({ ...pending, popupVisualisation: { ...pending.popupVisualisation, data: { ...pending.popupVisualisation.data, visualizedSimulationState: { success: true as const, visualizedBlocks: [] } } } })))
 	await expect(approve(record, true)).rejects.toThrow('only be cancelled')
 	expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
+})
+
+for (const rpcMethod of ['eth_chainId', 'eth_getTransactionCount', 'eth_getBalance']) test(`switching into simulation mode during approval's ${ rpcMethod } freshness check refuses the approval`, async () => {
+	duringRpcRequest = async (method) => {
+		if (method !== rpcMethod) return
+		duringRpcRequest = undefined
+		await changeSimulationMode({ simulationMode: true })
+	}
+	await expect(approve(record)).rejects.toThrow('switched to simulation mode')
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
+})
+
+test('an approved request cannot be authorized for its device after switching into simulation mode', async () => {
+	record = await approve(record)
+	await changeSimulationMode({ simulationMode: true })
+	await expect(updateDirectSigning({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision })).rejects.toThrow('switched to simulation mode')
+	await changeSimulationMode({ simulationMode: false })
+	expect((await updateDirectSigning({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision })).phase).toBe('approved')
+})
+
+// Answers the signing page's messages with the background signing lifecycle, as the extension's signing-page listener does.
+function answerSigningPageWithBackground() {
+	browser.runtime.sendMessage = async (message: unknown) => {
+		const request = SigningPageRequest.parse(message)
+		if (!('id' in request)) throw new Error('Expected a command for a stored signing request')
+		try {
+			return SigningPageReply.serialize({ ok: true, record: await updateDirectSigning(request) })
+		} catch (error) {
+			if (!isSigningOperationError(error)) throw error
+			return SigningPageReply.serialize({ ok: false, message: error.message })
+		}
+	}
+}
+
+// A Ledger that records every packet the page sends it, so a test can assert that no signing request reached it.
+function installRecordingLedger() {
+	const sentPackets: Uint8Array[] = []
+	const device: LedgerHidDevice = Object.assign(new EventTarget(), {
+		vendorId: 0x2c97, productId: 1, productName: 'Test Ledger', opened: false, collections: [{ usagePage: 0xffa0 }],
+		open: async () => undefined, close: async () => undefined,
+		sendReport: async (_reportId: number, data: Uint8Array<ArrayBuffer>) => { sentPackets.push(data.slice()) },
+	})
+	const hid: LedgerHid = Object.assign(new EventTarget(), { requestDevice: async () => [device], getDevices: async () => [device] })
+	const locks = { request: async <T>(_name: string, _options: unknown, callback: () => Promise<T>) => await callback() }
+	Object.defineProperty(navigator, 'hid', { value: hid, configurable: true })
+	Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
+	return { sentPackets, restore: () => { Reflect.deleteProperty(navigator, 'hid'); Reflect.deleteProperty(navigator, 'locks') } }
+}
+
+for (const walletType of ['ledger', 'airgap'] as const) test(`resuming a ${ walletType === 'ledger' ? 'Ledger' : 'AirGap' } approval after a reload and a switch into simulation mode produces no device request`, async () => {
+	if (walletType === 'airgap') {
+		const airgap = await saveAddressSigningWallet(address, { type: 'airgap', label: 'Vault', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), true)), derivationPath: 'm/44\'/60\'/0\'/0/0', sourceFingerprint: 0x11223344 }, record.binding.revision, 'Savings')
+		if (airgap === undefined) throw new Error('Missing AirGap binding')
+		record = { ...record, binding: airgap }
+		// Changing the address's signing wallet ends requests made for the previous one, so the website request is made again for the AirGap wallet.
+		await clearPendingTransactions()
+		await appendPendingTransactionOrMessage({ ...reviewedTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: airgap, signingChainId: 1n })
+		await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
+	}
+	record = await approve(record)
+	expect(record.phase).toBe('approved')
+	// The signing page is reloaded, then Interceptor switches into simulation mode before the user resumes the approval.
+	answerSigningPageWithBackground()
+	Object.defineProperty(globalThis, 'location', { value: { origin: '', search: `?id=${ encodeURIComponent(record.id) }` }, configurable: true, writable: true })
+	const ledger = installRecordingLedger()
+	const dom = installDomMock()
+	let page: ReturnType<typeof useDirectSigning> | undefined
+	const SigningPageProbe = () => { page = useDirectSigning(); return null }
+	try {
+		await act(() => { render(h(SigningPageProbe, null), dom.document.body) })
+		for (let attempt = 0; attempt < 100 && page?.record === undefined; attempt++) await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
+		if (page?.record?.phase !== 'approved') throw new Error('Expected the reloaded page to recover the approval')
+		await changeSimulationMode({ simulationMode: true })
+		const resume = page.sign
+		await act(async () => await resume())
+		expect(page.error).toContain('switched to simulation mode')
+		expect(page.qr).toBeUndefined()
+		expect(ledger.sentPackets).toEqual([])
+		expect((await readDirectSigningRecords())[0]?.phase).toBe('approved')
+	} finally {
+		render(null, dom.document.body)
+		dom.restore()
+		ledger.restore()
+	}
 })
