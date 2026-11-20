@@ -1,13 +1,8 @@
 import * as funtypes from 'funtypes'
-import { getHostWithPort, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
+import { getStoredWebsiteHost } from './websiteOrigin.js'
 
 function getWebsiteHostWithPortFromStoredOrigin(websiteOrigin: string): string | undefined {
-	const normalizedOrigin = normalizeStoredWebsiteOrigin(websiteOrigin)
-	if (normalizedOrigin === undefined || normalizedOrigin === '') return undefined
-	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) return normalizedOrigin
-	const url = new URL(normalizedOrigin)
-	if (url.protocol === 'file:') return undefined
-	return getHostWithPort(normalizedOrigin)
+	return getStoredWebsiteHost(websiteOrigin)?.hostWithPort
 }
 
 type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>

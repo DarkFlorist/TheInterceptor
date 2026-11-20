@@ -21,7 +21,7 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, getWebsiteAccessAuthorityForOrigin, type ApprovalState } from './websiteAccessPolicy.js'
 import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
-import { doesStoredWebsiteOriginApplyTo, getHostWithPort, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin, getWebsiteOrigin } from '../utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getStoredWebsiteHost, getWebsiteOrigin } from '../utils/websiteOrigin.js'
 import { applyWebsiteAccessDecision } from './websiteAccessMutations.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
@@ -226,10 +226,7 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 }
 // Declarative net request initiatorDomains are hostnames, without scheme or port. Match its host-wide blocking semantics in both registration and the icon.
 function getWebsiteBlockingHostname(storedOrigin: string): string | undefined {
-	const normalized = normalizeStoredWebsiteOrigin(storedOrigin)
-	if (normalized === undefined || normalized === '') return undefined
-	const url = new URL(isCanonicalWebsiteOrigin(normalized) ? normalized : `https://${ normalized }`)
-	return url.protocol === 'file:' ? undefined : url.hostname
+	return getStoredWebsiteHost(storedOrigin)?.hostname
 }
 
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {

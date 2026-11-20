@@ -70,6 +70,17 @@ export function isCanonicalWebsiteOrigin(websiteOrigin: string): boolean {
 	return normalizeCanonicalWebsiteOrigin(websiteOrigin) === websiteOrigin
 }
 
+// Interpret canonical and legacy stored identities once. Consumers choose hostname-only matching or port-sensitive matching without re-parsing or guessing a legacy scheme.
+export function getStoredWebsiteHost(storedOrigin: string): { readonly hostname: string, readonly hostWithPort: string } | undefined {
+	const normalized = normalizeStoredWebsiteOrigin(storedOrigin)
+	if (normalized === undefined || normalized === '') return undefined
+	const canonical = isCanonicalWebsiteOrigin(normalized)
+	const url = new URL(canonical ? normalized : `https://${ normalized }`)
+	if (url.protocol === 'file:') return undefined
+	// A legacy explicit default port must survive: its original scheme is unknown, unlike a canonical origin's scheme-default port.
+	return { hostname: url.hostname, hostWithPort: canonical ? getHostWithPort(normalized) : normalized }
+}
+
 // Legacy records omitted the scheme, so they are only candidates for restrictive decisions or explicit user rebinding, never automatic grants.
 export function isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin: string, websiteOrigin: string): boolean {
 	const canonicalOrigin = normalizeCanonicalWebsiteOrigin(websiteOrigin)
