@@ -10,7 +10,7 @@ import { type BackgroundBrowserMock, createEthereumWithGetBlockCounter, createPo
 import { readProperty } from '../harness/assertions.js'
 import { settleWithin } from '../harness/async.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 const createSettings = (activeSimulationAddress: bigint | undefined): Settings => ({
 	activeSimulationAddress,
@@ -106,7 +106,7 @@ async function loadModules() {
 
 describe('interceptor access close handling', () => {
 	test('does not emit pre-response connection events when eth_requestAccounts already has access', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { requestAccessFromUser, createInterceptedRequestReplay, websiteSocketToString, changeSimulationMode, updateWebsiteAccess, getSettings } = await loadModules()
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const account = 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n
@@ -136,7 +136,7 @@ describe('interceptor access close handling', () => {
 	})
 
 	test('serializes dialog close cleanup with matching request creation', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { requestAccessFromUser, getPendingAccessRequests, websiteSocketToString } = await loadModules()
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
@@ -187,7 +187,7 @@ describe('interceptor access close handling', () => {
 	})
 
 	test('serializes dialog close cleanup with popup resolution', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { getPendingAccessRequests, requestAccessFromUser, resolveInterceptorAccess, websiteSocketToString } = await loadModules()
 		const website = { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
@@ -228,7 +228,7 @@ describe('interceptor access close handling', () => {
 	})
 
 	test('prompts another connection after releasing the popup resolution semaphore', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -309,7 +309,7 @@ describe('interceptor access close handling', () => {
 	})
 
 	test('closes a tab-backed access dialog through its tab listener', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { getPendingAccessRequests, requestAccessFromUser, setUseTabsInsteadOfPopup, websiteSocketToString } = await loadModules()
 		const website = { websiteOrigin: 'https://tab-dialog.example.test', icon: undefined, title: undefined }
 		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
@@ -349,7 +349,7 @@ describe('interceptor access refused after the router asked for it', () => {
 	]
 	for (const { name, websiteAccess, expectedError } of accessChanges) {
 		test(`replays a request whose website became ${ name } so the router refuses it without opening a dialog`, async () => {
-			const browserMock = installBrowserMock()
+			const browserMock = installBackgroundBrowserMockForTest()
 			const { createInterceptedRequestReplay, getPendingAccessRequests, requestAccessFromUser, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 			const website = { websiteOrigin: 'https://refused-while-asking.example.test', icon: undefined, title: undefined }
 			const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }

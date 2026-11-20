@@ -1,10 +1,16 @@
-import { getSettings } from '../background/settings.js'
+import { getWebsiteAccess } from '../background/websiteAccessStorage.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { reportUnexpectedError } from './errors.js'
 import { Semaphore } from './semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
+
+export function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
+	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
+	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
+	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
+}
 
 // A disabled site's origin as a URL, or 'file' for local files, or undefined for a stored origin that is not a plain http(s) or file origin.
 function parseDisabledSiteOrigin(origin: string): { readonly url: URL, readonly hasExplicitScheme: boolean } | 'file' | undefined {
@@ -54,7 +60,7 @@ export const getManifestV3ExcludeMatches = (origins: readonly string[]) => [...n
 const getManifestV2ExcludeGlobs = (origins: readonly string[]) => [...new Set(origins.flatMap(getManifestV2ExcludeGlobsForOrigin))]
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
+	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getWebsiteAccess()))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -113,7 +119,7 @@ async function removeSupersededManifestV2Registrations() {
 // The new registration is added before the previous one is removed, so no navigation in between goes without the provider. A page that loads while both exist runs document_start.js twice in the same content-script world, and its interceptorInjected guard lets only the first run inject.
 async function registerManifestV2ContentScripts() {
 	try {
-		const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites((await getSettings()).websiteAccess))
+		const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites(await getWebsiteAccess()))
 		const registration = await browser.contentScripts.register({
 			matches: injectableSitesWildcard,
 			excludeGlobs,

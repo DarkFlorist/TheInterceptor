@@ -8,7 +8,7 @@ import { hasMessageMethod } from './runtimeMessageMatchers.js'
 import { createStubEthereumClient } from './stubEthereumClient.js'
 import { readProperty } from '../harness/assertions.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 // The popup messages the background sent through browser.runtime.sendMessage, parsed back from their wire format.
 const parsePopupMessages = (messages: readonly unknown[]) => messages.flatMap((message) => {
@@ -40,7 +40,7 @@ type TestModules = Awaited<ReturnType<typeof loadModules>>
 
 describe('refreshHomeData', () => {
 	test('sends a fresh home snapshot with the woken retry state', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const { browserStorageLocalSet, defaultActiveAddresses, defaultRpcs, setRpcConnectionStatus, refreshHomeData, TokenPriceService } = modules
 
@@ -82,7 +82,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('refresh path waits for signer accounts when missing but refresh is enabled', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const {
 			browserStorageLocalSet,
@@ -173,7 +173,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('home data falls back to signer accounts for active address when activeSigningAddress is unset', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateUserAddressBookEntries, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString } = modules
 
@@ -240,7 +240,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('home bootstrap uses mode-aware active address resolution without a simulation snapshot', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateTransactionState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString } = modules
 
@@ -343,7 +343,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('home bootstrap hides cached signer addresses without a confirmed signer owner', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, defaultActiveAddresses, defaultRpcs } = modules
 
@@ -376,7 +376,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('bootstrap and full home data share the interceptor-disabled state for the current website', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs } = modules
 
@@ -422,7 +422,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('cached home snapshot refreshes signer accounts only when requested', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const modules: TestModules = await loadModules()
 		const {
 			browserStorageLocalSet,
@@ -531,7 +531,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('refresh path does not request signer accounts with no approved socket', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, refreshHomeData, defaultActiveAddresses, defaultRpcs, TokenPriceService } = await loadModules()
 
 		const [defaultAddress] = defaultActiveAddresses
@@ -577,7 +577,7 @@ describe('refreshHomeData', () => {
 	})
 
 	test('changeSettings refreshes home without triggering signer account refresh', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, websiteSocketToString, TokenPriceService } = await loadModules()
 
 		const [defaultAddress] = defaultActiveAddresses

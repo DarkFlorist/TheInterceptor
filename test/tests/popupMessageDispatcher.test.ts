@@ -9,7 +9,7 @@ import { settleWithin, waitFor } from '../harness/async.js'
 import { createEthereumWithGetBlockCounter, createRestoringBrowserMockInstaller, createTestSimulationServicesOwner, installBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 // The dispatcher modules check for the extension globals while they load, so they are imported under a mock that is removed again before the tests install their own.
 const importTimeBrowserMock = installBackgroundBrowserMock()
@@ -38,7 +38,7 @@ const isPopupMessage = (method: string) => (message: unknown) => {
 
 // Installs a browser mock with the manifest v3 content scripts registered, and records content-script updates plus the order of popup broadcasts and dynamic rule updates.
 async function installDispatcherBrowserMock({ websiteAccess }: { readonly websiteAccess?: readonly WebsiteAccess[] } = {}) {
-	const browserMock = installBrowserMock({ storage: { local: websiteAccess === undefined ? {} : { websiteAccess } } })
+	const browserMock = installBackgroundBrowserMockForTest({ storage: { local: websiteAccess === undefined ? {} : { websiteAccess } } })
 	await browserMock.browser.scripting.registerContentScripts([
 		{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
 		{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },

@@ -27,7 +27,7 @@ import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useSignal } from '@preact/signals'
 import { Fragment } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
-import { type GasLimitDraftSource, getNextGasLimitDraft } from '../../utils/gasLimitDraft.js'
+import { type GasLimitDraft, getNextGasLimitDraft } from '../../utils/gasLimitDraft.js'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { getGasFeePaidByTransactionSender, type TransactionGasAccounting } from '../../utils/transactionGasAccounting.js'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
@@ -948,12 +948,10 @@ type GasLimitEditorParams = {
 
 export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTransaction }: GasLimitEditorParams) {
 	const gasLimit = useOptionalSignal<bigint>(initialGasLimit)
-	const draftSource = useRef<GasLimitDraftSource>({ transactionIdentifier, gasLimit: initialGasLimit })
+	const draft = useRef<GasLimitDraft>({ transactionIdentifier, gasLimit: initialGasLimit, wasEdited: false })
 	useEffect(() => {
-		const next = { transactionIdentifier, gasLimit: initialGasLimit }
-		const draft = getNextGasLimitDraft(draftSource.current, gasLimit.deepPeek(), next)
-		if (draft === next.gasLimit) draftSource.current = next
-		gasLimit.deepValue = draft
+		draft.current = getNextGasLimitDraft({ ...draft.current, gasLimit: gasLimit.deepPeek() }, { transactionIdentifier, gasLimit: initialGasLimit })
+		gasLimit.deepValue = draft.current.gasLimit
 	}, [transactionIdentifier, initialGasLimit])
 	const { value: forceSetGasLimitState, waitFor: waitForForceSetGasLimit, reset: resetForceSetGasLimit } = useAsyncState<void>()
 
@@ -971,6 +969,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 		<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
 			<IntegerInput
 				autoSize = { true }
+				onInput = { () => { draft.current = { ...draft.current, wasEdited: true } } }
 				value = { gasLimit }
 				placeholder = { initialGasLimit?.toString(10) ?? '' }
 				disabled = { isRawTransaction }
