@@ -1,6 +1,7 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
+import type { CompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
@@ -8,6 +9,9 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
+
+// Whether a stored or just-refreshed popup simulation is available to show.
+export const isPopupSimulationAvailable = (simulation: Pick<CompleteVisualizedSimulation, 'simulationUpdatingState' | 'simulationResultState'>) => simulation.simulationUpdatingState !== 'failed' && simulation.simulationResultState !== 'invalid'
 
 export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
 
@@ -58,7 +62,7 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 
 const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot }) => {
 	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot })
-	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
+	return isPopupSimulationAvailable(result)
 })
 
 export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {

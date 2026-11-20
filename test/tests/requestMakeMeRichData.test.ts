@@ -654,24 +654,38 @@ describe('requestMakeMeRichList resilience', () => {
 		installBrowserMock()
 		const { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply, modifyMakeMeRich } = await loadModules()
 		let refreshCount = 0
-		const refresh = async () => { refreshCount += 1; return { status: 'observed' as const, available: false } }
-		const rejected = await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { address: richAccountAddress, nativeAmount: 0n } })
+		let storedSimulationAvailable = true
+		const refreshAvailable = { current: false }
+		// Like the real queue, a refresh stores its result, so a failed refresh leaves the stored simulation unavailable.
+		const simulation = {
+			refresh: async () => { refreshCount += 1; storedSimulationAvailable = refreshAvailable.current; return { status: 'observed' as const, available: refreshAvailable.current } },
+			isStoredSimulationAvailable: async () => storedSimulationAvailable,
+		}
+		const setNative = async (nativeAmount: bigint) => await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { address: richAccountAddress, nativeAmount } })
+
+		const rejected = await setNative(0n)
 		assert.deepEqual(rejected, { ok: false, error: 'Native amount must be greater than zero and fit within uint256.' })
-		const rejectedOutcome = await completeRichFundingMutation(rejected, refresh)
+		const rejectedOutcome = await completeRichFundingMutation(rejected, simulation)
+		assert.equal(refreshCount, 0)
 		assert.deepEqual(toRichSettingsChangeReply(rejectedOutcome), { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount must be greater than zero and fit within uint256.' })
 		assert.deepEqual(toModifyRichTokenReply(rejectedOutcome), { method: 'popup_modifyRichToken', result: { success: false, error: 'Native amount must be greater than zero and fit within uint256.' } })
 
-		const changed = await completeRichFundingMutation(await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { address: richAccountAddress, nativeAmount: 5n } }), refresh)
+		const changed = await completeRichFundingMutation(await setNative(5n), simulation)
 		assert.equal(refreshCount, 1)
 		assert.deepEqual(changed, { ok: true, richToken: undefined, simulationRefresh: 'Unavailable' })
 		assert.equal(toRichSettingsChangeReply(changed).ok, false)
-
-		// Retrying the identical setting after the failed refresh changes no funding but must refresh again, not claim the simulation reflects it.
-		const retried = await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { address: richAccountAddress, nativeAmount: 5n } })
-		assert.deepEqual(retried, { ok: true, fundingChanged: false, richToken: undefined })
-		assert.deepEqual(await completeRichFundingMutation(retried, refresh), { ok: true, richToken: undefined, simulationRefresh: 'Unavailable' })
-		assert.equal(refreshCount, 2)
 		assert.deepEqual(toModifyRichTokenReply(changed), { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined, simulationRefresh: 'Unavailable' } })
+
+		// Retrying the identical setting after the failed refresh changes no funding, but must refresh again instead of claiming the simulation reflects it.
+		const retried = await setNative(5n)
+		assert.deepEqual(retried, { ok: true, fundingChanged: false, richToken: undefined })
+		refreshAvailable.current = true
+		assert.deepEqual(await completeRichFundingMutation(retried, simulation), { ok: true, richToken: undefined, simulationRefresh: 'Refreshed' })
+		assert.equal(refreshCount, 2)
+
+		// With funding unchanged and the stored simulation available, there is nothing to refresh.
+		assert.deepEqual(await completeRichFundingMutation(await setNative(5n), simulation), { ok: true, richToken: undefined, simulationRefresh: 'Refreshed' })
+		assert.equal(refreshCount, 2)
 	})
 
 	test('replies with an explicit outcome and reports the error when the refresh after a saved token change rejects', async () => {

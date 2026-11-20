@@ -22,10 +22,17 @@ export async function refreshSimulationAfterRichFundingChange(refresh: () => Pro
 	}
 }
 
-// Completes every rich-funding mutation the same way: a rejection passes through, and every saved mutation refreshes the simulation, even when funding did not change. Unchanged funding does not prove the simulation reflects it, because an earlier refresh may have failed, so retrying a setting retries the refresh.
-export async function completeRichFundingMutation(result: RichFundingResult, refresh: () => Promise<PopupSimulationRefreshOutcome>): Promise<RichFundingOutcome> {
+type RichFundingSimulation = {
+	readonly refresh: () => Promise<PopupSimulationRefreshOutcome>
+	// Whether the stored popup simulation is available, the same test the refresh queue reports after a refresh.
+	readonly isStoredSimulationAvailable: () => Promise<boolean>
+}
+
+// Completes every rich-funding mutation the same way: a rejection passes through, and a saved mutation refreshes the simulation unless funding is unchanged and the stored simulation is available. Unchanged funding alone does not prove the simulation reflects it, because an earlier refresh may have failed, so retrying a setting then retries the refresh.
+export async function completeRichFundingMutation(result: RichFundingResult, simulation: RichFundingSimulation): Promise<RichFundingOutcome> {
 	if (!result.ok) return result
-	const simulationRefresh = await refreshSimulationAfterRichFundingChange(refresh)
+	const simulationIsCurrent = !result.fundingChanged && await simulation.isStoredSimulationAvailable()
+	const simulationRefresh = simulationIsCurrent ? 'Refreshed' : await refreshSimulationAfterRichFundingChange(simulation.refresh)
 	return { ok: true, richToken: result.richToken, simulationRefresh }
 }
 
