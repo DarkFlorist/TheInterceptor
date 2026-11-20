@@ -3,7 +3,7 @@ import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, ty
 import { richFundingSaved, type RichFundingResult, type RichModeState } from '../types/richMode.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { getRichModeWritesForAddressBook } from './richModeSettings.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
@@ -24,20 +24,31 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
 }
 
-export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
+// The stored address book as it should be read: valid, missing (the defaults), repaired from legacy ERC-20 entries, or corrupt (the defaults). Reading never writes; persistRepairedUserAddressBookEntries persists a repaired or fallback view.
+async function readStoredUserAddressBookEntries(): Promise<{ readonly state: 'valid' | 'missing' | 'repaired' | 'corrupt', readonly entries: AddressBookEntries, readonly rawEntries: unknown }> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
-	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
-	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
+	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return { state: 'valid', entries: parsedEntries.userAddressBookEntriesV3, rawEntries }
+	if (rawEntries === undefined) return { state: 'missing', entries: DEFAULT_ACTIVE_ADDRESSES, rawEntries }
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
-	if (repairedEntries !== undefined) {
-		await browserStorageLocalSet({ userAddressBookEntriesV3: repairedEntries })
-		return repairedEntries
-	}
-	console.warn('userAddressBookEntriesV3 was corrupt:')
-	console.warn(rawEntries)
-	await browserStorageLocalSet({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
-	return DEFAULT_ACTIVE_ADDRESSES
+	return repairedEntries === undefined ? { state: 'corrupt', entries: DEFAULT_ACTIVE_ADDRESSES, rawEntries } : { state: 'repaired', entries: repairedEntries, rawEntries }
+}
+
+export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
+	return (await readStoredUserAddressBookEntries()).entries
+}
+
+// Persists the repaired or fallback view of a stored address book that does not parse, through the reconciling write, so funding that referenced a repaired token is reconciled in the same storage write. Runs from the startup address-book migration.
+export async function persistRepairedUserAddressBookEntries() {
+	await runSettingsStorageTransaction(async () => {
+		const stored = await readStoredUserAddressBookEntries()
+		if (stored.state === 'valid' || stored.state === 'missing') return { writes: [], result: undefined }
+		if (stored.state === 'corrupt') {
+			console.warn('userAddressBookEntriesV3 was corrupt:')
+			console.warn(stored.rawEntries)
+		}
+		return { writes: (await getFundingAwareAddressBookWrites(undefined, stored.entries)).writes, result: undefined }
+	})
 }
 
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')

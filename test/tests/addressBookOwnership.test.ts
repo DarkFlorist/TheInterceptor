@@ -40,6 +40,19 @@ describe('address-book storage ownership', () => {
 		assert.deepEqual(sourceFiles.filter((filePath) => filePath !== addressBookStoragePath && filePath !== storageCodecRegistryPath && buildsAddressBookStorageItems(parse(filePath))), [])
 	})
 
+	test('address-book reads never write: storage is written only inside settings storage transactions', () => {
+		const ownerSourceFile = parse(addressBookStoragePath)
+		assert.doesNotMatch(ownerSourceFile.text, /browserStorageLocalSet|storage\.local\.set\(/u)
+		const readFunctionNames = ['getUserAddressBookEntries', 'readStoredUserAddressBookEntries', 'getUserAddressBookEntriesForChainId', 'getUserAddressBookEntriesForChainIdMorePreciseFirst']
+		const readFunctions = ownerSourceFile.statements.flatMap((statement) => {
+			if (ts.isFunctionDeclaration(statement) && statement.name !== undefined && readFunctionNames.includes(statement.name.text)) return [statement]
+			if (ts.isVariableStatement(statement)) return statement.declarationList.declarations.filter((declaration) => ts.isIdentifier(declaration.name) && readFunctionNames.includes(declaration.name.text))
+			return []
+		})
+		assert.equal(readFunctions.length, readFunctionNames.length)
+		for (const readFunction of readFunctions) assert.doesNotMatch(readFunction.getText(ownerSourceFile), /runSettingsStorageTransaction|StorageWrite|getFundingAwareAddressBookWrites/u)
+	})
+
 	test('addressBookStorage keeps its raw address-book write private and nothing re-exports it', () => {
 		const ownerSource = fs.readFileSync(addressBookStoragePath, 'utf8')
 		assert.match(ownerSource, /^const userAddressBookEntriesStorageWrite = /mu)

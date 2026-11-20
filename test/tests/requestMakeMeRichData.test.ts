@@ -1316,32 +1316,56 @@ describe('requestMakeMeRichList resilience', () => {
 describe('startup storage recovery', () => {
 	test('repairs only legacy ERC20 entries with out-of-range decimals', async () => {
 		const storageState = installBrowserMock()
-		const { getUserAddressBookEntries } = await loadModules()
-		storageState.userAddressBookEntriesV3 = [
+		const { getUserAddressBookEntries, persistRepairedUserAddressBookEntries } = await loadModules()
+		const storedEntries = [
 			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
 			{ type: 'ERC20', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', symbol: 'BAD', decimals: '0x100', entrySource: 'User', chainId: '0x1' },
 		]
+		storageState.userAddressBookEntriesV3 = storedEntries
 
 		const entries = await getUserAddressBookEntries()
 
 		assert.equal(entries.length, 2)
 		assert.deepEqual(entries[0], { type: 'contact', name: 'Preserved contact', address: 1n, entrySource: 'User' })
 		assert.deepEqual(entries[1], { type: 'contract', name: 'Invalid token', address: 2n, entrySource: 'User', chainId: 1n })
+		assert.equal(storageState.userAddressBookEntriesV3, storedEntries, 'reading never persists the repair')
+		await persistRepairedUserAddressBookEntries()
 		assert.deepEqual(storageState.userAddressBookEntriesV3, [
 			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
 			{ type: 'contract', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', entrySource: 'User', chainId: '0x1' },
 		])
 	})
 
+	test('persists an address-book repair and the funding it invalidates in one storage write', async () => {
+		const storageSets: string[][] = []
+		const storageState = installBrowserMock({ onStorageSet: (items) => { storageSets.push(Object.keys(items).sort()) } })
+		const { persistRepairedUserAddressBookEntries, updateRichTokens, updateRichAccountBalances, getRichModeState } = await loadModules()
+		const tokenAddress = 0x0000000000000000000000000000000000000002n
+		await updateRichTokens(() => [{ chainId: 1n, tokenAddress, tokenType: 'ERC20', tokenId: undefined, name: 'Invalid token', symbol: 'BAD', decimals: 6n, amount: 1n, balanceSlot: 9n, erc1155StorageOrder: undefined }])
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 1n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 5n }] }])
+		storageState.userAddressBookEntriesV3 = [{ type: 'ERC20', name: 'Invalid token', address: addressString(tokenAddress), symbol: 'BAD', decimals: '0x100', entrySource: 'User', chainId: '0x1' }]
+		storageSets.length = 0
+
+		await persistRepairedUserAddressBookEntries()
+
+		assert.deepEqual(storageSets, [['richModeState', 'userAddressBookEntriesV3']])
+		assert.deepEqual(storageState.userAddressBookEntriesV3, [{ type: 'contract', name: 'Invalid token', address: addressString(tokenAddress), entrySource: 'User', chainId: '0x1' }])
+		const funding = await getRichModeState()
+		assert.deepEqual(funding.tokenLayouts, [])
+		assert.deepEqual(funding.accountBalances[0]?.tokenBalances, [])
+	})
+
 	test('recovers active addresses from corrupt user address book storage', async () => {
 		const storageState = installBrowserMock()
-		const { requestActiveAddresses, defaultActiveAddresses, getUserAddressBookEntries } = await loadModules()
+		const { requestActiveAddresses, defaultActiveAddresses, getUserAddressBookEntries, persistRepairedUserAddressBookEntries } = await loadModules()
 		storageState.userAddressBookEntriesV3 = null
 
 		const reply = await withSilencedConsole(async () => await requestActiveAddresses())
 
 		assert.equal(reply.method, 'popup_requestActiveAddresses')
 		assert.deepEqual(reply.activeAddresses, defaultActiveAddresses)
+		assert.equal(storageState.userAddressBookEntriesV3, null, 'reading never persists the fallback')
+		await withSilencedConsole(async () => await persistRepairedUserAddressBookEntries())
 		assert.ok(Array.isArray(storageState.userAddressBookEntriesV3))
 		assert.deepEqual(await getUserAddressBookEntries(), defaultActiveAddresses)
 	})
