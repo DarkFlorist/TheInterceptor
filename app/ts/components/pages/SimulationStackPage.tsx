@@ -20,7 +20,7 @@ import { NetworkErrors, NetworkWithoutRpcError } from '../subcomponents/NetworkE
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { useEffect, useRef } from 'preact/hooks'
-import type { SimulationStackTarget } from '../../utils/managementPages.js'
+import type { SimulationStackTarget } from '../../utils/simulationStackTargets.js'
 import { SmallAddress, getActiveAddressEntry } from '../subcomponents/address.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { createUnexpectedErrorPopupMessage } from '../../utils/unexpectedErrorPopupMessage.js'

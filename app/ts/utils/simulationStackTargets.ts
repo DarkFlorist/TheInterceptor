@@ -1,5 +1,7 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
-import type { SimulationStackRoute } from './managementPages.js'
+// A stack row to scroll to; focus differs per navigation so repeating a link to the same row scrolls to it again.
+export type SimulationStackTarget = { readonly elementId: string, readonly focus?: string }
+export type SimulationStackRoute = { readonly page: 'simulation-stack', readonly stackTarget?: SimulationStackTarget }
 
 export const isSimulationStackElementId = (value: string) => /^simulation-stack-(transaction|message)-0x[a-f0-9]+$/.test(value)
 

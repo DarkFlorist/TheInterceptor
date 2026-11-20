@@ -1,13 +1,9 @@
-import { isSimulationStackElementId } from './simulationStackTargets.js'
+import { isSimulationStackElementId, type SimulationStackRoute, type SimulationStackTarget } from './simulationStackTargets.js'
 
 export const managementPages = ['home', 'websites', 'address-book', 'simulation-stack', 'diagnostics', 'settings'] as const
 export type ManagementPage = (typeof managementPages)[number]
 
-// A stack row to scroll to; focus differs per navigation so repeating a link to the same row scrolls to it again.
-export type SimulationStackTarget = { readonly elementId: string, readonly focus?: string }
-
 export type WebsitesRoute = { readonly page: 'websites', readonly websiteOrigin?: string }
-export type SimulationStackRoute = { readonly page: 'simulation-stack', readonly stackTarget?: SimulationStackTarget }
 export type ManagementRoute = WebsitesRoute | SimulationStackRoute | { readonly page: Exclude<ManagementPage, 'websites' | 'simulation-stack'> }
 
 const WEBSITE_ORIGIN_KEY = 'origin'

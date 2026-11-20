@@ -3,7 +3,7 @@ import { formatManagementRoute, getManagementPageHash, type ManagementPage } fro
 import { getSimulationStackRoute } from '../utils/simulationStackTargets.js'
 import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
-import { getHtmlFile } from './backgroundUtils.js'
+import { getHtmlFile, getLegacySettingsPagePath } from './backgroundUtils.js'
 import { getManagementTabId, setManagementTabId } from './storageVariables.js'
 
 function managementPagePath() {
@@ -13,7 +13,7 @@ function managementPagePath() {
 async function openManagementTab(targetUrl: string): Promise<browser.tabs.Tab | undefined> {
 	const pagePath = managementPagePath()
 	// A migrated settings tab still has its old URL until this first navigation. Only extension-owned shell/settings pages may be reused.
-	const reusableUrls = [browser.runtime.getURL(pagePath), browser.runtime.getURL(pagePath.replace('managementView', 'settingsView'))]
+	const reusableUrls = [browser.runtime.getURL(pagePath), browser.runtime.getURL(getLegacySettingsPagePath())]
 	const openInNewTab = async () => {
 		const tab = await browser.tabs.create({ url: targetUrl })
 		if (tab.id !== undefined) await setManagementTabId(tab.id)
