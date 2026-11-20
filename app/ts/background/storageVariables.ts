@@ -1,14 +1,13 @@
-import { prepareAddressBookWrite, prepareAddressIdentificationInsertion, writeAddressBookStorage, persistAddressBookReadRepair } from './addressBookRevision.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, commitBrowserStorageLocalWrite, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntry as AddressBookEntryCodec, LegacyErc20TokenEntry, type AddressBookEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -23,7 +22,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { runSettingsStorageTransaction } from './settingsStorageTransaction.js'
+import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -305,7 +304,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 }
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
-	const parsedEntry = AddressBookEntryCodec.safeParse(rawEntry)
+	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
 	if (parsedEntry.success) return parsedEntry.value
 	const legacyErc20Entry = LegacyErc20TokenEntry.safeParse(rawEntry)
 	if (!legacyErc20Entry.success || isValidErc20Decimals(legacyErc20Entry.value.decimals)) return undefined
@@ -320,9 +319,6 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
 }
 
-// Replaces the stored address book as it is; for the address-book migration, which reads entries that do not parse yet.
-export const setUserAddressBookEntries = async (entries: AddressBookEntries) => await writeAddressBookStorage({ userAddressBookEntriesV3: entries })
-
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
@@ -330,18 +326,18 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
 	if (repairedEntries !== undefined) {
-		await persistAddressBookReadRepair(repairedEntries)
+		await browserStorageLocalSet({ userAddressBookEntriesV3: repairedEntries })
 		return repairedEntries
 	}
 	console.warn('userAddressBookEntriesV3 was corrupt:')
 	console.warn(rawEntries)
-	await persistAddressBookReadRepair(DEFAULT_ACTIVE_ADDRESSES)
+	await browserStorageLocalSet({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
 	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
-export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries) => prepareAddressBookWrite({ userAddressBookEntriesV3 })
+export const userAddressBookEntriesStorageWrite = (userAddressBookEntriesV3: AddressBookEntries): StorageWrite => ({ userAddressBookEntriesV3 })
 
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await runSettingsStorageTransaction(async () => ({ writes: [userAddressBookEntriesStorageWrite(updateFunc(await getUserAddressBookEntries()))], result: undefined }))
@@ -354,12 +350,11 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 	})
 }
 
-// Persist a lookup result without announcing an edit: the identifying run already uses these names. User edits and imports use the revision-bearing writer above.
-export async function cacheIdentifiedAddressBookEntry(newEntry: AddressBookEntry) {
+export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
 	await runSettingsStorageTransaction(async () => {
 		const entries = await getUserAddressBookEntries()
-		const insertion = prepareAddressIdentificationInsertion(entries, newEntry)
-		return { writes: insertion === undefined ? [] : [insertion], result: undefined }
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
+		return { writes: existingEntry === undefined ? [userAddressBookEntriesStorageWrite(entries.concat(newEntry))] : [], result: undefined }
 	})
 }
 
@@ -409,34 +404,27 @@ export async function clearInterceptorErrorDiagnostics() {
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []
 
 const ensNodeHashesSemaphore = new Semaphore(1)
-async function persistEnsNodeHash(name: string, kind: 'edit' | 'cache') {
+export async function addEnsNodeHash(name: string) {
 	if (!isValidEnsName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
-		const oldEntries = await getEnsNodeHashes()
-		if (oldEntries.some((old) => old.nameHash === entry.nameHash)) return
-		const write = kind === 'edit' ? writeAddressBookStorage : commitBrowserStorageLocalWrite
-		await write({ ensNameHashes: [...oldEntries, entry] })
+		const oldEntries = await getEnsNodeHashes() || []
+		if (oldEntries.find((old) => old.nameHash === entry.nameHash)) return
+		return await browserStorageLocalSet({ ensNameHashes: [...oldEntries, entry] })
 	})
 }
-
-export const addEnsNodeHash = async (name: string) => await persistEnsNodeHash(name, 'edit')
-export const cacheEnsNodeHash = async (name: string) => await persistEnsNodeHash(name, 'cache')
 
 export const getEnsLabelHashes = async () => (await browserStorageLocalGet('ensLabelHashes'))?.ensLabelHashes ?? []
+
 const ensLabelHashesSemaphore = new Semaphore(1)
-async function persistEnsLabelHash(label: string, kind: 'edit' | 'cache') {
+export async function addEnsLabelHash(label: string) {
 	const entry = { label, labelHash: BigInt(keccak256(stringToBytes(label))) }
 	await ensLabelHashesSemaphore.execute(async () => {
-		const oldEntries = await getEnsLabelHashes()
-		if (oldEntries.some((old) => old.labelHash === entry.labelHash)) return
-		const write = kind === 'edit' ? writeAddressBookStorage : commitBrowserStorageLocalWrite
-		await write({ ensLabelHashes: [...oldEntries, entry] })
+		const oldEntries = await getEnsLabelHashes() || []
+		if (oldEntries.find((old) => old.labelHash === entry.labelHash)) return
+		return await browserStorageLocalSet({ ensLabelHashes: [...oldEntries, entry] })
 	})
 }
-
-export const addEnsLabelHash = async (label: string) => await persistEnsLabelHash(label, 'edit')
-export const cacheEnsLabelHash = async (label: string) => await persistEnsLabelHash(label, 'cache')
 
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }

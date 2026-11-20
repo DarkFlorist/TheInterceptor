@@ -1,12 +1,10 @@
 import { Semaphore } from '../utils/semaphore.js'
-import { commitBrowserStorageLocalWrite, type LocalStorageItems, type GeneralStorageItems } from '../utils/storageUtils.js'
-import { isAddressBookStorageWrite, getAddressBookStorageWrite, recordAddressBookWrite, type AddressBookStorageWrite } from './addressBookRevision.js'
+import { browserStorageLocalSet, type LocalStorageItems } from '../utils/storageUtils.js'
 
 // The items one storage owner writes for its own keys, built by that owner's …StorageWrite function so each key, value transform and sanitization stays with its owner.
-export type StorageWrite = GeneralStorageItems
+export type StorageWrite = LocalStorageItems
 
-
-type StorageTransactionPlan<Result> = { readonly writes: readonly (StorageWrite | AddressBookStorageWrite)[], readonly result: Result }
+type StorageTransactionPlan<Result> = { readonly writes: readonly StorageWrite[], readonly result: Result }
 
 // The one lock of every read-modify-write of website access, signing address preferences and the address book, including the settings import that replaces all three; with a single lock there is no acquisition order between them to get wrong.
 const settingsStorageLock = new Semaphore(1)
@@ -15,19 +13,7 @@ const settingsStorageLock = new Semaphore(1)
 export async function runSettingsStorageTransaction<Result>(plan: () => Promise<StorageTransactionPlan<Result>>) {
 	return await settingsStorageLock.execute(async () => {
 		const { writes, result } = await plan()
-		if (writes.length > 0) {
-			let advancesAddressBookRevision = false
-			const items = writes.reduce<LocalStorageItems>((items, write) => {
-				if (!isAddressBookStorageWrite(write)) return { ...items, ...write }
-				const prepared = getAddressBookStorageWrite(write)
-				advancesAddressBookRevision ||= prepared.advancesRevision
-				return { ...items, ...prepared.items }
-			}, {})
-			// Revision publication surrounds the atomic commit so settled readers cannot observe persisted names before their revision. The fixed policy never inspects or changes other domains' items.
-			const commit = async () => await commitBrowserStorageLocalWrite(items)
-			if (advancesAddressBookRevision) await recordAddressBookWrite(commit)
-			else await commit()
-		}
+		if (writes.length > 0) await browserStorageLocalSet(writes.reduce<StorageWrite>((items, write) => ({ ...items, ...write }), {}))
 		return result
 	})
 }
