@@ -29,7 +29,7 @@ export async function installFlowLedger(page: CdpConnection, record: DirectSigni
 		const response = command.instruction === 6 ? Uint8Array.of(1, 1, 22, 3) : command.instruction === 2 ? Uint8Array.from([65, ...publicKey, 40, ...new TextEncoder().encode(address.slice(2))]) : signing ? Uint8Array.from([signature[64] ?? 27, ...signature.slice(0, 64)]) : new Uint8Array()
 		script.push({ request: frameLedgerApdu(0, encodeLedgerCommand(command)).map((p) => [...p]), response: frameLedgerApdu(0, Uint8Array.from([...response, 0x90, 0])).map((p) => [...p]), signing })
 		return response
-	}, { address: ensureHex(address), publicKey: bytesToHex(publicKey), derivationPath: path }, prepareDirectPayload(record.input))
+	}, { address: ensureHex(address), publicKey: bytesToHex(publicKey), derivationPath: path }, prepareDirectPayload(record.input), async () => undefined)
 	await page.evaluate(`(() => {
 		const script = ${ JSON.stringify(script) }; let command = 0, packetIndex = 0, failure = ${ JSON.stringify(failure) };
 		const device = Object.assign(new EventTarget(), { vendorId: 0x2c97, productId: 0x0004, productName: 'Public-key signing fixture', collections: [{usagePage: 0xffa0}], opened: false,

@@ -11,6 +11,9 @@ import { encodeAirGapSigningRequest, verifyAirGapSigningResponse } from '../../s
 import { createAirGapUrDecoder } from '../../signing/airgapUr.js'
 import { ensureHex } from '../../utils/ethereumBytes.js'
 import { parseTransaction } from '../../utils/ethereumTransactions.js'
+import { MessageToPopup } from '../../types/interceptor-messages.js'
+import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
+import { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../../utils/constants.js'
 
 const signatureRefusedStatus = 'Interceptor did not return the signature to the originating application. See the reason below.'
 
@@ -35,6 +38,15 @@ export function useDirectSigning() {
 	useEffect(() => { setForceSend(false) }, [review?.reviewedResultId])
 	const controller = useRef(new AbortController())
 	const decoder = useRef(createAirGapUrDecoder('eth-signature'))
+	// Switching into simulation mode ends an in-flight device session and withdraws a shown request QR; the background also refuses any further device grant.
+	useEffect(() => noReplyExpectingBrowserRuntimeOnMessageListener((message) => {
+		const parsed = MessageToPopup.safeParse(message)
+		if (!parsed.success || parsed.value.method !== 'popup_settingsUpdated' || !parsed.value.data.simulationMode) return false
+		controller.current.abort(new Error(ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error.message))
+		setQr(undefined)
+		setScanning(false)
+		return false
+	}), [])
 	const command = async (request: DirectSigningRequest) => {
 		try {
 			const reply = await sendSigningPageRequest(request)
@@ -91,20 +103,20 @@ export function useDirectSigning() {
 		const approved = record.phase === 'review' && review !== undefined ? (await command({ method: 'signing_approve', id, revision: record.revision, reviewedResultId: review.reviewedResultId, forceSend })).record : record
 		if (approved.phase !== 'approved') throw new Error('This request is no longer waiting for a signature')
 		const wallet = approved.binding.wallet
+		// The background refuses when another signing window completed or cancelled this approval, the wallet changed, or Interceptor switched to simulation mode.
+		const authorizeDeviceRequest = async () => { await sendSigningPageRequest({ method: 'signing_authorizeDevice', id, revision: approved.revision }) }
 		const payload = prepareDirectPayload(approved.input)
 		if (wallet.type === 'ledger' && device !== undefined) {
 			setStatus('Unlock Ledger and open Ethereum. Check the account and approve on your device.')
 			controller.current = new AbortController()
 			const signed = await withLedgerDevice(device, controller.current.signal, async (exchange) => {
-				// The background refuses when another signing window completed or cancelled this approval, or Interceptor switched to simulation mode.
-				await sendSigningPageRequest({ method: 'signing_authorizeDevice', id, revision: approved.revision })
-				const result = await signWithLedger(exchange, { address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath }, payload)
+				const result = await signWithLedger(exchange, { address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath }, payload, authorizeDeviceRequest)
 				setStatus('Verifying signature against the approved account and exact payload…')
 				return await command({ method: 'signing_result', id, revision: approved.revision, result })
 			})
 			setStatus(signed.signatureRefusalReason !== undefined ? signatureRefusedStatus : payload.method === 'eth_sendTransaction' ? 'Signature verified. Review the fees and broadcast when ready.' : 'Message signature verified and returned to the originating application.')
 		} else if (wallet.type === 'airgap') {
-			await sendSigningPageRequest({ method: 'signing_authorizeDevice', id, revision: approved.revision })
+			await authorizeDeviceRequest()
 			setQr(encodeAirGapSigningRequest({ address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath, sourceFingerprint: wallet.sourceFingerprint }, payload, approved.input.chainId, approved.revision))
 			decoder.current = createAirGapUrDecoder('eth-signature')
 			setStatus('Scan the request with AirGap Vault, review it offline, and sign. Then scan its response here.')

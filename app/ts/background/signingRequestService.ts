@@ -3,6 +3,8 @@ import { SigningPageReply } from '../types/signingPageReply.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { advanceDirectSigning, getDirectSigningReview, getSignatureRefusalReason } from './signingRequestLifecycle.js'
+import { authorizeDirectSigningDevice } from './directSigning.js'
+import { isSigningOperationError } from '../signing/signingOperationError.js'
 import { getSigningWallets, saveSigningWallet } from './signingWalletHandlers.js'
 import { setSafeSigningAccounts } from './safeSigningAccountHandler.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
@@ -17,6 +19,11 @@ export async function dispatchSigningPageRequest(request: SigningPageRequest, se
 		case 'signing_wallets': return await getSigningWallets()
 		case 'signing_saveWallet': return await saveSigningWallet(request)
 		case 'signing_setSafeAccounts': return await setSafeSigningAccounts(request, services.ethereum)
+		// A device grant carries no reply enrichment: its mode check must stay the last step before the reply.
+		case 'signing_authorizeDevice': return await authorizeDirectSigningDevice(request).catch((error: unknown) => {
+			if (!isSigningOperationError(error)) throw error
+			return { ok: false as const, message: error.message }
+		})
 		default: {
 			const outcome = await advanceDirectSigning(request, services.ethereum, services.tokenPriceService)
 			if (outcome.refreshConfirmation) await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)

@@ -53,7 +53,7 @@ const transcripts: { method: string, screens: string[][], result: string }[] = [
 for (const payload of payloads) {
 	let done = false
 	const screens: string[][] = []
-	const signed = signWithLedger(exchange, account, payload).then((result) => ({ result }), (error: unknown) => ({ error })).finally(() => { done = true })
+	const signed = signWithLedger(exchange, account, payload, async () => undefined).then((result) => ({ result }), (error: unknown) => ({ error })).finally(() => { done = true })
 	const deadline = Date.now() + 120000
 	while (!done && Date.now() < deadline) {
 		await pause()

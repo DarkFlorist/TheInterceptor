@@ -146,7 +146,6 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 				return await records.store({ ...edited, reviewReady: true })
 			}
 			case 'signing_approve': return await approveSigningRequest(record, records, request)
-			case 'signing_authorizeDevice': return await authorizeDeviceRequest(record)
 			case 'signing_result': return await acceptSigningResult(record, request.result, records)
 			case 'signing_broadcast': return await broadcast(record, records)
 			default: throw signingOperationError('Unsupported signing operation')
@@ -181,13 +180,21 @@ function assertSigningModeStillCurrent(simulationModeGuard: SimulationModeGuard,
 	if (simulationMode || !simulationModeGuard.allowsSignerForward()) throw signingOperationError(ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error.message)
 }
 
-// The only grant for the signing page to send an approved request to its device, a Ledger signing request or an AirGap request QR, including a request resumed after a reload. The page asks for it immediately before producing the device request.
-async function authorizeDeviceRequest(record: DirectSigningRecord) {
+// The only grant for the signing page to send an approved request to its device: each Ledger signing command, or an AirGap request QR, including a request resumed after a reload. The page asks for it immediately before producing the device request. All asynchronous work comes first; the mode check is the last step and the reply is built without awaiting anything after it.
+export async function authorizeDirectSigningDevice(request: Extract<DirectSigningRequest, { method: 'signing_authorizeDevice' }>) {
 	const simulationModeGuard = captureSimulationModeGuard()
-	if (record.phase !== 'approved') throw signingOperationError('This request is no longer waiting for a signature')
+	const record = await withDirectSigningRecords(async (records) => {
+		const stored = (await records.read()).find((item) => item.id === request.id)
+		if (stored === undefined) throw signingOperationError('Signing request not found')
+		if (request.revision !== stored.revision) throw signingOperationError('This approval or response belongs to an earlier review')
+		if (stored.phase !== 'approved') throw signingOperationError('This request is no longer waiting for a signature')
+		await assertCurrentBinding(stored)
+		return stored
+	})
 	const { simulationMode } = await getSettings()
+	// The grant is checked at the latest point before the page dispatches to the device; the remaining browser-to-device round trip cannot be closed across processes, and a Ledger additionally needs physical confirmation on the device.
 	assertSigningModeStillCurrent(simulationModeGuard, simulationMode)
-	return record
+	return { ok: true as const, record }
 }
 
 async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction, approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {

@@ -7,7 +7,10 @@ import { DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/di
 import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages } from '../../app/ts/background/storageVariables.js'
 import { saveAddressSigningWallet } from '../../app/ts/background/signingAddressBookCoordinator.js'
 import { readDirectSigningRecords } from '../../app/ts/signing/directSigningStore.js'
-import { updateDirectSigning, refreshDirectSigningReview } from '../../app/ts/background/directSigning.js'
+import { authorizeDirectSigningDevice, updateDirectSigning, refreshDirectSigningReview } from '../../app/ts/background/directSigning.js'
+import { dispatchSigningPageRequest } from '../../app/ts/background/signingRequestService.js'
+import { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../../app/ts/utils/constants.js'
+import { createLedgerResponseDecoder, frameLedgerApdu } from '../../app/ts/signing/ledgerFraming.js'
 import { bytesFromHex, bytesToHex, ensureHex, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { parseTransaction, serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
@@ -18,7 +21,6 @@ import { useDirectSigning } from '../../app/ts/components/hooks/useDirectSigning
 import { changeSimulationMode } from '../../app/ts/background/settings.js'
 import { SigningPageRequest } from '../../app/ts/types/directSigning.js'
 import { SigningPageReply } from '../../app/ts/types/signingPageReply.js'
-import { isSigningOperationError } from '../../app/ts/signing/signingOperationError.js'
 import type { LedgerHid, LedgerHidDevice } from '../../app/ts/signing/ledgerHid.js'
 import { installDomMock } from './domMock.js'
 
@@ -320,41 +322,82 @@ for (const rpcMethod of ['eth_chainId', 'eth_getTransactionCount', 'eth_getBalan
 test('an approved request cannot be authorized for its device after switching into simulation mode', async () => {
 	record = await approve(record)
 	await changeSimulationMode({ simulationMode: true })
-	await expect(updateDirectSigning({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision })).rejects.toThrow('switched to simulation mode')
+	await expect(authorizeDirectSigningDevice({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision })).rejects.toThrow('switched to simulation mode')
 	await changeSimulationMode({ simulationMode: false })
-	expect((await updateDirectSigning({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision })).phase).toBe('approved')
+	expect((await authorizeDirectSigningDevice({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision })).record.phase).toBe('approved')
 })
 
-// Answers the signing page's messages with the background signing lifecycle, as the extension's signing-page listener does.
-function answerSigningPageWithBackground() {
-	browser.runtime.sendMessage = async (message: unknown) => {
-		const request = SigningPageRequest.parse(message)
-		if (!('id' in request)) throw new Error('Expected a command for a stored signing request')
-		try {
-			return SigningPageReply.serialize({ ok: true, record: await updateDirectSigning(request) })
-		} catch (error) {
-			if (!isSigningOperationError(error)) throw error
-			return SigningPageReply.serialize({ ok: false, message: error.message })
-		}
+// Runs onRead after each storage read while armed, before the read's result is returned to the background.
+function interceptStorageReads(onRead: () => Promise<void>) {
+	const originalGet = browser.storage.local.get
+	browser.storage.local.get = async (keys?: Parameters<typeof originalGet>[0]) => {
+		const items = await originalGet(keys)
+		await onRead()
+		return items
 	}
+	return () => { browser.storage.local.get = originalGet }
 }
 
-// A Ledger that records every packet the page sends it, so a test can assert that no signing request reached it.
-function installRecordingLedger() {
-	const sentPackets: Uint8Array[] = []
+test('switching into simulation mode during any await of a device authorization refuses the grant', async () => {
+	record = await approve(record)
+	const authorize = async () => await dispatchSigningPageRequest({ method: 'signing_authorizeDevice', id: record.id, revision: record.revision }, simulator, new Map())
+	let readsDuringAuthorization = 0
+	const stopCounting = interceptStorageReads(async () => { readsDuringAuthorization++ })
+	try {
+		expect((await authorize()).ok).toBe(true)
+	} finally { stopCounting() }
+	expect(readsDuringAuthorization).toBeGreaterThan(0)
+	for (let switchAtRead = 0; switchAtRead < readsDuringAuthorization; switchAtRead++) {
+		await changeSimulationMode({ simulationMode: false })
+		let reads = 0
+		const stopSwitching = interceptStorageReads(async () => {
+			if (reads++ === switchAtRead) await changeSimulationMode({ simulationMode: true })
+		})
+		try {
+			expect(await authorize()).toEqual({ ok: false, message: ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error.message })
+		} finally { stopSwitching() }
+	}
+})
+
+// Answers the signing page's messages with the background signing-page dispatcher, as the extension's signing-page listener does.
+function answerSigningPageWithBackground() {
+	browser.runtime.sendMessage = async (message: unknown) => SigningPageReply.serialize(await dispatchSigningPageRequest(SigningPageRequest.parse(message), simulator, new Map()))
+}
+
+const LEDGER_SIGN_TRANSACTION = 4
+// A Ledger holding the test account that records the instruction of every command it receives. beforeReply can hold a reply back; signing commands are declined so a test that wrongly reaches one ends at once.
+function installLedger(beforeReply: (instruction: number) => Promise<void> = async () => undefined) {
+	const instructions: number[] = []
+	const publicKey = secp256k1.getPublicKey(bytesFromHex(privateKey), false)
+	const accountResponse = Uint8Array.from([65, ...publicKey, 40, ...new TextEncoder().encode(account.address.slice(2)), 0x90, 0])
+	const decoders = new Map<number, ReturnType<typeof createLedgerResponseDecoder>>()
 	const device: LedgerHidDevice = Object.assign(new EventTarget(), {
 		vendorId: 0x2c97, productId: 1, productName: 'Test Ledger', opened: false, collections: [{ usagePage: 0xffa0 }],
 		open: async () => undefined, close: async () => undefined,
-		sendReport: async (_reportId: number, data: Uint8Array<ArrayBuffer>) => { sentPackets.push(data.slice()) },
+		sendReport: async (_reportId: number, data: Uint8Array<ArrayBuffer>) => {
+			const channel = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint16(0)
+			const decode = decoders.get(channel) ?? createLedgerResponseDecoder(channel)
+			decoders.set(channel, decode)
+			const apdu = decode(data)
+			if (apdu === undefined) return
+			decoders.delete(channel)
+			const instruction = apdu[1] ?? -1
+			instructions.push(instruction)
+			const response = instruction === 6 ? Uint8Array.of(0, 1, 9, 19, 0x90, 0) : instruction === 2 ? accountResponse : Uint8Array.of(0x69, 0x85)
+			void (async () => {
+				await beforeReply(instruction)
+				for (const packet of frameLedgerApdu(channel, response)) device.dispatchEvent(Object.assign(new Event('inputreport'), { reportId: 0, data: new DataView(packet.slice().buffer) }))
+			})()
+		},
 	})
 	const hid: LedgerHid = Object.assign(new EventTarget(), { requestDevice: async () => [device], getDevices: async () => [device] })
 	const locks = { request: async <T>(_name: string, _options: unknown, callback: () => Promise<T>) => await callback() }
 	Object.defineProperty(navigator, 'hid', { value: hid, configurable: true })
 	Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
-	return { sentPackets, restore: () => { Reflect.deleteProperty(navigator, 'hid'); Reflect.deleteProperty(navigator, 'locks') } }
+	return { instructions, restore: () => { Reflect.deleteProperty(navigator, 'hid'); Reflect.deleteProperty(navigator, 'locks') } }
 }
 
-for (const walletType of ['ledger', 'airgap'] as const) test(`resuming a ${ walletType === 'ledger' ? 'Ledger' : 'AirGap' } approval after a reload and a switch into simulation mode produces no device request`, async () => {
+async function approveForWallet(walletType: 'ledger' | 'airgap') {
 	if (walletType === 'airgap') {
 		const airgap = await saveAddressSigningWallet(address, { type: 'airgap', label: 'Vault', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), true)), derivationPath: 'm/44\'/60\'/0\'/0/0', sourceFingerprint: 0x11223344 }, record.binding.revision, 'Savings')
 		if (airgap === undefined) throw new Error('Missing AirGap binding')
@@ -366,27 +409,61 @@ for (const walletType of ['ledger', 'airgap'] as const) test(`resuming a ${ wall
 	}
 	record = await approve(record)
 	expect(record.phase).toBe('approved')
-	// The signing page is reloaded, then Interceptor switches into simulation mode before the user resumes the approval.
+}
+
+// Opens the signing page for the record, as a reload does, and runs the test against the recovered approval.
+async function withReloadedSigningPage(run: (page: () => ReturnType<typeof useDirectSigning>) => Promise<void>) {
 	answerSigningPageWithBackground()
 	Object.defineProperty(globalThis, 'location', { value: { origin: '', search: `?id=${ encodeURIComponent(record.id) }` }, configurable: true, writable: true })
-	const ledger = installRecordingLedger()
 	const dom = installDomMock()
-	let page: ReturnType<typeof useDirectSigning> | undefined
-	const SigningPageProbe = () => { page = useDirectSigning(); return null }
+	let rendered: ReturnType<typeof useDirectSigning> | undefined
+	const SigningPageProbe = () => { rendered = useDirectSigning(); return null }
+	const page = () => {
+		if (rendered === undefined) throw new Error('Expected the signing page to render')
+		return rendered
+	}
 	try {
 		await act(() => { render(h(SigningPageProbe, null), dom.document.body) })
-		for (let attempt = 0; attempt < 100 && page?.record === undefined; attempt++) await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
-		if (page?.record?.phase !== 'approved') throw new Error('Expected the reloaded page to recover the approval')
-		await changeSimulationMode({ simulationMode: true })
-		const resume = page.sign
-		await act(async () => await resume())
-		expect(page.error).toContain('switched to simulation mode')
-		expect(page.qr).toBeUndefined()
-		expect(ledger.sentPackets).toEqual([])
-		expect((await readDirectSigningRecords())[0]?.phase).toBe('approved')
+		for (let attempt = 0; attempt < 100 && rendered?.record === undefined; attempt++) await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)))
+		if (page().record?.phase !== 'approved') throw new Error('Expected the reloaded page to recover the approval')
+		await run(page)
 	} finally {
 		render(null, dom.document.body)
 		dom.restore()
-		ledger.restore()
 	}
+}
+
+async function resume(page: () => ReturnType<typeof useDirectSigning>) {
+	const sign = page().sign
+	await act(async () => await sign())
+}
+
+for (const walletType of ['ledger', 'airgap'] as const) test(`resuming a ${ walletType === 'ledger' ? 'Ledger' : 'AirGap' } approval after a reload and a switch into simulation mode produces no device request`, async () => {
+	await approveForWallet(walletType)
+	const ledger = installLedger()
+	try {
+		await withReloadedSigningPage(async (page) => {
+			await changeSimulationMode({ simulationMode: true })
+			await resume(page)
+			expect(page().error).toContain('switched to simulation mode')
+			expect(page().qr).toBeUndefined()
+			expect(ledger.instructions).not.toContain(LEDGER_SIGN_TRANSACTION)
+		})
+	} finally { ledger.restore() }
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('approved')
+})
+
+for (const [instruction, read] of [[6, 'app configuration'], [2, 'account']] as const) test(`switching into simulation mode during the Ledger ${ read } read sends no signing command`, async () => {
+	await approveForWallet('ledger')
+	const ledger = installLedger(async (replyingTo) => {
+		if (replyingTo === instruction) await changeSimulationMode({ simulationMode: true })
+	})
+	try {
+		await withReloadedSigningPage(async (page) => {
+			await resume(page)
+			expect(ledger.instructions).toContain(instruction)
+			expect(ledger.instructions).not.toContain(LEDGER_SIGN_TRANSACTION)
+			expect(page().error).toContain('switched to simulation mode')
+		})
+	} finally { ledger.restore() }
 })

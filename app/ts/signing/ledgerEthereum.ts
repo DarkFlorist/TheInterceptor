@@ -40,8 +40,8 @@ function chunkSigningCommand(instruction: number, prefix: Uint8Array, payload: U
 	return commands
 }
 
-/** Whole operation must run inside withLedgerDevice, including account verification and every streamed command. */
-export async function signWithLedger(exchange: LedgerExchange, account: LedgerPublicAccount, payload: TransactionSigningPayload | PersonalSigningPayload | TypedDataSigningPayload): Promise<Hex> {
+/** Whole operation must run inside withLedgerDevice, including account verification and every streamed command. authorizeSigning is awaited immediately before each signing command is sent, after the app-configuration and account reads, and rejects to stop signing. */
+export async function signWithLedger(exchange: LedgerExchange, account: LedgerPublicAccount, payload: TransactionSigningPayload | PersonalSigningPayload | TypedDataSigningPayload, authorizeSigning: () => Promise<void>): Promise<Hex> {
 	if (getAddress(account.address) !== getAddress(payload.expectedAddress)) throw new Error('Ledger binding does not match the request account')
 	let commands: readonly LedgerCommand[]
 	if (payload.method === 'eth_signTypedData_v4') {
@@ -63,6 +63,8 @@ export async function signWithLedger(exchange: LedgerExchange, account: LedgerPu
 	if (connected.publicKey.toLowerCase() !== account.publicKey.toLowerCase()) throw new Error('Ledger public key differs from the saved account')
 	let response: Uint8Array = new Uint8Array()
 	for (const [index, command] of commands.entries()) {
+		// Every signing command, including each continuation of a streamed payload, is authorized with nothing awaited between the grant and the send.
+		await authorizeSigning()
 		response = await exchange(command)
 		if (index < commands.length - 1 && response.length !== 0) throw new Error('Ledger returned a signature before receiving the complete payload')
 	}

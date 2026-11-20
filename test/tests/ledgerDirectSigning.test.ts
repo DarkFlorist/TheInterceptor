@@ -170,14 +170,33 @@ describe('Ledger Ethereum adapter', () => {
 				if (command.instruction === 2) return publicAccountResponse
 				if ([4, 8, 12].includes(command.instruction)) return signature(payload.digest).ledger
 				return new Uint8Array()
-			}, savedAccount, payload)
+			}, savedAccount, payload, async () => undefined)
 			expect(result.startsWith(payload.method === 'eth_sendTransaction' ? '0x02' : '0x')).toBe(true)
 		})
 	}
+	test('authorizes each signing command after the device reads, and a refusal sends no signing command', async () => {
+		const payload = prepareTypedDataSigningPayload(eip712Example, account.address, 1n)
+		const events: string[] = []
+		const exchange = async (command: LedgerCommand) => {
+			events.push(`send ${ command.instruction }`)
+			if (command.instruction === 6) return Uint8Array.of(0, 1, 9, 19)
+			if (command.instruction === 2) return publicAccountResponse
+			if (command.instruction === 12) return signature(payload.digest).ledger
+			return new Uint8Array()
+		}
+		await signWithLedger(exchange, savedAccount, payload, async () => { events.push('authorize') })
+		const signingSends = events.filter((event) => event.startsWith('send') && event !== 'send 6' && event !== 'send 2')
+		expect(events.slice(0, 2)).toEqual(['send 6', 'send 2'])
+		expect(signingSends.length).toBeGreaterThan(1)
+		expect(events.slice(2)).toEqual(signingSends.flatMap((send) => ['authorize', send]))
+		events.length = 0
+		await expect(signWithLedger(exchange, savedAccount, payload, async () => { throw new Error('Interceptor switched to simulation mode') })).rejects.toThrow('simulation mode')
+		expect(events).toEqual(['send 6', 'send 2'])
+	})
 	test('invalid payload digest is rejected before any device exchange', async () => {
 		let calls = 0
 		const payload = preparePersonalSigningPayload('0x', account.address)
-		await expect(signWithLedger(async () => { calls += 1; return new Uint8Array() }, savedAccount, { ...payload, digest: ensureHex('0x00') })).rejects.toThrow('changed')
+		await expect(signWithLedger(async () => { calls += 1; return new Uint8Array() }, savedAccount, { ...payload, digest: ensureHex('0x00') }, async () => undefined)).rejects.toThrow('changed')
 		expect(calls).toBe(0)
 	})
 })
