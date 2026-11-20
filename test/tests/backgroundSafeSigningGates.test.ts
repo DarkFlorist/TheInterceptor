@@ -5,14 +5,14 @@ import type { InterceptedRequest } from '../../app/ts/utils/requests.js'
 import { waitFor } from '../harness/async.js'
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, createSafeTx, EthereumJsonRpcRequest, loadModules, noopPublishRpcConnectionStatus, type PortMessage, safeTxToTypedDataJson } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 // The error message of a port reply, or '' when the reply has none, so assert.match reports the missing message as a mismatch.
 const readErrorMessage = (reply: PortMessage | undefined) => typeof reply?.error?.message === 'string' ? reply.error.message : ''
 
 describe('background Safe signing gates and wallet account fallback', () => {
 	test('falls back from an active Safe to a newly selected wallet account without a saved preference', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -118,7 +118,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('restores each signer account\'s last Safe-or-EOA choice when MetaMask accounts change', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			createInternalMessageListener,
@@ -204,7 +204,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('rejects public message signing while a configured Safe is the dapp-visible account', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getPendingTransactionsAndMessages,
@@ -285,7 +285,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('allows only canonical Safe transaction typed data for the active Safe through the Safe signing gate', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { isSafeTransactionCoSignRequest } = await import('../../app/ts/safe/safeRequestPolicy.js')
 		const safeAddress = 0x5555555555555555555555555555555555555555n
 		const safeTx = createSafeTx(1n, safeAddress, {
@@ -317,7 +317,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('never forwards Safe signing requests on a signer-only network', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getPendingTransactionsAndMessages,
@@ -434,7 +434,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('never exposes a configured Safe selected from another chain while signing', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddressAndChain,
 			changeSimulationMode,
@@ -496,7 +496,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('does not reinterpret a selected Safe from another chain as a generic simulation address', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -529,7 +529,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('falls back to the wallet account when a signing Safe lacks cached owner membership', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeActiveAddressAndChain,
 			changeSimulationMode,
@@ -614,7 +614,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	for (const access of ['denied', 'origin', 'tab']) test(`requires website authorization in addition to a confirmed signer (${ access })`, async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 		const { changeSimulationMode, getSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n })
@@ -644,7 +644,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('uses trusted signer state for simulation chain changes without website address access', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getSettings,
@@ -689,7 +689,7 @@ describe('background Safe signing gates and wallet account fallback', () => {
 	})
 
 	test('follows wallet chain changes when the stored signing Safe is no longer owned', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
