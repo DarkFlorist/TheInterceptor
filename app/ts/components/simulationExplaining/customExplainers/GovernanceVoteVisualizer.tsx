@@ -1,15 +1,16 @@
 import { type Signal, type ReadonlySignal, useComputed, useSignal } from '@preact/signals'
 import { getMissingPopupReplyErrorMessage, requestPopupSimulateGovernanceContractExecution } from '../../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
-import { MessageToPopup, type GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
+import { GovernanceVoteInputParameters, SimulateExecutionReply } from '../../../types/interceptor-messages.js'
 import type { RenameAddressCallBack } from '../../../types/user-interface-types.js'
-import type { SimulatedAndVisualizedTransaction } from '../../../types/visualizer-types.js'
+import type { SimulatedAndVisualizedTransaction, TransactionVisualizationParameters } from '../../../types/visualizer-types.js'
 import { checksummedAddress, dataStringWith0xStart } from '../../../utils/bigint.js'
-import { addNoReplyExpectingBrowserRuntimeOnMessageListener } from '../../../utils/browser.js'
+import { serialize } from '../../../types/wire-types.js'
+import { usePopupMessage } from '../../hooks/usePopupMessage.js'
 import { ErrorComponent } from '../../subcomponents/Error.js'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import { CellElement } from '../../ui-utils.js'
-import { Transaction } from '../Transactions.js'
+import type { JSX } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
 import { resolveSignal, type SignalOrValue } from '../../../utils/signals.js'
 import { AsyncActionButton } from '../../subcomponents/AsyncAction.js'
@@ -79,7 +80,11 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 	</>
 }
 
+// Renders the simulated proposal execution. This visualizer is itself shown inside a transaction card, so the card component is passed in by the caller rather than imported back from the card's module.
+type TransactionCardComponent = (props: TransactionVisualizationParameters) => JSX.Element
+
 type ShowSuccessOrFailureParams = {
+	transactionCard: TransactionCardComponent
 	simTx: Signal<SimulatedAndVisualizedTransaction | undefined>
 	activeAddress: ReadonlySignal<bigint | undefined>
 	simulateExecutionReply: Signal<SimulateExecutionReply | undefined>
@@ -92,7 +97,7 @@ type ShowSuccessOrFailureParams = {
 
 const GOVERNANCE_SIMULATION_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Simulating governance execution')
 
-const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, governanceSimulationState, requestErrorText, simulateGovernanceVote }: ShowSuccessOrFailureParams) => {
+const ShowSuccessOrFailure = ({ transactionCard: TransactionCard, simulateExecutionReply, simTx, activeAddress, renameAddressCallBack, editEnsNamedHashCallBack, governanceSimulationState, requestErrorText, simulateGovernanceVote }: ShowSuccessOrFailureParams) => {
 	const missingAbiText = 'The governance contract is missing an ABI. Add an ABI to simulate execution of this proposal.'
 	const errorText = useComputed(() => simulateExecutionReply.value?.data.success === false ? simulateExecutionReply.value.data.errorMessage : undefined)
 	const rpcErrorText = useComputed(() => simulateExecutionReply.value?.data.success === true && simulateExecutionReply.value.data.result.visualizedSimulationState.success === false ? JSON.stringify(simulateExecutionReply.value.data.result.visualizedSimulationState.jsonRpcError, undefined, 4) : undefined)
@@ -165,7 +170,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 
 	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
-		<Transaction
+		<TransactionCard
 			simTx = { govSimTx.value }
 			simulationAndVisualisationResults = { results.value }
 			removeTransactionOrSignedMessage = { undefined }
@@ -178,6 +183,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 }
 
 type GovernanceVoteVisualizerParams = {
+	transactionCard: TransactionCardComponent
 	simTx: SimulatedAndVisualizedTransaction
 	activeAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -197,31 +203,28 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 
 	const isReplyForCurrentTransaction = (reply: SimulateExecutionReply) => reply.data.transactionOrMessageIdentifier === currentTransactionIdentifier.current
 
-	useEffect(() => {
-		const popupMessageListener = (msg: unknown): false => {
-			const maybeParsed = MessageToPopup.safeParse(msg)
-			if (!maybeParsed.success) return false // not a message we are interested in
-			const parsed = maybeParsed.value
-			if (parsed.method === 'popup_new_block_arrived') return false
-			if (parsed.method !== 'popup_simulateExecutionReply') return false
-			const { role: _role, ...popupSimulateExecutionReply } = parsed
-			const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
-			if (!isReplyForCurrentTransaction(reply)) return false
-			resetGovernanceSimulationRequest()
-			simulateExecutionReply.value = reply
-			return false
-		}
-		// Still subscribes through the helper directly: #1683 moves this component onto usePopupMessage together with the rest of its hook changes.
-		return addNoReplyExpectingBrowserRuntimeOnMessageListener((message) => { popupMessageListener(message) })
-	}, [])
+	usePopupMessage((message) => {
+		if (message.method !== 'popup_simulateExecutionReply') return
+		const { role: _role, ...popupSimulateExecutionReply } = message
+		const reply = SimulateExecutionReply.parse(popupSimulateExecutionReply)
+		if (!isReplyForCurrentTransaction(reply)) return
+		resetGovernanceSimulationRequest()
+		simulateExecutionReply.value = reply
+	})
 
+	// The parent identifies the transaction again on every render, so the vote parameters arrive as a new but equal object each time; this key changes only when their values do.
+	const governanceVoteInputParametersKey = JSON.stringify(serialize(GovernanceVoteInputParameters, param.governanceVoteInputParameters))
+
+	// Reset only when the transaction identity, the vote parameter values or the active address change; other parent re-renders, such as re-simulations, keep the current simulation.
 	useEffect(() => {
 		governanceVoteInputParameters.value = param.governanceVoteInputParameters
-		simTx.value = param.simTx
 		activeAddress.value = param.activeAddress.value
 		simulateExecutionReply.value = undefined
 		resetGovernanceSimulationRequest()
-	}, [param.simTx.transactionIdentifier, param.governanceVoteInputParameters, param.activeAddress.value])
+	}, [param.simTx.transactionIdentifier, governanceVoteInputParametersKey, param.activeAddress.value])
+
+	// Shows the newest transaction object without resetting the simulation, for example once the governance contract got an ABI and the simulate button can replace the missing-ABI notice.
+	useEffect(() => { simTx.value = param.simTx }, [param.simTx])
 
 	const simulateGovernanceVote = () => {
 		const transactionIdentifier = simTx.value?.transactionIdentifier
@@ -259,6 +262,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 
 			<div class = 'notification dashed-notification'>
 				<ShowSuccessOrFailure
+					transactionCard = { param.transactionCard }
 					simulateExecutionReply = { simulateExecutionReply }
 					governanceSimulationState = { governanceSimulationRequest.value.state }
 					requestErrorText = { requestErrorText.value }

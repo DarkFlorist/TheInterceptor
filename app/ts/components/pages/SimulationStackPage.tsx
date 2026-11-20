@@ -10,7 +10,7 @@ import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { BroomIcon, ChevronIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
 import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
-import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
+import { TransactionsAndSignedMessages } from '../simulationExplaining/TransactionsAndSignedMessages.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { AddNewAddress } from './AddNewAddress.js'
 import { EditEnsLabelHash } from './EditEnsLabelHash.js'
@@ -19,7 +19,7 @@ import { ImportSafeStack } from './ImportSafeStack.js'
 import { NetworkErrors } from '../subcomponents/NetworkErrors.js'
 import { useLiveSimulationHomeData } from '../hooks/useLiveSimulationHomeData.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
-import { useEffect } from 'preact/hooks'
+import { useCallback, useEffect } from 'preact/hooks'
 import { getSimulationStackTargetElementIdFromHash } from '../../utils/simulationStackTargets.js'
 import { SmallAddress, getActiveAddressEntry } from '../subcomponents/address.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
@@ -326,7 +326,8 @@ export function SimulationStackPage() {
 		markSimulationDataReceived()
 	})
 
-	const scrollToRequestedStackRow = () => {
+	// Only reads and writes this page's signals, so useCallback keeps it stable and the hashchange listener below is registered once per mount.
+	const scrollToRequestedStackRow = useCallback(() => {
 		const browserWindow = globalThis.window
 		const browserDocument = globalThis.document
 		if (browserWindow === undefined || browserDocument === undefined) return
@@ -345,7 +346,7 @@ export function SimulationStackPage() {
 		scheduleStackTargetTimeout(() => {
 			if (highlightedStackTargetId.value === targetElementId) highlightedStackTargetId.value = undefined
 		}, 1800)
-	}
+	}, [])
 
 	useEffect(() => {
 		const scrollOnHashChange = () => {
@@ -360,7 +361,7 @@ export function SimulationStackPage() {
 		browserWindow.addEventListener('hashchange', scrollOnHashChange)
 		scheduleStackTargetFrame(scrollOnHashChange)
 		return () => browserWindow.removeEventListener('hashchange', scrollOnHashChange)
-	}, [])
+	}, [scrollToRequestedStackRow])
 
 	useSignalEffect(() => {
 		simVisResults.value
