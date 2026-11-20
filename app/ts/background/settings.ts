@@ -1,3 +1,6 @@
+import { getNormalizedWebsiteAccessFromStorage, getWebsiteAccess } from './websiteAccessStorage.js'
+export { getWebsiteAccess } from './websiteAccessStorage.js'
+import { haveSameDisabledSites, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -215,16 +218,6 @@ async function replaceModeAndSigningPreferencesForImport(changes: SimulationMode
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
-async function getNormalizedWebsiteAccessFromStorage() {
-	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
-	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
-	return { rawWebsiteAccess, sanitizedWebsiteAccess }
-}
-
-export async function getWebsiteAccess() {
-	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
-}
-
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
@@ -283,6 +276,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+	const previousWebsiteAccess = await getWebsiteAccess()
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
@@ -323,6 +317,8 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
+	// Import owns this derived registration state, so direct callers and popup callers follow the same policy.
+	if (!haveSameDisabledSites(previousWebsiteAccess, await getWebsiteAccess())) await updateContentScriptInjectionStrategy()
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })
