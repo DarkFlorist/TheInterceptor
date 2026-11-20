@@ -176,13 +176,21 @@ export function requireReadableSettings(snapshot: SettingsSnapshot): Settings {
 	return snapshot.settings
 }
 
+// RPC editors can repair an unreadable active selection by treating it as absent. Storage/repair failures remain errors rather than being mistaken for an unselected network.
+export async function getActiveRpcNetworkForConfigurationEditing(): Promise<RpcNetwork | undefined> {
+	const snapshot = await getSettingsSnapshot()
+	const configuration = snapshot.rpcConfiguration
+	if (configuration.status === 'unavailable' && (configuration.reason === 'read-failed' || configuration.reason === 'write-failed')) throw configuration.error ?? createRpcConfigurationUnavailableError()
+	return settingsEvenIfRpcConfigurationUnusable(snapshot)?.activeRpcNetwork
+}
+
 // The weaker of the two settings projections, named so every call site shows it: settings whenever they are readable, even while the RPC configuration is unusable (corrupt, emptied or unwritable entries with a readable active network). Only for callers that branch on availability themselves and only need the settings fields; a decision that must fail closed on any unusable RPC configuration (granting access, choosing how tabs are blocked) uses settingsIfRpcConfigurationReady.
 export function settingsEvenIfRpcConfigurationUnusable(snapshot: SettingsSnapshot): Settings | undefined {
 	return snapshot.status === 'available' ? snapshot.settings : undefined
 }
 
 const readyRpcConfigurationMarker = Symbol('readyRpcConfiguration')
-// Settings read while the RPC configuration was ready. Only settingsIfRpcConfigurationReady creates it, and the fail-closed decisions (granting through LiveSettings, choosing how tabs are blocked) take this type, so handing them settings from a weaker projection (requireReadableSettings, settingsEvenIfRpcConfigurationUnusable) does not type-check.
+// Settings read while the RPC configuration was ready. Reconciliation grants and request blocking require this branded projection; legacy verifyAccess/connectToPort still accept ordinary Settings until the successor admission migration.
 export type ReadyRpcSettings = Settings & { readonly [readyRpcConfigurationMarker]: true }
 
 // Projection for decisions that must treat every unavailable RPC configuration alike, such as granting access or choosing how tabs are blocked: settings only while the RPC configuration is ready.
@@ -210,7 +218,7 @@ export type LiveSettingsOnAdmittedRpcNetwork =
 	| { readonly kind: 'ready', readonly settings: ReadyRpcSettings }
 	| { readonly kind: AdmittedRpcNetworkNoLongerLive }
 
-// The single check behind every connection grant, and behind routing a request: work can be parked on the website lookup, signer prompts or address lookups after it read its settings, so one live snapshot is read and used unmixed. A metadata-only change (name, explorer, list preferences) keeps the chain and endpoint, so the live snapshot still matches the admitted service pair; a chain change invalidates the live selection's chain-dependent decisions for the admitted pair.
+// Reconciliation re-reads one live snapshot immediately before its synchronous grant. Metadata-only changes retain the admitted endpoint; chain or endpoint changes invalidate its service pair. This helper is not yet used by legacy verifyAccess/connectToPort or general request admission.
 export async function getLiveSettingsOnAdmittedRpcNetwork(admitted: Settings | CapturedRpcNetwork): Promise<LiveSettingsOnAdmittedRpcNetwork> {
 	const liveSettings = settingsIfRpcConfigurationReady(await getSettingsSnapshot())
 	if (liveSettings === undefined) return { kind: 'unavailable' }
@@ -396,6 +404,7 @@ export const getSafeAppsCompatibilityMode = async() => (await browserStorageLoca
 export const safeAppsCompatibilityModeStorageWrite = (safeAppsCompatibilityMode: boolean): StorageWrite => ({ safeAppsCompatibilityMode })
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet(safeAppsCompatibilityModeStorageWrite(safeAppsCompatibilityMode))
 
+// A backup requires a real selected network. Configuration repair remains available through the RPC editor and import; exporting must never invent an active selection.
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')

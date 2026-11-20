@@ -1,5 +1,4 @@
 import { sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import { getWebsiteApprovalChangedOrigins } from './settingsTransactions.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { createWorkflowStepsError, type WorkflowStepFailure } from '../utils/errors.js'
@@ -54,10 +53,7 @@ async function runStepsThenReconcileApprovals(simulationServicesOwner: Simulatio
 export async function applyWebsiteAccessUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reloadPolicy: ConnectedTabsReloadPolicy, mutation: WebsiteAccessMutation) {
 	const outcome = await tryUpdateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previous) => sanitizeWebsiteAccess(mutation(previous)))
 	const committedChange = outcome.transaction?.committedChange
-	const origins = committedChange === undefined ? undefined : getWebsiteApprovalChangedOrigins(committedChange.previousWebsiteAccess, committedChange.updatedWebsiteAccess)
-	// Missing outcome metadata must widen fail-closed revocation, never silently claim that no approvals changed.
-	const change: CommittedAccessChange = origins === undefined ? { kind: 'unknown-website-access' }
-		: origins.length === 0 ? { kind: 'non-approval-website-change' } : { kind: 'website-access', websiteOrigins: origins }
+	const change: CommittedAccessChange = { kind: 'website-access', committedChange }
 	if (outcome.status === 'failed' && outcome.storage === 'not-written') throw outcome.error
 	const failures: WorkflowStepFailure[] = outcome.status === 'failed' ? [{ code: 'website_access_injection_update_failed', error: outcome.error }] : []
 	// The injection owner reports whether it already handled the reload, including failed attempts. Only an unchanged configuration may need an additional reload.

@@ -242,7 +242,7 @@ describe('website access registration and reconciliation', () => {
 })
 
 
-for (const edit of ['approval', 'blocking', 'new-blocking-record', 'rolled-back-approval', 'unknown-outcome'] as const) test(`an unreadable post-write snapshot uses the committed authority scope for a ${ edit } edit`, async () => {
+for (const edit of ['approval', 'multi-approval', 'blocking', 'new-blocking-record', 'rolled-back-approval', 'unknown-outcome'] as const) test(`an unreadable post-write snapshot uses the committed authority scope for a ${ edit } edit`, async () => {
 	const { setStorageHooks } = installBrowserMock()
 	const modules = await loadModules()
 	const { applyWebsiteAccessUpdate } = await import('../../app/ts/background/applyWebsiteAccessUpdate.js')
@@ -268,13 +268,13 @@ for (const edit of ['approval', 'blocking', 'new-blocking-record', 'rolled-back-
 	try {
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		await withSilencedConsole(async () => {
-			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] ? entry : edit === 'approval' || edit === 'rolled-back-approval' ? { ...entry, access: false, ...(edit === 'rolled-back-approval' ? { interceptorDisabled: true } : {}) } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
+			await assert.rejects(applyWebsiteAccessUpdate(simulationServicesOwner, connections, 'whenInjectionChanges', (previous) => edit === 'new-blocking-record' ? [...previous, { website: { websiteOrigin: 'scope-a.test' }, declarativeNetRequestBlockMode: 'block-all' }] : previous.map((entry) => entry.website.websiteOrigin !== origins[0] && edit !== 'multi-approval' ? entry : edit === 'multi-approval' || edit === 'approval' || edit === 'rolled-back-approval' ? { ...entry, access: false, ...(edit === 'rolled-back-approval' ? { interceptorDisabled: true } : {}) } : { ...entry, declarativeNetRequestBlockMode: 'block-all' })))
 			await waitForBackgroundTasks()
 		})
 		assert.equal(committed, true)
 		const approvalOf = (tabId: number) => Object.values(connections.get(tabId)?.connections ?? {})[0]?.approved
-		assert.equal(approvalOf(1), edit !== 'approval' && edit !== 'unknown-outcome')
-		assert.equal(approvalOf(2), edit !== 'unknown-outcome')
+		assert.equal(approvalOf(1), edit !== 'approval' && edit !== 'multi-approval' && edit !== 'unknown-outcome')
+		assert.equal(approvalOf(2), edit !== 'multi-approval' && edit !== 'unknown-outcome')
 	} finally {
 		await waitForBackgroundTasks()
 		setStorageHooks({})

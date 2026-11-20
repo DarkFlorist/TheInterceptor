@@ -38,7 +38,7 @@ const importedSettings = ExportedSettings.serialize({
 })
 
 try {
-	for (const recovery of ['RPC selection', 'settings import'] as const) {
+	for (const recovery of ['RPC selection', 'settings import', 'RPC edit', 'RPC removal'] as const) {
 		const profileDir = await mkdtemp(path.join(os.tmpdir(), 'interceptor-rpc-recovery-'))
 		try {
 			// Persist the unavailable configuration in a real extension profile, then cold-start the actual background entry point.
@@ -48,7 +48,7 @@ try {
 				const worker = await connectTarget(initialChrome.browserDebugPort, target.id)
 				try {
 					await waitForPerformanceMarks(worker, ['interceptor:background:startup-ready'], 30_000)
-					await worker.evaluate(`browser.storage.local.set(${ JSON.stringify({ activeRpcNetwork: 'corrupt', rpcEntries: [storedNetwork], websiteAccess, simulationMode: false }) })`)
+					await worker.evaluate(`browser.storage.local.set(${ JSON.stringify({ activeRpcNetwork: 'corrupt', rpcEntries: [storedNetwork, { ...storedNetwork, name: 'Recovery fallback RPC', primary: false }], websiteAccess, simulationMode: false }) })`)
 					await worker.evaluate(`browser.declarativeNetRequest.updateDynamicRules({ addRules: [{ id: 1, priority: 1, action: { type: 'block' }, condition: { initiatorDomains: ['recovery-block.test'], domainType: 'thirdParty' } }] })`)
 				} finally { worker.close() }
 			} finally { await initialChrome.close() }
@@ -71,11 +71,28 @@ try {
 						await page.evaluate(`(() => { globalThis.__recoverySettingsReply = undefined; browser.runtime.onMessage.addListener((message) => { if (message.method === 'popup_requestSettingsReply') globalThis.__recoverySettingsReply = message.data }); void browser.runtime.sendMessage({ method: 'popup_requestSettings' }) })()`)
 						await waitForState(page, 'globalThis.__recoverySettingsReply !== undefined', 'settings reply through startup gate')
 						assert.equal(await page.evaluate('globalThis.__recoverySettingsReply.activeRpcNetwork'), undefined)
-						const request = PopupMessage.serialize(recovery === 'RPC selection'
-							? { method: 'popup_changeActiveRpc', data: network }
-							: { method: 'popup_import_settings', data: { fileContents: JSON.stringify(importedSettings) } })
-						await page.evaluate(`browser.runtime.sendMessage(${ JSON.stringify(request) })`)
+						if (recovery === 'RPC edit' || recovery === 'RPC removal') {
+							await waitForState(page, `Array.from(document.querySelectorAll('button')).some(button => button.textContent?.trim() === 'Edit')`, 'RPC editor')
+							await page.evaluate(`(() => { const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Edit'); if (!(button instanceof HTMLButtonElement)) throw new Error('RPC edit control missing'); button.click() })()`)
+							await waitForState(page, `document.querySelector('dialog[open]') !== null`, 'open RPC editor')
+							await page.evaluate(recovery === 'RPC edit'
+								? `(() => { const dialog = document.querySelector('dialog[open]'); const input = dialog?.querySelector('input[name="name"]'); const save = dialog?.querySelector('button[value="save"]'); if (!(input instanceof HTMLInputElement) || !(save instanceof HTMLButtonElement)) throw new Error('RPC form missing'); input.value = 'Repaired RPC'; save.click() })()`
+								: `(() => { const dialog = document.querySelector('dialog[open]'); const remove = Array.from(dialog?.querySelectorAll('button') ?? []).find(button => button.textContent?.trim() === 'Remove'); if (!(remove instanceof HTMLButtonElement)) throw new Error('RPC removal control missing'); remove.click() })()`)
+							if (recovery === 'RPC removal') {
+								await waitForState(page, `document.querySelector('dialog[open] button[value=remove]') !== null`, 'RPC removal confirmation')
+								await page.evaluate(`document.querySelector('dialog[open] button[value=remove]').click()`)
+							}
+							await waitForState(page, `document.querySelector('dialog[open]') === null`, 'successful RPC form completion')
+						} else {
+							const request = PopupMessage.serialize(recovery === 'RPC selection'
+								? { method: 'popup_changeActiveRpc', data: network }
+								: { method: 'popup_import_settings', data: { fileContents: JSON.stringify(importedSettings) } })
+							await page.evaluate(`browser.runtime.sendMessage(${ JSON.stringify(request) })`)
+						}
 						await waitForState(worker, `(async()=> { const { activeRpcNetwork } = await browser.storage.local.get('activeRpcNetwork'); return activeRpcNetwork?.httpsRpc === ${ JSON.stringify(network.httpsRpc) } })()`, 'repaired active network')
+						if (recovery === 'RPC edit' || recovery === 'RPC removal') {
+							assert.equal(await worker.evaluate('(async()=> (await browser.storage.local.get("activeRpcNetwork")).activeRpcNetwork.name)()'), recovery === 'RPC edit' ? 'Repaired RPC' : 'Recovery fallback RPC')
+						}
 						const rules = await worker.evaluate<readonly { condition: { initiatorDomains?: readonly string[] } }[]>('browser.declarativeNetRequest.getDynamicRules()')
 						assert.equal(rules.some((rule) => rule.condition.initiatorDomains?.includes('recovery-block.test')), true)
 					} finally { page.close() }

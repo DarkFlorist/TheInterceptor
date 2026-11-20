@@ -756,3 +756,41 @@ describe('popup settings changes', () => {
 		})
 	}
 })
+
+for (const operation of ['add', 'edit', 'remove'] as const) test(`RPC editor ${ operation } repairs an unreadable active selection through the list command`, async () => await withSilencedConsole(async () => {
+	installBrowserMock()
+	const modules = await loadModules()
+	const { getActiveRpcNetworkForConfigurationEditing } = await import('../../app/ts/background/settings.js')
+	const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+	const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
+	const { saveRpcEntryAndKeepActiveRpcConsistent, removeRpcEntryAndKeepActiveRpcConsistent } = await import('../../app/ts/components/subcomponents/ConfigureRpcConnection.js')
+	const initial = await modules.getSettings()
+	const first = { ...initial.activeRpcNetwork, chainId: 2n, name: 'First', primary: true }
+	const fallback = { ...first, name: 'Fallback', primary: false }
+	const entries = [first, fallback]
+	await setRpcList(entries)
+	await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+	const active = await getActiveRpcNetworkForConfigurationEditing()
+	assert.equal(active, undefined)
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	const persist = async (rpcEntries: Parameters<typeof setNewRpcList>[2]['data']) => await setNewRpcList(simulationServicesOwner, new Map(), { method: 'popup_set_rpc_list', data: rpcEntries })
+	const unexpectedSelection = async () => { throw new Error('An absent active selection must not be compared or switched by the editor') }
+	try {
+		if (operation === 'remove') await removeRpcEntryAndKeepActiveRpcConsistent(first, entries, active, persist, unexpectedSelection)
+		else await saveRpcEntryAndKeepActiveRpcConsistent({ ...first, name: operation === 'add' ? 'Added' : 'Edited' }, operation === 'add' ? undefined : first, entries, active, persist, unexpectedSelection)
+		const stored = await getRpcList()
+		assert.equal(stored.length, operation === 'remove' ? 1 : operation === 'add' ? 3 : 2)
+		assert.equal((await modules.getSettings()).activeRpcNetwork.name, operation === 'remove' ? 'Fallback' : operation === 'edit' ? 'Edited' : 'First')
+		assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, 2n)
+		assert.equal(await modules.getLatestUnexpectedError(), undefined)
+	} finally { simulationServicesOwner.getCurrent().ethereum.setBlockPolling(false) }
+}))
+
+test('RPC editing propagates a storage failure instead of treating it as an absent selection', async () => {
+	const { setStorageHooks } = installBrowserMock()
+	const { getActiveRpcNetworkForConfigurationEditing } = await import('../../app/ts/background/settings.js')
+	const failure = new Error('Selection storage unavailable')
+	setStorageHooks({ afterGet: async () => { throw failure } })
+	try { await assert.rejects(getActiveRpcNetworkForConfigurationEditing(), (error) => error === failure) }
+	finally { setStorageHooks({}) }
+})

@@ -5,7 +5,8 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
-import { getSettingsSnapshot, updateWebsiteAccess, settingsIfRpcConfigurationReady } from './settings.js'
+import { getSettingsSnapshot, updateWebsiteAccess, updateWebsiteAccessWithSnapshots, settingsIfRpcConfigurationReady } from './settings.js'
+import { getWebsiteApprovalChangedOrigins, type CommittedWebsiteAccessChange } from './websiteAccessState.js'
 import { grantWithLiveSettings } from './connectionGrant.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -33,7 +34,7 @@ import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js
  * Connection approval and its reconciliation. Which entry point to call:
  * - A handler that committed an access-affecting write calls reconcileCommittedAccessChangeOrFailClosed with the write's CommittedAccessChange and an AccessReconciliationFollowUp that says what follows the reconciliation (prompts and popup notification). It fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. persistWebsiteAccessChange is setAccess followed by it.
  * - updateWebsiteApprovalAccesses reconciles without a committed write (follow-up prompts after an access dialog); the entry points above run it.
- * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. Keeping the scope private here means no caller can revoke a narrower scope than its change implies.
+ * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. The owner derives website scope from complete committed snapshots; callers cannot select origins or claim that an edit changed no authority.
  */
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
@@ -94,25 +95,27 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 	return activeAddressEntries.filter((x) => x.askForAddressAccess === false)
 }
 
-export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
-		return previousWebsiteAccess.map((prevAccess) => {
-			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
-				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
-				const addressAccess = { address, access }
-				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
-				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
-				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
-				}
-				return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
+const accessDecision = (website: Website, access: boolean, address: bigint | undefined) => (previousWebsiteAccess: WebsiteAccessArray): WebsiteAccessArray => {
+	const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+	if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
+	return previousWebsiteAccess.map((prevAccess) => {
+		if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
+			const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
+			if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
+			const addressAccess = { address, access }
+			const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
+			if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
+			if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
+				return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
 			}
-			return prevAccess
-		})
+			return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
+		}
+		return prevAccess
 	})
+}
+
+export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
+	return await updateWebsiteAccess(accessDecision(website, access, address))
 }
 
 const collectFailure = (step: () => void): readonly unknown[] => {
@@ -416,22 +419,18 @@ export async function persistWebsiteAccessChange(
 	address: bigint | undefined,
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
-	await setAccess(website, access, address)
-	return await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, { simulationServicesOwner, promptForAccesses: promptForAccessesIfNeeded, notifyWebsiteAccessChanged: true })
+	const committedChange = await updateWebsiteAccessWithSnapshots(accessDecision(website, access, address))
+	return await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, { kind: 'website-access', committedChange }, { simulationServicesOwner, promptForAccesses: promptForAccessesIfNeeded, notifyWebsiteAccessChanged: true })
 }
 
 // A committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Its kind, not the call site, decides which websites' runtime approvals fail closed when settings are unreadable (see getAffectedWebsites).
 export type CommittedAccessChange =
-	// Approvals, address consent or interceptor-disabled state of these websites.
-	| { readonly kind: 'website-access', readonly websiteOrigins: readonly string[] }
-	// A committed website change whose outcome could not establish a narrower scope.
-	| { readonly kind: 'unknown-website-access' }
+	// The complete committed or rolled-back snapshots; missing metadata conservatively affects every website.
+	| { readonly kind: 'website-access', readonly committedChange?: CommittedWebsiteAccessChange }
 	// Address-book entries, which can alter any website's effective address policy.
 	| { readonly kind: 'address-book' }
 	// An imported settings file, which replaces every website's approvals.
 	| { readonly kind: 'settings-import' }
-	// A website edit or rollback that changed no approval authority (for example, request-block mode or metadata).
-	| { readonly kind: 'non-approval-website-change' }
 	// A recovered RPC configuration, whose active network decides every website's chain-specific address consent.
 	| { readonly kind: 'rpc-configuration' }
 
@@ -442,12 +441,14 @@ type AffectedWebsites =
 
 function getAffectedWebsites(change: CommittedAccessChange): AffectedWebsites {
 	switch (change.kind) {
-		case 'website-access': return { kind: 'websites', websiteOrigins: change.websiteOrigins }
-		case 'unknown-website-access': return { kind: 'every' }
+		case 'website-access': {
+			if (change.committedChange === undefined) return { kind: 'every' }
+			const origins = getWebsiteApprovalChangedOrigins(change.committedChange.previousWebsiteAccess, change.committedChange.updatedWebsiteAccess)
+			return origins.length === 0 ? { kind: 'none' } : { kind: 'websites', websiteOrigins: origins }
+		}
 		case 'address-book': return { kind: 'every' }
 		case 'settings-import': return { kind: 'every' }
 		case 'rpc-configuration': return { kind: 'every' }
-		case 'non-approval-website-change': return { kind: 'none' }
 		default: return assertNever(change)
 	}
 }

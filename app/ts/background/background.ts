@@ -3,7 +3,7 @@ import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, updateWebsiteAccess } from './settings.js'
+import { getSettings, updateWebsiteAccessWithSnapshots } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, syncing, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -331,7 +331,7 @@ async function revokeWebsitePermissions(
 	websiteTabConnections: WebsiteTabConnections,
 	websiteOrigin: string,
 ) {
-	await updateWebsiteAccess((previousAccess) => previousAccess.map((access) => {
+	const committedChange = await updateWebsiteAccessWithSnapshots((previousAccess) => previousAccess.map((access) => {
 		if (access.website.websiteOrigin !== websiteOrigin) return access
 		const { access: previousPermission, addressAccess: _removedAddressAccess, ...remainingAccess } = access
 		return {
@@ -341,7 +341,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, { kind: 'website-access', websiteOrigins: [websiteOrigin] }, { simulationServicesOwner, promptForAccesses: false, notifyWebsiteAccessChanged: true })
+	await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, { kind: 'website-access', committedChange }, { simulationServicesOwner, promptForAccesses: false, notifyWebsiteAccessChanged: true })
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
