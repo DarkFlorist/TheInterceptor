@@ -1,12 +1,13 @@
 import { waitForSigningFocus } from './signingAccessibility.js'
 import { installFlowCamera, installFlowLedger } from './directSigningFlowFixtures.js'
+import { createDirectSigningFlowPendingRequest } from './directSigningFlowPendingRequest.js'
 /** Built-page walkthrough with public test keys, scripted HID, synthetic QR camera and local RPC. No physical-device claim. */
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { secp256k1 } from '@noble/curves/secp256k1'
 import { type DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
 import { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
-import { SigningWalletBinding, SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
+import { type SigningWalletBinding, SigningWalletBindings } from '../../app/ts/types/signingWallet.js'
 import { bytesFromHex, bytesToHex, keccak256 } from '../../app/ts/utils/ethereumBytes.js'
 import { serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
 import { prepareDirectPayload } from '../../app/ts/signing/backend.js'
@@ -64,15 +65,9 @@ try {
 		const binding: SigningWalletBinding = { revision: crypto.randomUUID(), wallet: { type, address: BigInt(address), label: 'Walkthrough public test account', publicKey: bytesToHex(secp256k1.getPublicKey(key, type === 'airgap')), derivationPath: path, ...(type === 'airgap' ? { sourceFingerprint: 0xf23f9fd2 } : {}) } }
 		const data = method === 'eth_sendTransaction' ? serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 2000000000n, maxPriorityFeePerGas: 1000000000n, to: address, value: 1000000000000000n }) : method === 'personal_sign' ? '0x48656c6c6f2066726f6d207468652077616c6b7468726f756768' : typed
 		const record: DirectSigningRecord = { id: crypto.randomUUID(), request: { requestId: 1, requestSocket: { tabId: 98765, connectionName: 0n } }, binding, websiteOrigin: 'https://walkthrough.example.test', rpcUrl: `http://127.0.0.1:${ server.port }`, input: { method, data, address, chainId: 1n }, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
-		// Seed only the pre-existing explanation/request boundary; approval, signing, verification and submission use production handlers.
-		const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 98765, connectionName: '0x0' } }
-		const originalRequestParameters = method === 'eth_sendTransaction' ? { method, params: [{ from: address, to: address, value: '0x0' }] } : method === 'personal_sign' ? { method, params: [data, address] } : { method, params: [address, data] }
-		const common = { popupOrTabId: { type: 'tab', id: 98765 }, originalRequestParameters, uniqueRequestIdentifier, simulationMode: false, activeAddress: address, created: '0x1', website: { websiteOrigin: record.websiteOrigin }, approvalStatus: { status: 'WaitingForUser' }, transactionOrMessageCreationStatus: 'Simulated', signingWalletBinding: SigningWalletBinding.serialize(binding), signingChainId: '0x1' }
-		const transactionToSimulate = { website: common.website, created: common.created, originalRequestParameters, transactionIdentifier: '0x1', success: true, transaction: { type: '0x2', from: address, to: address, chainId: '0x1', nonce: '0x0', gas: '0x5208', maxFeePerGas: '0x77359400', maxPriorityFeePerGas: '0x3b9aca00', value: '0x38d7ea4c68000', input: '0x', accessList: [] } }
-		const addressEntry = { type: 'contact', address, name: 'Public test account', chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true }
-		const visualizedPersonalSignRequest = { activeAddress: addressEntry, account: addressEntry, rpcNetwork: { name: 'Local fixture', chainId: '0x1', httpsRpc: record.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }, simulationMode: false, signerName: 'NoSignerDetected', quarantineReasons: [], quarantine: false, website: common.website, created: common.created, rawMessage: data, stringifiedMessage: data, messageIdentifier: '0x1', method, type: 'NotParsed', message: data }
-		const pending = PendingTransactionOrSignableMessage.parse(method === 'eth_sendTransaction' ? { ...common, type: 'Transaction', transactionIdentifier: '0x1', transactionToSimulate, popupVisualisation: { statusCode: 'failed', data: { activeAddress: address, simulationMode: false, simulationStartedTimestamp: '0x1', uniqueRequestIdentifier, transactionToSimulate, signerName: 'NoSignerDetected', error: { code: -32000, message: 'Walkthrough fixture', decodedErrorMessage: 'Walkthrough fixture' }, simulationState: { blockNumber: '0x1', simulationConductedTimestamp: '0x1' } } } } : { ...common, type: 'SignableMessage', visualizedPersonalSignRequest, signedMessageTransaction: { website: common.website, created: common.created, fakeSignedFor: address, activeAddress: address, originalRequestParameters, request: { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier, ...originalRequestParameters }, simulationMode: false, messageIdentifier: '0x1' } })
-		await background.evaluate(`browser.storage.local.set(${ JSON.stringify({ signingWalletBindings: SigningWalletBindings.serialize([binding]), directSigningRequestsV1: DirectSigningRecords.serialize([record]), pendingTransactionsAndMessages: [PendingTransactionOrSignableMessage.serialize(pending)], pendingTerminalReplies: [] }) })`)
+		// Seed only the pre-existing explanation/request boundary, in signing mode as the request was made; approval, signing, verification and submission use production handlers.
+		const pending = createDirectSigningFlowPendingRequest(record)
+		await background.evaluate(`browser.storage.local.set(${ JSON.stringify({ simulationMode: false, signingWalletBindings: SigningWalletBindings.serialize([binding]), directSigningRequestsV1: DirectSigningRecords.serialize([record]), pendingTransactionsAndMessages: [PendingTransactionOrSignableMessage.serialize(pending)], pendingTerminalReplies: [] }) })`)
 		const target = await createTargetPage(chrome.browserConnection, `${ origin }/html3/directSigningV3.html?id=${ record.id }`)
 		const page = await connectTarget(chrome.browserDebugPort, target); connections.push(page)
 		await page.send('Emulation.setDeviceMetricsOverride', { width: 1100, height: 1000, deviceScaleFactor: 1, mobile: false })
