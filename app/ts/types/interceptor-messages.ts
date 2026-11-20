@@ -749,7 +749,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	})
 })
 
-// Kept out of ChangeSettings so popupMessageProtocol can restrict the Safe Apps hosting allowlist to extension pages.
+// Separate from ChangeSettings because saving the allowlist needs no home-page refresh; popupMessageProtocol restricts both to extension pages.
 export type SetSafeAppsHostOrigins = funtypes.Static<typeof SetSafeAppsHostOrigins>
 export const SetSafeAppsHostOrigins = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_setSafeAppsHostOrigins'),

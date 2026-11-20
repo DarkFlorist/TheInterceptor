@@ -41,7 +41,8 @@ export const popupMessageProtocol = {
 	popup_refreshInterceptorAccessMetadata: { domain: 'website-access' },
 	popup_interceptorAccessChangeAddress: { domain: 'website-access' },
 	popup_interceptorAccessRefresh: { domain: 'website-access' },
-	popup_ChangeSettings: { domain: 'settings', legacyWireName: true },
+	// Its compatibility-mode fields change which scripts are registered on websites (including the Safe Apps host), so only the Settings page may send it.
+	popup_ChangeSettings: { domain: 'settings', legacyWireName: true, extensionPageSenderOnly: true },
 	popup_setSafeAppsHostOrigins: { domain: 'settings', extensionPageSenderOnly: true },
 	popup_openSettings: { domain: 'navigation' },
 	popup_import_settings: { domain: 'settings', legacyWireName: true, extensionPageSenderOnly: true },
