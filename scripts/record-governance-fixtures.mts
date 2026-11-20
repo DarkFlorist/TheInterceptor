@@ -1,10 +1,8 @@
-// Records the RPC exchanges of one governance execution preview into test/fixtures/governance/<name>.json for test/tests/governanceProposalExecution.test.ts to replay. Usage: bun ./scripts/record-governance-fixtures.mts <name> <rpcUrl> <governor> <proposalId> <description> [--stack=<name of an EXAMPLE_STACKS entry in test/governanceFixtures.ts>]. The safeExecution stack needs the Safe that test/governanceFixtures.ts names as EXAMPLE_SAFE deployed and funded on the node first. Proposals in a past state were recorded on an anvil fork of mainnet at the block their description names (anvil --fork-url <archive RPC> --fork-block-number <block>).
-import * as path from 'node:path'
-import * as url from 'node:url'
-import { promises as fs } from 'node:fs'
+// Records the RPC exchanges of one governance execution preview into test/fixtures/governance/<name>.json, with the values it shares with other fixtures in test/fixtures/governance-shared-values.json, for test/tests/governanceProposalExecution.test.ts to replay. Usage: bun ./scripts/record-governance-fixtures.mts <name> <rpcUrl> <governor> <proposalId> <description> [--stack=<name of an EXAMPLE_STACKS entry in test/governanceFixtures.ts>]. The safeExecution stack needs the Safe that test/governanceFixtures.ts names as EXAMPLE_SAFE deployed and funded on the node first. Proposals in a past state were recorded on an anvil fork of mainnet at the block their description names (anvil --fork-url <archive RPC> --fork-block-number <block>).
 import { simulateGovernanceProposalExecution } from '../app/ts/simulation/governanceProposalExecution.js'
 import { EthereumJSONRpcRequestHandler } from '../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { EXAMPLE_STACKS, createRecordingEthereumClientService, isExampleStackName, pinToLatestBlock, prepareExampleStack, type GovernanceFixture } from '../test/governanceFixtures.js'
+import { EXAMPLE_STACKS, createRecordingEthereumClientService, isExampleStackName, pinToLatestBlock, prepareExampleStack } from '../test/governanceFixtures.js'
+import { loadGovernanceFixtures, writeGovernanceFixtures, type GovernanceFixture } from '../test/governanceFixtureFiles.js'
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
 import { addressString } from '../app/ts/utils/bigint.js'
 
@@ -19,6 +17,6 @@ const preview = await simulateGovernanceProposalExecution(pinnedEthereum, await 
 console.log(preview.success ? `${ name }: simulated ${ preview.simulationState.simulatedBlocks[0]?.simulatedTransactions.length ?? 0 } execution transactions` : `${ name }: ${ preview.errorMessage }`)
 
 const fixture: GovernanceFixture = { description, governor, proposalId, ...stackName === undefined ? {} : { stack: stackName }, ...stackName === 'safeExecution' ? { safeExecutionExecutor: addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR) } : {}, exchanges: exchanges() }
-const fixturePath = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..', 'test', 'fixtures', 'governance', `${ name }.json`)
-await fs.mkdir(path.dirname(fixturePath), { recursive: true })
-await fs.writeFile(fixturePath, `${ JSON.stringify(fixture) }\n`)
+const fixtures = await loadGovernanceFixtures()
+fixtures.set(name, fixture)
+await writeGovernanceFixtures(fixtures)

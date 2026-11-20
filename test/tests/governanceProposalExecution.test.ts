@@ -16,10 +16,8 @@ import { EthereumBlockHeaderWithTransactionHashes } from '../../app/ts/types/wir
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { toSimulationStateInputMinimalData, type SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../../app/ts/utils/constants.js'
-import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, type GovernanceFixture, isExampleStackName, pinToLatestBlock, prepareExampleStack } from '../governanceFixtures.js'
-
-// Each fixture is the RPC conversation of one preview, recorded from a real node by scripts/record-governance-fixtures.mts; its description names the chain state it was recorded on.
-const loadFixture = async (name: string): Promise<GovernanceFixture> => await Bun.file(new URL(`../fixtures/governance/${ name }.json`, import.meta.url)).json()
+import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, isExampleStackName, pinToLatestBlock, prepareExampleStack } from '../governanceFixtures.js'
+import { loadGovernanceFixture } from '../governanceFixtureFiles.js'
 
 // A block header with placeholder fields, for tests that need a whole header.
 const EXAMPLE_HEADER = {
@@ -79,8 +77,8 @@ const assertBoundedLogSearch = (requests: readonly EthereumJsonRpcRequest[]) => 
 	}
 }
 
-const recordedGasLimit = (fixture: GovernanceFixture) => {
-	const latestBlock = fixture.exchanges.find((exchange) => JSON.stringify(exchange.request).includes('"latest"'))?.result
+const recordedGasLimit = (resultOf: (request: EthereumJsonRpcRequest) => unknown) => {
+	const latestBlock = resultOf({ method: 'eth_getBlockByNumber', params: ['latest', true] })
 	if (typeof latestBlock !== 'object' || latestBlock === null || !('gasLimit' in latestBlock) || typeof latestBlock.gasLimit !== 'string') throw new Error('Expected the recorded block gas limit')
 	return BigInt(latestBlock.gasLimit)
 }
@@ -100,7 +98,7 @@ const assertStateReadsNameTheBlockHash = (requests: readonly EthereumJsonRpcRequ
 
 // Replays a fixture as the governance handler runs a preview: pinned to the latest block, the example stack it was recorded with prepared on that block, then the preview. Checks the override rule, the block hash of every state read and the log search bound on every request it sent.
 const previewFixture = async (name: string, options: Parameters<typeof createReplayingEthereumClientService>[1] = {}) => {
-	const fixture = await loadFixture(name)
+	const fixture = await loadGovernanceFixture(name)
 	if (fixture.stack !== undefined && !isExampleStackName(fixture.stack)) throw new Error(`Unknown stack ${ fixture.stack }`)
 	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture, options)
 	const pinnedEthereum = await pinToLatestBlock(ethereum)
@@ -219,7 +217,7 @@ describe('governance proposal execution preview of real governors', () => {
 	})
 
 	test('works on the block it started with when the chain moves on to a block with a lower gas limit', async () => {
-		const fixture = await loadFixture('uniswap-bravo-active')
+		const fixture = await loadGovernanceFixture('uniswap-bravo-active')
 		const answerWithLaterLatestBlock = (request: EthereumJsonRpcRequest, recordedResult: () => unknown, earlierRequests: readonly EthereumJsonRpcRequest[]) => {
 			const isLatestBlockRead = (candidate: EthereumJsonRpcRequest) => candidate.method === 'eth_getBlockByNumber' && candidate.params[0] === 'latest'
 			const recorded = recordedResult()
@@ -462,9 +460,9 @@ describe('governance proposal execution through a real Compound Timelock in one 
 	})
 
 	test('limits a transaction by the planned block\'s time, so an execution after Osaka gets the EIP-7825 limit though the parent block was before it', async () => {
-		const { requests, fixture } = await executionOf('compound-timelock-executes-after-osaka')
+		const { requests, resultOf } = await executionOf('compound-timelock-executes-after-osaka')
 		const [queueBlock, executionBlock] = outcomeSimulation(requests, 2).blockStateCalls
-		const parentGasLimit = recordedGasLimit(fixture)
+		const parentGasLimit = recordedGasLimit(resultOf)
 		const queueTime = queueBlock?.blockOverrides?.time
 		const executionTime = executionBlock?.blockOverrides?.time
 		if (queueTime === undefined || executionTime === undefined) throw new Error('Expected block times')

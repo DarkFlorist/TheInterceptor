@@ -10,29 +10,27 @@ import { mockSignTransaction } from '../app/ts/simulation/services/simulationTra
 import { DEFAULT_BLOCK_MANIPULATION } from '../app/ts/config/defaults.js'
 import { prepareSafeExecutionSimulationInput, SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../app/ts/safe/safeExecutionSimulation.js'
 import { getSimulatedBlockBaseFeePerGas } from '../app/ts/simulation/services/simulationBlockParameters.js'
-
-// One JSON-RPC request the governance preview sent to a node, in its wire form, and the node's result.
-export type RecordedExchange = { readonly request: unknown, readonly result: unknown }
-// safeExecutionExecutor is the executor account prepareSafeExecutionSimulationInput used when the fixture was recorded. It is random for each session, so a replay maps the session's executor to it.
-export type GovernanceFixture = { readonly description: string, readonly governor: string, readonly proposalId: string, readonly stack?: string, readonly safeExecutionExecutor?: string, readonly exchanges: readonly RecordedExchange[] }
+import { type GovernanceFixture, type RecordedExchange, sha256Digest } from './governanceFixtureFiles.js'
 
 const FIXTURE_RPC_URL = 'https://recorded.governance.fixture.invalid'
 
+// The wire form of a request, whose SHA-256 digest names its recorded result.
 const requestKey = (request: EthereumJsonRpcRequest) => JSON.stringify(serialize(EthereumJsonRpcRequest, request))
 
 const createEthereumClientService = (requestHandler: IEthereumJSONRpcRequestHandler) => new EthereumClientService(requestHandler, async () => undefined, async () => undefined, { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: requestHandler.rpcUrl, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true })
 
 // Answers each request with the result a real node gave to the same request when the fixture was recorded, and keeps every request so a test can inspect what was sent. resultOf gives the recorded result of a request, and answer lets a test change what the chain answers, for example a later latest block or another block at a height.
 export const createReplayingEthereumClientService = (fixture: GovernanceFixture, options: { readonly answer?: (request: EthereumJsonRpcRequest, recordedResult: () => unknown, earlierRequests: readonly EthereumJsonRpcRequest[]) => unknown } = {}) => {
-	const results = new Map(fixture.exchanges.map((exchange) => [JSON.stringify(exchange.request), exchange.result]))
+	const results = new Map(fixture.exchanges.map((exchange) => [exchange.requestDigest, exchange.result]))
 	const recordedExecutor = fixture.safeExecutionExecutor?.slice(2).toLowerCase()
 	const sessionExecutor = addressString(SAFE_EXECUTION_SIMULATION_EXECUTOR).slice(2)
 	const keyOf = (request: EthereumJsonRpcRequest) => recordedExecutor === undefined ? requestKey(request) : requestKey(request).replaceAll(sessionExecutor, recordedExecutor)
 	const requests: EthereumJsonRpcRequest[] = []
 	const resultOf = (request: EthereumJsonRpcRequest) => {
 		const key = keyOf(request)
-		if (!results.has(key)) throw new Error(`The fixture "${ fixture.description }" has no recorded result for ${ key.slice(0, 300) }`)
-		return results.get(key)
+		const digest = sha256Digest(key)
+		if (!results.has(digest)) throw new Error(`The fixture "${ fixture.description }" has no recorded result for ${ key.slice(0, 300) }`)
+		return results.get(digest)
 	}
 	const requestHandler: IEthereumJSONRpcRequestHandler = {
 		rpcUrl: FIXTURE_RPC_URL,
@@ -60,7 +58,8 @@ export const createRecordingEthereumClientService = (forwardTo: IEthereumJSONRpc
 		clearCache: forwardTo.clearCache,
 		jsonRpcRequest: async (request: EthereumJsonRpcRequest, requestAbortController?: AbortController) => {
 			const result = await forwardTo.jsonRpcRequest(request, requestAbortController)
-			exchanges.set(requestKey(request), { request: serialize(EthereumJsonRpcRequest, request), result: withoutBlockTransactions(request, result) })
+			const requestDigest = sha256Digest(requestKey(request))
+			exchanges.set(requestDigest, { method: request.method, requestDigest, result: withoutBlockTransactions(request, result) })
 			return result
 		},
 	}
