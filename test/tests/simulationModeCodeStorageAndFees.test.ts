@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { isAbiDataDecodeError } from '../../app/ts/utils/ethereumPrimitives.js'
 import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
@@ -12,7 +12,8 @@ import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from
 import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, SHA256_PRECOMPILE_ADDRESS, testBytes32 } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { requestHandler, ethereum } = createSimulationModeTestContext()
+const { requestHandler, ethereum, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 
 describe('SimulationModeEthereumClientService', () => {
 	test('getSimulatedCodeFromInput installs the helper override and omits gas', async () => {

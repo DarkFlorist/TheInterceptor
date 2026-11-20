@@ -5,7 +5,6 @@
 //   requestHandler.balance = 50n                                              // tests tune the mock node through its mutable fields
 //   assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 // Before every test the context restores the mock node's answers and empties its recorders, so no test depends on what an earlier test in the file changed.
-import { beforeEach } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
@@ -275,7 +274,6 @@ type ExecutionSimulationStateForTest = Parameters<typeof toResolvedExecutionSimu
 // Creates the mock node, an EthereumClientService that talks to it, and shorthand readers bound to that service.
 export function createSimulationModeTestContext() {
 	const requestHandler = createMockSimulationModeRequestHandler()
-	beforeEach(() => resetMockSimulationModeRequestHandler(requestHandler))
 	const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
 	const createEthereumWithThrowingSimulationPreparation = () => {
 		let prepareCallCount = 0
@@ -299,6 +297,7 @@ export function createSimulationModeTestContext() {
 	const getReceiptFromState = async (simulationState: ExecutionSimulationStateForTest, hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
 	const getLogsFromState = async (simulationState: ExecutionSimulationStateForTest, filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
 	return {
+		reset: () => resetMockSimulationModeRequestHandler(requestHandler),
 		requestHandler,
 		ethereum,
 		createEthereumWithThrowingSimulationPreparation,
