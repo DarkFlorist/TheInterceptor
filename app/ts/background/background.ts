@@ -1,7 +1,8 @@
 import { resolveSigningRequest } from './signingRequestResolver.js'
+import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
-import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
+import type { InpageScriptRequest, InterceptedRequestForward, RPCReply, Settings } from '../types/interceptor-messages.js'
 import { getTabState } from './storageVariables.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
@@ -9,8 +10,9 @@ import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBala
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
+import { withSuppressedUnscopedConnectionEventsForSocket } from './websiteConnectionEvents.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
@@ -487,36 +489,71 @@ export async function runAfterReplyDelivered(afterReplyDelivered: AfterReplyDeli
 type ContentScriptMessageReply = { readonly replyDelivered: boolean | undefined, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
 const replyDeliveredWithoutFollowUp = (replyDelivered: boolean | undefined): ContentScriptMessageReply => ({ replyDelivered, afterReplyDelivered: undefined })
 
+// The first route plus the re-routes allowed when simulation mode keeps being enabled before the signer forward is posted.
+const MAX_REQUEST_ROUTING_ATTEMPTS = 3
+
+type RequestRouting =
+	| { readonly kind: 'answeredAtAdmission', readonly reply: InterceptedRequestForward }
+	| { readonly kind: 'resolved', readonly resolved: RPCReply, readonly afterReplyDelivered: AfterReplyDelivered | undefined }
+
+// One routing decision on the given settings. A re-route repeats all of it because every step depends on the mode: the Safe signing state, Safe Apps admission and rpcContext, the simulation overlay, and the services handleRPCRequest selects.
+async function routeRequest(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<RequestRouting> {
+	const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
+	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+	const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+	let rpcContext: RpcRequestContext = { request }
+	if (request.method === 'safe_apps_request') {
+		const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
+		if (admission.kind === 'reply') return { kind: 'answeredAtAdmission', reply: admission.reply }
+		rpcContext = admission.context
+	}
+	const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
+	// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
+	const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
+	const walletSelectedSafeSigner = safeSigningMode ? activeAddress.type === 'safe' ? activeAddress.safeSigningSignerAddress ?? selectedWalletAccount : selectedWalletAccount : undefined
+	const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+	return { kind: 'resolved', resolved, afterReplyDelivered }
+}
+
+// Website access itself does not change with the mode, but the mode selects the active address and access is granted per address. So a re-route keeps the earlier access decision only for the address that decision covered; any other address needs its own stored grant. Undefined means the website has no address to be routed on.
+async function getActiveAddressForReroute(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, verifiedActiveAddress: AddressBookEntry, settings: Settings) {
+	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket.tabId)
+	if (activeAddress === undefined || activeAddress.address === verifiedActiveAddress.address) return activeAddress
+	return getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, activeAddress) === 'hasAccess' ? activeAddress : undefined
+}
+
 // Sends the request's only reply, turning handling failures into an error reply. Follow-up work is returned instead of run, so its failures cannot reach this catch and send a second reply.
-async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
+async function replyToContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddressInitiallyVerified: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<ContentScriptMessageReply> {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const settings = await getSettings()
-		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
-		let rpcContext: RpcRequestContext = { request }
-		if (request.method === 'safe_apps_request') {
-			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
-			if (admission.kind === 'reply') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, admission.reply))
-			rpcContext = admission.context
+		const refuseModeChange = () => replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...requestWithDefinedParams, ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST }))
+		for (let routingAttempt = 1; routingAttempt <= MAX_REQUEST_ROUTING_ATTEMPTS; routingAttempt++) {
+			const simulationModeGuard = captureSimulationModeGuard()
+			const settings = await getSettings()
+			const activeAddress = routingAttempt === 1 ? activeAddressInitiallyVerified : await getActiveAddressForReroute(websiteTabConnections, request, website, activeAddressInitiallyVerified, settings)
+			if (activeAddress === undefined) return replyDeliveredWithoutFollowUp(refuseAccess(websiteTabConnections, request))
+			const routing = await routeRequest(simulationServicesOwner, websiteTabConnections, request, website, activeAddress, settings, publishRpcConnectionStatus)
+			if (routing.kind === 'answeredAtAdmission') return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, routing.reply))
+			const { resolved, afterReplyDelivered } = routing
+			if (resolved.type === 'forwardToSigner') {
+				const forward = simulationModeGuard.postSignerForwardIfAllowed(() => replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }))
+				if (forward.posted) return { replyDelivered: forward.result, afterReplyDelivered }
+				if (!await simulationModeGuard.waitForPendingWrites()) return refuseModeChange()
+				continue
+			}
+			// Permission persistence carries the owner through any follow-up access prompts.
+			await persistApprovedAccountsForAccountRequest(
+				simulationServicesOwner,
+				websiteTabConnections,
+				request,
+				website,
+				resolved,
+				activeAddress.address,
+			)
+			replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
+			return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
 		}
-		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
-		// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
-		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
-		const walletSelectedSafeSigner = safeSigningMode ? activeAddress.type === 'safe' ? activeAddress.safeSigningSignerAddress ?? selectedWalletAccount : selectedWalletAccount : undefined
-		const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
-		// Permission persistence carries the owner through any follow-up access prompts.
-		await persistApprovedAccountsForAccountRequest(
-			simulationServicesOwner,
-			websiteTabConnections,
-			request,
-			website,
-			resolved,
-			activeAddress.address,
-		)
-		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
-		return { replyDelivered: replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved }), afterReplyDelivered }
+		return refuseModeChange()
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
 			return replyDeliveredWithoutFollowUp(replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN }))

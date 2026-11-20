@@ -1229,6 +1229,8 @@ for (const walletChain of ['reviewed', 'other'] as const) test(`a reviewed trans
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const binding = await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
 	if (binding === undefined) throw new Error('Missing browser wallet binding')
+	// The request was made in signing mode, and the Interceptor is still in it, so only the wallet's chain decides whether it is forwarded.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const reviewedChainId = simulator.ethereum.getChainId()
 	const walletChainId = walletChain === 'reviewed' ? reviewedChainId : reviewedChainId + 1n
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (previous) => ({ ...previous, signerName: 'MetaMask', signerProvider: undefined, signerConnected: true, signerAccounts: [activeAddress], activeSigningAddress: activeAddress, signerChain: walletChainId }))

@@ -1,8 +1,11 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getReviewedResultId, stringifyCanonically } from '../../app/ts/background/reviewedResult.js'
 import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTestOwnerPrivateKey, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+
+describe('reviewed send-anyway consent in signing mode', () => {
+	beforeEach(async () => await modules.changeSimulationMode({ simulationMode: false }))
 
 const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
 const reverted: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
@@ -333,6 +336,27 @@ test('opens direct (hardware) wallet signing only for the reviewed result and wi
 	assert.equal((await getStoredRequest()).approvalStatus.status, 'WaitingForSigner', 'the accept claimed the request before opening direct signing')
 })
 
+test('does not open direct (hardware) wallet signing for a signing-mode request once simulation mode is enabled', async () => {
+	const { secp256k1 } = await import('@noble/curves/secp256k1')
+	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
+	const { readDirectSigningRecords } = await import('../../app/ts/signing/directSigningStore.js')
+	const { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } = await import('../../app/ts/utils/constants.js')
+	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
+	await saveAddressSigningWallet(safeTestOwnerAddress, { type: 'ledger', label: 'Owner Ledger', address: safeTestOwnerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Ledger owner')
+	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', safeTestOwnerAddress] as const }
+	const request = { ...signRequest, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest }, false, safeTestOwnerAddress, pendingTransaction.website, websiteTabConnections)
+	assert.equal((await getStoredRequest()).signingWalletBinding?.wallet.type, 'ledger')
+	await modules.changeSimulationMode({ simulationMode: true })
+
+	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation()), false)
+	assert.deepEqual(await readDirectSigningRecords(), [])
+	assert.equal(wasForwardedToSigner(), false)
+	assert.deepEqual((await getStoredRequest()).approvalStatus, { status: 'SignerError', ...ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error })
+})
+
 test('refuses a Safe proposal accept when the signer refresh during resolution changes the reviewed owner', async () => {
 	const reviewedOwner = recipientAddress
 	const selectedOwner = safeTestOwnerAddress
@@ -389,4 +413,6 @@ test('refuses a Safe co-signing accept when the signer refresh during resolution
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
 	assert.equal(getForwardedSigner(), addressString(selectedOwner))
+})
+
 })

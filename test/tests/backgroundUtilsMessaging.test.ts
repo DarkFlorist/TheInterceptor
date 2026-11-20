@@ -239,15 +239,10 @@ describe('backgroundUtils messaging', () => {
 	test('keeps popup request parsing at the dispatcher boundary', async () => {
 		installBrowserMock('unused')
 		const { popupMessageHandler } = await loadModules()
-		const [{ EthereumClientService }, { TokenPriceService }] = await Promise.all([
-			import('../../app/ts/simulation/services/EthereumClientService.js'),
-			import('../../app/ts/simulation/services/priceEstimator.js'),
-		])
-		const ethereum: import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService = Object.create(EthereumClientService.prototype)
-		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await withSilencedConsole(async () => await popupMessageHandler(
 			new Map(),
-			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
+			createTestSimulationServicesOwner(services),
 			{ method: 'not_a_popup_method' },
 			{
 				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,

@@ -236,6 +236,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		const currentExtensionPort = extensionPort
 		if (currentExtensionPort === undefined) return
 		try {
+			// Non-module counterpart of INTERCEPTOR_DIAGNOSTIC_REQUEST in utils/requests.ts; contentScriptReconnect.test.ts verifies the emitted identity.
 			currentExtensionPort.postMessage({ data: { interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false, requestId: -1, method: 'InterceptorError', params: [diagnostics] } })
 		} catch(reportingError: unknown) {
 			if (reportingError instanceof Error && isIgnorableContentScriptPortError(reportingError)) {

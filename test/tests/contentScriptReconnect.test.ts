@@ -3,6 +3,7 @@ import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
 import { getManifestV2DocumentStartScriptPath } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { INTERCEPTOR_DIAGNOSTIC_REQUEST } from '../../app/ts/utils/requests.js'
 import { generateInpageArtifacts } from '../../scripts/inline-inpage-document-start.mts'
 
 type ContentScriptMockState = {
@@ -362,9 +363,9 @@ async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: Co
 		const replayHandling = postedMessages.slice(2).map((message) => {
 			const requestId = getPostedBridgeRequestId(message)
 			if (requestId === undefined) throw new Error('Missing replayed bridge request ID')
-			return acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'replacement-socket', requestId, () => undefined)
+			return acknowledgeAndTrackBridgeRequest(latestReceivedRequestIds, 'replacement-socket', { requestId, method: 'example_pendingMethod' }, () => undefined)
 		})
-		assert.deepEqual(replayHandling, [true, true])
+		assert.deepEqual(replayHandling, ['handle', 'handle'])
 		channel.port1.close()
 		channel.port2.close()
 	})
@@ -551,6 +552,19 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 			assert.equal(getConnectionCount(), 1)
 		}, { configurable: false, value: legacyListener })
 	})
+	for (const source of ['standalone-listener', 'manifest-v2-document-start'] as const) {
+		test(`${ source } emits the diagnostic identity owned by the request protocol`, async () => {
+			await withContentScriptMock(source, async ({ backgroundMessageListeners, postedMessages }) => {
+				backgroundMessageListeners[0]?.({ malformed: true })
+				const [posted] = postedMessages
+				assert.ok(typeof posted === 'object' && posted !== undefined && posted !== null && 'data' in posted)
+				const data = posted.data
+				assert.ok(typeof data === 'object' && data !== undefined && data !== null && 'requestId' in data && 'method' in data)
+				assert.deepEqual({ requestId: data.requestId, method: data.method }, INTERCEPTOR_DIAGNOSTIC_REQUEST)
+			})
+		})
+	}
+
 } else {
 	test('content script reconnect scenarios pass in an isolated browser-global harness', async () => {
 		const child = Bun.spawn([process.execPath, 'test', import.meta.path], {
