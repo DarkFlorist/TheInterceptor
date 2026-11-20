@@ -7,7 +7,7 @@ import { flushMicrotasks } from '../harness/async.js'
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import { readProperty } from '../harness/assertions.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
 
@@ -19,7 +19,7 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 
 describe('background Safe Apps compatibility and website lifecycle observers', () => {
 	test('shared top-frame identity accepts MV2 and top-frame ports and rejects child frames', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { isTopFramePort } = await loadModules()
 		for (const frameId of [undefined, 0, 1, 9]) {
 			assert.equal(isTopFramePort(createPort(1, undefined, frameId).port), frameId === undefined || frameId === 0)
@@ -27,7 +27,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 	})
 
 	test('disabled Safe Apps has no lifecycle work, reads, or port traffic', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { initializeSafeAppsCompatibility, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -50,7 +50,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 	})
 
 	test('Safe Apps settings activate and dispose the coordinator for existing ports', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -78,7 +78,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 	})
 
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -127,7 +127,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 	})
 
 	test('ordinary signer reload restores EOA consent and requests accounts without a lifecycle observer', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState, getSettings } = await loadModules()
 		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
 		const websiteOrigin = 'https://ordinary.example.test'
@@ -154,7 +154,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 	})
 
 	test('enables Safe compatibility only while an owned configured Safe is active', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			setSafeAppsCompatibilityMode,
@@ -223,7 +223,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 		{ accountKind: 'owner with compatibility disabled', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: true, featureEnabled: false },
 	]) {
 		test(`waits for fresh ${ accountKind } account discovery before publishing Safe compatibility`, async () => {
-			installBrowserMock()
+			installBackgroundBrowserMockForTest()
 			const {
 				changeSimulationMode,
 				getTabState,
@@ -311,7 +311,7 @@ describe('background Safe Apps compatibility and website lifecycle observers', (
 	}
 
 	test('does not let an older async Safe compatibility enable overwrite a newer disable', async () => {
-		const browserMock = installBrowserMock()
+		const browserMock = installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			setSafeAppsCompatibilityMode,

@@ -1,4 +1,4 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { createSimulationCallParams, createSimulationState, getSimulatedCode, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, simulateEstimateGas, simulateEstimateGasFromInput, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { PASSTHROUGH_STATE, toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
@@ -7,7 +7,8 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, exampleTransaction, rpcNetwork } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { requestHandler, ethereum } = createSimulationModeTestContext()
+const { requestHandler, ethereum, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 const emptySimulationInput = toResolvedSimulationInput([])
 
 describe('SimulationModeEthereumClientService', () => {
