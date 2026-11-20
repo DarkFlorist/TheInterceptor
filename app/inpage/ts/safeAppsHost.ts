@@ -2,9 +2,13 @@ import { createSafeAppsErrorResponse, createSafeAppsCancellation, isSafeAppsDisc
 import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
 import { createSafeAppsTransport } from './safeAppsTransport.js'
 
-// The emulated parent and message source let any script on an explicitly selected HTTP(S) origin use the Safe Apps API; background RPC admission still checks website access and signing mode for each request.
+// Settings accepts only HTTP(S) origins (parseSafeAppsHostOrigin), so an opaque, file or extension origin means the host was injected outside its registration.
+const isSelectableSafeAppsHostOrigin = (origin: string) => origin.startsWith('https://') || origin.startsWith('http://')
+
+// Accepted trade-off: on a selected origin the host deliberately replaces window.parent for the whole page, so framing checks such as self !== top, parent-based postMessage routing and analytics see an apparent parent frame. Chrome registers only files, so this script cannot embed the user's Settings selection; safeAppsHostRegistration.ts registers it only for selected origins, safeAppsHost.test.ts pins that it has no other injection path, and the guard below refuses any origin Settings could not have selected. The emulated parent lets any script on that origin use the Safe Apps API; background RPC admission still checks website access and signing mode for each request.
 export function installSafeAppsHost() {
 	const windowObject = window
+	if (!isSelectableSafeAppsHostOrigin(windowObject.location.origin)) return undefined
 	// Leave existing parent emulation intact if this bootstrap is loaded again.
 	if (windowObject.top !== windowObject || windowObject.parent !== windowObject) return undefined
 	const container = document.documentElement

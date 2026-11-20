@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import * as fs from 'node:fs'
 import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { safe } from '@wagmi/connectors/safe'
 import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
@@ -42,6 +43,41 @@ test('shared host leaves existing embedded Safe apps untouched', () => {
 		assert.equal(frameWasAppended(), false)
 		assert.equal(Reflect.get(fakeWindow, 'parent'), parent)
 	} finally { restoreGlobals() }
+})
+
+test('shared host leaves origins that Settings cannot select untouched', () => {
+	for (const origin of ['null', 'file://', 'chrome-extension://interceptor-id', 'data:']) {
+		const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness({ origin })
+		const parent = Reflect.get(fakeWindow, 'parent')
+		try {
+			assert.equal(installSafeAppsHost(), undefined)
+			assert.deepEqual({ origin, frameAppended: frameWasAppended(), parentUnchanged: Reflect.get(fakeWindow, 'parent') === parent }, { origin, frameAppended: false, parentUnchanged: true })
+		} finally { restoreGlobals() }
+	}
+	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness({ origin: 'http://localhost:3000' })
+	const parent = Reflect.get(fakeWindow, 'parent')
+	try {
+		installSafeAppsHost()?.dispose()
+		assert.equal(Reflect.get(fakeWindow, 'parent'), parent)
+		const host = installSafeAppsHost()
+		assert.equal(frameWasAppended(), true)
+		assert.notEqual(Reflect.get(fakeWindow, 'parent'), parent)
+		host?.dispose()
+	} finally { restoreGlobals() }
+})
+
+// The host cannot read the Settings selection itself, so its only injection path must be the registration built from the selected origins.
+test('the Safe Apps host bootstrap is injected only by the selected-origin registration', () => {
+	const sourceFiles = [...['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'build/**/*.mts', 'scripts/**/*.mts'].flatMap((pattern) => [...new Bun.Glob(pattern).scanSync('.')]), 'app/manifestV2.json', 'app/manifestV3.json']
+	const referencingFiles = sourceFiles.filter((file) => {
+		const source = fs.readFileSync(file, 'utf8')
+		return source.includes('safeAppsHostBootstrap') || source.includes('INPAGE_SCRIPTS.safeAppsHost')
+	}).sort()
+	assert.deepEqual(referencingFiles, ['app/ts/background/safeAppsHostRegistration.ts', 'app/ts/config/injectedScripts.ts'])
+	const registrationSource = fs.readFileSync('app/ts/background/safeAppsHostRegistration.ts', 'utf8')
+	assert.equal(registrationSource.match(/INPAGE_SCRIPTS\.safeAppsHost\b/g)?.length, 1)
+	assert.match(registrationSource, /matches: hosting\.matches,/)
+	assert.match(registrationSource, /matches: getSafeAppsHostMatchPatterns\(origins\)/)
 })
 
 test('hosting accepts canonical exact HTTP(S) origins and rejects malformed or overly broad configuration', () => {
