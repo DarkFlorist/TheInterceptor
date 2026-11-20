@@ -5,7 +5,6 @@
 //   requestHandler.balance = 50n                                              // tests tune the mock node through its mutable fields
 //   assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, undefined)
 // Before every test the context restores the mock node's answers and empties its recorders, so no test depends on what an earlier test in the file changed.
-import { beforeEach } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
@@ -32,7 +31,7 @@ const getCodeAbi = [{
 }] as const
 const getCodeSelector = encodeFunctionCall(getCodeAbi, 'at', ['0x0000000000000000000000000000000000000000']).slice(0, 10)
 const GET_CODE_HELPER_ADDRESS = 0x1ce438391307f908756fefe0fe220c0f0d51508an
-const SHA256_PRECOMPILE_ADDRESS = 0x2n
+export const SHA256_PRECOMPILE_ADDRESS = 0x2n
 const activePrecompileAddresses = new Set([SHA256_PRECOMPILE_ADDRESS])
 
 export function testBytes32(suffix: string) {
@@ -42,7 +41,7 @@ export function testBytes32(suffix: string) {
 export const zeroBytes256 = `0x${'0'.repeat(512)}`
 
 export const blockNumber = 8443561n
-const rpcNetwork = {
+export const rpcNetwork = {
 	name: 'Goerli',
 	chainId: 5n,
 	httpsRpc: 'https://rpc.dark.florist/flipcardtrustone',
@@ -275,7 +274,6 @@ type ExecutionSimulationStateForTest = Parameters<typeof toResolvedExecutionSimu
 // Creates the mock node, an EthereumClientService that talks to it, and shorthand readers bound to that service.
 export function createSimulationModeTestContext() {
 	const requestHandler = createMockSimulationModeRequestHandler()
-	beforeEach(() => resetMockSimulationModeRequestHandler(requestHandler))
 	const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, rpcNetwork)
 	const createEthereumWithThrowingSimulationPreparation = () => {
 		let prepareCallCount = 0
@@ -298,6 +296,7 @@ export function createSimulationModeTestContext() {
 	const getReceiptFromState = async (simulationState: ExecutionSimulationStateForTest, hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
 	const getLogsFromState = async (simulationState: ExecutionSimulationStateForTest, filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
 	return {
+		reset: () => resetMockSimulationModeRequestHandler(requestHandler),
 		requestHandler,
 		ethereum,
 		createEthereumWithThrowingSimulationPreparation,
