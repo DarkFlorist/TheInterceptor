@@ -174,3 +174,14 @@ test('host answers malformed SDK requests from its own page without forwarding t
 		])
 	} finally { restoreGlobals() }
 })
+
+
+test('Safe SDK test dependencies cannot enter production application or build imports', async () => {
+	const projectRoot = new URL('../..', import.meta.url).pathname
+	const testOnlyImports = /\b(?:from\s*|import\s*(?:\(\s*)?|require\s*\(\s*)['"](@safe-global\/safe-apps-(?:sdk|provider)|@wagmi\/connectors|viem|ox)(?:\/[^'"]*)?['"]/u
+	for (const pattern of ['app/ts/**/*.ts', 'app/ts/**/*.tsx', 'app/inpage/ts/**/*.ts', 'build/*.mts']) {
+		for await (const file of new Bun.Glob(pattern).scan({ cwd: projectRoot, absolute: true })) {
+			assert.equal(testOnlyImports.test(await Bun.file(file).text()), false, `Test-only SDK dependency imported by ${ file }`)
+		}
+	}
+})

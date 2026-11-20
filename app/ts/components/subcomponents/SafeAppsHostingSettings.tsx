@@ -31,7 +31,7 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 	}
 	return <div class = 'grid' style = '--gap-y: 0.5rem; --btn-text-size: 0.9rem; padding-block: 0.5rem'>
 		<p class = 'paragraph'>Connect as a Safe App on these websites. Select a Safe in signing mode, open the website, then authorize and reload it before using its Safe connector. Site discovery deadlines remain unchanged and short probes may still time out after approval.</p>
-		<p class = 'paragraph'>Supports apps using parent-based Safe SDK discovery. Apps requiring a real iframe or a trusted Safe parent origin need additional support.</p>
+		<p class = 'paragraph'>Hosting changes window.parent for every script on each selected website until it is reloaded without hosting. Disable hosting for websites that depend on real framing. Supports apps using parent-based Safe SDK discovery. Apps requiring a real iframe or a trusted Safe parent origin need additional support.</p>
 		{ origins.length > 0 ? <ul class = 'grid' style = '--gap-y: 0.5rem'>
 			{ origins.map((origin) => <SafeAppsHostRow key = { origin } origin = { origin } enabled = { enabled } removeDisabled = { !enabled || save.value.state === 'pending' } onRemove = { () => {
 				savingAction.value = 'remove'

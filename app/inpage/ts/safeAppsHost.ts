@@ -93,9 +93,12 @@ export function installSafeAppsHost() {
 				deliver(createSafeAppsErrorResponse(request, 'Safe Apps hosting was disconnected.'))
 			}
 			// The SDK checks response.source against the current parent, so reject before restoring it. The real parent is restored even over a later page replacement, which only ever saw the emulation; Reflect leaves a parent the page made non-configurable in place instead of throwing during pagehide.
-			if (originalParent === undefined) Reflect.deleteProperty(windowObject, 'parent')
-			else Reflect.defineProperty(windowObject, 'parent', originalParent)
-			Reflect.deleteProperty(windowObject, SAFE_APPS_HOST_MARKER)
+			const restored = originalParent === undefined
+				? Reflect.deleteProperty(windowObject, 'parent')
+				: Reflect.defineProperty(windowObject, 'parent', originalParent)
+			if (!restored) console.warn('Interceptor: Safe Apps hosting stopped, but this page made window.parent non-configurable. Reload the page to restore normal framing.')
+			// Keep the marker truthful when the page froze the emulated parent itself.
+			if (windowObject.parent !== apparentParent) Reflect.deleteProperty(windowObject, SAFE_APPS_HOST_MARKER)
 			frame.remove()
 		},
 	}

@@ -5,6 +5,9 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 	const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	// The host announces its emulated parent; record the line instead of printing it in every test.
 	const previousConsoleInfo = console.info
+	const previousConsoleWarn = console.warn
+	const warningLogs: string[] = []
+	console.warn = (...values: unknown[]) => { warningLogs.push(values.map(String).join(' ')) }
 	const infoLogs: string[] = []
 	console.info = (...values: unknown[]) => { infoLogs.push(values.map(String).join(' ')) }
 	const fakeWindow = new EventTarget()
@@ -79,9 +82,11 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 		fakeWindow, framePort, origin, emitMessage, emitParentMessage, activeTimeouts, fireTimeouts, postMessage,
 		frameWasAppended: () => appended,
 		infoLogs,
+		warningLogs,
 		restoreGlobals: () => {
 			disposed = true
 			console.info = previousConsoleInfo
+			console.warn = previousConsoleWarn
 			framePort.close()
 			if (previousWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
 			else Object.defineProperty(globalThis, 'window', previousWindow)

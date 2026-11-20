@@ -322,6 +322,20 @@ test('host disposal leaves a parent the page made non-configurable in place with
 	} finally { restoreGlobals() }
 })
 
+test('a frozen emulated parent stays marked and reports incomplete restoration', () => {
+	const { fakeWindow, warningLogs, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const emulatedParent = Reflect.get(fakeWindow, 'parent')
+		Object.defineProperty(fakeWindow, 'parent', { configurable: false, value: emulatedParent })
+		host.dispose()
+		assert.equal(Reflect.get(fakeWindow, 'parent'), emulatedParent)
+		assert.equal(Reflect.get(fakeWindow, SAFE_APPS_HOST_MARKER), true)
+		assert.deepEqual(warningLogs, ['Interceptor: Safe Apps hosting stopped, but this page made window.parent non-configurable. Reload the page to restore normal framing.'])
+	} finally { restoreGlobals() }
+})
+
 test('page lifetime hosting disposes on pagehide and hosts again only when the back/forward cache restores the page', () => {
 	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness()
 	const originalParent = Reflect.get(fakeWindow, 'parent')
