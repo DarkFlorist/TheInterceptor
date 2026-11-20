@@ -15,11 +15,11 @@ const updateConnectionStatusRetry = async (ethereumClientService: EthereumClient
 
 export const makeSureInterceptorIsNotSleeping = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
 	setInterceptorStartSleepingTimestamp(Date.now() + TIME_BETWEEN_BLOCKS * 2 * 1000)
-	if (!ethereumClientService.isBlockPolling()) {
-		console.info('The Interceptor woke up! ⏰')
-		ethereumClientService.setBlockPolling(true)
-		await updateConnectionStatusRetry(ethereumClientService, publishRpcConnectionStatus)
-	}
+	if (ethereumClientService.isBlockPolling()) return
+	// A client retired by a network switch refuses to poll again, so it has no connection status to publish; the installed client reports the active network.
+	if (!ethereumClientService.setBlockPolling(true)) return
+	console.info('The Interceptor woke up! ⏰')
+	await updateConnectionStatusRetry(ethereumClientService, publishRpcConnectionStatus)
 }
 
 const checkConfirmTransaction = async (ethereumClientService: EthereumClientService, publishRpcConnectionStatus: PublishRpcConnectionStatus) => {
