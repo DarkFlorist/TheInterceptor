@@ -1,3 +1,4 @@
+import * as funtypes from 'funtypes'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -52,6 +53,8 @@ export async function getInterceptorErrorDiagnostics(): Promise<readonly Interce
 	try {
 		return (await browserStorageLocalGet('interceptorErrorDiagnostics'))?.interceptorErrorDiagnostics ?? []
 	} catch (error) {
+		// Only a failed schema parse proves the diagnostics are corrupt; a storage API failure must not delete them.
+		if (!(error instanceof funtypes.ValidationError)) throw error
 		console.warn('interceptorErrorDiagnostics were corrupt:')
 		console.warn(error)
 		await browserStorageLocalRemove('interceptorErrorDiagnostics')

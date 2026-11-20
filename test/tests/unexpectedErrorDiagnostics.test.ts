@@ -76,12 +76,14 @@ function createBrowserMock() {
 	const defaultSetStorage = async (items: Record<string, unknown>) => {
 		Object.assign(storageState, items)
 	}
+	const removedStorageKeys: string[] = []
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
 		if (Array.isArray(keys)) return Object.fromEntries(keys.map((key) => [key, storageState[key]]))
 		if (typeof keys === 'string') return { [keys]: storageState[keys] }
 		return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 	}
+	const defaultGetStorage = async (keys?: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> => getStorageItems(keys)
 
 	const browserMock = {
 		runtime: {
@@ -93,10 +95,13 @@ function createBrowserMock() {
 		},
 		storage: {
 			local: {
-				async get(keys?: string | string[] | Record<string, unknown> | null) { return getStorageItems(keys) },
+				get: defaultGetStorage,
 				set: defaultSetStorage,
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) {
+						removedStorageKeys.push(key)
+						delete storageState[key]
+					}
 				},
 			},
 		},
@@ -130,8 +135,11 @@ function createBrowserMock() {
 
 	return {
 		sentMessages,
+		removedStorageKeys,
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
+			removedStorageKeys.length = 0
+			browserMock.storage.local.get = defaultGetStorage
 			sentMessages.length = 0
 			onMessageListener = undefined
 			browserMock.runtime.lastError = null
@@ -143,6 +151,9 @@ function createBrowserMock() {
 		},
 		setStorageSet(set: (items: Record<string, unknown>) => Promise<void>) {
 			browserMock.storage.local.set = set
+		},
+		setStorageGet(get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>) {
+			browserMock.storage.local.get = get
 		},
 		async writeStorage(items: Record<string, unknown>) {
 			await defaultSetStorage(items)
@@ -247,6 +258,26 @@ describe('unexpected error diagnostics', () => {
 		const clearReply = await clearDiagnostics()
 		assert.deepEqual(clearReply, { method: 'popup_clearDiagnostics', diagnostics: [] })
 		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+	})
+
+	test('discards stored diagnostics that fail schema validation', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics } = await modulesPromise
+		await browserMock.writeStorage({ interceptorErrorDiagnostics: 'not a diagnostic list' })
+
+		assert.deepEqual(await withSilencedConsole(async () => await getInterceptorErrorDiagnostics()), [])
+		assert.deepEqual(browserMock.removedStorageKeys, ['interceptorErrorDiagnostics'])
+	})
+
+	test('propagates a rejected diagnostics read without deleting the stored diagnostics', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics } = await modulesPromise
+		await browserMock.writeStorage({ interceptorErrorDiagnostics: [] })
+		const storageFailure = new Error('storage unavailable')
+		browserMock.setStorageGet(async () => { throw storageFailure })
+
+		await assert.rejects(getInterceptorErrorDiagnostics(), storageFailure)
+		assert.deepEqual(browserMock.removedStorageKeys, [])
 	})
 
 	test('clearing diagnostics waits for an earlier append and removes its completed result', async () => {

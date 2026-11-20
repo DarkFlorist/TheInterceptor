@@ -43,7 +43,7 @@ type StorageState = {
 	useTabsInsteadOfPopup?: boolean
 }
 
-function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds | undefined, updateShouldFail = false, currentTabId?: number, useTabsInsteadOfPopup = false) {
+function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds | undefined, updateShouldFail = false, currentTabId?: number, useTabsInsteadOfPopup = false, storageReadFailure?: Error) {
 	const createdTabs: TabCreateDetails[] = []
 	const createdWindows: TabCreateDetails[] = []
 	const updatedTabs: TabUpdateDetails[] = []
@@ -63,6 +63,7 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 			storage: {
 				local: {
 					async get(keys?: string | string[]) {
+						if (storageReadFailure !== undefined) throw storageReadFailure
 						const requestedKeys = Array.isArray(keys) ? keys : keys === undefined ? Object.keys(storageState) : [keys]
 						return Object.fromEntries(requestedKeys.map((key) => [key, getStorageValue(key)]))
 					},
@@ -189,6 +190,19 @@ describe('management tab tracking', () => {
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#diagnostics' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
+	})
+
+	test('propagates a failed tab ID read instead of opening and tracking another tab', async () => {
+		const storageFailure = new Error('storage unavailable')
+		const { createdTabs, createdWindows, updatedTabs, storageState } = installBrowserMock([], { managementTabId: 42 }, false, undefined, false, storageFailure)
+		const { openManagementPage } = await loadManagementNavigation()
+
+		await assert.rejects(openManagementPage('settings'), storageFailure)
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(createdWindows, [])
+		assert.deepEqual(updatedTabs, [])
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 42 })
 	})
 
 	test('reuses and focuses the tracked management tab window', async () => {
