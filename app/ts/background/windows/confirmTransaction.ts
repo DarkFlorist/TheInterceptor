@@ -229,6 +229,25 @@ const shouldReplacePopupVisualisation = (
 	return nextTimestamp.getTime() >= currentTimestamp.getTime()
 }
 
+// The only builder of the confirmation dialog's two companion messages: its pending requests and the dialog state shown with them, sent together on every update. Sends nothing for an empty queue, because the dialog expects at least one pending request and closes by itself once the queue is empty.
+export async function publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages: readonly PendingTransactionOrSignableMessage[], dialog: UpdateConfirmTransactionDialog['data']): Promise<boolean> {
+	if (pendingTransactionAndSignableMessages.length === 0) return false
+	const pendingTransactionsMessage: UpdateConfirmTransactionDialogPendingTransactions = {
+		method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+		data: {
+			pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
+			currentBlockNumber: dialog.currentBlockNumber,
+			rpcConnectionStatus: dialog.rpcConnectionStatus,
+		},
+	}
+	const dialogMessage: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: dialog }
+	await Promise.all([
+		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, pendingTransactionsMessage), 'confirmTransaction'),
+		sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, dialogMessage), 'confirmTransaction'),
+	])
+	return true
+}
+
 export function toPopupPendingTransactionOrSignableMessage(pending: PendingTransactionOrSignableMessage): PopupPendingTransactionOrSignableMessage {
 	switch (pending.type) {
 		case 'Transaction':
@@ -280,24 +299,11 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		const visualizedSimulatorState = settings.simulationMode
 			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
 			: createPassthroughCompleteVisualizedSimulation()
-		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
+		return await publishConfirmTransactionDialogPendingTransactions(pendingTransactionAndSignableMessages, {
 			currentBlockNumber: await currentBlockNumberPromise,
 			rpcConnectionStatus: await rpcConnectionStatusPromise,
 			visualizedSimulatorState,
-		} }
-		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
-			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
-			data: {
-				pendingTransactionAndSignableMessages: pendingTransactionAndSignableMessages.map(toPopupPendingTransactionOrSignableMessage),
-				currentBlockNumber: await currentBlockNumberPromise,
-				rpcConnectionStatus: await rpcConnectionStatusPromise,
-			}
-		}
-		await Promise.all([
-			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialogPendingTransactions, messagePendingTransactions), 'confirmTransaction'),
-			sendPopupMessageToOpenWindows(serialize(UpdateConfirmTransactionDialog, message), 'confirmTransaction')
-		])
-		return true
+		})
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return false
 		await reportUnexpectedError(error)

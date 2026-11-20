@@ -39,6 +39,30 @@ test('gas edits broadcast a JSON-transportable pending request that disables sta
 	} finally { await waitForBackgroundTasks() }
 })
 
+test.each(['dialog view update', 'metadata refresh', 'gas edit'] as const)('%s sends the pending requests with their companion dialog update', async path => {
+	const { forceSetGasLimitForTransaction, refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const { updateConfirmTransactionView } = await import('../../app/ts/background/windows/confirmTransaction.js')
+	const { UpdateConfirmTransactionDialog } = await import('../../app/ts/types/interceptor-messages.js')
+	const ethereum = new modules.EthereumClientService(fakeRequestHandler, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const tokenPriceService = new modules.TokenPriceService(ethereum, 60_000)
+	try {
+		if (path === 'dialog view update') await updateConfirmTransactionView(ethereum, tokenPriceService)
+		else if (path === 'metadata refresh') await refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+		else await forceSetGasLimitForTransaction(ethereum, tokenPriceService, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: pendingTransaction.transactionIdentifier, gasLimit: 30_000n } })
+		const pendingUpdates = browserMock.sentMessages.filter(message => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
+		const dialogUpdates = browserMock.sentMessages.filter(message => message.method === 'popup_update_confirm_transaction_dialog')
+		assert.equal(pendingUpdates.length, 1)
+		assert.equal(dialogUpdates.length, 1)
+		const pending = UpdateConfirmTransactionDialogPendingTransactions.parse(JSON.parse(JSON.stringify(pendingUpdates[0])))
+		const dialog = UpdateConfirmTransactionDialog.parse(JSON.parse(JSON.stringify(dialogUpdates[0])))
+		assert.deepEqual(Object.keys(pending.data).sort(), ['currentBlockNumber', 'pendingTransactionAndSignableMessages', 'rpcConnectionStatus'])
+		assert.deepEqual(Object.keys(dialog.data).sort(), ['currentBlockNumber', 'rpcConnectionStatus', 'visualizedSimulatorState'])
+		assert.equal(pending.data.currentBlockNumber, dialog.data.currentBlockNumber)
+		assert.deepEqual(pending.data.rpcConnectionStatus, dialog.data.rpcConnectionStatus)
+		assert.deepEqual(pending.data.pendingTransactionAndSignableMessages.map(request => request.uniqueRequestIdentifier.requestId), [pendingTransaction.uniqueRequestIdentifier.requestId])
+	} finally { await waitForBackgroundTasks() }
+})
+
 test.each(['pending-state read', 'transaction construction', 'tab-state read'] as const)('a refresh delayed during %s cannot cancel a newer gas simulation', async pauseAt => {
 	const { getConfirmTransactionAbortController } = await import('../../app/ts/background/confirmTransactionSimulation.js')
 	const { refreshPopupConfirmTransactionSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
