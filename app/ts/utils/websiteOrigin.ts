@@ -83,6 +83,11 @@ export function isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin: string, we
 	return url.port === '' && storedOrigin === `${ legacyHost }:${ defaultPort }`
 }
 
+// Whether a stored website access record stands for a canonical origin: the origin's exact record, or a scheme-ambiguous legacy record for it. The access policy, request blocking and content-script injection all decide whether a record covers a page through this one rule, so they agree on what is the same site.
+export function doesStoredWebsiteOriginApplyTo(storedOrigin: string, websiteOrigin: string): boolean {
+	return storedOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin, websiteOrigin)
+}
+
 export function getWebsiteHostWithPortFromStoredOrigin(websiteOrigin: string): string | undefined {
 	const normalizedOrigin = normalizeStoredWebsiteOrigin(websiteOrigin)
 	if (normalizedOrigin === undefined || normalizedOrigin === '') return undefined

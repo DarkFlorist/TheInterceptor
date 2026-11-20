@@ -1,6 +1,6 @@
 import { checkAndThrowRuntimeLastError, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
-import { getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
 import type { ContentScriptRegistrationConfiguration } from './contentScriptInjectionConfiguration.js'
 
@@ -143,11 +143,7 @@ const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScr
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
 	const origins = urls.map((url) => getWebsiteOrigin(url))
-	const noMatches = interceptorDisabledSites.every((disabledSite) => origins.every((origin) => {
-		if (disabledSite === origin) return false
-		return !isLegacyWebsiteOriginForCanonicalOrigin(disabledSite, origin)
-	}))
-	if (!noMatches) return false
+	if (interceptorDisabledSites.some((disabledSite) => origins.some((origin) => doesStoredWebsiteOriginApplyTo(disabledSite, origin)))) return false
 	try {
 		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
 			await browser.tabs.executeScript(content.tabId, { file: `/${ injection.file }`, allFrames: false, runAt: 'document_start' })

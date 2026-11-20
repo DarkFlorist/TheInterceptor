@@ -4,6 +4,7 @@ import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
 import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
+import { storedWebsiteOriginCases } from './storedWebsiteOriginCases.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -304,6 +305,24 @@ describe('content script injection strategy', () => {
 		await updateContentScriptInjectionStrategyManifestV2()
 		await getCommittedListener()({ ...committedDetails, url: 'https://example.test/page' })
 		assert.equal(getExecuteScriptCalls(), 0)
+	})
+
+	test('manifest v2 injection and the access policy treat a disabled record as covering exactly the pages the shared origin rule names', async () => {
+		const { isInterceptorDisabledForWebsiteOrigin } = await import('../../app/ts/background/websiteAccessPolicy.js')
+		const { doesStoredWebsiteOriginApplyTo } = await import('../../app/ts/utils/websiteOrigin.js')
+		for (const [storedOrigin, websiteOrigin, applies] of storedWebsiteOriginCases) {
+			const pageUrl = websiteOrigin.startsWith('file:') ? websiteOrigin : `${ websiteOrigin }/page`
+			const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock({ tabUrl: pageUrl })
+			const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+			const websiteAccess = [{ website: { websiteOrigin: storedOrigin }, interceptorDisabled: true }]
+			storageState.websiteAccess = websiteAccess
+			await updateContentScriptInjectionStrategyManifestV2()
+			await getCommittedListener()({ ...committedDetails, url: pageUrl })
+			const description = `${ storedOrigin || '(legacy file marker)' } disabled, page ${ pageUrl }`
+			assert.equal(doesStoredWebsiteOriginApplyTo(storedOrigin, websiteOrigin), applies, description)
+			assert.equal(getExecuteScriptCalls() === 0, applies, description)
+			assert.equal(isInterceptorDisabledForWebsiteOrigin(websiteAccess, websiteOrigin), applies, description)
+		}
 	})
 
 	test('excludes an exact file and its query variants without excluding path suffixes', async () => {
@@ -736,14 +755,14 @@ describe('content script injection strategy', () => {
 	test('excludes exactly the origins that the manifest v2 injection treats as disabled', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
-		const { getHostWithPort, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
+		const { doesStoredWebsiteOriginApplyTo, getHostWithPort, getWebsiteOrigin } = await import('../../app/ts/utils/websiteOrigin.js')
 		// Chromium matches a pattern with a port against the URL's scheme, exact host and effective port.
 		const isMatchedBy = (pattern: string, url: string) => {
 			const { protocol, hostname, port } = new URL(url)
 			const effectivePort = port === '' ? (protocol === 'https:' ? '443' : '80') : port
 			return pattern === `${ protocol }//${ hostname }:${ effectivePort }/*`
 		}
-		const isDisabledBy = (disabledSite: string, url: string) => disabledSite === getWebsiteOrigin(url) || isLegacyWebsiteOriginForCanonicalOrigin(disabledSite, getWebsiteOrigin(url))
+		const isDisabledBy = (disabledSite: string, url: string) => doesStoredWebsiteOriginApplyTo(disabledSite, getWebsiteOrigin(url))
 		const urls = ['http://example.com/', 'https://example.com/path', 'https://example.com:80/', 'http://example.com:443/', 'http://example.com:8080/', 'https://app.example.com/', 'http://[::1]:8545/']
 		const disabledSites = [...urls.map(getWebsiteOrigin), ...urls.map(getHostWithPort), 'example.com:80', 'example.com:443']
 		for (const disabledSite of disabledSites) {

@@ -1,6 +1,6 @@
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
@@ -19,7 +19,7 @@ export function findWebsiteAccessEntryForOrigin(websiteAccess: WebsiteAccessArra
 // The Interceptor stays disabled for an origin while any exact or scheme-ambiguous legacy record for it is disabled, matching content-script injection, which excludes the origin of every disabled record.
 export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
 	return websiteAccess.some((entry) => entry.interceptorDisabled === true
-		&& (entry.website.websiteOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)))
+		&& doesStoredWebsiteOriginApplyTo(entry.website.websiteOrigin, websiteOrigin))
 }
 
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {

@@ -20,7 +20,7 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js'
-import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin, getWebsiteOrigin, isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getWebsiteHostWithPortFromStoredOrigin, getWebsiteOrigin } from '../utils/websiteOrigin.js'
 import { applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
@@ -245,7 +245,7 @@ const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConne
 function isWebsiteOriginBlocked(blocked: { readonly originsToBlock: readonly string[], readonly initiatorHostsToBlock: readonly string[] }, websiteOrigin: string) {
 	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
 	if (websiteHost !== undefined && blocked.initiatorHostsToBlock.includes(websiteHost)) return true
-	return blocked.originsToBlock.some((blockedOrigin) => blockedOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(blockedOrigin, websiteOrigin))
+	return blocked.originsToBlock.some((blockedOrigin) => doesStoredWebsiteOriginApplyTo(blockedOrigin, websiteOrigin))
 }
 
 let webRequestListener: (details: browser.webRequest._OnBeforeRequestDetails) => void = () => undefined

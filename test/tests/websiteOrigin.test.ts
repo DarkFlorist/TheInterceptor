@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getHostWithPort, getWebsiteOrigin, getWebsiteOriginForDisplay } from '../../app/ts/utils/websiteOrigin.js'
+import { storedWebsiteOriginCases } from './storedWebsiteOriginCases.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getWebsiteOrigin, getWebsiteOriginForDisplay } from '../../app/ts/utils/websiteOrigin.js'
 
 describe('website origin identity and display', () => {
 	test('keeps authorization origins scheme-scoped while preserving host-style display', () => {
@@ -20,5 +21,11 @@ describe('website origin identity and display', () => {
 		assert.equal(getWebsiteOrigin('file:///tmp/first.html'), 'file:///tmp/first.html')
 		assert.equal(getWebsiteOrigin('file:///tmp/second.html'), 'file:///tmp/second.html')
 		assert.notEqual(getWebsiteOrigin('file:///tmp/first.html'), getWebsiteOrigin('file:///tmp/second.html'))
+	})
+})
+
+describe('stored website origin applicability', () => {
+	test.each(storedWebsiteOriginCases)('stored %p applies to %p: %p', (storedOrigin, websiteOrigin, applies) => {
+		assert.equal(doesStoredWebsiteOriginApplyTo(storedOrigin, websiteOrigin), applies)
 	})
 })
