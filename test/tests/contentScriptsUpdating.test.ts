@@ -1235,6 +1235,32 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getActiveFirefoxContentScripts().map(({ world }) => world), ['ISOLATED', 'MAIN'])
 	})
 
+	test('removes a stale Firefox host registration that still permits a newly disabled origin on the next update', async () => {
+		const { getRegistrationSnapshots, getActiveFirefoxContentScripts, getFirefoxContentScriptOperations, setWebsiteAccess } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')], failingFirefoxUnregistrations: [1, 2] })
+		const { updateContentScriptInjectionStrategy, getLatestUnexpectedError } = await loadModules()
+		const newlyDisabledUrl = 'http://localhost:8080/'
+		const scriptCountsOnNewlyDisabledOrigin = () => {
+			const settled = getRegistrationSnapshots().at(-1)
+			if (settled === undefined) throw new Error('no registration was made')
+			return (['MAIN', 'ISOLATED'] as const).map((world) => getScriptCountsInFirefoxDocument(settled, newlyDisabledUrl, world))
+		}
+
+		await updateContentScriptInjectionStrategy()
+		setWebsiteAccess([disabledWebsiteAccessEntry('localhost:3000'), disabledWebsiteAccessEntry('localhost:8080')])
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategy())
+
+		// The known limit: the old registration, which the browser refused to unregister, still permits :8080 with its old disabled-origin list, and the failure is reported.
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_cleanup_failed')
+		assert.deepEqual(scriptCountsOnNewlyDisabledOrigin(), [[1], [1]])
+
+		await updateContentScriptInjectionStrategy()
+
+		// The next update's retry removes it, so the newly disabled origin gets neither the provider nor the bridge.
+		assert.deepEqual(getFirefoxContentScriptOperations(), ['register 1', 'register 2', 'register 3', 'register 4', 'unregister 1', 'unregister 2', 'unregister 1', 'unregister 2'])
+		assert.equal(getActiveFirefoxContentScripts().length, 2)
+		assert.deepEqual(scriptCountsOnNewlyDisabledOrigin(), [[0], [0]])
+	})
+
 	test('declares the Firefox permission and minimum version that MAIN-world registration needs', () => {
 		const manifestV2 = readManifest('app/manifestV2.json')
 		const manifestV3 = readManifest('app/manifestV3.json')

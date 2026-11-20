@@ -159,6 +159,7 @@ export function createFirefoxContentScriptRegistrations() {
 			try {
 				await registration.unregister()
 			} catch (unregisterError: unknown) {
+				// Known limit: a registration the browser refuses to unregister keeps injecting with its old disabled-origin list, so it can still provide on an origin disabled since, until a later update's retry removes it; Firefox cannot change a registered script, and a MAIN-world document_start script cannot read extension state synchronously to revoke itself, so each failure is reported and the removal is retried on every update.
 				contentScriptsPendingRemoval.push(registration)
 				await reportUnexpectedError(unregisterError, { code: failureCode })
 			}
