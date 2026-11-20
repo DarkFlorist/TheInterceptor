@@ -733,6 +733,21 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.ok((await getLatestUnexpectedError())?.data.message.includes('probe exploded'))
 	})
 
+	test('replies with an explicit outcome and reports the error when the refresh after a saved token change rejects', async () => {
+		installBrowserMock()
+		const { refreshSimulationAfterRichTokenChange, getLatestUnexpectedError } = await loadModules()
+		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'observed', available: true })), 'Refreshed')
+		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'superseded' })), 'Refreshed')
+		assert.equal(await refreshSimulationAfterRichTokenChange(async () => ({ status: 'observed', available: false })), 'Unavailable')
+		assert.equal(await getLatestUnexpectedError(), undefined)
+
+		const outcome = await withSilencedConsole(async () => await refreshSimulationAfterRichTokenChange(async () => { throw new Error('refresh exploded') }))
+		assert.equal(outcome, 'Unavailable')
+		const reported = await getLatestUnexpectedError()
+		assert.equal(reported?.data.code, 'rich_token_simulation_refresh_failed')
+		assert.equal(reported?.data.message, 'Token funding was saved, but refreshing the simulation failed: refresh exploded')
+	})
+
 	test('requires rich tokens to come from the active-chain address book', async () => {
 		installBrowserMock()
 		const { modifyRichToken, getLatestUnexpectedError, getRichTokens, updateRichTokens } = await loadModules()

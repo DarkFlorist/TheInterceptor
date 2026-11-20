@@ -65,12 +65,17 @@ export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
 	),
 }).asReadonly()
 
+// A successful reply means the change is saved; 'Unavailable' tells the popup that the follow-up simulation refresh failed and its view of balances may be stale.
+export type RichTokenSimulationRefresh = funtypes.Static<typeof RichTokenSimulationRefresh>
+export const RichTokenSimulationRefresh = funtypes.Union(funtypes.Literal('Refreshed'), funtypes.Literal('Unavailable'))
+
 const ModifyRichTokenReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyRichToken'),
 	result: funtypes.Union(
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(true),
 			richToken: funtypes.Union(RichToken, funtypes.Undefined),
+			simulationRefresh: RichTokenSimulationRefresh,
 		}),
 		funtypes.ReadonlyObject({
 			success: funtypes.Literal(false),

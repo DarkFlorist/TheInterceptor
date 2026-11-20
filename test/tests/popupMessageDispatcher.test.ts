@@ -216,6 +216,14 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
 	})
 
+	test('replies to a committed rich-token change with the simulation refresh outcome', async () => {
+		const reply = await withSilencedConsole(async () => await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_modifyRichToken', data: { action: 'Remove', address: 1n, tokenAddress: 2n },
+		}))
+		if (reply === undefined || !('method' in reply) || reply.method !== 'popup_modifyRichToken' || !reply.result.success) throw new Error('Expected a committed rich-token reply')
+		assert.equal(reply.result.simulationRefresh === 'Refreshed' || reply.result.simulationRefresh === 'Unavailable', true)
+	})
+
 	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
 

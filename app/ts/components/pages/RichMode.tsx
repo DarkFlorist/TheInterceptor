@@ -3,7 +3,7 @@ import type { ComponentChildren, JSX } from 'preact'
 import { useId, useRef } from 'preact/hooks'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
+import type { EnrichedRichListElement, RichTokenSimulationRefresh } from '../../types/interceptor-reply-messages.js'
 import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { addressString } from '../../utils/bigint.js'
@@ -18,6 +18,8 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import { ChevronIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
+
+const SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE = 'The token funding was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.'
 
 type RichModeAccountManagerProps = {
 	isSettingsChangePending: ReadonlySignal<boolean>
@@ -222,6 +224,11 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		richTokenError.value = undefined
 		richTokenErrorTarget.value = undefined
 	}
+	const reportSimulationRefreshOutcome = (simulationRefresh: RichTokenSimulationRefresh) => {
+		if (simulationRefresh === 'Refreshed') return
+		richTokenError.value = SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE
+		richTokenErrorTarget.value = undefined
+	}
 	const runRichOperation = async <Result,>(key: string, label: string, operation: () => Promise<Result>) => {
 		richTokenPending.value = true
 		richTokenPendingKey.value = key
@@ -271,6 +278,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 			: { ...profile, tokenBalances: profile.tokenBalances.filter((balance) => !sameRichTokenIdentity(balance, option)) })
 		if (enabled) recentRichTokenKeys.value = [tokenKey, ...recentRichTokenKeys.value.filter((key) => key !== tokenKey)].slice(0, 5)
 		richTokenSaveConfirmedAddress.value = address
+		reportSimulationRefreshOutcome(reply.result.simulationRefresh)
 		return true
 	}
 
@@ -356,6 +364,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		}
 		updateProfileForAddress(address, (profile) => ({ ...profile, tokenBalances: profile.tokenBalances.map((balance) => sameRichTokenIdentity(balance, option) ? { ...balance, amount } : balance) }))
 		richTokenSaveConfirmedAddress.value = address
+		reportSimulationRefreshOutcome(reply.result.simulationRefresh)
 	}
 
 	const setRichTokenAmount = async (option: RichTokenOption, input: HTMLInputElement) => {

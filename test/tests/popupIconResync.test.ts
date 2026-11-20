@@ -1,7 +1,8 @@
 import { signal } from '@preact/signals'
 import { RichModeAccountManager } from '../../app/ts/components/pages/RichMode.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { RichAccountBalance } from '../../app/ts/types/richMode.js'
+import { RichToken, type RichAccountBalance, type RichTokenOption } from '../../app/ts/types/richMode.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { act } from 'preact/test-utils'
@@ -1160,6 +1161,53 @@ describe('popup icon sync', () => {
 		}
 	})
 
+	const usdcOption = (enabled: boolean): RichTokenOption => ({
+		chainId: 1n, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n, tokenType: 'ERC20', tokenId: undefined, name: 'USD Coin', symbol: 'USDC',
+		decimals: 6n, amount: 200_000_000_000n, balanceSlot: enabled ? 9n : undefined, erc1155StorageOrder: undefined, enabled,
+	})
+	const openBalanceEditor = async (dom: ReturnType<typeof installDomMock>, accountName: string) => {
+		const expandButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
+		if (expandButton === undefined) throw new Error('Expected rich account expander')
+		await act(async () => { await clickElement(expandButton) })
+		const balancesButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === `Edit balances for ${ accountName }`)
+		if (balancesButton === undefined) throw new Error('Expected balance editor button')
+		await act(async () => { await clickElement(balancesButton) })
+	}
+
+	test('keeps a saved token amount and explains when its simulation refresh is unavailable', async () => {
+		const dom = installDomMock()
+		const account: AddressBookEntry = { type: 'contact', name: 'Refresh account', address: 1n, entrySource: 'User' }
+		const option = usdcOption(true)
+		const profiles = signal<readonly RichAccountBalance[]>([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5_000_000n }] }])
+		installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
+			const { enabled: _enabled, ...richToken } = option
+			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Unavailable' } }
+		})
+		try {
+			await act(() => {
+				render(h(RichModeAccountManager, {
+					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
+					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
+					setRichState: async () => undefined,
+				}), dom.document.body)
+			})
+			await openBalanceEditor(dom, account.name)
+			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'USDC rich amount')
+			if (input === undefined) throw new Error('Expected token balance editor')
+			await act(async () => {
+				await changeElementValue(input, '7')
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(profiles.value[0]?.tokenBalances[0]?.amount, 7_000_000n)
+			assert.equal(dom.document.body.textContent.includes('The token funding was saved, but the latest simulation is unavailable.'), true)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('renders configured balances and keeps unselected address-book tokens in the picker', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
@@ -1170,7 +1218,7 @@ describe('popup icon sync', () => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyMakeMeRich' && 'data' in message && typeof message.data === 'object' && message.data !== null && 'nativeAmount' in message.data) return await nativeAmountReply
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken') {
 				tokenAddRequestCount += 1
-				return tokenAddRequestCount === 1 ? { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined } } : undefined
+				return tokenAddRequestCount === 1 ? { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined, simulationRefresh: 'Refreshed' } } : undefined
 			}
 			return undefined
 		})
@@ -1673,7 +1721,7 @@ describe('popup icon sync', () => {
 					amount: tokenOption.amount,
 					balanceSlot: '0x9',
 					erc1155StorageOrder: tokenOption.erc1155StorageOrder,
-				} } })
+				}, simulationRefresh: 'Refreshed' } })
 				await tokenReply
 				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
 			})
