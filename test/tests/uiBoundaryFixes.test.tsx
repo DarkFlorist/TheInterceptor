@@ -2,7 +2,7 @@ import type { RpcEntries, RpcEntry } from '../../app/ts/types/rpc.js'
 import { getRpcEntryIdentityKey } from '../../app/ts/utils/rpcNetworkChange.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { installLegacyBackgroundBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { requestPopupSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
 import { signal } from '@preact/signals'
 import { render } from 'preact'
@@ -278,7 +278,7 @@ describe('UI boundary fixes', () => {
 
 	for (const operation of ['edit', 'remove'] as const) {
 		test(`keeps the RPC list and dialog intact when the background rejects an active RPC ${ operation }`, async () => {
-			installBrowserMock()
+			installLegacyBackgroundBrowserMock()
 			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async () => ({ type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings.' }) })
 			const active = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 			const fallback = { ...active, httpsRpc: 'https://fallback.example', primary: false }
