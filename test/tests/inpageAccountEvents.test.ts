@@ -2,7 +2,7 @@ import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { waitFor } from '../harness/async.js'
 import { replaceProperty } from '../harness/globals.js'
-import { createFakeWindow, getPageProvider, type InpageRequest, waitOneEventLoopTurn, withFakeInpageWindow } from './inpageSignerBridgeHarness.js'
+import { captureTimerCallbackErrors, createFakeWindow, getPageProvider, type InpageRequest, waitOneEventLoopTurn, withFakeInpageWindow } from './inpageSignerBridgeHarness.js'
 import { readProperty } from '../harness/assertions.js'
 
 describe('inpage account exposure and request-scoped provider events', () => {
@@ -334,6 +334,95 @@ describe('inpage account exposure and request-scoped provider events', () => {
 			assert.deepEqual(permissionReply, permissions)
 			assert.deepEqual(events, ['accountsChanged', 'resolved'])
 		})
+	})
+
+	test('resolves eth_requestAccounts when request-scoped provider listeners throw', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const { fakeWindow, signerRequests, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method !== 'eth_requestAccounts') return false
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connect',
+					result: ['0x1'],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'accountsChanged',
+					result: [signerAccount],
+				})
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'eth_accounts',
+					result: [signerAccount],
+				})
+				return true
+			},
+		})
+
+		const timerErrors = captureTimerCallbackErrors()
+		try {
+			await withFakeInpageWindow(fakeWindow, 'request-scoped-listener-throws', async () => {
+				const provider = getPageProvider(fakeWindow)
+				await waitFor(() => signerRequests.includes('eth_chainId'))
+				let connectCallbackCount = 0
+				let accountCallbackCount = 0
+				const connectListenerError = new Error('dapp connect listener failed')
+				const accountsListenerError = new Error('dapp accounts listener failed')
+				provider.on('connect', () => {
+					connectCallbackCount += 1
+					throw connectListenerError
+				})
+				provider.on('accountsChanged', () => {
+					accountCallbackCount += 1
+					throw accountsListenerError
+				})
+
+				const accountReply = await provider.request({ method: 'eth_requestAccounts' })
+
+				assert.deepEqual(accountReply, [signerAccount])
+				assert.equal(connectCallbackCount, 1)
+				assert.equal(accountCallbackCount, 1)
+				await waitFor(() => timerErrors.errors.length === 2)
+				assert.deepEqual(timerErrors.errors, [connectListenerError, accountsListenerError])
+				assert.deepEqual(interceptorErrorPayloads, [])
+			})
+		} finally {
+			timerErrors.restore()
+		}
+	})
+
+	test('keeps notifying later accountsChanged listeners after a dapp listener throws, without reporting an Interceptor error', async () => {
+		const signerAccount = '0x1111111111111111111111111111111111111111'
+		const { fakeWindow, signerRequests, sendBackgroundMessage, interceptorErrorPayloads } = createFakeWindow()
+		const timerErrors = captureTimerCallbackErrors()
+		try {
+			await withFakeInpageWindow(fakeWindow, 'throwing-accounts-changed-listener', async () => {
+				const provider = getPageProvider(fakeWindow)
+				await waitFor(() => signerRequests.includes('eth_chainId'))
+				const listenerError = new Error('dapp accounts listener failed')
+				const accountsSeenByLaterListener: unknown[] = []
+				provider.on('accountsChanged', () => { throw listenerError })
+				provider.on('accountsChanged', (accounts) => { accountsSeenByLaterListener.push(accounts) })
+
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'accountsChanged', result: [signerAccount] })
+
+				// The dapp's error reaches the page as an uncaught error from a timer instead of interrupting the Interceptor's message handling.
+				await waitFor(() => timerErrors.errors.length === 1)
+				assert.deepEqual(accountsSeenByLaterListener, [[signerAccount]])
+				assert.deepEqual(timerErrors.errors, [listenerError])
+				await waitOneEventLoopTurn()
+				assert.deepEqual(interceptorErrorPayloads, [])
+			})
+		} finally {
+			timerErrors.restore()
+		}
 	})
 
 	test('drops stale request-scoped provider events after eth_requestAccounts settles', async () => {
