@@ -1,7 +1,7 @@
 import type { StorageTransactionOutcome } from './storageTransactionOutcome.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { createFirefoxContentScriptRegistrations, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { createFirefoxContentScriptRegistrations, updateContentScriptInjectionStrategyManifestV3, type FirefoxContentScriptRegistrations } from '../utils/contentScriptsUpdating.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { hasSameContentScriptInjectionSitesConfiguration, hasSameContentScriptRegistrationConfiguration, hasSamePageWorldProviderConfiguration, type ContentScriptRegistrationConfiguration } from '../utils/contentScriptInjectionConfiguration.js'
@@ -10,8 +10,12 @@ import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js
 import { getMetamaskCompatibilityMode } from './settings.js'
 
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
-// The background's one owner of Firefox's disabled-host registrations, which live as long as this background; it is used only under the semaphore above, like every registration update.
-const firefoxContentScriptRegistrations = createFirefoxContentScriptRegistrations()
+// The Firefox (MV2) background's one owner of its content script registrations, which live as long as this background. It is created on the first Firefox update, so the Chrome build never creates it and loading this module needs no extension runtime, and it is used only under the semaphore above.
+let firefoxContentScriptRegistrations: FirefoxContentScriptRegistrations | undefined
+const getFirefoxContentScriptRegistrations = () => {
+	firefoxContentScriptRegistrations ??= createFirefoxContentScriptRegistrations()
+	return firefoxContentScriptRegistrations
+}
 
 type WebsiteAccessUpdateTransaction = (update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray, afterUpdate: (websiteAccess: WebsiteAccessArray) => Promise<void>) => Promise<StorageTransactionOutcome>
 
@@ -22,7 +26,11 @@ type ContentScriptInjectionStrategyRefresh =
 // Callers must hold contentScriptInjectionConfigurationSemaphore, which serializes every registration update.
 async function applyContentScriptInjectionStrategy(refresh: ContentScriptInjectionStrategyRefresh) {
 	const configuration = refresh.configurationSource === 'storage' ? await getContentScriptInjectionConfiguration() : refresh.configuration
-	await updateContentScriptInjectionStrategy(configuration, firefoxContentScriptRegistrations)
+	if (browser.runtime.getManifest().manifest_version === 2) {
+		await getFirefoxContentScriptRegistrations().update(configuration)
+		return
+	}
+	await updateContentScriptInjectionStrategyManifestV3(configuration)
 }
 
 // Each exported entry point below is the one place that reports a refresh failure, once and with the code of its context; the scripting layer only throws.

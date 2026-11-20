@@ -82,7 +82,7 @@ function makeReloadStepReject(reloadStepError: Error) {
 	spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reloadStepError })
 }
 
-const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategy').mockImplementation(async () => {
+const mockContentScriptInjectionUpdate = (contentScriptUpdateError?: Error) => spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => {
 	if (contentScriptUpdateError !== undefined) throw contentScriptUpdateError
 })
 
@@ -144,7 +144,7 @@ describe('removeWebsiteAddressAccess', () => {
 describe('website access registration and reconciliation', () => {
 	test('registers and reloads before reconciling and notifying the popup', async () => {
 		const { handlers, sentPopupMessageMethods, sideEffectOrder } = await setUpApprovedConnectionAndOtherTab()
-		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategy').mockImplementation(async () => { sideEffectOrder.push('content script update') })
+		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
 		const reconcileApprovals = accessManagement.updateWebsiteApprovalAccesses
