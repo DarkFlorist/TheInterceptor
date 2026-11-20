@@ -3,11 +3,11 @@ import { describe, test } from 'bun:test'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import { settleWithin } from '../harness/async.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 describe('background wallet_requestPermissions and wallet_revokePermissions', () => {
 	test('falls back to the pending request address when popup approval reply omits address fields', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -65,7 +65,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('popup-approved wallet_requestPermissions stores address access and returns restrictReturnedAccounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -133,7 +133,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('simulation-mode wallet_requestPermissions requires address consent for a site-only approval', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -196,7 +196,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('does not bypass access for wallet_requestPermissions with unsupported permission keys', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -237,7 +237,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('first-time wallet_requestPermissions uses one dialog that identifies the address', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -317,7 +317,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('site-approved wallet_requestPermissions opens address consent after releasing the popup semaphore', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -403,7 +403,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('wallet_revokePermissions clears website account access and keeps the website entry', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -443,7 +443,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings, getPendingAccessRequests } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -488,7 +488,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('wallet_revokePermissions succeeds when the Interceptor is disabled for the website', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -524,7 +524,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getPendingAccessRequests, syncWebsiteApprovalsWithSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -567,7 +567,7 @@ describe('background wallet_requestPermissions and wallet_revokePermissions', ()
 	})
 
 	test('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }

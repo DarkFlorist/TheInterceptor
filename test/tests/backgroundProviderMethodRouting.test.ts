@@ -4,14 +4,14 @@ import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.j
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, createTestSimulationServicesOwner, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 import { settleWithin } from '../harness/async.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 type SimulationStateInputBlock = SimulationStateInput[number]
 type SignedMessageRequestParameters = SimulationStateInputBlock['signedMessages'][number]['originalRequestParameters']
 
 describe('background provider method routing', () => {
 	test('resolves an access prompt with the services installed after it opened', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { requestAccessFromUser, createInterceptedRequestReplay, resolveInterceptorAccess, getPendingAccessRequests, getSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const website = { websiteOrigin: 'https://access-reset.example', icon: undefined, title: undefined }
@@ -44,7 +44,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('uses installed services after waiting for website metadata', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://queued-rpc.example'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -76,7 +76,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('handles wallet_getCapabilities locally and protects capabilities for other accounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -146,7 +146,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('answers Sealwort Safe code and storage inspection without forwarding storage to the signer', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -230,7 +230,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('asks the inpage bridge to settle forwarded EOA storage reads from the signer reply', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -267,7 +267,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('answers a forwarded wallet_addEthereumChain signer reply from a replaced port with the replaced-connection error', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { signerConnectionReplacedError, websiteSocketToString } = await loadModules()
 		const { signerReply } = await import('../../app/ts/background/providerMessageHandlers.js')
 		const socket = { tabId: 1, connectionName: 0n }
@@ -302,7 +302,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
 		const address = 0x1111111111111111111111111111111111111111n
 		const socket = { tabId: 1, connectionName: 0n }
@@ -343,7 +343,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { defaultActiveAddresses, handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -378,7 +378,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('returns wallet_watchAsset parse errors before the Safe signing-mode fallback', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -438,7 +438,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('reject public calls to internal provider callback methods', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -479,7 +479,7 @@ describe('background provider method routing', () => {
 	})
 
 	test('allow marked internal eth_accounts_reply callbacks', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -515,7 +515,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -548,7 +548,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('site-approved eth_accounts returns empty accounts until address access is approved', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -578,7 +578,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('site-approved wallet_getPermissions returns no accounts until address access is approved', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -608,7 +608,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('wallet_getCapabilities advertises the active signer for an approved Gnosis Safe account', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -677,7 +677,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('wallet_getPermissions returns empty when signer accounts are cached but address access is missing', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -708,7 +708,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('wallet_getPermissions returns the approved account when signer accounts are cached without an active signer address', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }

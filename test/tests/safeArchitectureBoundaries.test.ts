@@ -4,6 +4,7 @@ import { test } from 'bun:test'
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const safePopupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers/safe.ts', import.meta.url)).text()
+const safeStackHandlersSource = await Bun.file(new URL('../../app/ts/background/safeStackHandlers.ts', import.meta.url)).text()
 const safePopupMessageRegistrySource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
@@ -30,9 +31,12 @@ test('the confirmation window delegates Gnosis Safe resolution, persistence, and
 	assert.doesNotMatch(confirmTransactionSource, /safeExecutionSignerRoute|reconciledStoredSafeState/u)
 })
 
-test('Gnosis Safe stack import and export are owned by the Safe popup handlers', () => {
+test('Gnosis Safe popup handlers delegate stack operations to background orchestration', () => {
 	assert.match(safePopupMessageRegistrySource, /import \{ importSafeStack, requestSafeStackExport, setSafeSimulationSigner \} from '\.\.\/popupMessageHandlers\/safe\.js'/u)
-	assert.match(safePopupMessageHandlersSource, /export async function validateSafeTransactionStackForCurrentContract/u)
+	assert.match(safePopupMessageHandlersSource, /export \{ importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract \} from '\.\.\/safeStackHandlers\.js'/u)
+	assert.doesNotMatch(safePopupMessageHandlersSource, /export async function (?:validateSafeTransactionStackForCurrentContract|importSafeStack|requestSafeStackExport)/u)
+	assert.match(safeStackHandlersSource, /export async function validateSafeTransactionStackForCurrentContract/u)
+	assert.doesNotMatch(safeStackHandlersSource, /from ['"][^'"]*popupMessageHandlers/u)
 })
 
 test('Safe transaction confirmation owns stored stack reconciliation', () => {

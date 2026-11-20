@@ -7,7 +7,7 @@ import { beginSignerStateConfirmation, resolveSignerStateConfirmation } from '..
 import { requireDefined } from '../harness/assertions.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 const websiteOrigin = 'https://mode-switch.example'
 const website: Website = { websiteOrigin, icon: undefined, title: undefined }
@@ -35,7 +35,7 @@ function createWebsiteMetadataGate() {
 
 // An approved website with the Interceptor in simulation mode on the default network. The website has its own access to the account, or with accountSharedWithoutAsking, gets it because the account's address book entry shares it without asking.
 async function setUpApprovedWebsiteInSimulationMode({ accountSharedWithoutAsking = false }: { readonly accountSharedWithoutAsking?: boolean }) {
-	installBrowserMock()
+	installBackgroundBrowserMockForTest()
 	const modules = await loadModules()
 	await modules.setUseSignersAddressAsActiveAddress(false)
 	if (accountSharedWithoutAsking) await modules.updateUserAddressBookEntries(() => [getAccountEntry(false)])
@@ -73,7 +73,7 @@ const switchedAccount = 0x2222222222222222222222222222222222222222n
 
 // Starts an eth_requestAccounts request that has no configured or wallet-selected active address, so it falls back to the first signer account, and returns once its access is decided.
 async function startAccountRequestOnFirstSignerAccount() {
-	installBrowserMock()
+	installBackgroundBrowserMockForTest()
 	const modules = await loadModules()
 	await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 	await modules.setUseSignersAddressAsActiveAddress(false)
@@ -146,7 +146,7 @@ describe('intercepted request settings context', () => {
 	})
 
 	test('reads the wallet-selected address entry again, not a same-address Safe, when deciding whether a waiting request still has access', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const modules = await loadModules()
 		// Signing mode with the wallet's account active. The account has a contact that shares it without asking, and a Safe at the same address on this chain; wallet-selected addresses use the contact.
 		const contact = (askForAddressAccess: boolean) => getAccountEntry(askForAddressAccess, 'AllChains')
