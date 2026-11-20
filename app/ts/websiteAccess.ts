@@ -4,7 +4,8 @@ import { ErrorBoundary } from './components/subcomponents/Error.js'
 
 function rerender() {
 	const body = document.body
-	const main = document.querySelector('main')!
+	const main = document.querySelector('main')
+	if (main === null) throw new Error('Missing website access main element')
 	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(WebsiteAccessView, {})), body, main)
 }
 

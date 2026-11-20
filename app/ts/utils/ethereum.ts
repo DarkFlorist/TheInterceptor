@@ -193,7 +193,7 @@ const encodeTransactionSignature = (transaction: { yParity: 'even' | 'odd', r: b
 function rlpEncodeSignedLegacyTransactionPayload(transaction: DistributiveOmit<ISignedTransactionLegacy, 'hash'>): Uint8Array {
 	return rlpEncode([
 		stripLeadingZeros(bigintToUint8Array(transaction.nonce, 32)),
-		stripLeadingZeros(bigintToUint8Array(transaction.gasPrice!, 32)),
+		stripLeadingZeros(bigintToUint8Array(transaction.gasPrice, 32)),
 		stripLeadingZeros(bigintToUint8Array(transaction.gasLimit, 32)),
 		encodeTransactionRecipient(transaction.to),
 		stripLeadingZeros(bigintToUint8Array(transaction.value, 32)),
@@ -275,7 +275,7 @@ function rlpEncodeSigned4844TransactionPayload(transaction: DistributiveOmit<ISi
 function rlpEncodeUnsignedLegacyTransactionPayload(transaction: IUnsignedTransactionLegacy): Uint8Array {
 	const toEncode = [
 		stripLeadingZeros(bigintToUint8Array(transaction.nonce, 32)),
-		stripLeadingZeros(bigintToUint8Array(transaction.gasPrice!, 32)),
+		stripLeadingZeros(bigintToUint8Array(transaction.gasPrice, 32)),
 		stripLeadingZeros(bigintToUint8Array(transaction.gasLimit, 32)),
 		encodeTransactionRecipient(transaction.to),
 		stripLeadingZeros(bigintToUint8Array(transaction.value, 32)),

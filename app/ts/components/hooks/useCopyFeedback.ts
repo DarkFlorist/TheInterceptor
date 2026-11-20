@@ -2,7 +2,7 @@ import { useSignal } from '@preact/signals'
 import { useEffect, useRef } from 'preact/hooks'
 import type { TooltipConfig } from '../subcomponents/Tooltip.js'
 
-export const COPY_FEEDBACK_DURATION_MS = 4000
+const COPY_FEEDBACK_DURATION_MS = 4000
 
 export function useCopyFeedback(message = 'Copied!') {
 	const coolingDown = useSignal(false)

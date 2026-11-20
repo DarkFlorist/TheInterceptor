@@ -64,7 +64,7 @@ async function migrateAddressInfoAndContactsFromV2ToV3() {
 	}
 }
 
-export function migrateLegacySafeAddressBookEntries(rawEntries: unknown): AddressBookEntries | undefined {
+function migrateLegacySafeAddressBookEntries(rawEntries: unknown): AddressBookEntries | undefined {
 	if (!Array.isArray(rawEntries)) return undefined
 	let migrationNeeded = false
 	const migratedEntries: AddressBookEntry[] = []

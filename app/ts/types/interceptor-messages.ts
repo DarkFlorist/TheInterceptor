@@ -21,7 +21,6 @@ import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, S
 import { EthSimulateV1Result } from './ethSimulate-types.js'
 import { SafeAppsRequestCommand } from './safeApps.js'
 
-type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
 	funtypes.ReadonlyObject({
 		accept: funtypes.Literal(true),
@@ -44,7 +43,6 @@ export const WalletSwitchEthereumChainReply = funtypes.ReadonlyObject({
 	params: WalletSwitchEthereumChainReplyParams
 }).asReadonly()
 
-type InpageScriptRequestWithoutIdentifier = funtypes.Static<typeof InpageScriptRequestWithoutIdentifier>
 const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_connection_status_changed'), result: funtypes.Literal('0x') }),
@@ -73,7 +71,6 @@ export const InpageScriptRequest = funtypes.Intersect(
 	InpageScriptRequestWithoutIdentifier,
 )
 
-type ErrorReturn = funtypes.Static<typeof ErrorReturn>
 const ErrorReturn = funtypes.ReadonlyObject({
 	method: funtypes.String,
 	error: ErrorWithCodeAndOptionalData
@@ -101,7 +98,6 @@ export const GetSimulationStackReply = funtypes.Union(
 	funtypes.ReadonlyObject({ version: funtypes.Literal('2.0.0'), payload: GetSimulationStackReplyV2 })
 )
 
-type NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Static<typeof NonForwardingRPCRequestSuccessfullReturnValue>
 const WalletPermission = funtypes.ReadonlyObject({
 	parentCapability: funtypes.Literal('eth_accounts'),
 	caveats: funtypes.ReadonlyArray(funtypes.Unknown),
@@ -156,7 +152,6 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: SafeAppsRequestCommand }),
 )
 
-type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
 const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	method: funtypes.Literal('newHeads'),
 	result: funtypes.ReadonlyObject({
@@ -165,20 +160,17 @@ const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	})
 })
 
-type NonForwardingRPCRequestReturnValue = funtypes.Static<typeof NonForwardingRPCRequestReturnValue>
 const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('result') }),
 	funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
 )
 
-type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
 	ForwardToWalletRequest,
 )
 
-type ReplyWithSignersReplyForward = funtypes.Static<typeof ReplyWithSignersReplyForward>
 const ReplyWithSignersReplyForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
@@ -217,7 +209,6 @@ export const SubscriptionReplyOrCallBack = funtypes.Intersect(
 	)
 )
 
-type InterceptedRequestForwardWithRequestId = funtypes.Static<typeof InterceptedRequestForwardWithRequestId>
 const InterceptedRequestForwardWithRequestId = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
 	funtypes.ReadonlyPartial({ bridgeRequestSettled: funtypes.Literal(true) }),
@@ -236,7 +227,6 @@ export const InterceptorMessageToInpage = funtypes.Intersect(
 	funtypes.Union(InterceptedRequestForwardWithRequestId, SubscriptionReplyOrCallBack)
 )
 
-type RefreshConfirmTransactionMetadata = funtypes.Static<typeof RefreshConfirmTransactionMetadata>
 const RefreshConfirmTransactionMetadata = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshConfirmTransactionMetadata')
 }).asReadonly()
@@ -277,7 +267,6 @@ export const InterceptorAccessRefresh = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type RefreshInterceptorAccessMetadata = funtypes.Static<typeof RefreshInterceptorAccessMetadata>
 const RefreshInterceptorAccessMetadata = funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshInterceptorAccessMetadata') }).asReadonly()
 
 export type InterceptorAccessChangeAddress = funtypes.Static<typeof InterceptorAccessChangeAddress>
@@ -355,12 +344,10 @@ export const OpenSimulationStack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSimulationStack') }),
 )
 
-type ResetSimulation = funtypes.Static<typeof ResetSimulation>
 const ResetSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_resetSimulation')
 }).asReadonly()
 
-type RefreshSimulation = funtypes.Static<typeof RefreshSimulation>
 const RefreshSimulation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_refreshSimulation')
 }).asReadonly()
@@ -424,7 +411,6 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 }).asReadonly()
 
 
-type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
 	funtypes.Union(ReplyWithSignersReplyForward, ForwardToWallet)
@@ -469,7 +455,6 @@ export const GetAddressBookData = funtypes.ReadonlyObject({
 	data: GetAddressBookDataFilter,
 }).asReadonly()
 
-type OpenAddressBook = funtypes.Static<typeof OpenAddressBook>
 const OpenAddressBook = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_openAddressBook'),
 }).asReadonly()
@@ -485,9 +470,7 @@ export const GetAddressBookDataReply = funtypes.ReadonlyObject({
 }).asReadonly()
 
 const PopupRefreshGeneration = funtypes.Number
-type PopupRefreshGeneration = funtypes.Static<typeof PopupRefreshGeneration>
 
-type RpcConnectionStatusUpdate = funtypes.Static<typeof RpcConnectionStatusUpdate>
 const RpcConnectionStatusUpdate = funtypes.ReadonlyObject({
 	method: funtypes.Union(
 		funtypes.Literal('popup_new_block_arrived'),
@@ -497,7 +480,6 @@ const RpcConnectionStatusUpdate = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({ rpcConnectionStatus: RpcConnectionStatus }),
 }).asReadonly()
 
-type WebsiteIconChanged = funtypes.Static<typeof WebsiteIconChanged>
 const WebsiteIconChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_websiteIconChanged'),
 	tabId: funtypes.Number,
@@ -505,7 +487,6 @@ const WebsiteIconChanged = funtypes.ReadonlyObject({
 	popupRefreshGeneration: PopupRefreshGeneration,
 })
 
-type SimulationUpdateStartedOrEnded = funtypes.Static<typeof SimulationUpdateStartedOrEnded>
 const SimulationUpdateStartedOrEnded = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulation_state_changed'),
 	data: funtypes.ReadonlyObject({
@@ -519,7 +500,6 @@ const MessageToPopupRole = funtypes.Union(
 	funtypes.Literal('confirmTransaction'),
 )
 
-type MessageToPopupSimple = funtypes.Static<typeof MessageToPopupSimple>
 const MessageToPopupSimple = funtypes.ReadonlyObject({
 	method: funtypes.Union(
 		funtypes.Literal('popup_chain_update'),
@@ -543,13 +523,11 @@ export const UpdateConfirmTransactionDialog = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-type UpdateConfirmTransactionDialogPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPartial>
 const UpdateConfirmTransactionDialogPartial = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog'),
 	data: funtypes.Unknown
 }).asReadonly()
 
-type UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.Static<typeof UpdateConfirmTransactionDialogPendingTransactionsPartial>
 const UpdateConfirmTransactionDialogPendingTransactionsPartial = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_update_confirm_transaction_dialog_pending_transactions'),
 	data: funtypes.Unknown
@@ -590,7 +568,6 @@ export const InterceptorAccess = funtypes.ReadonlyObject({
 }).asReadonly()
 
 
-type InterceptorAccessDialog = funtypes.Static<typeof InterceptorAccessDialog>
 const InterceptorAccessDialog = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_interceptorAccessDialog'), funtypes.Literal('popup_interceptor_access_dialog_pending_changed')),
 	data: funtypes.ReadonlyObject({
@@ -655,7 +632,6 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 	}))
 })
 
-type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>
 const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_activeSigningAddressChanged'),
 	data: funtypes.ReadonlyObject({
@@ -665,7 +641,6 @@ const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	})
 })
 
-type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
 const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('window_signer_accounts_changed'),
 	data: funtypes.Intersect(
@@ -714,7 +689,6 @@ export const SetRpcList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
-type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
 	data: RpcEntries,
@@ -745,7 +719,6 @@ export const WatchAssetConfirmation = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: PendingChainChangeConfirmationPromise,
@@ -773,14 +746,12 @@ export const PopupReadyAndListening = funtypes.ReadonlyObject({
 	}),
 })
 
-type SettingsUpdated = funtypes.Static<typeof SettingsUpdated>
 const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
 	data: Settings,
 	popupRefreshGeneration: PopupRefreshGeneration,
 })
 
-type PartiallyParsedSimulateExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateExecutionReply>
 const PartiallyParsedSimulateExecutionReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_simulateExecutionReply'),
 	data: funtypes.Unknown,
@@ -808,7 +779,6 @@ export const SimulateGovernanceContractExecution = SharedSimulateGovernanceContr
 export type SimulateGnosisSafeTransaction = funtypes.Static<typeof SharedSimulateGnosisSafeTransaction>
 export const SimulateGnosisSafeTransaction = SharedSimulateGnosisSafeTransaction
 
-type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
 const SettingsOpenedReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestSettingsReply'),
 	data: funtypes.ReadonlyObject({
@@ -840,7 +810,6 @@ export const RetrieveWebsiteAccess = funtypes.ReadonlyObject({
 	data: RetrieveWebsiteAccessFilter,
 }).asReadonly()
 
-type RetrieveWebsiteAccessReply = funtypes.Static<typeof RetrieveWebsiteAccessReply>
 const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_retrieveWebsiteAccessReply'),
 	data: funtypes.ReadonlyObject({
@@ -849,7 +818,6 @@ const RetrieveWebsiteAccessReply = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-type PopupAddOrModifyAddressWindowStateInfomation = funtypes.Static<typeof PopupAddOrModifyAddressWindowStateInfomation>
 const PopupAddOrModifyAddressWindowStateInfomation = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_addOrModifyAddressWindowStateInformation'),
 	data: funtypes.ReadonlyObject({
@@ -876,7 +844,6 @@ export const DisableInterceptor = funtypes.ReadonlyObject({
 	})
 }).asReadonly()
 
-type DisableInterceptorReply = funtypes.Static<typeof DisableInterceptorReply>
 const DisableInterceptorReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_setDisableInterceptorReply'),
 	data: funtypes.ReadonlyObject({
@@ -931,7 +898,6 @@ export const FetchSimulationStackRequestConfirmation = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type FetchSimulationStackRequest = funtypes.Static<typeof FetchSimulationStackRequest>
 const FetchSimulationStackRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_fetchSimulationStackRequest'),
 	data: PendingFetchSimulationStackRequestPromise,
