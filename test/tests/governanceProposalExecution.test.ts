@@ -1,6 +1,6 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { findGovernorCodeProblem, GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, prepareStackOnPinnedBlock, simulateGovernanceProposalExecution, splitIntoLogQueries } from '../../app/ts/simulation/governanceProposalExecution.js'
+import { findGovernorCodeProblem, GOVERNOR_CODE_ADDRESS, getProposalCreatedSearchRange, getTransactionGasLimit, OSAKA_ACTIVATION_TIME_BY_CHAIN_ID, MAXIMUM_BLOCKS_PER_LOG_QUERY, pinGovernancePreviewToLatestBlock, PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS, splitIntoLogQueries, type GovernanceExecutionPreview } from '../../app/ts/simulation/governanceProposalExecution.js'
 import { SAFE_EXECUTION_SIMULATION_EXECUTOR } from '../../app/ts/safe/safeExecutionSimulation.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
@@ -9,7 +9,7 @@ import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCod
 import { toEventSelector, toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { pinRequestToBlockHash, pinToLatestBlock } from '../../app/ts/simulation/services/blockPinning.js'
+import { pinRequestToBlockHash } from '../../app/ts/simulation/services/blockPinning.js'
 import { EthereumClientService as RealEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumBlockHeaderWithTransactionHashes } from '../../app/ts/types/wire-types.js'
@@ -112,13 +112,13 @@ const previewFixture = async (name: string, options: Parameters<typeof createRep
 	const fixture = await loadGovernanceFixture(name)
 	if (fixture.stack !== undefined && !isExampleStackName(fixture.stack)) throw new Error(`Unknown stack ${ fixture.stack }`)
 	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture, options)
-	const pinnedEthereum = await pinToLatestBlock(ethereum, undefined)
-	const parentBlock = pinnedEthereum.block
-	const preparedOnPinnedBlock = await prepareStackOnPinnedBlock(pinnedEthereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack](BigInt(fixture.governor)))
-	const stack = preparedOnPinnedBlock.preparedStack
+	const pinnedPreview = await pinGovernancePreviewToLatestBlock(ethereum, undefined)
+	const parentBlock = pinnedPreview.parentBlock
+	const preparedStack = await pinnedPreview.prepareStack(fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack](BigInt(fixture.governor)))
+	const stack = preparedStack.preparedStack
 	const governor = BigInt(fixture.governor)
-	const preview = await simulateGovernanceProposalExecution(preparedOnPinnedBlock, governor, BigInt(fixture.proposalId), WEBSITE)
-	const forwarderUsed = await assertOverrideRule(pinnedEthereum.ethereum, requests, resultOf, stack, governor)
+	const preview = await preparedStack.simulateProposalExecution(governor, BigInt(fixture.proposalId), WEBSITE)
+	const forwarderUsed = await assertOverrideRule(pinnedPreview.ethereum, requests, resultOf, stack, governor)
 	assertStateReadsNameTheBlockHash(requests, parentBlock.hash)
 	assertBoundedLogSearch(requests)
 	return { preview, requests, resultOf, stack, governor, forwarderUsed, fixture, parentBlock }
@@ -131,14 +131,14 @@ const outcomeSimulation = (requests: readonly EthereumJsonRpcRequest[], blockCou
 	return simulation
 }
 
-const getExecution = (preview: Awaited<ReturnType<typeof simulateGovernanceProposalExecution>>) => {
+const getExecution = (preview: GovernanceExecutionPreview) => {
 	if (!preview.success) throw new Error(`Expected an outcome, got: ${ preview.errorMessage }`)
 	const executionBlock = preview.simulationState.simulatedBlocks[0]
 	if (executionBlock === undefined || preview.simulationState.simulatedBlocks.length !== 1) throw new Error('Expected exactly the execution block')
 	return { ...preview, transactions: executionBlock.simulatedTransactions }
 }
 
-const assertRefused = (preview: Awaited<ReturnType<typeof simulateGovernanceProposalExecution>>, reason: RegExp) => {
+const assertRefused = (preview: GovernanceExecutionPreview, reason: RegExp) => {
 	if (preview.success) throw new Error('Expected no outcome')
 	assert.match(preview.errorMessage, /^No outcome is simulated: /)
 	assert.match(preview.errorMessage, reason)
@@ -242,6 +242,25 @@ describe('governance proposal execution preview of real governors', () => {
 		assert.equal(latestBlockReads(moved.requests), 1)
 		assert.deepEqual(moved.stack, unchanged.stack)
 		assert.deepEqual(getExecution(moved.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult), getExecution(unchanged.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult))
+	})
+
+	test('a pinned preview or prepared stack spread into an object with another client, block or stack still prepares and previews with its own', async () => {
+		const fixture = await loadGovernanceFixture('uniswap-bravo-queued-after-safeExecution')
+		const governor = BigInt(fixture.governor)
+		const { ethereum: liveEthereum, requests } = createReplayingEthereumClientService(fixture, { answer: answerWithLaterLatestBlock })
+		const pinnedPreview = await pinGovernancePreviewToLatestBlock(liveEthereum, undefined)
+		// The live client would read the later block, and the forged parent block names it; neither reaches the preparation.
+		const forgedPinnedPreview = { ...pinnedPreview, ethereum: liveEthereum, parentBlock: { ...pinnedPreview.parentBlock, number: pinnedPreview.parentBlock.number + 1n, hash: 0x1a7e5en } }
+		const preparedStack = await forgedPinnedPreview.prepareStack(EXAMPLE_STACKS.safeExecution(governor))
+		// An empty stack in place of the prepared one does not reach the preview.
+		const forgedPreparedStack = { ...preparedStack, preparedStack: [] }
+		const forged = await forgedPreparedStack.simulateProposalExecution(governor, BigInt(fixture.proposalId), WEBSITE)
+		const unchanged = await previewFixture('uniswap-bravo-queued-after-safeExecution')
+		assert.equal(latestBlockReads(requests), 1)
+		assertStateReadsNameTheBlockHash(requests, unchanged.parentBlock.hash)
+		assert.deepEqual(preparedStack.preparedStack, unchanged.stack)
+		assert.deepEqual(simulateRequests(requests).map((simulation) => simulation.blockStateCalls.length), simulateRequests(unchanged.requests).map((simulation) => simulation.blockStateCalls.length))
+		assert.deepEqual(getExecution(forged).transactions.map((transaction) => transaction.ethSimulateV1CallResult), getExecution(unchanged.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult))
 	})
 
 	test('refuses when a reorganisation replaces the parent block while the preview runs', async () => {

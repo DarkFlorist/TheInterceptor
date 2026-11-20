@@ -59,8 +59,8 @@ test('everything that sends the simulation stack to the node runs its Gnosis Saf
 	assert.match(simulationUpdatingSource, /export const prepareSimulationInputForRpc = [^\n]*\n(?:.*\n){0,4}?\tsimulationInput = await prepareSafeExecutionsForRpc\(simulationInput, ethereum\)/u)
 	assert.match(simulationUpdatingSource, /export const simulateGnosisSafeMetaTransaction = [^\n]*\n(?:.*\n){0,2}?\t\tconst simulationInput = await prepareSafeExecutionsForRpc\(stackSimulationInput, ethereumClientService\)/u)
 	assert.match(popupMessageHandlersSource, /const simulationInput = await prepareSafeExecutionsForRpc\(await getCurrentSimulationInput\(\), ethereumClientService\)/u)
-	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst stack = await prepareStackOnPinnedBlock\(pinnedEthereum, await getCurrentSimulationInput\(\)\)/u)
-	assert.match(governanceProposalExecutionSource, /preparedStack: await prepareSafeExecutionsOnParentBlock\(stack, pinnedEthereum\.ethereum, pinnedEthereum\.block\)/u)
+	assert.match(simulationUpdatingSource, /export const simulateGovernanceContractExecution = [^\n]*\n(?:.*\n){0,30}?\t\tconst stack = await pinnedPreview\.prepareStack\(await getCurrentSimulationInput\(\)\)/u)
+	assert.match(governanceProposalExecutionSource, /const preparedStack = await prepareSafeExecutionsOnParentBlock\(stack, ethereum, parentBlock\)/u)
 })
 
 test('the RPC client enforces the executed-call invariant without Gnosis Safe domain code', async () => {

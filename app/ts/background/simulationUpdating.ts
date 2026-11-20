@@ -23,8 +23,7 @@ import { type DistributiveOmit, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, identifyAddressWith, lookUpMetadataOnChain, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
-import { prepareStackOnPinnedBlock, simulateGovernanceProposalExecution } from '../simulation/governanceProposalExecution.js'
-import { pinToLatestBlock } from '../simulation/services/blockPinning.js'
+import { pinGovernancePreviewToLatestBlock } from '../simulation/governanceProposalExecution.js'
 import { decodeGovernanceVote } from '../utils/governanceVote.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
@@ -212,11 +211,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const vote = decodeGovernanceVote(pendingTransaction.transactionToSimulate.transaction.input)
 		if (vote === undefined) return returnError('Could not identify the transaction as a vote')
 		// The stack's preparation, the preview and the visualisation all work on one parent block, whatever blocks arrive meanwhile.
-		const pinnedEthereum = await pinToLatestBlock(liveEthereum, undefined)
-		const stack = await prepareStackOnPinnedBlock(pinnedEthereum, await getCurrentSimulationInput())
-		const execution = await simulateGovernanceProposalExecution(stack, governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
+		const pinnedPreview = await pinGovernancePreviewToLatestBlock(liveEthereum, undefined)
+		const stack = await pinnedPreview.prepareStack(await getCurrentSimulationInput())
+		const execution = await stack.simulateProposalExecution(governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
 		if (!execution.success) return returnError(execution.errorMessage)
-		return { success: true as const, result: await visualizeSimulatorState(execution.simulationState, pinnedEthereum.ethereum, tokenPriceService, undefined) }
+		return { success: true as const, result: await visualizeSimulatorState(execution.simulationState, pinnedPreview.ethereum, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
 		if (error instanceof Error) return returnError(error.message)
@@ -330,7 +329,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview. The governance execution preview prepares it with prepareSafeExecutionsOnParentBlock, as this does, on the block it pins (prepareStackOnPinnedBlock). EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
+// Gives every Gnosis Safe execution of the input the executor's call the node runs it as (prepareSafeExecutionSimulationInput). Everything that sends the simulation stack to the node prepares it with this: every simulation through prepareSimulationInputForRpc, the stack export and the Safe transaction preview. The governance execution preview prepares it with prepareSafeExecutionsOnParentBlock, as this does, on the block it pins (pinGovernancePreviewToLatestBlock). EthereumClientService.prepareEthSimulateV1Input rejects a Safe execution that wasn't prepared.
 export const prepareSafeExecutionsForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)

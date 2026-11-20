@@ -106,7 +106,7 @@ export const EXAMPLE_STACKS = {
 		simulationMode: true,
 		messageIdentifier: 1n,
 	}] })],
-	// 1 ether sent by EXAMPLE_SAFE, a Gnosis Safe 1.3.0 deployed on the fork the fixture was recorded on, as the simulation stack holds a Safe's own call before prepareStackOnPinnedBlock prepares it.
+	// 1 ether sent by EXAMPLE_SAFE, a Gnosis Safe 1.3.0 deployed on the fork the fixture was recorded on, as the simulation stack holds a Safe's own call before the governance preview's prepareStack prepares it.
 	safeExecution: (_governor: bigint): SimulationStateInput => [stackBlock({ transactions: [{ ...exampleTransfer(EXAMPLE_SAFE), simulationOptions: { requiredChainId: 1n, executeThroughSafe: true } }] })],
 	// vitalik.eth sends the governor 2 ether earlier in the stack.
 	fundsTheGovernor: (governor: bigint): SimulationStateInput => [stackBlock({ transactions: [exampleTransfer(EXAMPLE_STACK_SENDER, governor, 2n * 10n ** 18n, 100_000n)] })],

@@ -11,7 +11,6 @@ import type { EthereumClientService } from './services/EthereumClientService.js'
 import { createSimulationState } from './services/SimulationModeEthereumClientService.js'
 import { getGovernorProposalForwarder } from '../utils/ethereumByteCodes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
-import type { BlockPinnedEthereumClient } from './services/blockPinning.js'
 import { prepareSafeExecutionsOnParentBlock } from '../safe/safeExecutionSimulation.js'
 
 type EthereumBlockHeader = NonNullable<MaybeEthereumBlockHeader>
@@ -430,28 +429,11 @@ const toSimulationInputBlocks = (ethereum: EthereumClientService, parentBlock: E
 	}
 })
 
-// Only prepareStackOnPinnedBlock can build a StackPreparedOnPinnedBlock, since no other module can name this key.
-const stackPreparedOnPinnedBlockBrand: unique symbol = Symbol('StackPreparedOnPinnedBlock')
-
-// The user's simulation stack prepared for the node (its Gnosis Safe executions included) on the block pinnedEthereum is pinned to, together with that client, so the preview runs on the very block the stack was prepared on.
-export type StackPreparedOnPinnedBlock = {
-	readonly [stackPreparedOnPinnedBlockBrand]: true
-	readonly pinnedEthereum: BlockPinnedEthereumClient
-	readonly preparedStack: SimulationStateInput
-}
-
-export const prepareStackOnPinnedBlock = async (pinnedEthereum: BlockPinnedEthereumClient, stack: SimulationStateInput): Promise<StackPreparedOnPinnedBlock> => ({
-	[stackPreparedOnPinnedBlockBrand]: true,
-	pinnedEthereum,
-	preparedStack: await prepareSafeExecutionsOnParentBlock(stack, pinnedEthereum.ethereum, pinnedEthereum.block),
-})
-
 /**
- * Simulates what executing a governance proposal does, as the governor's own timelock executes it, after the user's simulation stack. The whole preview works on the block the stack was prepared on: the reads, the simulation and its balance lookups all use it, whatever blocks arrive meanwhile.
+ * Simulates what executing a governance proposal does, as the governor's own timelock executes it, after the user's simulation stack. The whole preview works on parentBlock, which ethereum is pinned to and stackSimulationInput was prepared on: the reads, the simulation and its balance lookups all use it, whatever blocks arrive meanwhile. Only PreparedGovernanceStack.simulateProposalExecution calls it, with the values its closure holds.
  * The governor has to be a Compound-style or OpenZeppelin governor whose timelock() is a Compound Timelock or an OpenZeppelin TimelockController that accepts it. Anything else, any proposal that will not be executed, and any execution that fails, gets a reason instead of an outcome. The state overrides it may add are described at toSimulationInputBlocks.
  */
-export const simulateGovernanceProposalExecution = async (stack: StackPreparedOnPinnedBlock, governor: bigint, proposalId: bigint, website: Website): Promise<GovernanceExecutionPreview> => {
-	const { pinnedEthereum: { ethereum, block: parentBlock }, preparedStack: stackSimulationInput } = stack
+const simulateGovernanceProposalExecutionOnPinnedBlock = async (ethereum: EthereumClientService, parentBlock: EthereumBlockHeader, stackSimulationInput: SimulationStateInput, governor: bigint, proposalId: bigint, website: Website): Promise<GovernanceExecutionPreview> => {
 	const reads = await readGovernor(ethereum, parentBlock, stackSimulationInput, governor, proposalId)
 	if (!reads.success) return reads
 	const timelock = await identifyTimelock(ethereum, parentBlock, stackSimulationInput, governor, reads.value.timelock)
@@ -506,4 +488,31 @@ export const simulateGovernanceProposalExecution = async (stack: StackPreparedOn
 		timelock: timelock.value.address,
 		executionTime: bigintSecondsToDate(plan.executionTime),
 	}
+}
+
+// The user's simulation stack prepared for the node, Gnosis Safe executions included, on the preview's pinned block. preparedStack is a copy to read; simulateProposalExecution runs the preview with the client, block and stack its closure holds, so replacing a field of this object, or spreading it into another, cannot make the preview mix two blocks.
+export type PreparedGovernanceStack = {
+	readonly preparedStack: SimulationStateInput
+	readonly simulateProposalExecution: (governor: bigint, proposalId: bigint, website: Website) => Promise<GovernanceExecutionPreview>
+}
+
+// A governance preview pinned to one parent block, the latest when it was made. ethereum and parentBlock are there to read, for example to visualise the outcome on the same block; prepareStack prepares with the client and block its closure holds, never these fields.
+export type PinnedGovernancePreview = {
+	readonly ethereum: EthereumClientService
+	readonly parentBlock: EthereumBlockHeader
+	readonly prepareStack: (stack: SimulationStateInput) => Promise<PreparedGovernanceStack>
+}
+
+export const pinGovernancePreviewToLatestBlock = async (liveEthereum: EthereumClientService, requestAbortController: AbortController | undefined): Promise<PinnedGovernancePreview> => {
+	const parentBlock = await liveEthereum.getBlock(requestAbortController)
+	if (parentBlock === null) throw new Error('The latest block is null')
+	const ethereum = liveEthereum.pinnedToBlock(parentBlock)
+	const prepareStack = async (stack: SimulationStateInput): Promise<PreparedGovernanceStack> => {
+		const preparedStack = await prepareSafeExecutionsOnParentBlock(stack, ethereum, parentBlock)
+		return {
+			preparedStack,
+			simulateProposalExecution: async (governor, proposalId, website) => await simulateGovernanceProposalExecutionOnPinnedBlock(ethereum, parentBlock, preparedStack, governor, proposalId, website),
+		}
+	}
+	return { ethereum, parentBlock, prepareStack }
 }
