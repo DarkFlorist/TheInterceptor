@@ -123,6 +123,7 @@ test('the dispatcher only combines domain registries', async () => {
 })
 
 test('each popup handler implementation file is wired by the registry of the same domain', async () => {
+	// Domain adapters live here; reusable orchestration, such as safeStackHandlers.ts, lives in the peer background directory.
 	assert.equal(await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).exists(), false)
 	for (const file of popupMessageHandlerFileNames) assert.ok(popupHandlerRegistryFileNames.includes(file), `popupMessageHandlers/${ file } has no popupMessageHandlerRegistries/${ file }`)
 })
