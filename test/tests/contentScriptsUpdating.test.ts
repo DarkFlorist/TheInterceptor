@@ -1303,6 +1303,28 @@ describe('content script injection strategy', () => {
 		}
 	})
 
+	test('derives the scripting and Firefox contentScripts execution options from one definition', async () => {
+		installBrowserMock()
+		const { contentScriptExecution, toScriptingExecutionOptions, toFirefoxContentScriptsExecutionOptions } = await loadModules()
+		const { runAt, allFrames, framesWithCreatorOrigin } = contentScriptExecution
+		assert.deepEqual(toScriptingExecutionOptions(contentScriptExecution), { runAt, allFrames, matchOriginAsFallback: framesWithCreatorOrigin })
+		assert.deepEqual(toFirefoxContentScriptsExecutionOptions(contentScriptExecution), { runAt, allFrames, matchAboutBlank: framesWithCreatorOrigin })
+		// Changing the definition changes both mappings the same way.
+		const otherExecution = { runAt, allFrames: false, framesWithCreatorOrigin: false }
+		assert.deepEqual(toScriptingExecutionOptions(otherExecution), { runAt, allFrames: false, matchOriginAsFallback: false })
+		assert.deepEqual(toFirefoxContentScriptsExecutionOptions(otherExecution), { runAt, allFrames: false, matchAboutBlank: false })
+	})
+
+	test('both registration APIs register with the shared execution options', async () => {
+		const { getRegisteredContentScripts, getActiveFirefoxContentScripts } = installBrowserMock({ manifestVersion: 2, websiteAccess: [disabledWebsiteAccessEntry('localhost:3000')] })
+		const { updateContentScriptRegistrations, contentScriptExecution, toScriptingExecutionOptions, toFirefoxContentScriptsExecutionOptions } = await loadModules()
+
+		await updateContentScriptRegistrations()
+
+		for (const { runAt, allFrames, matchOriginAsFallback } of getRegisteredContentScripts()) assert.deepEqual({ runAt, allFrames, matchOriginAsFallback }, toScriptingExecutionOptions(contentScriptExecution))
+		for (const { runAt, allFrames, matchAboutBlank } of getActiveFirefoxContentScripts()) assert.deepEqual({ runAt, allFrames, matchAboutBlank }, toFirefoxContentScriptsExecutionOptions(contentScriptExecution))
+	})
+
 	test('a failed Firefox refresh that disables a site leaves the registrations matching the rolled-back access', async () => {
 		const { getRegisteredContentScripts, getActiveFirefoxContentScripts, getRegistrationSnapshots, getStorageState } = installBrowserMock({ manifestVersion: 2, websiteAccess: [], failingFirefoxRegistration: 2 })
 		const { refreshContentScriptInjectionStrategy } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')

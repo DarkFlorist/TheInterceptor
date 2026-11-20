@@ -80,6 +80,16 @@ const getContentScriptDefinitions = (metamaskCompatibilityMode: boolean): readon
 	{ id: 'inpage', js: asRootRelativePaths(getPageWorldScriptPaths(metamaskCompatibilityMode)), world: 'MAIN' },
 ]
 
+// How every registration runs, on both registration APIs: at document_start, in every frame, and in frames without a URL origin of their own (such as about:blank) under their creator's origin. Only the two mapping functions below name each API's fields.
+type ContentScriptExecution = { readonly runAt: 'document_start', readonly allFrames: boolean, readonly framesWithCreatorOrigin: boolean }
+export const contentScriptExecution: ContentScriptExecution = { runAt: 'document_start', allFrames: true, framesWithCreatorOrigin: true }
+
+// scripting.registerContentScripts (Chrome, and Firefox 128 and later) names the creator-origin fallback matchOriginAsFallback.
+export const toScriptingExecutionOptions = ({ runAt, allFrames, framesWithCreatorOrigin }: ContentScriptExecution): { readonly runAt: 'document_start', readonly allFrames: boolean, readonly matchOriginAsFallback: boolean } => ({ runAt, allFrames, matchOriginAsFallback: framesWithCreatorOrigin })
+
+// Firefox's contentScripts.register validates its options against its own schema, which has no matchOriginAsFallback; its matchAboutBlank is the counterpart.
+export const toFirefoxContentScriptsExecutionOptions = ({ runAt, allFrames, framesWithCreatorOrigin }: ContentScriptExecution): Pick<browser.contentScripts.RegisteredContentScriptOptions, 'runAt' | 'allFrames' | 'matchAboutBlank'> => ({ runAt, allFrames, matchAboutBlank: framesWithCreatorOrigin })
+
 // Firefox matches URL globs against the URL with its credentials, and a glob's * also matches /, so no glob names exactly one origin. This first script of a disabled-host registration compares the document's origin instead. On a disabled origin it sets the world's disabledOriginKey, which the guarded script of the same registration consumes to skip; Firefox runs one registration's scripts back to back, so no other registration's script runs in between. It never claims the document, so a registration that should provide on this origin, such as the general one after the site is enabled again, still does. An opaque origin ("null") counts as disabled, because it cannot be told apart.
 export function getDisabledOriginCheckCode(disabledOrigins: readonly string[], { global, disabledOriginKey }: ContentScriptDocumentMarkers) {
 	return `if (window.origin === 'null' || ${ JSON.stringify(disabledOrigins) }.includes(window.origin)) Reflect.defineProperty(${ global }, Symbol.for(${ JSON.stringify(disabledOriginKey) }), { value: true, configurable: true })`
@@ -90,7 +100,7 @@ async function updateRegisteredContentScripts(contentScriptDefinitions: readonly
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 	// The browser polyfill types do not expose the MAIN world or matchOriginAsFallback options of scripting.registerContentScripts, which Chrome and Firefox 128 accept.
 	type FixedContentScript = RegisteredContentScript & { world: ContentScriptWorld, matchOriginAsFallback: boolean }
-	const contentScripts: FixedContentScript[] = contentScriptDefinitions.map(({ id, js, world }) => ({ id, js, world, matches: injectableSitesWildcard, excludeMatches, allFrames: true, runAt: 'document_start', matchOriginAsFallback: true }))
+	const contentScripts: FixedContentScript[] = contentScriptDefinitions.map(({ id, js, world }) => ({ id, js, world, matches: injectableSitesWildcard, excludeMatches, ...toScriptingExecutionOptions(contentScriptExecution) }))
 	let previousRegisteredContentScripts: RegisteredContentScript[] | undefined
 	let registrationMutationStarted = false
 	try {
@@ -141,7 +151,7 @@ async function updateRegisteredContentScripts(contentScriptDefinitions: readonly
 
 type DisabledHost = ReturnType<typeof getFirefoxContentScriptExclusions>['disabledHosts'][number]
 type FirefoxContentScriptRegistration = browser.contentScripts.RegisteredContentScript
-// Firefox validates contentScripts.register options against its own schema, which has none of the scripting API's options such as matchOriginAsFallback; matchAboutBlank is its counterpart. The polyfill types predate the world option, which Firefox 128 added.
+// Firefox validates contentScripts.register options against its own schema, so they are built from its fields only, never from a scripting registration. The polyfill types predate the world option, which Firefox 128 added.
 type FirefoxContentScriptOptions = browser.contentScripts.RegisteredContentScriptOptions & { readonly world: ContentScriptWorld }
 const getDisabledHostRegistrationKey = (disabledHost: DisabledHost, contentScriptDefinitions: readonly ContentScriptDefinition[]) => JSON.stringify({ ...disabledHost, scriptFiles: contentScriptDefinitions.map(({ js }) => js) })
 
@@ -174,9 +184,7 @@ export function createFirefoxContentScriptRegistrations() {
 				const contentScript: FirefoxContentScriptOptions = {
 					matches: disabledHost.matches,
 					js: [{ code: getDisabledOriginCheckCode(disabledHost.disabledOrigins, contentScriptDocumentMarkers[world]) }, ...js.map((file) => ({ file }))],
-					runAt: 'document_start',
-					allFrames: true,
-					matchAboutBlank: true,
+					...toFirefoxContentScriptsExecutionOptions(contentScriptExecution),
 					world,
 				}
 				registeredContentScripts.push(await browser.contentScripts.register(contentScript))
