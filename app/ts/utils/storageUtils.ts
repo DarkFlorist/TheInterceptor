@@ -17,10 +17,9 @@ import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
-type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
+export type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.ReadonlyPartial({
 	managementTabId: funtypes.Number,
-	settingsView: funtypes.Number,
 })
 
 export type OldActiveAddressEntry = funtypes.Static<typeof OldActiveAddressEntry>

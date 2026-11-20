@@ -1,5 +1,6 @@
 import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../background/backgroundUtils.js'
-import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from '../background/storageVariables.js'
+import { appendInterceptorErrorDiagnostic } from '../background/diagnosticStorage.js'
+import { setLatestUnexpectedError } from '../background/storageVariables.js'
 import type { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import { InterceptorError } from '../types/JsonRpc-types.js'
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'

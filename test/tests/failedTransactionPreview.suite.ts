@@ -676,7 +676,8 @@ for (const { description, createLookupError, isDefect } of failedPreviewLookups)
 		const unknownContractAddress = 0x4444444444444444444444444444444444444444n
 		const lookupError = await createLookupError()
 		const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
-		const { getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const { getInterceptorErrorDiagnostics } = await import('../../app/ts/background/diagnosticStorage.js')
 		let failedLookups = 0
 		// Simulation mode estimates gas with eth_simulateV1, so failing it leaves the transaction unformed, and only its failure preview looks up the unknown contract.
 		const confirmationSimulator = createSimulatorWithRpcFailure((rpcRequest) => {
@@ -721,7 +722,7 @@ for (const { description, createLookupError, isDefect } of failedPreviewLookups)
 				}
 			},
 		})
-		const { getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+		const { getInterceptorErrorDiagnostics } = await import('../../app/ts/background/diagnosticStorage.js')
 		const { refreshPopupConfirmTransactionMetadata } = await import('../../app/ts/background/popupMessageHandlers.js')
 		browserMock.sentMessages.length = 0
 

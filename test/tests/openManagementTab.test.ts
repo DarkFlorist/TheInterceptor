@@ -120,7 +120,7 @@ describe('open management tab', () => {
 	test('reuses the tracked management tab across management sections', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
 			[{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites' }],
-			{ ...emptyOpenedTabs(), settingsView: 42 },
+			{ managementTabId: 42 },
 		)
 		const { openManagementPage, openManagementSimulationStack } = await loadManagementNavigation()
 		const pages: readonly ManagementPage[] = ['home', 'websites', 'address-book', 'settings']
@@ -166,20 +166,18 @@ describe('management tab tracking', () => {
 		assert.deepEqual(storageState.idsOfOpenedTabs, {})
 	})
 
-	test('prefers the current management tab ID over a legacy settings tab ID', async () => {
-		const { createdTabs, updatedTabs } = installBrowserMock(
-			[
-				{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#settings' },
-				{ id: 43, url: 'chrome-extension://test-extension/html3/managementViewV3.html#home' },
-			],
-			{ settingsView: 42, managementTabId: 43 },
+	test('ignores an unmigrated legacy settings tab ID because startup migration owns that conversion', async () => {
+		const { createdTabs, updatedTabs, storageState } = installBrowserMock(
+			[{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#settings' }],
+			{ settingsView: 42 },
 		)
 		const { openManagementPage } = await loadManagementNavigation()
 
 		await openManagementPage('diagnostics')
 
-		assert.deepEqual(createdTabs, [])
-		assert.deepEqual(updatedTabs, [{ tabId: 43, update: { active: true, highlighted: true, url: '/html3/managementViewV3.html#diagnostics' } }])
+		assert.deepEqual(updatedTabs, [])
+		assert.deepEqual(createdTabs, [{ url: '/html3/managementViewV3.html#diagnostics' }])
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('opens and tracks one management tab even when legacy page IDs were stored', async () => {
@@ -196,7 +194,7 @@ describe('management tab tracking', () => {
 	test('reuses and focuses the tracked management tab window', async () => {
 		const { createdTabs, updatedTabs, updatedWindows } = installBrowserMock(
 			[{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites', windowId: 7 }],
-			{ ...emptyOpenedTabs(), settingsView: 42 },
+			{ managementTabId: 42 },
 		)
 		const { openManagementSimulationStack } = await loadManagementNavigation()
 
@@ -224,7 +222,7 @@ describe('management tab tracking', () => {
 	})
 
 	test('replaces a missing tracked management tab', async () => {
-		const { createdTabs, storageState } = installBrowserMock([], { settingsView: 42 })
+		const { createdTabs, storageState } = installBrowserMock([], { managementTabId: 42 })
 		const { openManagementPage } = await loadManagementNavigation()
 
 		await openManagementPage('settings')
@@ -236,7 +234,7 @@ describe('management tab tracking', () => {
 	test('does not replace a website opened in the formerly tracked tab', async () => {
 		const { createdTabs, updatedTabs, storageState } = installBrowserMock(
 			[{ id: 42, url: 'https://example.com/' }],
-			{ settingsView: 42 },
+			{ managementTabId: 42 },
 		)
 		const { openManagementPage } = await loadManagementNavigation()
 
@@ -248,7 +246,7 @@ describe('management tab tracking', () => {
 	})
 
 	test('replaces a management tab that cannot be focused', async () => {
-		const { createdTabs, storageState } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites' }], { settingsView: 42 }, true)
+		const { createdTabs, storageState } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/managementViewV3.html#websites' }], { managementTabId: 42 }, true)
 		const { openManagementPage } = await loadManagementNavigation()
 
 		await openManagementPage('settings')

@@ -160,6 +160,7 @@ async function loadModules() {
 		...await import('../../app/ts/utils/errors.js'),
 		...await import('../../app/ts/utils/requests.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/diagnosticStorage.js'),
 		...await import('../../app/ts/components/subcomponents/Error.js'),
 	}
 }
@@ -223,7 +224,7 @@ describe('unexpected error diagnostics', () => {
 
 	test('returns and clears stored diagnostics for the management page', async () => {
 		browserMock.reset()
-		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/diagnosticStorage.js')
 		const { clearDiagnostics, requestDiagnostics } = await import('../../app/ts/background/popupMessageHandlers.js')
 		await appendInterceptorErrorDiagnostic({
 			timestamp: new Date('2026-01-01T00:00:00.000Z'),
@@ -250,7 +251,7 @@ describe('unexpected error diagnostics', () => {
 
 	test('clearing diagnostics waits for an earlier append and removes its completed result', async () => {
 		browserMock.reset()
-		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/diagnosticStorage.js')
 		const { clearDiagnostics } = await import('../../app/ts/background/popupMessageHandlers.js')
 		let releaseStorageWrite = () => undefined
 		const storageWriteGate = new Promise<void>((resolve) => { releaseStorageWrite = resolve })

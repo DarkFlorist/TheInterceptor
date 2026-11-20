@@ -2,7 +2,7 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type IdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -17,7 +17,6 @@ import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
-export { appendInterceptorErrorDiagnostic, clearInterceptorErrorDiagnostics, getInterceptorErrorDiagnostics } from './diagnosticStorage.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
@@ -29,15 +28,16 @@ const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(error)
 }
 
-export async function getManagementTabId(): Promise<number | undefined> {
-	const tabIds = (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs
-	// Older versions tracked this same tab under settingsView.
-	return tabIds?.managementTabId ?? tabIds?.settingsView
-}
+// Legacy per-page tab IDs are rewritten to managementTabId by migrateManagementTabId at startup.
+const idsOfOpenedTabsRepository = createStoredValueRepository<IdsOfOpenedTabs>({
+	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
+	write: async (idsOfOpenedTabs) => { await browserStorageLocalSet({ idsOfOpenedTabs }) },
+	getDefault: () => ({}),
+	recover: reportCorruptStoredValue('Opened tab IDs'),
+})
 
-export async function setManagementTabId(tabId: number): Promise<void> {
-	await browserStorageLocalSet({ idsOfOpenedTabs: { managementTabId: tabId } })
-}
+export const getManagementTabId = async () => (await idsOfOpenedTabsRepository.get()).managementTabId
+export const setManagementTabId = async (managementTabId: number) => { await idsOfOpenedTabsRepository.set({ managementTabId }) }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
