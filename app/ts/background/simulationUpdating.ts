@@ -25,6 +25,7 @@ import { getAddressBookEntriesForTransactionWithoutSimulation, getAddressBookEnt
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { simulateGovernanceProposalExecution } from '../simulation/governanceProposalExecution.js'
+import { pinToLatestBlock } from '../simulation/services/blockPinning.js'
 import { decodeGovernanceVote } from '../utils/governanceVote.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
@@ -203,7 +204,7 @@ async function getDelegationAddressesForSimulation(
 		.map((entry) => [addressString(entry.senderAddress), entry.delegationEntry] as const))
 }
 
-export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, liveEthereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
 		if (pendingTransaction.transactionOrMessageCreationStatus !== 'Simulated') return returnError('Still simulating the voting transaction')
@@ -211,8 +212,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (governor === null) return returnError('The transaction creates a contract instead of casting a vote')
 		const vote = decodeGovernanceVote(pendingTransaction.transactionToSimulate.transaction.input)
 		if (vote === undefined) return returnError('Could not identify the transaction as a vote')
+		// The stack's preparation, the preview and the visualisation all work on one parent block, whatever blocks arrive meanwhile.
+		const pinnedEthereum = await pinToLatestBlock(liveEthereum, undefined)
+		const { ethereum } = pinnedEthereum
 		const simulationInput = await prepareSafeExecutionsForRpc(await getCurrentSimulationInput(), ethereum)
-		const execution = await simulateGovernanceProposalExecution(ethereum, simulationInput, governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
+		const execution = await simulateGovernanceProposalExecution(pinnedEthereum, simulationInput, governor, vote.proposalId, pendingTransaction.transactionToSimulate.website)
 		if (!execution.success) return returnError(execution.errorMessage)
 		return { success: true as const, result: await visualizeSimulatorState(execution.simulationState, ethereum, tokenPriceService, undefined) }
 	} catch(error) {

@@ -9,14 +9,14 @@ import { getGovernorProposalForwarder } from '../../app/ts/utils/ethereumByteCod
 import { toEventSelector, toFunctionSelector } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumData } from '../../app/ts/types/wire-types.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { pinRequestToBlockHash } from '../../app/ts/simulation/services/blockPinning.js'
+import { pinRequestToBlockHash, pinToLatestBlock } from '../../app/ts/simulation/services/blockPinning.js'
 import { EthereumClientService as RealEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumBlockHeaderWithTransactionHashes } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { toSimulationStateInputMinimalData, type SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../../app/ts/utils/constants.js'
-import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, isExampleStackName, pinToLatestBlock, prepareExampleStack } from '../governanceFixtures.js'
+import { createReplayingEthereumClientService, EXAMPLE_SAFE, EXAMPLE_STACK_SENDER, EXAMPLE_STACKS, isExampleStackName, prepareExampleStack } from '../governanceFixtures.js'
 import { loadGovernanceFixture } from '../governanceFixtureFiles.js'
 
 // A block header with placeholder fields, for tests that need a whole header.
@@ -101,13 +101,12 @@ const previewFixture = async (name: string, options: Parameters<typeof createRep
 	const fixture = await loadGovernanceFixture(name)
 	if (fixture.stack !== undefined && !isExampleStackName(fixture.stack)) throw new Error(`Unknown stack ${ fixture.stack }`)
 	const { ethereum, requests, resultOf } = createReplayingEthereumClientService(fixture, options)
-	const pinnedEthereum = await pinToLatestBlock(ethereum)
-	const parentBlock = await pinnedEthereum.getBlock(undefined)
-	if (parentBlock === null) throw new Error('Expected the latest block')
-	const stack = await prepareExampleStack(pinnedEthereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack](BigInt(fixture.governor)))
+	const pinnedEthereum = await pinToLatestBlock(ethereum, undefined)
+	const parentBlock = pinnedEthereum.block
+	const stack = await prepareExampleStack(pinnedEthereum.ethereum, fixture.stack === undefined ? [] : EXAMPLE_STACKS[fixture.stack](BigInt(fixture.governor)))
 	const governor = BigInt(fixture.governor)
 	const preview = await simulateGovernanceProposalExecution(pinnedEthereum, stack, governor, BigInt(fixture.proposalId), WEBSITE)
-	const forwarderUsed = await assertOverrideRule(pinnedEthereum, requests, resultOf, stack, governor)
+	const forwarderUsed = await assertOverrideRule(pinnedEthereum.ethereum, requests, resultOf, stack, governor)
 	assertStateReadsNameTheBlockHash(requests, parentBlock.hash)
 	assertBoundedLogSearch(requests)
 	return { preview, requests, resultOf, stack, governor, forwarderUsed, fixture, parentBlock }
@@ -225,9 +224,9 @@ describe('governance proposal execution preview of real governors', () => {
 			if (typeof recorded !== 'object' || recorded === null || !('number' in recorded) || typeof recorded.number !== 'string') throw new Error('Expected a recorded block')
 			return { ...recorded, number: `0x${ (BigInt(recorded.number) + 1n).toString(16) }`, gasLimit: '0x1312d00' }
 		}
-		// The preview is given a client that is not pinned, so it has to pin itself.
+		// The preview reads the latest block once, when it is pinned, and keeps to that block though the chain's latest block then moves on.
 		const { ethereum, requests } = createReplayingEthereumClientService(fixture, { answer: answerWithLaterLatestBlock })
-		const moved = await simulateGovernanceProposalExecution(ethereum, [], BigInt(fixture.governor), BigInt(fixture.proposalId), WEBSITE)
+		const moved = await simulateGovernanceProposalExecution(await pinToLatestBlock(ethereum, undefined), [], BigInt(fixture.governor), BigInt(fixture.proposalId), WEBSITE)
 		const unchanged = await previewFixture('uniswap-bravo-active')
 		assert.equal(requests.filter((request) => request.method === 'eth_getBlockByNumber' && request.params[0] === 'latest').length, 1)
 		assert.deepEqual(getExecution(moved).transactions.map((transaction) => transaction.ethSimulateV1CallResult), getExecution(unchanged.preview).transactions.map((transaction) => transaction.ethSimulateV1CallResult))

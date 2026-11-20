@@ -1,6 +1,8 @@
 import type { EthereumJsonRpcRequest } from '../../types/JsonRpc-types.js'
 import { bytes32String } from '../../utils/bigint.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
+import type { EthereumClientService } from './EthereumClientService.js'
+import type { EthereumBlockHeader } from '../../types/wire-types.js'
 
 type PinnedBlock = { readonly number: bigint, readonly hash: bigint }
 
@@ -34,3 +36,19 @@ export const createBlockPinnedRequestHandler = (requestHandler: IEthereumJSONRpc
 	// Every option, such as bypassing the handler's cache, passes through with the request.
 	jsonRpcRequest: async (request, ...options) => await requestHandler.jsonRpcRequest(pinRequestToBlockHash(request, block), ...options),
 })
+
+// Only pinToLatestBlock can build a BlockPinnedEthereumClient, since no other module can name this key.
+const blockPinnedBrand: unique symbol = Symbol('BlockPinnedEthereumClient')
+
+// A client whose latest block stays `block`, with the block it is pinned to. Work that has to prepare the user's stack, simulate and visualise on one parent block takes this instead of an EthereumClientService, so it cannot be handed a live client whose latest block moves on in between.
+export type BlockPinnedEthereumClient = {
+	readonly [blockPinnedBrand]: true
+	readonly ethereum: EthereumClientService
+	readonly block: NonNullable<EthereumBlockHeader>
+}
+
+export const pinToLatestBlock = async (liveEthereum: EthereumClientService, requestAbortController: AbortController | undefined): Promise<BlockPinnedEthereumClient> => {
+	const block = await liveEthereum.getBlock(requestAbortController)
+	if (block === null) throw new Error('The latest block is null')
+	return { [blockPinnedBrand]: true, ethereum: liveEthereum.pinnedToBlock(block), block }
+}

@@ -142,10 +142,3 @@ export const prepareExampleStack = async (ethereum: EthereumClientService, stack
 	if (parentBlock === null) throw new Error('The latest block is null')
 	return await prepareSafeExecutionSimulationInput(stack, ethereum, parentBlock.number, getSimulatedBlockBaseFeePerGas(parentBlock))
 }
-
-// Pins a client to the latest block, as the governance handler does before it prepares the user's stack and runs the preview.
-export const pinToLatestBlock = async (ethereum: EthereumClientService) => {
-	const latestBlock = await ethereum.getBlock(undefined)
-	if (latestBlock === null) throw new Error('The latest block is null')
-	return ethereum.pinnedToBlock(latestBlock)
-}

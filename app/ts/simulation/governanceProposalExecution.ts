@@ -11,6 +11,7 @@ import type { EthereumClientService } from './services/EthereumClientService.js'
 import { createSimulationState } from './services/SimulationModeEthereumClientService.js'
 import { getGovernorProposalForwarder } from '../utils/ethereumByteCodes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
+import type { BlockPinnedEthereumClient } from './services/blockPinning.js'
 
 type EthereumBlockHeader = NonNullable<MaybeEthereumBlockHeader>
 
@@ -423,14 +424,12 @@ const toSimulationInputBlocks = (ethereum: EthereumClientService, parentBlock: E
 })
 
 /**
- * Simulates what executing a governance proposal does, as the governor's own timelock executes it, after the user's simulation stack. The whole preview works on one parent block, the latest when it starts: the reads, the simulation and its balance lookups all use it, whatever blocks arrive meanwhile.
+ * Simulates what executing a governance proposal does, as the governor's own timelock executes it, after the user's simulation stack. The whole preview works on the block pinnedEthereum is pinned to: the reads, the simulation and its balance lookups all use it, whatever blocks arrive meanwhile.
  * The governor has to be a Compound-style or OpenZeppelin governor whose timelock() is a Compound Timelock or an OpenZeppelin TimelockController that accepts it. Anything else, any proposal that will not be executed, and any execution that fails, gets a reason instead of an outcome. The state overrides it may add are described at toSimulationInputBlocks.
- * stackSimulationInput has to be prepared for the node already (prepareSafeExecutionsForRpc), on the same parent block.
+ * stackSimulationInput has to be prepared for the node already (prepareSafeExecutionsForRpc) with the same pinned client, so the stack and the preview run on one parent block; taking a BlockPinnedEthereumClient rather than a live client is what lets the caller share that block.
  */
-export const simulateGovernanceProposalExecution = async (latestEthereum: EthereumClientService, stackSimulationInput: SimulationStateInput, governor: bigint, proposalId: bigint, website: Website): Promise<GovernanceExecutionPreview> => {
-	const parentBlock = await latestEthereum.getBlock(undefined)
-	if (parentBlock === null) throw new Error('The latest block is null')
-	const ethereum = latestEthereum.pinnedToBlock(parentBlock)
+export const simulateGovernanceProposalExecution = async (pinnedEthereum: BlockPinnedEthereumClient, stackSimulationInput: SimulationStateInput, governor: bigint, proposalId: bigint, website: Website): Promise<GovernanceExecutionPreview> => {
+	const { ethereum, block: parentBlock } = pinnedEthereum
 	const reads = await readGovernor(ethereum, parentBlock, stackSimulationInput, governor, proposalId)
 	if (!reads.success) return reads
 	const timelock = await identifyTimelock(ethereum, parentBlock, stackSimulationInput, governor, reads.value.timelock)
