@@ -1212,9 +1212,15 @@ describe('popup icon sync', () => {
 		const account: AddressBookEntry = { type: 'contact', name: 'Editing account', address: 1n, entrySource: 'User' }
 		const option = usdcOption(true)
 		const daiOption: RichTokenOption = { ...usdcOption(false), tokenAddress: 0x6b175474e89094c44da98b954eedeac495271d0fn, name: 'Dai', symbol: 'DAI', decimals: 18n }
+		const profiles = signal<readonly RichAccountBalance[]>([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: savedAmount }] }])
+		let removeSaved = false
 		installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData' && removeSaved) {
+				profiles.value = [{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [] }]
+			}
 			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
 			sentRichTokenRequests.push(message)
+			removeSaved = 'data' in message && typeof message.data === 'object' && message.data !== null && 'action' in message.data && message.data.action === 'Remove'
 			const { enabled: _enabled, ...richToken } = option
 			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Refreshed' } }
 		})
@@ -1222,7 +1228,7 @@ describe('popup icon sync', () => {
 			render(h(RichModeAccountManager, {
 				activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
 				makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
-				richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: savedAmount }] }]),
+				richAccountBalances: profiles,
 				richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option, daiOption]),
 				setRichState: async () => undefined,
 			}), dom.document.body)
@@ -1356,6 +1362,9 @@ describe('popup icon sync', () => {
 		const option = usdcOption(true)
 		const profiles = signal<readonly RichAccountBalance[]>([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5_000_000n }] }])
 		installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData') {
+				profiles.value = [{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 7_000_000n }] }]
+			}
 			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
 			const { enabled: _enabled, ...richToken } = option
 			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Unavailable' } }
@@ -1387,6 +1396,9 @@ describe('popup icon sync', () => {
 		const option = usdcOption(true)
 		const profiles = signal<readonly RichAccountBalance[]>([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5_000_000n }] }])
 		installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData') {
+				profiles.value = [{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 7_000_000n }] }]
+			}
 			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
 			const { enabled: _enabled, ...richToken } = option
 			return { method: 'popup_modifyRichToken', result: { success: true, richToken: serialize(RichToken, { ...richToken, balanceSlot: 9n }), simulationRefresh: 'Superseded' } }
@@ -1687,7 +1699,7 @@ describe('popup icon sync', () => {
 			})
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), false)
 			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
-			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false, 'the reply must not invent funding absent from authoritative home data')
 			const reopenAfterAddButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
 			await act(async () => { if (reopenAfterAddButton !== undefined) await clickElement(reopenAfterAddButton) })
 			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('value'), 'DAI')

@@ -1,5 +1,5 @@
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
-import { richFundingRejected, richFundingSaved, type RichAccountBalance, type RichFundingResult, type RichListElement, type RichModeState, type RichToken } from '../types/richMode.js'
+import { richFundingRejected, richFundingSaved, type RichAccountBalance, type RichFundingResult, type RichListElement, RichModeState, type RichToken } from '../types/richMode.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { MAX_RICH_TOKEN_AMOUNT, normalizeRichAccountBalances } from '../utils/richTokens.js'
@@ -33,7 +33,7 @@ export async function mutateRichMode<Result>(operation: (store: ReturnType<typeo
 
 // The funding writes that keep rich mode consistent with new address-book entries. Only addressBookStorage calls this, inside the settings storage transaction that writes those entries, so no address-book write can skip reconciliation. fundingChanged says whether any account's funded balances changed.
 export async function getRichModeWritesForAddressBook(entries: AddressBookEntries, importedState?: RichModeState) {
-	const store = createRichModeTransaction(importedState ?? await getRichModeState())
+	const store = createRichModeTransaction(await getRichModeState())
 	if (importedState !== undefined) store.replace(importedState)
 	const fundingChanged = await store.reconcileAddressBook(entries)
 	return { writes: store.getStorageWrites(), fundingChanged }
@@ -42,7 +42,12 @@ export async function getRichModeWritesForAddressBook(entries: AddressBookEntrie
 function createRichModeTransaction(initial: RichModeState) {
 	let state = initial
 	let changed = false
-	const replace = (next: RichModeState) => { state = next; changed = true }
+	const initialSerialized = JSON.stringify(RichModeState.serialize(initial))
+	const replace = (next: RichModeState) => {
+		state = next
+		// Compare canonical schema values, so cloned but unchanged profiles/layouts do not trigger storage writes or simulation refreshes.
+		changed = JSON.stringify(RichModeState.serialize(next)) !== initialSerialized
+	}
 	const transaction = {
 		getState: () => state,
 		isChanged: () => changed,

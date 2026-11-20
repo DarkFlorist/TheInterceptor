@@ -10,7 +10,7 @@ export const richTokenLayout = ({ amount: _amount, ...layout }: RichToken): Rich
 
 export const richTokensForPresentation = (state: RichModeState): readonly RichToken[] => state.tokenLayouts.map((layout) => ({ ...layout, amount: getDefaultRichTokenAmount(layout.decimals) }))
 
-export const addressesBeingMadeRich = (settings: Settings, state: RichModeState): readonly bigint[] => settings.simulationMode ? [
+export const addressesBeingMadeRich = (settings: Pick<Settings, 'simulationMode' | 'activeSimulationAddress'>, state: Pick<RichModeState, 'fixedAddressRichList' | 'makeCurrentAddressRich'>): readonly bigint[] => settings.simulationMode ? [
 	...state.fixedAddressRichList.filter((entry) => entry.makingRich).map((entry) => entry.address),
 	...(state.makeCurrentAddressRich && settings.activeSimulationAddress !== undefined ? [settings.activeSimulationAddress] : []),
 ] : []

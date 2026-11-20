@@ -48,17 +48,17 @@ type RichModeAccountListProps = {
 	controlsDisabled: boolean
 	enableMakeCurrentAddressRich: (enabled: boolean) => void
 	isInitialHomeDataLoaded: Signal<boolean>
-	makeCurrentAddressRich: Signal<boolean>
+	makeCurrentAddressRich: ReadonlySignal<boolean>
 	modifyRichList: (addressBookEntry: AddressBookEntry, makeRich: boolean) => void
 	nativeCurrencyTicker: string
 	openBalances: (address: bigint) => void
 	renameAddressCallBack: RenameAddressCallBack
-	richAccountBalances: Signal<readonly RichAccountBalance[]>
+	richAccountBalances: ReadonlySignal<readonly RichAccountBalance[]>
 	richAccounts: ReadonlySignal<readonly EnrichedRichListElement[]>
 	richAssetCount: ReadonlySignal<number>
 	richChangeState: AsyncActionContext<void>['value']
-	richList: Signal<readonly EnrichedRichListElement[]>
-	richTokenOptions: Signal<readonly RichTokenOption[]>
+	richList: ReadonlySignal<readonly EnrichedRichListElement[]>
+	richTokenOptions: ReadonlySignal<readonly RichTokenOption[]>
 	visibleRichList: ReadonlySignal<readonly EnrichedRichListElement[]>
 }
 

@@ -507,7 +507,7 @@ describe('Home popup clear empty state', () => {
 			if (handler === undefined) throw new Error('Expected rich toggle handler')
 			Reflect.set(checkbox, 'checked', true)
 			await act(async () => { await handler({ target: checkbox }) })
-			assert.equal(params.makeCurrentAddressRich.value, true)
+			assert.equal(params.makeCurrentAddressRich.value, false, 'a pending toggle must not mutate the authoritative home-data snapshot')
 			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), true)
 			assert.equal(String(checkbox.getAttribute?.('disabled')), 'true')
 			await act(async () => {

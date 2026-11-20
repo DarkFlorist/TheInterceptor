@@ -8,7 +8,7 @@ import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.j
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { formatUnits } from '../../utils/ethereumUnits.js'
 import { getMatchingRichTokenOptions, getRichTokenIdentityKey, getRichTokenLabel, parseRichTokenAmountInput, sameRichTokenIdentity } from '../../utils/richTokens.js'
-import { updateRichListAddress } from '../../utils/richList.js'
+import { addressesBeingMadeRich } from '../../utils/richModeDerivation.js'
 import { assertNever } from '../../utils/typescript.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { InterceptorDialogBody, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
@@ -21,13 +21,13 @@ import { type RichTokenFilter, RichModeTokenPicker, RichModeTokenPickerFooter } 
 type RichModeAccountManagerProps = {
 	isSettingsChangePending: ReadonlySignal<boolean>
 	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
-	makeCurrentAddressRich: Signal<boolean>
-	richNativeAmount: Signal<bigint>
+	makeCurrentAddressRich: ReadonlySignal<boolean>
+	richNativeAmount: ReadonlySignal<bigint>
 	nativeCurrencyTicker: string
 	activeAddress: Signal<AddressBookEntry | undefined>
-	richList: Signal<readonly EnrichedRichListElement[]>
-	richTokenOptions: Signal<readonly RichTokenOption[]>
-	richAccountBalances: Signal<readonly RichAccountBalance[]>
+	richList: ReadonlySignal<readonly EnrichedRichListElement[]>
+	richTokenOptions: ReadonlySignal<readonly RichTokenOption[]>
+	richAccountBalances: ReadonlySignal<readonly RichAccountBalance[]>
 	chainId: bigint
 	renameAddressCallBack: RenameAddressCallBack
 	isInitialHomeDataLoaded: Signal<boolean>
@@ -36,43 +36,30 @@ type RichModeAccountManagerProps = {
 const SAVED_BUT_SIMULATION_UNAVAILABLE_MESSAGE = 'The token funding was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.'
 const SAVED_WITH_NEWER_REFRESH_PENDING_MESSAGE = 'The token funding was saved. A newer simulation refresh is in progress; its result will update the simulation.'
 
-// Owns rich-mode state and the background requests; the account list, balance editor and token picker views render it.
+// Renders the authoritative home-data snapshot. Only dialog/edit progress is local; funding changes are reloaded from the background owner.
 export function RichModeAccountManager({ isSettingsChangePending, setRichState, makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, chainId, renameAddressCallBack, isInitialHomeDataLoaded }: RichModeAccountManagerProps) {
 	const { value: richChangeState, waitFor: waitForRichChange } = useAsyncState<void>()
 	const controlsDisabled = !isInitialHomeDataLoaded.value || isSettingsChangePending.value || richChangeState.value.state === 'pending'
+	const reloadRichState = async () => await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
 	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
 		void waitForRichChange(async () => {
 			try {
 				await setRichState(enabled, address)
 			} catch (error) {
 				// Reload persisted balances when a saved setting cannot be visualized.
-				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
+				await reloadRichState()
 				throw error
 			}
+			await reloadRichState()
 		})
 	}
 	const selectRichTokensButtonRef = useRef<HTMLButtonElement>(null)
 	function enableMakeCurrentAddressRich(enabled: boolean) {
 		if (controlsDisabled) return
 		saveRichChange(enabled, 'CurrentAddress')
-		makeCurrentAddressRich.value = enabled
-		const address = activeAddress.value?.address
-		if (enabled && address !== undefined && !richAccountBalances.value.some((profile) => profile.chainId === chainId && profile.address === address)) {
-			richAccountBalances.value = [...richAccountBalances.value, { chainId, address, nativeAmount: richNativeAmount.value, tokenBalances: [] }]
-		}
 	}
 	function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
 		if (controlsDisabled) return
-		richList.value = updateRichListAddress(
-			richList.value,
-			addressBookEntry.address,
-			makeRich,
-			(element) => element.addressBookEntry.address,
-			() => ({ addressBookEntry, makingRich: true, type: 'UserAdded' as const }),
-		)
-		if (makeRich && !richAccountBalances.value.some((profile) => profile.chainId === chainId && profile.address === addressBookEntry.address)) {
-			richAccountBalances.value = [...richAccountBalances.value, { chainId, address: addressBookEntry.address, nativeAmount: richNativeAmount.value, tokenBalances: [] }]
-		}
 		saveRichChange(makeRich, addressBookEntry.address)
 	}
 
@@ -95,9 +82,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 	const failedAddedRichTokenKey = useSignal<string | undefined>(undefined)
 	const newlyAddedRichTokenKeys = useSignal<readonly string[]>([])
 	const selectedRichAddress = useSignal<bigint | undefined>(undefined)
-	const updateProfileForAddress = (address: bigint, update: (profile: RichAccountBalance) => RichAccountBalance) => {
-		richAccountBalances.value = richAccountBalances.value.map((profile) => profile.chainId === chainId && profile.address === address ? update(profile) : profile)
-	}
+
 	useSignalEffect(() => {
 		if (richTokenSaveConfirmedAddress.value === undefined) return
 		const timeout = globalThis.setTimeout(() => { richTokenSaveConfirmedAddress.value = undefined }, 1600)
@@ -145,7 +130,9 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		richTokenErrorTarget.value = undefined
 		richTokenNotice.value = undefined
 		try {
-			return await operation()
+			const result = await operation()
+			await reloadRichState()
+			return result
 		} finally {
 			richTokenPending.value = false
 			richTokenPendingKey.value = undefined
@@ -175,16 +162,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 			richTokenErrorTarget.value = tokenKey
 			return false
 		}
-		const configuredRichToken = reply.result.richToken
-		// A successful add has stored a layout for the token, so its option is funded from now on.
-		if (enabled) {
-			richTokenOptions.value = richTokenOptions.value.map((entry) => sameRichTokenIdentity(entry, option) ? { ...entry, ...configuredRichToken, enabled: true } : entry)
-		}
-		updateProfileForAddress(address, (profile) => enabled
-			? profile.tokenBalances.some((balance) => sameRichTokenIdentity(balance, option))
-				? profile
-				: { ...profile, tokenBalances: [...profile.tokenBalances, { tokenAddress: option.tokenAddress, tokenId: option.tokenId, amount: configuredRichToken?.amount ?? option.amount }] }
-			: { ...profile, tokenBalances: profile.tokenBalances.filter((balance) => !sameRichTokenIdentity(balance, option)) })
+
 		if (enabled) recentRichTokenKeys.value = [tokenKey, ...recentRichTokenKeys.value.filter((key) => key !== tokenKey)].slice(0, 5)
 		richTokenSaveConfirmedAddress.value = address
 		reportSimulationRefreshOutcome(reply.result.simulationRefresh)
@@ -219,17 +197,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		const address = selectedRichAccount.value?.addressBookEntry.address
 		const profile = selectedRichProfile.value
 		if (address === undefined || profile === undefined || richTokenPending.value) return
-		const previousAmount = profile.nativeAmount
-		const reply = await runRichOperation('native', `Saving ${ nativeCurrencyTicker } amount…`, async () => {
-			updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: amount }))
-			const reply = await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', nativeAmount: amount, address } })
-			if (reply?.ok !== true) {
-				updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: previousAmount }))
-				// A rejected reply can mean the amount was saved but its simulation refresh failed; reload authoritative balances.
-				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
-			}
-			return reply
-		})
+		const reply = await runRichOperation('native', `Saving ${ nativeCurrencyTicker } amount…`, async () => await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { action: 'set-native-amount', nativeAmount: amount, address } }))
 		if (reply?.ok === true) {
 			richTokenSaveConfirmedAddress.value = address
 			return
@@ -271,7 +239,6 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 			richTokenErrorTarget.value = tokenKey
 			return
 		}
-		updateProfileForAddress(address, (profile) => ({ ...profile, tokenBalances: profile.tokenBalances.map((balance) => sameRichTokenIdentity(balance, option) ? { ...balance, amount } : balance) }))
 		richTokenSaveConfirmedAddress.value = address
 		reportSimulationRefreshOutcome(reply.result.simulationRefresh)
 	}
@@ -298,9 +265,14 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		return [...richList.value, { addressBookEntry: peekedActiveAddress, makingRich: false, type: 'CurrentActiveAddress' as const }]
 	})
 	const richAccounts = useComputed(() => {
-		const fixed = visibleRichList.value.filter((element) => element.makingRich)
 		const current = activeAddress.value
-		if (!makeCurrentAddressRich.value || current === undefined || fixed.some((element) => element.addressBookEntry.address === current.address)) return fixed
+		// Home mounts this manager only in simulation mode. Use the simulation input's funding rule for the displayed accounts too.
+		const fundedAddresses = new Set(addressesBeingMadeRich({ simulationMode: true, activeSimulationAddress: current?.address }, {
+			makeCurrentAddressRich: makeCurrentAddressRich.value,
+			fixedAddressRichList: richList.value.map(({ addressBookEntry, makingRich, type }) => ({ address: addressBookEntry.address, makingRich, type })),
+		}))
+		const fixed = richList.value.filter((element) => element.makingRich && fundedAddresses.has(element.addressBookEntry.address))
+		if (current === undefined || !fundedAddresses.has(current.address) || fixed.some((element) => element.addressBookEntry.address === current.address)) return fixed
 		return [{ addressBookEntry: current, makingRich: true, type: 'CurrentActiveAddress' as const }, ...fixed]
 	})
 	const richAssetCount = useComputed(() => {

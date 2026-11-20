@@ -19,7 +19,7 @@ type RichModeBalanceEditorProps = {
 	removeFailedRichTokenSelection: () => void
 	retryFailedRichTokenSelection: () => void
 	richBalanceAssetStatusLabel: ReadonlySignal<string>
-	richNativeAmount: Signal<bigint>
+	richNativeAmount: ReadonlySignal<bigint>
 	richTokenError: Signal<string | undefined>
 	richTokenErrorTarget: Signal<string | undefined>
 	richTokenPending: Signal<boolean>

@@ -654,6 +654,30 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.ok((await getLatestUnexpectedError())?.data.message.includes('probe exploded'))
 	})
 
+	test('no-op token funding changes neither write state nor request a simulation refresh', async () => {
+		let fundingWrites = 0
+		installBrowserMock({ onStorageSet: (items) => { if ('richModeState' in items) fundingWrites += 1 } })
+		const { modifyRichToken, updateRichTokens, updateRichAccountBalances, completeRichFundingMutation } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const token = { chainId: 1n, tokenAddress, tokenType: 'ERC20' as const, tokenId: undefined, name: 'Token', symbol: 'TOK', decimals: 6n, amount: 5n, balanceSlot: 9n, erc1155StorageOrder: undefined }
+		await updateRichTokens(() => [token])
+		await updateRichAccountBalances(() => [{ chainId: 1n, address: richAccountAddress, nativeAmount: 1n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 5n }] }])
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(requestHandler, async () => undefined, async () => undefined, { httpsRpc: requestHandler.rpcUrl, name: 'Ethereum', chainId: 1n, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false })
+		const before = fundingWrites
+		let refreshes = 0
+		const simulation = { isStoredSimulationAvailable: async () => true, refresh: async () => { refreshes += 1; return { status: 'observed' as const, available: false } } }
+		for (const change of [{ action: 'Remove' as const, tokenAddress: 0x999n }, { action: 'SetAmount' as const, tokenAddress, amount: 5n }]) {
+			const result = await modifyRichToken(ethereum, undefined, { method: 'popup_modifyRichToken', data: { ...change, address: richAccountAddress, tokenId: undefined } })
+			assert.equal(result.ok, true)
+			if (!result.ok) throw new Error(result.error)
+			assert.equal(result.fundingChanged, false)
+			assert.equal((await completeRichFundingMutation(result, simulation)).ok, true)
+		}
+		assert.equal(fundingWrites, before)
+		assert.equal(refreshes, 0)
+	})
+
 	test('every rich-funding mutation completes through one result contract and one reply mapping', async () => {
 		installBrowserMock()
 		const { completeRichFundingMutation, toModifyRichTokenReply, toRichSettingsChangeReply, modifyMakeMeRich } = await loadModules()
