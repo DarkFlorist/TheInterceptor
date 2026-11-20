@@ -799,6 +799,12 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(overriddenCalls, 0)
 	})
 
+	test('marks own properties and entries whose value is undefined instead of dropping them', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+
+		assert.equal(stringifyDiagnosticDetails({ debugId: undefined, params: [undefined, 1] }), '{"debugId":"[undefined]","params":["[undefined]",1]}')
+	})
+
 	test('keeps a caller-supplied __proto__ field instead of dropping it through the prototype setter', async () => {
 		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
 

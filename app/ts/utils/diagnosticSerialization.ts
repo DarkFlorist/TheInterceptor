@@ -80,7 +80,8 @@ function snapshotError(error: Error, seen: WeakSet<object>, budget: ErrorSnapsho
 
 // Context is caller-supplied and may hold website data, so it is copied generically but defensively: own data properties only (getters are never run), with bounded depth, entries, nodes and text.
 function snapshotContextValue(value: unknown, seen: WeakSet<object>, budget: ErrorSnapshotBudget, depth: number): unknown {
-	if (value === undefined || value === null || typeof value === 'boolean') return value
+	if (value === undefined) return '[undefined]'
+	if (value === null || typeof value === 'boolean') return value
 	if (typeof value === 'number') return Number.isFinite(value) ? value : String(value)
 	if (typeof value === 'bigint') return String(value)
 	if (typeof value === 'string') return budgetedErrorText(value, budget) ?? (value === '' ? '' : '[Diagnostic inspection limit reached]')
@@ -100,6 +101,7 @@ function snapshotContextValue(value: unknown, seen: WeakSet<object>, budget: Err
 		const entries = Array.from({ length: Math.min(entryCount, MAX_CONTEXT_ENTRIES) }, (_, index) => snapshotOwnProperty(value, String(index), seen, budget, depth + 1))
 		return entryCount > MAX_CONTEXT_ENTRIES ? [...entries, `[${ entryCount - MAX_CONTEXT_ENTRIES } more entries omitted]`] : entries
 	}
+	// Captures own enumerable string keys, matching JSON and main's diagnostics; non-enumerable and symbol keys are intentionally not captured.
 	const keys = Object.keys(value)
 	const entries: [string, unknown][] = keys.slice(0, MAX_CONTEXT_ENTRIES).map((key) => [key, snapshotOwnProperty(value, key, seen, budget, depth + 1)])
 	if (keys.length > MAX_CONTEXT_ENTRIES) entries.push(['[omitted]', `${ keys.length - MAX_CONTEXT_ENTRIES } more properties omitted`])
