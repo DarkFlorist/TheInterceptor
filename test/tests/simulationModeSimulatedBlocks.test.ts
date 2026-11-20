@@ -1,10 +1,11 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { createSimulationState, getSimulatedBlock, getSimulatedBlockFromInput, getSimulatedCode, getSimulatedTransactionByHash, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, createTwoBlockSimulationStateInput, exampleTransaction } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { ethereum, getBlockNumberFromInput, getBlockFromInput, getBlockByHashFromInput } = createSimulationModeTestContext()
+const { ethereum, getBlockNumberFromInput, getBlockFromInput, getBlockByHashFromInput, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 
 describe('SimulationModeEthereumClientService', () => {
 	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {

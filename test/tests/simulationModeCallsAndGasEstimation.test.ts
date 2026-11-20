@@ -1,11 +1,12 @@
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import * as assert from 'node:assert'
 import { createSimulationCallParams, createSimulationState, simulateEstimateGas, simulateEstimateGasFromInput, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { toResolvedSimulationInput, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
 import { createSimulationModeTestContext, blockNumber, createSimulationStateInput, exampleTransaction, rpcNetwork } from './simulationModeEthereumClientServiceTestHelpers.js'
 
-const { requestHandler, ethereum } = createSimulationModeTestContext()
+const { requestHandler, ethereum, reset } = createSimulationModeTestContext()
+beforeEach(reset)
 const emptySimulationInput = toResolvedSimulationInput([])
 
 describe('SimulationModeEthereumClientService', () => {
