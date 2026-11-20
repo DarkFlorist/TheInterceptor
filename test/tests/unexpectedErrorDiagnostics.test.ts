@@ -786,6 +786,40 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(getterReads, 0)
 	})
 
+	test('serializes dates through the native Date methods without running overridden accessors', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let overriddenCalls = 0
+		const recordedAt = new Date('2026-01-02T03:04:05.000Z')
+		Object.defineProperty(recordedAt, 'getTime', { get: () => { overriddenCalls += 1; return () => Number.NaN } })
+		Object.defineProperty(recordedAt, 'toISOString', { get: () => { overriddenCalls += 1; return () => 'forged' } })
+		const invalidDate = new Date(Number.NaN)
+		Object.defineProperty(invalidDate, 'getTime', { value: () => { overriddenCalls += 1; return 0 } })
+
+		assert.equal(stringifyDiagnosticDetails({ recordedAt, invalidDate }), '{"recordedAt":"2026-01-02T03:04:05.000Z","invalidDate":"[Invalid Date]"}')
+		assert.equal(overriddenCalls, 0)
+	})
+
+	test('keeps a caller-supplied __proto__ field instead of dropping it through the prototype setter', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+
+		assert.equal(stringifyDiagnosticDetails(JSON.parse('{"__proto__":{"context":1},"ok":2}')), '{"__proto__":{"context":1},"ok":2}')
+	})
+
+	test('serializes Map and Set context through native iteration with bounded entries', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let overriddenCalls = 0
+		const pending = new Map<string, bigint>([['0xabc', 1n]])
+		Object.defineProperty(pending, 'entries', { value: () => { overriddenCalls += 1; return [].values() } })
+		const many = new Set(Array.from({ length: 60 }, (_, index) => index))
+
+		const diagnostic = JSON.parse(stringifyDiagnosticDetails({ pending, many }) ?? '')
+
+		assert.deepEqual(diagnostic.pending, [['0xabc', '1']])
+		assert.equal(diagnostic.many.length, 51)
+		assert.equal(diagnostic.many[50], '[More entries omitted]')
+		assert.equal(overriddenCalls, 0)
+	})
+
 	test('stores caller context such as an explorer API URL with the reported error', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise

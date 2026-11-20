@@ -63,7 +63,9 @@ function snapshotError(error: Error, seen: WeakSet<object>, budget: ErrorSnapsho
 	if (cause instanceof Error) snapshot.cause = snapshotError(cause, seen, budget, depth + 1)
 	if (Array.isArray(errors)) {
 		const children: unknown[] = []
-		for (let index = 0; index < Math.min(errors.length, 10); index++) {
+		const errorsLength = ownDataProperty(errors, 'length')
+		const errorCount = typeof errorsLength === 'number' ? errorsLength : 0
+		for (let index = 0; index < Math.min(errorCount, 10); index++) {
 			if (budget.remainingNodes === 0 || budget.remainingText === 0) {
 				children.push('[Remaining errors omitted]')
 				break
@@ -89,7 +91,9 @@ function snapshotContextValue(value: unknown, seen: WeakSet<object>, budget: Err
 	if (budget.remainingNodes === 0) return '[Diagnostic inspection limit reached]'
 	budget.remainingNodes -= 1
 	seen.add(value)
-	if (value instanceof Date) return Number.isNaN(value.getTime()) ? '[Invalid Date]' : value.toISOString()
+	if (value instanceof Date) return snapshotDate(value)
+	if (value instanceof Map) return snapshotCollection(Map.prototype.entries, value, seen, budget, depth)
+	if (value instanceof Set) return snapshotCollection(Set.prototype.values, value, seen, budget, depth)
 	if (Array.isArray(value)) {
 		const length = ownDataProperty(value, 'length')
 		const entryCount = typeof length === 'number' ? length : 0
@@ -97,10 +101,32 @@ function snapshotContextValue(value: unknown, seen: WeakSet<object>, budget: Err
 		return entryCount > MAX_CONTEXT_ENTRIES ? [...entries, `[${ entryCount - MAX_CONTEXT_ENTRIES } more entries omitted]`] : entries
 	}
 	const keys = Object.keys(value)
-	const snapshot: Record<string, unknown> = {}
-	for (const key of keys.slice(0, MAX_CONTEXT_ENTRIES)) snapshot[key] = snapshotOwnProperty(value, key, seen, budget, depth + 1)
-	if (keys.length > MAX_CONTEXT_ENTRIES) snapshot['[omitted]'] = `${ keys.length - MAX_CONTEXT_ENTRIES } more properties omitted`
-	return snapshot
+	const entries: [string, unknown][] = keys.slice(0, MAX_CONTEXT_ENTRIES).map((key) => [key, snapshotOwnProperty(value, key, seen, budget, depth + 1)])
+	if (keys.length > MAX_CONTEXT_ENTRIES) entries.push(['[omitted]', `${ keys.length - MAX_CONTEXT_ENTRIES } more properties omitted`])
+	// Object.fromEntries defines own properties, so a caller key such as __proto__ is kept instead of hitting the inherited prototype setter.
+	return Object.fromEntries(entries)
+}
+
+// Native prototype methods are called directly so a Date with overridden getTime or toISOString cannot run caller code.
+function snapshotDate(value: Date) {
+	try {
+		return Number.isNaN(Date.prototype.getTime.call(value)) ? '[Invalid Date]' : Date.prototype.toISOString.call(value)
+	} catch {
+		return '[Unreadable Date]'
+	}
+}
+
+// Iterates through the native prototype method and stops at the entry limit, so overridden collection methods never run and large collections stay bounded.
+function snapshotCollection<T>(iterate: (this: T) => Iterable<unknown>, collection: T, seen: WeakSet<object>, budget: ErrorSnapshotBudget, depth: number) {
+	const entries: unknown[] = []
+	for (const entry of iterate.call(collection)) {
+		if (entries.length === MAX_CONTEXT_ENTRIES) {
+			entries.push('[More entries omitted]')
+			break
+		}
+		entries.push(snapshotContextValue(entry, seen, budget, depth + 1))
+	}
+	return entries
 }
 
 function snapshotOwnProperty(value: object, key: string, seen: WeakSet<object>, budget: ErrorSnapshotBudget, depth: number): unknown {
