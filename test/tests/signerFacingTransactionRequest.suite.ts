@@ -488,6 +488,7 @@ test('refreshing a signer-mode confirmation regenerates the nonce the website di
 })
 
 test('forwards a pre-signed raw transaction from another sender without requiring wallet authorization for that sender', async () => {
+	await modules.changeSimulationMode({ simulationMode: false })
 	const rawTransactionParameters = { method: 'eth_sendRawTransaction' as const, params: [new Uint8Array([0x02, 0x01])] as const }
 	// A located successful result, so the accept is for a reviewable request.
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({
@@ -539,6 +540,7 @@ async function assertRefusedForwardStaysRejectable(websiteTabConnections: Return
 }
 
 test('does not forward an accepted request whose website approval is suspended while the accept is being claimed', async () => {
+	await modules.changeSimulationMode({ simulationMode: false })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createApprovedConnections(postedMessages)
@@ -563,6 +565,7 @@ test('does not forward an accepted request whose website approval is suspended w
 })
 
 test('does not forward an accepted request whose website approval is suspended while the confirmation view updates after the claim', async () => {
+	await modules.changeSimulationMode({ simulationMode: false })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
 	const postedMessages: unknown[] = []
 	const websiteTabConnections = createApprovedConnections(postedMessages)
@@ -594,6 +597,7 @@ test('does not forward an accepted request whose website approval is suspended w
 })
 
 test('does not forward an accepted request to an MV2 reconnected port whose website approval was not restored', async () => {
+	await modules.changeSimulationMode({ simulationMode: false })
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [withSimulatedTransactionResult({ ...pendingTransaction, simulationMode: false })] })
 	const socket = uniqueRequestIdentifier.requestSocket
 	const socketKey = modules.websiteSocketToString(socket)

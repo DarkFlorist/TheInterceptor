@@ -1,4 +1,4 @@
-import type { RpcEntries, RpcEntry } from '../../app/ts/types/rpc.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getRpcEntryIdentityKey } from '../../app/ts/utils/rpcNetworkChange.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
@@ -225,6 +225,28 @@ describe('UI boundary fixes', () => {
 		}
 	})
 
+	for (const signerOnly of [false, true]) test(`unrelated RPC add, edit and removal preserve an external selection (signer-only=${ signerOnly })`, async () => {
+		const entry: RpcEntry = { name: 'Configured', chainId: 1n, httpsRpc: 'https://configured.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const active: RpcNetwork = signerOnly ? { name: 'Independent selection', chainId: entry.chainId, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } : { ...entry, name: 'Independent selection' }
+		const edited = { ...entry, name: 'Edited entry' }
+		const persisted: RpcEntries[] = []
+		const persist = async (entries: RpcEntries) => { persisted.push(entries) }
+		const change = async () => { throw new Error('Unrelated edit must not select a network') }
+		await saveRpcEntryAndKeepActiveRpcConsistent(edited, undefined, [entry], active, persist, change)
+		await saveRpcEntryAndKeepActiveRpcConsistent(edited, entry, [entry], active, persist, change)
+		await removeRpcEntryAndKeepActiveRpcConsistent(entry, [entry], active, persist, change)
+		assert.deepEqual(persisted, [[entry, edited], [edited], []])
+	})
+
+	test('removing the active RPC uses the shared primary-first fallback', async () => {
+		const active: RpcEntry = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
+		const first = { ...active, name: 'First', httpsRpc: 'https://first.example' }
+		const primary = { ...active, name: 'Primary', httpsRpc: 'https://primary.example', primary: true }
+		const changes: RpcEntry[] = []
+		await removeRpcEntryAndKeepActiveRpcConsistent(active, [active, first, primary], active, async () => undefined, async entry => { changes.push(entry) })
+		assert.deepEqual(changes, [primary])
+	})
+
 	test('rejects stale RPC edits and duplicate connections before persistence', async () => {
 		const entry: RpcEntry = { name: 'Original', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 		const stale = { ...entry, name: 'Stale' }
@@ -236,7 +258,7 @@ describe('UI boundary fixes', () => {
 
 	test('does not broadcast an active RPC edit before its active-network update succeeds', async () => {
 		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
-		const editedRpc = { ...activeRpc, name: 'Edited active RPC' }
+		const editedRpc = { ...activeRpc, name: 'Edited active RPC', httpsRpc: 'https://edited.example' }
 		const operations: string[] = []
 
 		await assert.rejects(saveRpcEntryAndKeepActiveRpcConsistent(editedRpc, activeRpc, [activeRpc], activeRpc,
@@ -287,7 +309,7 @@ describe('UI boundary fixes', () => {
 			const persist = async () => { persisted = true }
 			const change = async (entry: typeof active) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 			await assert.rejects(completeRpcFormMutation(async () => {
-				if (operation === 'edit') await saveRpcEntryAndKeepActiveRpcConsistent({ ...active, name: 'Edited' }, active, [active, fallback], active, persist, change)
+				if (operation === 'edit') await saveRpcEntryAndKeepActiveRpcConsistent({ ...active, name: 'Edited', httpsRpc: 'https://edited.example' }, active, [active, fallback], active, persist, change)
 				else await removeRpcEntryAndKeepActiveRpcConsistent(active, [active, fallback], active, persist, change)
 			}, () => { closed = true }), /Another popup/)
 			assert.equal(persisted, false)

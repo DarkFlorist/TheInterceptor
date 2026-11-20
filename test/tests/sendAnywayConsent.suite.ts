@@ -1,8 +1,11 @@
 import * as assert from 'assert'
-import { test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { getReviewedResultId, stringifyCanonically } from '../../app/ts/background/reviewedResult.js'
 import { activeAddress, addressString, browserMock, createAcceptConfirmation, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getPopupReviewedResultId, getPendingSafeProposal, getSafeTxHash, isRecord, modules, pendingTransaction, popupVisualisation, recipientAddress, safeTestOwnerAddress, safeTxToTypedDataJson, type SimulatedTransactionOutcome, simulator, uniqueRequestIdentifier, withSimulatedTransactionResult } from './confirmTransactionTestHarness.js'
+
+describe('reviewed send-anyway consent in signing mode', () => {
+	beforeEach(async () => await modules.changeSimulationMode({ simulationMode: false }))
 
 const succeeded: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Succeeded' }
 const reverted: SimulatedTransactionOutcome = { transactionStatus: 'Transaction Failed', error: { code: -32000, message: 'execution reverted', decodedErrorMessage: 'execution reverted' } }
@@ -361,4 +364,6 @@ test('refuses a Safe co-signing accept when the signer refresh during resolution
 
 	assert.equal(await resolveAccept(websiteTabConnections, await createAcceptConfirmation(), selectedOwner), true)
 	assert.equal(getForwardedSigner(), addressString(selectedOwner))
+})
+
 })

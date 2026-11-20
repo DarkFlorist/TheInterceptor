@@ -158,6 +158,7 @@ async function loadModules() {
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
+		changeSimulationMode: settings.changeSimulationMode,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
@@ -579,6 +580,8 @@ describe('SafeTx confirm transaction metadata', () => {
 	test('backend refuses a quarantined signer request until its matching approval explicitly acknowledges it', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
+		// Accepting forwards only while the Interceptor itself is in signing mode, not just the request.
+		await modules.changeSimulationMode({ simulationMode: false })
 		const fakeRpcNetwork: RpcEntry = {
 			name: 'Test Chain',
 			chainId: 1337n,

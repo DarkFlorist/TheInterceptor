@@ -662,14 +662,15 @@ test('refreshes the selected signer and uses services installed during the walle
 	const accountRequestEntered = createDeferredValue<void>()
 	const releaseAccountReply = createDeferredValue<void>()
 	let retiredClientRequests = 0
+	const retiredNetwork = { ...fakeRpcNetwork, httpsRpc: 'https://retired.example' }
 	const retiredEthereum = new modules.EthereumClientService({
-		rpcUrl: fakeRpcNetwork.httpsRpc,
+		rpcUrl: retiredNetwork.httpsRpc,
 		clearCache() { return undefined },
 		async jsonRpcRequest() {
 			retiredClientRequests++
 			throw new Error('Confirmation used services captured before the wallet refresh')
 		},
-	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	}, async () => undefined, async () => undefined, retiredNetwork)
 	const owner = createTestSimulationServicesOwner({
 		ethereum: retiredEthereum,
 		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
@@ -732,7 +733,7 @@ test('refreshes the selected signer and uses services installed during the walle
 
 	const confirmation = modules.confirmDialog(owner, websiteTabConnections, await createAcceptConfirmation())
 	await accountRequestEntered.promise
-	owner.reset(fakeRpcNetwork)
+	owner.ensureNetwork(fakeRpcNetwork)
 	releaseAccountReply.resolve(undefined)
 	await confirmation
 	await accountReply
@@ -766,6 +767,8 @@ test('refreshes the selected signer and uses services installed during the walle
 })
 
 test('rebases a later pending Safe proposal after an earlier nonce is rejected', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
@@ -857,6 +860,8 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 })
 
 test('rejects a stale forwarded Safe nonce before persistence and rebases it when retried', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]

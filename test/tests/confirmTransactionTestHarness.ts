@@ -18,6 +18,8 @@ import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
+
+
 export type RuntimeMessage = {
 	method?: string
 	type?: string
@@ -245,6 +247,7 @@ export async function loadModules() {
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
+		changeSimulationMode: settings.changeSimulationMode,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
@@ -799,3 +802,9 @@ export async function waitForPendingTransactionsToClear() {
 }
 
 export { addressString, bytes32String, createSafeTx, EIP712Message, getSafeTxHash, privateKeyToAccount, SAFE_ABI, SAFE_EXECUTION_ABI, safeTxToTypedDataJson, withSilencedConsole }
+
+// Replayed accepts may arrive after cleanup; the resolver must finish or ignore them before inspecting consent.
+export async function createReplayableAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, requestIdentifier))
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: pending === undefined ? '' : getPopupReviewedResultId(pending), forceSend: true } }
+}
