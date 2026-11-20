@@ -132,7 +132,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
 			tabId,
-			activeSigningAddress: getActiveSigningAddress(updatedSettings, { safeAddress: displayedSigningSafe?.address, signerAddress: activeSigningAddress }),
+			activeSigningAddress: getActiveSigningAddress(updatedSettings, { safeAddress: displayedSigningSafe?.address, signerAddress: activeSigningAddress })?.address,
 			activeSigningSafeAddress: displayedSigningSafe?.address,
 		} })
 		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.

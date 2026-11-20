@@ -160,8 +160,11 @@ export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', 
 		: 'The selected address is not available for the current signing wallet.')
 }
 
-/** Explicit selection wins; display callers supply an eligible Safe and live account instead of the configured Safe candidate. */
-export function getActiveSigningAddress(settings: Pick<Settings, 'selectedSigningAddress' | 'activeSigningSafeAddress'>, eligibleState?: { readonly safeAddress: bigint | undefined, readonly signerAddress: bigint | undefined }) {
+/** Explicit selection wins; display callers supply an eligible Safe and live account instead of the configured Safe candidate. The result says whether it is a Safe or an ordinary wallet account, so callers do not re-derive it from the settings. */
+export function getActiveSigningAddress(settings: Pick<Settings, 'selectedSigningAddress' | 'activeSigningSafeAddress'>, eligibleState?: { readonly safeAddress: bigint | undefined, readonly signerAddress: bigint | undefined }): SigningAddressSelection | undefined {
+	if (settings.selectedSigningAddress !== undefined) return { type: 'walletAccount', address: settings.selectedSigningAddress }
 	const safeAddress = eligibleState === undefined ? settings.activeSigningSafeAddress : eligibleState.safeAddress
-	return settings.selectedSigningAddress ?? safeAddress ?? eligibleState?.signerAddress
+	if (safeAddress !== undefined) return { type: 'safe', address: safeAddress }
+	const signerAddress = eligibleState?.signerAddress
+	return signerAddress === undefined ? undefined : { type: 'walletAccount', address: signerAddress }
 }

@@ -341,17 +341,17 @@ describe('active address selection', () => {
 
 
 test('configured signing address prefers an explicit wallet selection over a saved Safe', () => {
-	assert.equal(getActiveSigningAddress({ selectedSigningAddress: EOA_ADDRESS, activeSigningSafeAddress: SAFE_ADDRESS }), EOA_ADDRESS)
-	assert.equal(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: SAFE_ADDRESS }), SAFE_ADDRESS)
+	assert.deepEqual(getActiveSigningAddress({ selectedSigningAddress: EOA_ADDRESS, activeSigningSafeAddress: SAFE_ADDRESS }), { type: 'walletAccount', address: EOA_ADDRESS })
+	assert.deepEqual(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: SAFE_ADDRESS }), { type: 'safe', address: SAFE_ADDRESS })
 	assert.equal(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: undefined }), undefined)
 })
 
 test('display signing address uses only eligible Safe and live account fallbacks', () => {
 	const configured = { selectedSigningAddress: undefined, activeSigningSafeAddress: SAFE_ADDRESS }
-	assert.equal(getActiveSigningAddress(configured, { safeAddress: undefined, signerAddress: EOA_ADDRESS }), EOA_ADDRESS)
+	assert.deepEqual(getActiveSigningAddress(configured, { safeAddress: undefined, signerAddress: EOA_ADDRESS }), { type: 'walletAccount', address: EOA_ADDRESS })
 	assert.equal(getActiveSigningAddress(configured, { safeAddress: undefined, signerAddress: undefined }), undefined)
-	assert.equal(getActiveSigningAddress(configured, { safeAddress: SAFE_ADDRESS, signerAddress: EOA_ADDRESS }), SAFE_ADDRESS)
-	assert.equal(getActiveSigningAddress({ ...configured, selectedSigningAddress: EOA_ADDRESS }, { safeAddress: SAFE_ADDRESS, signerAddress: undefined }), EOA_ADDRESS)
+	assert.deepEqual(getActiveSigningAddress(configured, { safeAddress: SAFE_ADDRESS, signerAddress: EOA_ADDRESS }), { type: 'safe', address: SAFE_ADDRESS })
+	assert.deepEqual(getActiveSigningAddress({ ...configured, selectedSigningAddress: EOA_ADDRESS }, { safeAddress: SAFE_ADDRESS, signerAddress: undefined }), { type: 'walletAccount', address: EOA_ADDRESS })
 })
 
 test('signing selection excludes ordinary contacts scoped to other chains', () => {

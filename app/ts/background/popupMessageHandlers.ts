@@ -1149,12 +1149,12 @@ async function getCachedRichData(chainId: bigint) {
 }
 
 async function getDisplayedActiveSigningAddress(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number | undefined) {
-	if (settings.selectedSigningAddress !== undefined) return getActiveSigningAddress(settings)
+	if (settings.selectedSigningAddress !== undefined) return getActiveSigningAddress(settings)?.address
 	const eligibleAddress = tabId === undefined ? undefined : await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId)
 	return getActiveSigningAddress(settings, {
 		safeAddress: eligibleAddress?.type === 'safe' ? eligibleAddress.address : undefined,
 		signerAddress: eligibleAddress?.type === 'safe' ? undefined : eligibleAddress?.address,
-	})
+	})?.address
 }
 
 async function getActiveAddressForCurrentPopupSignerState(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
