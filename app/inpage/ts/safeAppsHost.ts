@@ -5,7 +5,10 @@ import { createSafeAppsTransport } from './safeAppsTransport.js'
 // Settings accepts only HTTP(S) origins (parseSafeAppsHostOrigin), so an opaque, file or extension origin means the host was injected outside its registration.
 const isSelectableSafeAppsHostOrigin = (origin: string) => origin.startsWith('https://') || origin.startsWith('http://')
 
-// Accepted trade-off: on a selected origin the host deliberately replaces window.parent for the whole page, so framing checks such as parent !== window, parent-based postMessage routing and analytics see an apparent parent frame, while self === top stays true. Chrome registers only files, so this script cannot embed the user's Settings selection; safeAppsHostRegistration.ts registers it only for selected origins, safeAppsHost.test.ts pins that it has no other injection path, and the guard below refuses any origin Settings could not have selected. The emulated parent lets any script on that origin use the Safe Apps API; background RPC admission still checks website access and signing mode for each request.
+// Read-only and non-enumerable; page scripts and developers can check it to tell the emulated parent from real framing.
+export const SAFE_APPS_HOST_MARKER = '__interceptorSafeAppsHostEmulatedParent'
+
+// Accepted trade-off: on a selected origin the host deliberately replaces window.parent for the whole page, so framing checks such as parent !== window, parent-based postMessage routing and analytics see an apparent parent frame, while self === top stays true; window.__interceptorSafeAppsHostEmulatedParent === true and a console.info line make the emulation observable. Chrome registers only files, so this script cannot embed the user's Settings selection; safeAppsHostRegistration.ts registers it only for selected origins, safeAppsHost.test.ts pins that it has no other injection path, and the guard below refuses any origin Settings could not have selected. The emulated parent lets any script on that origin use the Safe Apps API; background RPC admission still checks website access and signing mode for each request.
 export function installSafeAppsHost() {
 	const windowObject = window
 	if (!isSelectableSafeAppsHostOrigin(windowObject.location.origin)) return undefined
@@ -29,6 +32,8 @@ export function installSafeAppsHost() {
 		frame.remove()
 		throw error
 	}
+	Object.defineProperty(windowObject, SAFE_APPS_HOST_MARKER, { configurable: true, enumerable: false, writable: false, value: true })
+	console.info(`Interceptor: window.parent is emulated on ${ windowObject.location.origin } by The Interceptor's Safe Apps hosting (window.${ SAFE_APPS_HOST_MARKER }).`)
 	const transport = createSafeAppsTransport(windowObject)
 	let disposed = false
 	const deliver = (data: unknown) => {
@@ -87,12 +92,24 @@ export function installSafeAppsHost() {
 				transport.post(createSafeAppsCancellation(request.id, request.bridgeToken))
 				deliver(createSafeAppsErrorResponse(request, 'Safe Apps hosting was disconnected.'))
 			}
-			// The SDK checks response.source against the current parent, so reject before restoring it; preserve any later page-owned replacement.
-			if (windowObject.parent === apparentParent) {
-				if (originalParent === undefined) Reflect.deleteProperty(windowObject, 'parent')
-				else Object.defineProperty(windowObject, 'parent', originalParent)
-			}
+			// The SDK checks response.source against the current parent, so reject before restoring it. The real parent is restored even over a later page replacement, which only ever saw the emulation; Reflect leaves a parent the page made non-configurable in place instead of throwing during pagehide.
+			if (originalParent === undefined) Reflect.deleteProperty(windowObject, 'parent')
+			else Reflect.defineProperty(windowObject, 'parent', originalParent)
+			Reflect.deleteProperty(windowObject, SAFE_APPS_HOST_MARKER)
 			frame.remove()
 		},
 	}
+}
+
+// Hosts the page for its lifetime: pagehide disposes the host (also before the back/forward cache stores the page), and a page restored from that cache is hosted again.
+export function hostSafeAppsForPageLifetime() {
+	let host = installSafeAppsHost()
+	if (host === undefined) return
+	window.addEventListener('pagehide', () => {
+		host?.dispose()
+		host = undefined
+	})
+	window.addEventListener('pageshow', (event) => {
+		if (host === undefined && 'persisted' in event && event.persisted === true) host = installSafeAppsHost()
+	})
 }

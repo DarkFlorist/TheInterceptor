@@ -1,3 +1,3 @@
-import { installSafeAppsHost } from './safeAppsHost.js'
+import { hostSafeAppsForPageLifetime } from './safeAppsHost.js'
 
-installSafeAppsHost()
+hostSafeAppsForPageLifetime()

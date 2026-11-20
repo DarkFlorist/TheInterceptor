@@ -3,6 +3,10 @@ import * as assert from 'assert'
 export function createSafeHostHarness({ origin = 'https://app.request.finance', embedded = false } = {}) {
 	const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 	const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
+	// The host announces its emulated parent; record the line instead of printing it in every test.
+	const previousConsoleInfo = console.info
+	const infoLogs: string[] = []
+	console.info = (...values: unknown[]) => { infoLogs.push(values.map(String).join(' ')) }
 	const fakeWindow = new EventTarget()
 	let disposed = false
 	const scheduledTimeouts: { readonly handler: TimerHandler, readonly delay: number | undefined, readonly args: readonly unknown[], cleared: boolean }[] = []
@@ -74,8 +78,10 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 	return {
 		fakeWindow, framePort, origin, emitMessage, emitParentMessage, activeTimeouts, fireTimeouts, postMessage,
 		frameWasAppended: () => appended,
+		infoLogs,
 		restoreGlobals: () => {
 			disposed = true
+			console.info = previousConsoleInfo
 			framePort.close()
 			if (previousWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
 			else Object.defineProperty(globalThis, 'window', previousWindow)

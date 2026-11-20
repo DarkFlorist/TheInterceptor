@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 
-import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
+import { hostSafeAppsForPageLifetime, installSafeAppsHost, SAFE_APPS_HOST_MARKER } from '../../app/inpage/ts/safeAppsHost.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
 
 test('reused SDK IDs get distinct bridge tokens and stale provider replies cannot settle the retry', async () => {
@@ -292,16 +292,68 @@ test('host disposal rejects pending SDK requests, cancels provider discovery and
 	} finally { restoreGlobals() }
 })
 
-test('host disposal preserves a subsequent page-owned parent replacement', () => {
-	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness()
+test('host disposal restores the original parent and removes its marker even after the page replaced parent', () => {
+	const { fakeWindow, frameWasAppended, infoLogs, restoreGlobals } = createSafeHostHarness({ origin: 'https://marked.example' })
+	const originalParent = Object.getOwnPropertyDescriptor(fakeWindow, 'parent')
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const marker = Object.getOwnPropertyDescriptor(fakeWindow, SAFE_APPS_HOST_MARKER)
+		assert.deepEqual(marker, { value: true, writable: false, enumerable: false, configurable: true })
+		assert.deepEqual(infoLogs, ['Interceptor: window.parent is emulated on https://marked.example by The Interceptor\'s Safe Apps hosting (window.__interceptorSafeAppsHostEmulatedParent).'])
+		Object.defineProperty(fakeWindow, 'parent', { configurable: true, value: new EventTarget() })
+		host.dispose()
+		assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'parent'), originalParent)
+		assert.equal(Object.getOwnPropertyDescriptor(fakeWindow, SAFE_APPS_HOST_MARKER), undefined)
+		assert.equal(frameWasAppended(), false)
+	} finally { restoreGlobals() }
+})
+
+test('host disposal leaves a parent the page made non-configurable in place without throwing', () => {
+	const { fakeWindow, restoreGlobals } = createSafeHostHarness()
 	try {
 		const host = installSafeAppsHost()
 		assert.ok(host)
 		const pageParent = new EventTarget()
-		Object.defineProperty(fakeWindow, 'parent', { configurable: true, value: pageParent })
+		Object.defineProperty(fakeWindow, 'parent', { configurable: false, value: pageParent })
 		host.dispose()
 		assert.equal(Reflect.get(fakeWindow, 'parent'), pageParent)
+		assert.equal(Object.getOwnPropertyDescriptor(fakeWindow, SAFE_APPS_HOST_MARKER), undefined)
+	} finally { restoreGlobals() }
+})
+
+test('page lifetime hosting disposes on pagehide and hosts again only when the back/forward cache restores the page', () => {
+	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness()
+	const originalParent = Reflect.get(fakeWindow, 'parent')
+	const pageTransition = (type: string, persisted: boolean) => Object.assign(new Event(type), { persisted })
+	try {
+		hostSafeAppsForPageLifetime()
+		assert.notEqual(Reflect.get(fakeWindow, 'parent'), originalParent)
+		fakeWindow.dispatchEvent(pageTransition('pagehide', true))
+		assert.equal(Reflect.get(fakeWindow, 'parent'), originalParent)
+		assert.equal(Reflect.get(fakeWindow, SAFE_APPS_HOST_MARKER), undefined)
 		assert.equal(frameWasAppended(), false)
+		fakeWindow.dispatchEvent(pageTransition('pageshow', false))
+		assert.equal(Reflect.get(fakeWindow, 'parent'), originalParent)
+		fakeWindow.dispatchEvent(pageTransition('pageshow', true))
+		assert.notEqual(Reflect.get(fakeWindow, 'parent'), originalParent)
+		assert.equal(Reflect.get(fakeWindow, SAFE_APPS_HOST_MARKER), true)
+		fakeWindow.dispatchEvent(pageTransition('pagehide', false))
+		assert.equal(Reflect.get(fakeWindow, 'parent'), originalParent)
+	} finally { restoreGlobals() }
+})
+
+test('the host re-sources only Safe SDK responses, never unrelated page messages', async () => {
+	const { fakeWindow, framePort, emitMessage, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const resourced: unknown[] = []
+		fakeWindow.addEventListener('message', (event) => { if ('source' in event && event.source === framePort && 'data' in event) resourced.push(event.data) })
+		for (const data of [{ hello: 'analytics' }, 'plain text', { id: 'not-pending', success: true }, { type: 'some-widget', id: 'x' }]) emitMessage(data)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(resourced, [])
+		host.dispose()
 	} finally { restoreGlobals() }
 })
 
