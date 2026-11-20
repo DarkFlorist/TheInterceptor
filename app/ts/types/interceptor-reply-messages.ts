@@ -1,5 +1,5 @@
-import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
-import type { popupSettingsOperations } from './popupSettingsProtocol.js'
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress, SetRpcList } from './popupSettingsRequests.js'
+import type { popupSettingsOperations, DirectPopupSettingsMethod } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
@@ -324,9 +324,9 @@ type PopupSettingsReplyCodecs = {
 	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
 }
 
-// Every registered settings operation must provide the reply codec declared by its descriptor.
+// Settings commands with direct replies use their descriptor codec; imports deliver their reply by broadcast.
 type PopupSettingsRepliesMap = {
-	[Method in keyof typeof popupSettingsOperations]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['replyType']]
+	[Method in DirectPopupSettingsMethod]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['reply']['type']]
 }
 
 type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
@@ -366,6 +366,7 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_enableSimulationMode: PopupSettingsChangeReply,
 	popup_changeActiveRpc: PopupSettingsChangeReply,
 	popup_modifyMakeMeRich: PopupSettingsChangeReply,
+	popup_set_rpc_list: PopupSettingsChangeReply,
 	popup_setSafeSimulationSigner: SetSafeSimulationSignerReply,
 	popup_requestSafeStackExport: RequestSafeStackExportReply,
 	popup_importSafeStack: ImportSafeStackReply,
@@ -409,6 +410,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	EnableSimulationMode,
 	ChangeActiveChain,
 	ModifyMakeMeRich,
+	SetRpcList,
 	SetSafeSimulationSigner,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSafeStackExport') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSafeStack'), data: SafeStackExport }),
