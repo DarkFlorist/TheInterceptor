@@ -16,6 +16,7 @@ import { getErrorMessage } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { getPendingTransactionsAndMessages, getTabState } from './storageVariables.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
+import { browserSigningRequestAccount } from '../signing/browserWallet.js'
 import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
 import { readDirectSigningRecords } from './directSigningStore.js'
@@ -43,8 +44,8 @@ export async function resolveSigningConfirmationAdmission(
 	if (pending.simulationMode || binding === undefined) return { status: 'continue', forwarding: {} }
 	if (confirmation.action === 'accept') {
 		if (binding.wallet.type === 'browser') {
-			// Browser forwarding checks the revision after any asynchronous account discovery.
-			const forwarding = await prepareSavedBrowserWalletForwarding(connections, pending.uniqueRequestIdentifier.requestSocket, binding)
+			// Browser forwarding checks the revision after any asynchronous account discovery, and refuses a request naming another account than the binding's.
+			const forwarding = await prepareSavedBrowserWalletForwarding(connections, pending.uniqueRequestIdentifier.requestSocket, binding, { requestedAddress: browserSigningRequestAccount(request) })
 			if (forwarding.error !== undefined) return { status: 'blocked', error: forwarding.error }
 			if (request.method !== 'eth_sendTransaction') return { status: 'continue', forwarding: { expectedProviderId: forwarding.expectedProviderId } }
 			// A saved address does not follow the wallet's chain changes, so the wallet can be on another chain than the one this transaction was simulated on. Refuse a known mismatch here; the page checks the wallet's chain again right before forwarding.

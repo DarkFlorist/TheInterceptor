@@ -19,9 +19,15 @@ export function matchesBrowserSigningWallet(wallet: BrowserWallet, state: Browse
 	return wallet.providerId === providerId
 }
 
-/** Shared admission for reviewed requests and browser-owned forwarding on networks without an RPC. */
-export function prepareBrowserWalletForwarding(wallet: BrowserWallet, state: BrowserSignerState & Pick<TabState, 'signerConnected' | 'signerAccounts'>, options: { requireSelectedAccount?: boolean, requestedAddress?: bigint } = {}) {
-	if (!matchesBrowserSigningWallet(wallet, state) || (options.requireSelectedAccount ?? true) && (!state.signerConnected || state.signerAccounts[0] !== wallet.address || options.requestedAddress !== undefined && options.requestedAddress !== wallet.address)) {
+// requestedAddress is the account the forwarded request names (browserSigningRequestAccount), or undefined when it names none and the wallet uses its selected account. Every caller must say which, so no forward skips the account check.
+export type BrowserWalletForwardingOptions = { readonly requireSelectedAccount?: boolean, readonly requestedAddress: bigint | undefined }
+
+export const BROWSER_WALLET_OTHER_ACCOUNT_MESSAGE = 'This request names another account than the one its saved browser wallet signs for. Reject it and send it again from that account.'
+
+/** Shared admission for reviewed requests and browser-owned forwarding on networks without an RPC. Like a Ledger or AirGap request, a request naming another account than the bound one is refused. */
+export function prepareBrowserWalletForwarding(wallet: BrowserWallet, state: BrowserSignerState & Pick<TabState, 'signerConnected' | 'signerAccounts'>, options: BrowserWalletForwardingOptions) {
+	if (options.requestedAddress !== undefined && options.requestedAddress !== wallet.address) return { error: { code: 4100, message: BROWSER_WALLET_OTHER_ACCOUNT_MESSAGE } }
+	if (!matchesBrowserSigningWallet(wallet, state) || (options.requireSelectedAccount ?? true) && (!state.signerConnected || state.signerAccounts[0] !== wallet.address)) {
 		return { error: { code: 4100, message: 'Select the expected account in the saved browser wallet before continuing. The wallet identity or account is different, disconnected, or ambiguous.' } }
 	}
 	return { expectedProviderId: wallet.providerId }
