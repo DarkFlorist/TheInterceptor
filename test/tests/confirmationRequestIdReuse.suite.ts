@@ -1,3 +1,4 @@
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import * as assert from 'assert'
 import { setSystemTime, test } from 'bun:test'
 import { UpdateConfirmTransactionDialogPendingTransactions } from '../../app/ts/types/interceptor-messages.js'
@@ -466,6 +467,8 @@ test('a metadata refresh does not store its visualisation over a re-simulation o
 			const refresh = modules.refreshPopupConfirmTransactionMetadata(simulator.ethereum, simulator.tokenPriceService, undefined)
 			await waitUntilReached(pause.reached, refresh, 'reaching the paused RPC request')
 			await modules.forceSetGasLimitForTransaction(simulator.ethereum, simulator.tokenPriceService, { method: 'popup_forceSetGasLimitForTransaction', data: { transactionIdentifier: firstRun.transactionIdentifier, gasLimit: 42_000n } })
+			// Gas edits acknowledge storage before the supervised re-simulation finishes.
+			await waitForBackgroundTasks()
 			const secondRun = await getOnlyPendingRequest()
 			if (secondRun.type !== 'Transaction' || secondRun.transactionOrMessageCreationStatus !== 'Simulated' || secondRun.popupVisualisation.statusCode !== 'success') throw new Error('Expected a re-simulated transaction')
 			assert.equal(secondRun.popupVisualisation.data.simulationStartedTimestamp.getTime(), firstRun.popupVisualisation.data.simulationStartedTimestamp.getTime())
