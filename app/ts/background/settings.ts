@@ -4,14 +4,13 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type LocalStorageItems, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, serializeLocalStorageItems, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
-import { getRpcConfigurationStateWithStorageSnapshot } from './rpcConfigurationStorage.js'
+import { type LocalStorageItems, type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet, getStartupStorageValueOrDefault, type StartupStorageValues } from '../utils/storageUtils.js'
+import { getRpcConfigurationStateWithStorageSnapshot, rpcConfigurationIsReady } from './rpcConfigurationStorage.js'
 import { getUserAddressBookEntries } from './storageVariables.js'
 import { runSettingsStorageTransaction, type StorageWrite } from './settingsStorageTransaction.js'
 
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
-import { rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
@@ -343,14 +342,6 @@ export async function changeSimulationMode(changes: SimulationModeChanges): Prom
 	return storageUpdate
 }
 
-// The Settings that committed storage updates produce, derived by running the serialized updates (applied in write order) through the same storage-to-Settings conversion used for reads; fields no update writes keep their previous values. No field mapping is repeated here.
-export async function getSettingsAfterStorageUpdates(previousSettings: Settings, storageUpdates: readonly LocalStorageItems[]): Promise<Settings> {
-	const updatedItems = storageUpdates.reduce<Record<string, unknown>>((items, storageUpdate) => ({ ...items, ...serializeLocalStorageItems(storageUpdate) }), {})
-	const activeRpcNetwork = await getStartupStorageValueOrDefault(updatedItems, 'activeRpcNetwork', previousSettings.activeRpcNetwork)
-	return await getSettingsFromStorageItems(updatedItems, activeRpcNetwork, previousSettings)
-
-}
-
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
@@ -438,11 +429,15 @@ export async function getSettings(): Promise<Settings> {
 	return requireReadableSettings(await getSettingsSnapshot())
 }
 
-// Configuration editors can repair a missing/corrupt active selection using the already-installed service network for comparison. This projection never grants website authority and must not route provider requests.
-export async function getSettingsForConfigurationChange(installedNetwork: RpcNetwork): Promise<{ readonly settings: Settings, readonly hasReadableActiveNetwork: boolean }> {
+// Comparison fields have no websiteAccess member: absence of authority is represented in the type, never as a fictitious revocation of every approval.
+export type ConfigurationComparisonSettings = Omit<Settings, 'websiteAccess'>
+const configurationComparisonSettings = ({ websiteAccess: _websiteAccess, ...fields }: Settings): ConfigurationComparisonSettings => fields
+
+// Configuration editors may compare an unavailable selection with the installed dormant client. This never establishes an active selection or grants provider authority.
+export async function getSettingsForConfigurationChange(installedNetwork: RpcNetwork): Promise<{ readonly settings: ConfigurationComparisonSettings, readonly hasReadableActiveNetwork: boolean }> {
 	const snapshot = await getSettingsSnapshot()
-	if (snapshot.status === 'available') return { settings: settingsWithoutApprovals(snapshot.settings), hasReadableActiveNetwork: true }
+	if (snapshot.status === 'available') return { settings: configurationComparisonSettings(snapshot.settings), hasReadableActiveNetwork: true }
 	const admitted = await getAdmittedRpcNetworkSnapshot(captureRpcNetwork({ activeRpcNetwork: installedNetwork }))
 	if (admitted.status === 'unreadable') throw admitted.error
-	return { settings: settingsWithoutApprovals(withActiveRpcNetwork(admitted.storedFields, installedNetwork)), hasReadableActiveNetwork: false }
+	return { settings: configurationComparisonSettings(withActiveRpcNetwork(admitted.storedFields, installedNetwork)), hasReadableActiveNetwork: false }
 }

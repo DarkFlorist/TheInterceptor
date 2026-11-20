@@ -1,16 +1,17 @@
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
-import { getChainName } from '../utils/constants.js'
-import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
-import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalSet, safeParseLocalStorageItems } from '../utils/storageUtils.js'
-import { hasOwnKey, modifyObject } from '../utils/typescript.js'
+import { hasOwnKey } from '../utils/typescript.js'
 
 export type RpcConfigurationState =
 	| { readonly status: 'ready', readonly rpcEntries: RpcEntries, readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly activeRpcNetwork?: RpcNetwork, readonly error?: unknown }
+
+export function rpcConfigurationIsReady(configuration: RpcConfigurationState): configuration is Extract<RpcConfigurationState, { status: 'ready' }> {
+	return configuration.status === 'ready'
+}
 
 const rpcConfigurationSemaphore = new Semaphore(1)
 
@@ -30,9 +31,6 @@ const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationSta
 	...(activeRpcNetwork === undefined ? {} : { activeRpcNetwork }),
 	...(error === undefined ? {} : { error }),
 })
-
-// The configuration state of a settings read that rejected, so it is admitted and published exactly like an unreadable configuration.
-export const readFailedRpcConfiguration = (error: unknown) => unavailableRpcConfiguration('read-failed', undefined, error)
 
 async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcConfigurationStorageItems): Promise<RpcConfigurationState> {
 	const hasRpcEntries = hasOwnKey(storedConfiguration, 'rpcEntries') && storedConfiguration.rpcEntries !== undefined
@@ -100,20 +98,6 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 	return { status: 'ready', rpcEntries, activeRpcNetwork }
 }
 
-async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationState> {
-	let storedConfiguration: Readonly<Record<string, unknown>>
-	try {
-		storedConfiguration = await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork'])
-	} catch (error: unknown) {
-		return unavailableRpcConfiguration('read-failed', undefined, error)
-	}
-	return await resolveRpcConfigurationStateWithoutLock(storedConfiguration)
-}
-
-export async function getRpcConfigurationState(): Promise<RpcConfigurationState> {
-	return await rpcConfigurationSemaphore.execute(getRpcConfigurationStateWithoutLock)
-}
-
 export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly string[]): Promise<{ readonly storedItems: Readonly<Record<string, unknown>>, readonly rpcConfiguration: RpcConfigurationState }> {
 	return await rpcConfigurationSemaphore.execute(async () => {
 		let storedItems: Readonly<Record<string, unknown>>
@@ -126,50 +110,7 @@ export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly
 	})
 }
 
-export async function setRpcConfiguration(rpcEntries: RpcEntries, activeRpcNetwork: RpcNetwork) {
-	await rpcConfigurationSemaphore.execute(async () => await browserStorageLocalSet({ rpcEntries, activeRpcNetwork }))
-}
-
-export const setRpcList = async (rpcEntries: RpcEntries) => await rpcConfigurationSemaphore.execute(async () => await browserStorageLocalSet({ rpcEntries }))
-
-export async function getRpcList(): Promise<RpcEntries> {
-	const state = await getRpcConfigurationState()
-	if (state.status === 'ready') return state.rpcEntries
-	if ('error' in state && state.error !== undefined) throw state.error
-	throw createRpcConfigurationUnavailableError()
-}
-
-export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	await rpcConfigurationSemaphore.execute(async () => {
-		const state = await getRpcConfigurationStateWithoutLock()
-		if (state.status !== 'ready') {
-			if ('error' in state && state.error !== undefined) throw state.error
-			throw createRpcConfigurationUnavailableError()
-		}
-		const selectedIndex = state.rpcEntries.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
-		if (selectedIndex === -1) return
-		await browserStorageLocalSet({ rpcEntries: state.rpcEntries.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc) })
-	})
-}
-
-// The single RPC selection policy: the primary entry, otherwise the first one, optionally among the entries of one chain.
-export function selectPrimaryRpc(rpcEntries: RpcEntries, chainId?: bigint) {
-	const candidates = chainId === undefined ? rpcEntries : rpcEntries.filter((rpc) => rpc.chainId === chainId)
-	return candidates.find((rpc) => rpc.primary) ?? candidates[0]
-}
-
-export const getPrimaryRpcForChain = async (chainId: bigint) => selectPrimaryRpc(await getRpcList(), chainId)
-
-export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork> => {
-	const rpc = await getPrimaryRpcForChain(chainId)
-	if (rpc !== undefined) return rpc
-	return {
-		chainId,
-		currencyName: 'Ether?',
-		currencyTicker: 'ETH?',
-		name: getChainName(chainId),
-		httpsRpc: undefined,
-		primary: false,
-		minimized: true,
-	}
+// The snapshot resolver selects the primary entry, otherwise the first one.
+function selectPrimaryRpc(rpcEntries: RpcEntries) {
+	return rpcEntries.find((rpc) => rpc.primary) ?? rpcEntries[0]
 }

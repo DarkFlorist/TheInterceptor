@@ -20,6 +20,7 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry()))
 
+	const configuration = await settingsPromise
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_requestSettingsReply' as const,
 		data: {
@@ -27,7 +28,7 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
 			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
 			rpcEntries: await rpcEntriesPromise,
-			activeRpcNetwork: (await settingsPromise).settings.activeRpcNetwork
+			activeRpcNetwork: configuration.hasReadableActiveNetwork ? configuration.settings.activeRpcNetwork : undefined
 		}
 	})
 }

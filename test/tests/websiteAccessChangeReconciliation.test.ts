@@ -91,7 +91,7 @@ const importAccessManagement = async () => await import('../../app/ts/background
 
 const makeReconciliationReject = async (reconcileError: Error) => {
 	const accessManagement = await importAccessManagement()
-	spyOn(accessManagement, 'reconcileCommittedAccessChange').mockImplementationOnce(async () => { throw reconcileError })
+	spyOn(accessManagement, 'reconcileCommittedAccessChangeOrFailClosed').mockImplementationOnce(async () => { throw reconcileError })
 }
 
 afterEach(() => {
@@ -147,8 +147,8 @@ describe('website access registration and reconciliation', () => {
 		spyOn(contentScriptsUpdating, 'updateContentScriptInjectionStrategyManifestV3').mockImplementation(async () => { sideEffectOrder.push('content script update') })
 		spyOn(browser.tabs, 'reload').mockImplementation(async (tabId) => { sideEffectOrder.push(`reload tab ${ String(tabId) }`) })
 		const accessManagement = await importAccessManagement()
-		const reconcileApprovals = accessManagement.reconcileCommittedAccessChange
-		spyOn(accessManagement, 'reconcileCommittedAccessChange').mockImplementation(async (...args) => {
+		const reconcileApprovals = accessManagement.reconcileCommittedAccessChangeOrFailClosed
+		spyOn(accessManagement, 'reconcileCommittedAccessChangeOrFailClosed').mockImplementation(async (...args) => {
 			sideEffectOrder.push('reconcile')
 			return await reconcileApprovals(...args)
 		})
@@ -175,7 +175,7 @@ describe('website access registration and reconciliation', () => {
 	test('does not run follow-ups when the initial storage write fails', async () => {
 		const { reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		const registration = mockContentScriptInjectionUpdate()
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 		const writeError = new Error('storage write failed')
 		spyOn(browser.storage.local, 'set').mockImplementation(async () => { throw writeError })
 
@@ -190,7 +190,7 @@ describe('website access registration and reconciliation', () => {
 	test('rolls back a failed registration and reconciles the restored permissions', async () => {
 		const { modules, reloadedTabIds, handlers, assertConnectionStillApproved } = await setUpApprovedConnectionAndOtherTab()
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 
 		await handlers.denyAccessAndDisableInterceptorInAccessEditor()
 
@@ -207,7 +207,7 @@ describe('website access registration and reconciliation', () => {
 		mockContentScriptInjectionUpdate(new Error('registration failed'))
 		const reportingError = new Error('report failed')
 		spyOn(errors, 'reportUnexpectedError').mockImplementationOnce(async () => { throw reportingError })
-		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
+		const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 
 		await assert.rejects(handlers[handler](), (error) => error === reportingError)
 
@@ -230,7 +230,7 @@ describe('website access registration and reconciliation', () => {
 		test(`${ handler } (disabled: ${ interceptorDisabled }) refreshes registration if needed and reconciles once`, async () => {
 			const { reloadedTabIds, connectedTabIds, handlers } = await setUpApprovedConnectionAndOtherTab({ interceptorDisabled })
 			const registration = mockContentScriptInjectionUpdate()
-			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChange')
+			const reconcile = spyOn(await importAccessManagement(), 'reconcileCommittedAccessChangeOrFailClosed')
 
 			await handlers[handler]()
 

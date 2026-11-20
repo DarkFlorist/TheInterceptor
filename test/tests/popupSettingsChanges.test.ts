@@ -435,17 +435,20 @@ describe('popup settings changes', () => {
 		await modules.updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://approved.example' }, access: true, addressAccess: [] }])
 		const backup = await modules.exportSettingsAndAddressBook()
 		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		await modules.updateInterceptorTransactionStack(() => ({ operations: [{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Seconds' } }] }))
 		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
 		await assert.rejects(modules.getSettings(), /RPC configuration is unavailable/u)
 		const projection = await getSettingsForConfigurationChange(services.ethereum.getRpcEntry())
 		assert.equal(projection.hasReadableActiveNetwork, false)
-		assert.deepEqual(projection.settings.websiteAccess, [])
+		assert.equal(Object.hasOwn(projection.settings, 'websiteAccess'), false)
 		const reply = await popupMessageHandler(new Map(), services.simulationServicesOwner, PopupMessage.serialize(recovery === 'RPC selection'
-			? { method: 'popup_changeActiveRpc', data: initial.activeRpcNetwork }
+			? { method: 'popup_changeActiveRpc', data: { ...initial.activeRpcNetwork, chainId: 2n } }
 			: { method: 'popup_import_settings', data: { fileContents: JSON.stringify(ExportedSettings.serialize(backup)) } }), async () => undefined)
 		if (recovery === 'RPC selection') assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
 		else assert.ok(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_initiate_export_settings_reply'))
 		assert.equal((await modules.getSettings()).activeRpcNetwork.httpsRpc, initial.activeRpcNetwork.httpsRpc)
+		assert.equal((await modules.getSettings()).activeRpcNetwork.chainId, recovery === 'RPC selection' ? 2n : initial.activeRpcNetwork.chainId)
+		assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 0)
 		assert.equal(await modules.getLatestUnexpectedError(), undefined)
 	}))
 

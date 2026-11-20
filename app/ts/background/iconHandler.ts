@@ -147,8 +147,8 @@ export async function updateExtensionIcon(_websiteTabConnections: WebsiteTabConn
 }
 
 export async function updateExtensionBadge() {
-	const warningState = getRpcWarningState(await getRpcConnectionStatus())
-	if (warningState.kind !== 'none') {
+	const configurationUnavailable = settingsIfRpcConfigurationReady(await getSettingsSnapshot()) === undefined
+	if (configurationUnavailable || getRpcWarningState(await getRpcConnectionStatus()).kind !== 'none') {
 		await setExtensionBadgeBackgroundColor({ color: WARNING_COLOR })
 		return await setExtensionBadgeText({ text: '!' })
 	}

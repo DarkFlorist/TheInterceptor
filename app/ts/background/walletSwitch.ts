@@ -97,7 +97,8 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 		? await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 		: { settings: await getSettings(), hasReadableActiveNetwork: true }
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
-	const route = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
+	// Restoring an unreadable selection is local configuration repair, not a wallet switch from the dormant comparison network.
+	const route = hasReadableActiveNetwork ? getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode) : 'local'
 	if (route !== 'wallet') {
 		if (route === 'local' || !hasReadableActiveNetwork) {
 			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })

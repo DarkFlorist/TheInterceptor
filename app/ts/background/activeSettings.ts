@@ -82,11 +82,11 @@ export async function runActiveSettingsTransition(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			const { settings: previousSettings } = await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
+			const { settings: previousSettings, hasReadableActiveNetwork } = await getSettingsForConfigurationChange(simulationServicesOwner.getCurrent().ethereum.getRpcEntry())
 			if (!await commit()) return
 
 			const updatedSettings = await getSettings()
-			const { chainChanged: rpcChainChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+			const rpcChainChanged = !hasReadableActiveNetwork || getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork).chainChanged
 			let networkOutcome: SimulationNetworkReconciliation = 'unchanged'
 			try {
 				try {

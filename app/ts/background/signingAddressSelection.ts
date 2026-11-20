@@ -10,7 +10,7 @@ export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress:
 	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
 }
 
-export async function getConfiguredSigningSafe(settings: Settings, signerAccounts: readonly bigint[]) {
+export async function getConfiguredSigningSafe(settings: Pick<Settings, 'simulationMode' | 'activeSigningSafeAddress' | 'activeRpcNetwork'>, signerAccounts: readonly bigint[]) {
 	if (settings.simulationMode) return undefined
 	return await getConfiguredSigningSafeForChain(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerAccounts)
 }

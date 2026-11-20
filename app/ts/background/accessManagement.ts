@@ -31,8 +31,7 @@ import { shouldSendUnscopedConnectionEvents } from './websiteConnectionEvents.js
 
 /**
  * Connection approval and its reconciliation. Which entry point to call:
- * - A handler that committed an access-affecting write calls reconcileCommittedAccessChange with the write's CommittedAccessChange and an AccessReconciliationFollowUp that says what follows the reconciliation (prompts, error handling, popup notification). It fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. persistWebsiteAccessChange is setAccess followed by it.
- * - An operation that surfaces every failure of several committed steps through one collector calls reconcileCommittedAccessChangeCollectingFailures instead, whose callback runs reconcileWebsiteApprovalAccessesCollectingFailures.
+ * - A handler that committed an access-affecting write calls reconcileCommittedAccessChangeOrFailClosed with the write's CommittedAccessChange and an AccessReconciliationFollowUp that says what follows the reconciliation (prompts and popup notification). It fails closed: when the committed settings cannot be read, the change's affected approvals are revoked. persistWebsiteAccessChange is setAccess followed by it.
  * - updateWebsiteApprovalAccesses reconciles without a committed write (follow-up prompts after an access dialog); the entry points above run it.
  * The CommittedAccessChange taxonomy and its fail-closed scope (getAffectedWebsites) stay with the reconciliation that applies them: when committed settings are unreadable, the scope decides which connections lose their approval, under the same reconciliation lock that grants. Keeping the scope private here means no caller can revoke a narrower scope than its change implies.
  */
@@ -306,16 +305,15 @@ async function withAccessReconciliationLock<Result>(websiteTabConnections: Websi
 export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	committedSettings: Settings,
-	throwOnError = false,
 ): Promise<WebsiteAccessUpdate> {
 	const { update, failures } = await reconcileWebsiteApprovalAccessesCollectingFailures(websiteTabConnections, committedSettings)
-	// Surfaced only after every step ran and the lock is released: thrown (first) and reported (the rest) when the caller handles failures, otherwise all reported, so none is dropped.
-	await surfaceFailures(failures, reportAsUnexpectedError, { throwFirst: throwOnError })
+	// Report after every step ran and the lock is released; committed-write callers collect the same run and propagate its failures instead.
+	await surfaceFailures(failures, reportAsUnexpectedError, { throwFirst: false })
 	return update
 }
 
-// The same reconciliation for a step of a larger committed-write operation: the failures are returned, in order, for that operation's single collector (reconcileAfterIndependentSteps) to surface, instead of being reported here.
-export async function reconcileWebsiteApprovalAccessesCollectingFailures(
+// The shared reconciliation run returns failures without throwing under the lock. Each named entry point owns reporting or propagation after the lock is released.
+async function reconcileWebsiteApprovalAccessesCollectingFailures(
 	websiteTabConnections: WebsiteTabConnections,
 	committedSettings: Settings,
 ): Promise<{ readonly update: WebsiteAccessUpdate, readonly failures: readonly unknown[] }> {
@@ -387,7 +385,7 @@ async function finishWebsiteAccessUpdate(
 	}
 }
 
-// Reconciles every connection with `settings`, then runs the access prompts and icon updates. Handlers reach it through reconcileCommittedAccessChange; it is called directly only where no access write was committed (follow-up prompts after an access dialog).
+// Reconciles every connection with `settings`, then runs the access prompts and icon updates. Handlers reach it through reconcileCommittedAccessChangeOrFailClosed; it is called directly only where no access write was committed (follow-up prompts after an access dialog).
 export async function updateWebsiteApprovalAccesses(
 	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
@@ -419,7 +417,7 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
-	return await reconcileCommittedAccessChange(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, { simulationServicesOwner, promptForAccesses: promptForAccessesIfNeeded, throwOnError: false, notifyWebsiteAccessChanged: true })
+	return await reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections, { kind: 'website-access', websiteOrigins: [website.websiteOrigin] }, { simulationServicesOwner, promptForAccesses: promptForAccessesIfNeeded, notifyWebsiteAccessChanged: true })
 }
 
 // A committed write that can change website approvals, address consent, interceptor-disabled state or request blocking. Its kind, not the call site, decides which websites' runtime approvals fail closed when settings are unreadable (see getAffectedWebsites).
@@ -488,8 +486,6 @@ export type AccessReconciliationFollowUp = {
 	readonly simulationServicesOwner: SimulationServicesOwner | undefined
 	// Opens access prompts for websites that now need a decision.
 	readonly promptForAccesses: boolean
-	// Throws the first failure to the caller instead of reporting every failure.
-	readonly throwOnError: boolean
 	// Tells open popups that website access changed, after the reconciliation is applied.
 	readonly notifyWebsiteAccessChanged: boolean
 	readonly uiCompletion?: 'background'
@@ -502,7 +498,7 @@ function refreshIconsAfterFailedReconciliation(websiteTabConnections: WebsiteTab
 	}, false)
 }
 
-async function reconcileCommittedAccessState(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, throwOnError: boolean) {
+async function reconcileCommittedAccessState(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange) {
 	const committedSettings = await readSettingsForAccessReconciliation()
 	if (committedSettings.status !== 'available') {
 		const failures = [committedSettings.failure, ...await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))]
@@ -511,7 +507,8 @@ async function reconcileCommittedAccessState(websiteTabConnections: WebsiteTabCo
 		throw committedSettings.failure
 	}
 	try {
-		const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, committedSettings.settings, throwOnError)
+		const { update, failures } = await reconcileWebsiteApprovalAccessesCollectingFailures(websiteTabConnections, committedSettings.settings)
+		await surfaceFailures(failures, reportAsUnexpectedError)
 		return { settings: committedSettings.settings, update }
 	} catch (error: unknown) {
 		const failures = await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))
@@ -523,32 +520,14 @@ async function reconcileCommittedAccessState(websiteTabConnections: WebsiteTabCo
 
 // Compatibility for current main's local edits: await authority reconciliation, with prompts/icons explicitly scheduled by its callers.
 export async function reconcileCommittedWebsiteAccessOrFailClosed(websiteTabConnections: WebsiteTabConnections): Promise<WebsiteAccessUpdate> {
-	return (await reconcileCommittedAccessState(websiteTabConnections, { kind: 'address-book' }, true)).update
+	return (await reconcileCommittedAccessState(websiteTabConnections, { kind: 'address-book' })).update
 }
 
 // The entry point for reconciling a committed access-affecting write: the reconciliation runs with the committed settings, read now, and then `followUp`. When they are not available (an unavailable snapshot or a rejected read, see readSettingsForAccessReconciliation) the change's affected runtime approvals are revoked and request blocks reconciled, then that failure is thrown, and any failure of the revocation reported.
-export async function reconcileCommittedAccessChange(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, followUp: AccessReconciliationFollowUp): Promise<Settings> {
-	const { settings, update } = await reconcileCommittedAccessState(websiteTabConnections, change, followUp.throwOnError)
+export async function reconcileCommittedAccessChangeOrFailClosed(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, followUp: AccessReconciliationFollowUp): Promise<Settings> {
+	const { settings, update } = await reconcileCommittedAccessState(websiteTabConnections, change)
 	if (followUp.uiCompletion === 'background') startWebsiteAccessUiUpdateInBackground(followUp.simulationServicesOwner, websiteTabConnections, update, followUp.promptForAccesses)
 	else await finishWebsiteAccessUpdate(followUp.simulationServicesOwner, websiteTabConnections, update, followUp.promptForAccesses)
 	if (followUp.notifyWebsiteAccessChanged) await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return settings
-}
-
-// The same entry point for a step of a larger committed-write operation: it never throws, and returns every failure in order (the unavailable read and the revocation's, or the failures `reconcile` returns or throws) for that operation's single collector to surface.
-export async function reconcileCommittedAccessChangeCollectingFailures(websiteTabConnections: WebsiteTabConnections, change: CommittedAccessChange, reconcile: (committedSettings: Settings) => Promise<readonly unknown[]>): Promise<readonly unknown[]> {
-	const committedSettings = await readSettingsForAccessReconciliation()
-	if (committedSettings.status !== 'available') return [committedSettings.failure, ...await revokeAffectedApprovalsAfterReconciliationFailure(websiteTabConnections, getAffectedWebsites(change))]
-	try {
-		return await reconcile(committedSettings.settings)
-	} catch (error: unknown) {
-		return [error]
-	}
-}
-
-// Compatibility for existing write callers; replaced by scoped committed-change entry points in the admission layer.
-export async function finalizeWebsiteAccessChange(simulationServicesOwner: SimulationServicesOwner | undefined, websiteTabConnections: WebsiteTabConnections, settings: Settings, promptForAccessesIfNeeded: boolean): Promise<Settings> {
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, settings, promptForAccessesIfNeeded)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 	return settings
 }

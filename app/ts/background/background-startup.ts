@@ -2,7 +2,7 @@
 import 'webextension-polyfill'
 import { serializeInpageReply } from '../types/interceptor-messages.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
-import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { getSettings, getSettingsSnapshot, settingsEvenIfRpcConfigurationUnusable, settingsIfRpcConfigurationReady, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
@@ -287,18 +287,30 @@ async function startup() {
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
-	const settings = await getSettings()
-	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
+	const startupSnapshot = await getSettingsSnapshot()
+	const startupSettings = settingsEvenIfRpcConfigurationUnusable(startupSnapshot)
+	const startupConfigurationReady = settingsIfRpcConfigurationReady(startupSnapshot) !== undefined
+	// A dormant bootstrap client keeps configuration commands reachable; it is not persisted as the active selection and is never authority for provider admission. Constructors perform no RPC.
+	const bootstrapNetwork = startupSettings?.activeRpcNetwork ?? DEFAULT_RPCS[0]
+	const userSpecifiedSimulatorNetwork = bootstrapNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : bootstrapNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-	await recoverPendingTerminalState()
+	if (startupConfigurationReady) await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
+		await catchAllErrorsAndCall(async () => {
+			const ethereum = getSimulationServices().ethereum
+			if (settingsIfRpcConfigurationReady(await getSettingsSnapshot()) === undefined) {
+				ethereum.setBlockPolling(false)
+				return
+			}
+			await checkIfInterceptorShouldSleep(ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+		})
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
 	}
 
 	recursiveCheckIfInterceptorShouldSleep()
 
+	// Keep main's prerequisite: failure to install request blocking must still fail startup, rather than enabling provider access without its configured rules.
 	await updateExtensionBadge()
 	await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundStartupReady)
