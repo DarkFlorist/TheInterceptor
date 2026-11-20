@@ -6,12 +6,12 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { addressString } from '../../utils/bigint.js'
 import { truncateAddr } from '../../utils/ethereum.js'
 import type { AsyncActionContext } from '../../utils/preact-utilities.js'
-import { getRichTokenIdentityKey, sameRichTokenIdentity } from '../../utils/richTokens.js'
+import { getRichTokenIdentityKey } from '../../utils/richTokens.js'
 import { AddressIcon, SmallAddress } from './address.js'
 import { AsyncStatusIcon } from './AsyncAction.js'
 import { ErrorComponent } from './Error.js'
 import { ChevronIcon, SearchIcon } from './icons.js'
-import { formatRichAmountForDisplay } from './RichModeShared.js'
+import { findFundedRichTokenOption, formatRichAmountForDisplay } from './RichModeShared.js'
 
 function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
 	profile: RichAccountBalance | undefined
@@ -20,7 +20,7 @@ function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
 }) {
 	if (profile === undefined) return <></>
 	const tokenItems = profile.tokenBalances.flatMap((balance) => {
-		const option = tokenOptions.find((candidate) => sameRichTokenIdentity(candidate, balance))
+		const option = findFundedRichTokenOption(tokenOptions, balance)
 		return option === undefined ? [] : [{
 			amount: formatRichAmountForDisplay(balance.amount, Number(option.decimals)),
 			key: getRichTokenIdentityKey(option),

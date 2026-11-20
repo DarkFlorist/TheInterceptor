@@ -1,7 +1,12 @@
 import { useSignal } from '@preact/signals'
 import type { ComponentChildren } from 'preact'
 import { useId } from 'preact/hooks'
+import type { RichTokenBalance, RichTokenOption } from '../../types/richMode.js'
 import { formatUnits } from '../../utils/ethereumUnits.js'
+import { sameRichTokenIdentity } from '../../utils/richTokens.js'
+
+// A balance is shown as funded only while its token option has a stored layout (enabled); without one the simulation cannot fund it.
+export const findFundedRichTokenOption = (options: readonly RichTokenOption[], balance: RichTokenBalance) => options.find((option) => option.enabled && sameRichTokenIdentity(option, balance))
 
 export function RichTokenIcon({ label, logoUri, class: className }: { label: string, logoUri: string | undefined, class: string }) {
 	return logoUri === undefined

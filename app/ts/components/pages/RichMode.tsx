@@ -15,6 +15,7 @@ import { InterceptorDialogBody, InterceptorDialogHeader, InterceptorDialogSurfac
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { RichModeAccountList } from '../subcomponents/RichModeAccountList.js'
 import { RichModeBalanceEditor } from '../subcomponents/RichModeBalanceEditor.js'
+import { findFundedRichTokenOption } from '../subcomponents/RichModeShared.js'
 import { type RichTokenFilter, RichModeTokenPicker, RichModeTokenPickerFooter } from '../subcomponents/RichModeTokenPicker.js'
 
 type RichModeAccountManagerProps = {
@@ -161,7 +162,8 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 			return false
 		}
 		const configuredRichToken = reply.result.richToken
-		if (configuredRichToken !== undefined) {
+		// A successful add has stored a layout for the token, so its option is funded from now on.
+		if (enabled) {
 			richTokenOptions.value = richTokenOptions.value.map((entry) => sameRichTokenIdentity(entry, option) ? { ...entry, ...configuredRichToken, enabled: true } : entry)
 		}
 		updateProfileForAddress(address, (profile) => enabled
@@ -292,7 +294,7 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 		const accountAddresses = new Set(richAccounts.value.map((account) => account.addressBookEntry.address))
 		const tokenKeys = new Set(richAccountBalances.value
 			.filter((profile) => profile.chainId === chainId && accountAddresses.has(profile.address))
-			.flatMap((profile) => profile.tokenBalances.map(getRichTokenIdentityKey)))
+			.flatMap((profile) => profile.tokenBalances.filter((balance) => findFundedRichTokenOption(richTokenOptions.value, balance) !== undefined).map(getRichTokenIdentityKey)))
 		return tokenKeys.size + 1
 	})
 	const selectedRichAccount = useComputed(() => richAccounts.value.find((element) => element.addressBookEntry.address === selectedRichAddress.value))
@@ -311,14 +313,11 @@ export function RichModeAccountManager({ isSettingsChangePending, setRichState, 
 	const enabledRichTokens = useComputed(() => {
 		const balances = selectedRichProfile.value?.tokenBalances ?? []
 		return balances.flatMap((balance) => {
-			const option = richTokenOptions.value.find((candidate) => sameRichTokenIdentity(candidate, balance))
-			return option === undefined ? [] : [{ ...option, amount: balance.amount, enabled: true }]
+			const option = findFundedRichTokenOption(richTokenOptions.value, balance)
+			return option === undefined ? [] : [{ ...option, amount: balance.amount }]
 		})
 	})
-	const availableRichTokens = useComputed(() => {
-		const balances = selectedRichProfile.value?.tokenBalances ?? []
-		return richTokenOptions.value.filter((option) => !balances.some((balance) => sameRichTokenIdentity(balance, option)))
-	})
+	const availableRichTokens = useComputed(() => richTokenOptions.value.filter((option) => !enabledRichTokens.value.some((enabled) => sameRichTokenIdentity(enabled, option))))
 	const addingRichTokens = useComputed(() => availableRichTokens.value.filter((option) => addingRichTokenKeys.value.includes(getRichTokenIdentityKey(option))))
 	const failedAddedRichToken = useComputed(() => availableRichTokens.value.find((option) => getRichTokenIdentityKey(option) === failedAddedRichTokenKey.value))
 	const richBalanceAssetStatusLabel = useComputed(() => {

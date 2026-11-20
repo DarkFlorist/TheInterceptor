@@ -1174,6 +1174,33 @@ describe('popup icon sync', () => {
 		await act(async () => { await clickElement(balancesButton) })
 	}
 
+	test('does not show a token balance without a stored layout as funded', async () => {
+		const dom = installDomMock()
+		const account: AddressBookEntry = { type: 'contact', name: 'Unfunded account', address: 1n, entrySource: 'User' }
+		const option = usdcOption(false)
+		installBrowserMock()
+		try {
+			await act(() => {
+				render(h(RichModeAccountManager, {
+					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
+					richAccountBalances: signal([{ chainId: 1n, address: account.address, nativeAmount: 1n, tokenBalances: [{ tokenAddress: option.tokenAddress, tokenId: undefined, amount: 5n }] }]),
+					richList: signal([]), richNativeAmount: signal(1n), richTokenOptions: signal([option]),
+					setRichState: async () => undefined,
+				}), dom.document.body)
+			})
+			await openBalanceEditor(dom, account.name)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token USDC'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'USDC rich amount'), false)
+			assert.equal(dom.document.body.textContent.includes('1 asset'), true)
+			const selectTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			assert.equal(isButtonDisabled(selectTokensButton), false)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('keeps a saved token amount and explains when its simulation refresh is unavailable', async () => {
 		const dom = installDomMock()
 		const account: AddressBookEntry = { type: 'contact', name: 'Refresh account', address: 1n, entrySource: 'User' }
