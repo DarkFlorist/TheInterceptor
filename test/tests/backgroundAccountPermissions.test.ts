@@ -3,7 +3,7 @@ import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
-import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
 
@@ -14,7 +14,7 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 
 describe('background eth_accounts', () => {
 	test('confirms a persisted popup address before slow permission work completes', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { changeActiveAddress, changeSimulationMode, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		const previousAddress = 1n
@@ -64,7 +64,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('disabled Safe Apps has no lifecycle work, reads, or port traffic', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { initializeSafeAppsCompatibility, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -87,7 +87,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('Safe Apps settings activate and dispose the coordinator for existing ports', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId)
@@ -115,7 +115,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('optional lifecycle observers do not block or fail strict access reconciliation', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
 		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false), 'number')
@@ -124,7 +124,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('async lifecycle callback rejection is reported without delaying access reconciliation', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const releaseCallback = createDeferredValue<undefined>()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: async () => {
@@ -138,7 +138,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('access reconciliation invokes only the explicitly supplied connection callbacks', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const calls: string[] = []
 		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
@@ -153,7 +153,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const messages: unknown[] = []
 		Object.defineProperty(browser.runtime, 'sendMessage', {
 			configurable: true,
@@ -185,7 +185,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('refreshes the cached signing visualization when the active Safe context changes chain', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const messages: unknown[] = []
 		Object.defineProperty(browser.runtime, 'sendMessage', {
 			configurable: true,
@@ -223,7 +223,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
-		const { readStoredValue } = installBrowserMock()
+		const { readStoredValue } = installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -290,7 +290,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('rejects a wrong-chain Safe selected through a simulation-mode popup bypass', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -326,7 +326,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not classify a signer EOA as a Safe from another chain', async () => {
-		const { readStoredValue } = installBrowserMock()
+		const { readStoredValue } = installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddressAndChain,
 			activateAddressSelection,
@@ -378,7 +378,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('keeps a newly selected self-owned Safe distinct from its signer EOA in the access dialog', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -427,7 +427,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('activates a self-owned Safe selected over its same-address signer EOA when access is approved', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -486,7 +486,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not inherit wrong-chain address access policy during requests or access-dialog changes', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -557,7 +557,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('clears a stale signing-mode Safe when the popup selects a disconnected signer', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -597,7 +597,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('falls back to the wallet account when a stored signing Safe is no longer owned', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
@@ -653,7 +653,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('remembers whether a signer account last selected its Safe or the external EOA', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -693,7 +693,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('rechecks Safe ownership against the live signer when website access is approved', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
@@ -758,7 +758,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('replays account state after already-approved eth_requestAccounts with cached active signer address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -802,7 +802,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('replays account state for already-approved eth_requestAccounts on signer-only networks', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -860,7 +860,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -909,7 +909,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('ordinary signer reload restores EOA consent and requests accounts without a lifecycle observer', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState, getSettings } = await loadModules()
 		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
 		const websiteOrigin = 'https://ordinary.example.test'
@@ -936,7 +936,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1007,7 +1007,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('keeps Safe compatibility disabled when address consent is granted only to an EOA', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1064,7 +1064,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('enables Safe compatibility only while an owned configured Safe is active', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			setSafeAppsCompatibilityMode,
@@ -1133,7 +1133,7 @@ describe('background eth_accounts', () => {
 		{ accountKind: 'owner with compatibility disabled', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: true, featureEnabled: false },
 	] as const) {
 		test(`waits for fresh ${ accountKind } account discovery before publishing Safe compatibility`, async () => {
-			installBrowserMock()
+			installLegacyBackgroundBrowserMock()
 			const {
 				changeSimulationMode,
 				getTabState,
@@ -1221,7 +1221,7 @@ describe('background eth_accounts', () => {
 	}
 
 	test('does not let an older async Safe compatibility enable overwrite a newer disable', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			setSafeAppsCompatibilityMode,
@@ -1292,7 +1292,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('requires visible address consent after signer discovery for site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1361,7 +1361,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not override an explicitly denied address for site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1401,7 +1401,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not approve the port before site-approved eth_requestAccounts receives address consent', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1472,7 +1472,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not overwrite an address denial made while site-approved eth_requestAccounts is pending', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1516,7 +1516,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('uses wallet metadata for cached signer address consent when a same-address Safe exists', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1589,7 +1589,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			websiteSocketToString,
 			changeSimulationMode,
@@ -1668,7 +1668,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('uses refreshed website access after signer account discovery', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1724,7 +1724,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not connect an unapproved port when signer rejects site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1773,7 +1773,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not connect an unapproved port when signer returns empty accounts for site-approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1822,7 +1822,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('preserves the signer account-access rejection for approved eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1875,7 +1875,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('maps unavailable signer errors only for interactive account connection methods', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -1950,7 +1950,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('ignores a provider-disconnected completion from a sibling socket', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			sendInternalWindowMessage,
@@ -2015,7 +2015,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('keeps sibling connection events when address consent resolves eth_requestAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2084,7 +2084,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('falls back to the pending request address when popup approval reply omits address fields', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2142,7 +2142,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('popup-approved wallet_requestPermissions stores address access and returns restrictReturnedAccounts', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2210,7 +2210,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('simulation-mode wallet_requestPermissions requires address consent for a site-only approval', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2273,7 +2273,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not bypass access for wallet_requestPermissions with unsupported permission keys', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2314,7 +2314,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('first-time wallet_requestPermissions uses one dialog that identifies the address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2394,7 +2394,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('site-approved wallet_requestPermissions opens address consent after releasing the popup semaphore', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -2483,7 +2483,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('delivers accountsChanged before an approved active-address switch resolves', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { changeActiveAddressAndChain, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://app.safe.global'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2515,7 +2515,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('advertises the signer account when switching from a Safe to the MetaMask address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -2593,7 +2593,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('clears dapp accounts before deferred access approval opens for an unapproved address', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddressAndChain,
 			websiteSocketToString,
@@ -2651,7 +2651,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('wallet_revokePermissions clears website account access and keeps the website entry', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2691,7 +2691,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings, getPendingAccessRequests } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2736,7 +2736,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('wallet_revokePermissions succeeds when the Interceptor is disabled for the website', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2772,7 +2772,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getPendingAccessRequests, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2815,7 +2815,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2858,7 +2858,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('stored websites without an active decision remain promptable instead of denied', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { hasAccess, hasAddressAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
@@ -2870,7 +2870,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('preserves the configured simulation address across a signing-mode round trip', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
@@ -2914,7 +2914,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('restores the simulation signer after selecting a Safe in signing mode', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
@@ -2970,7 +2970,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('keeps simulation and Safe signing addresses independent across mode switches', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
@@ -3072,7 +3072,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('does not apply the passive reply timeout to interactive signer approval', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			getTabState,
@@ -3118,7 +3118,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('switching a Safe to signing mode refreshes only the current signer tab', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
@@ -3206,7 +3206,7 @@ describe('background eth_accounts', () => {
 	})
 
 	test('verifyAccess requires an address decision despite website approval', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { getSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }

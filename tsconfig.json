@@ -21,7 +21,9 @@
 		"skipLibCheck": false,
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact",
-		"lib": ["ES2021", "DOM"]
+		"lib": ["ES2021", "DOM"],
+		// Only the WebExtension globals; without this list the @types/bun devDependency would add Bun and Node globals to extension code.
+		"types": ["firefox-webext-browser"]
 	},
 	"include": [
 		"./app/ts/**/*.ts",

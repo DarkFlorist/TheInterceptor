@@ -2,7 +2,7 @@ import * as assert from 'node:assert'
 import { afterEach, describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { ModifyAddressWindowState, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
-import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { pendingTransaction, signedTransaction } from './confirmTransactionTestHarness.js'
 import { isPendingTransactionGasLimitCurrent } from '../../app/ts/utils/pendingTransactionSimulation.js'
@@ -48,7 +48,7 @@ async function completesPromptly<T>(result: Promise<T>) {
 
 describe('UI mutation completion', () => {
 	test.each(['reset', 'remove', 'time', 'transaction time', 'gas', 'network', 'mode', 'safe'] as const)('%s edit completes while its simulation refresh is pending', async operation => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers.js')
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
@@ -109,7 +109,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('simulation stack import acknowledges persisted operations while refresh is pending', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const started = createDeferredSignal()
@@ -133,7 +133,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('address form validation checks local duplicates without requesting on-chain metadata', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
 		const address = '0x9999999999999999999999999999999999999999'
@@ -160,7 +160,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('revokes access before acknowledgement without waiting for access prompts and icons', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { allowOrPreventAddressAccessForWebsite } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const address = signedTransaction.from
@@ -201,7 +201,7 @@ describe('UI mutation completion', () => {
 	test.each(['before write', 'after write'] as const)('refreshes access icons when an address access revocation rejects %s', async failure => {
 		const error = new Error(`Revocation failed ${ failure }`)
 		// After the write, the connected-tab reload step fails because the current tab cannot be looked up.
-		const { runtimeMessages } = installBrowserMock(failure === 'after write' ? { firstCurrentTabIdReadError: error } : {})
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock(failure === 'after write' ? { firstCurrentTabIdReadError: error } : {})
 		const modules = await loadModules()
 		const { allowOrPreventAddressAccessForWebsite } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const address = signedTransaction.from
@@ -238,7 +238,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('failed reconciliation clears every approval and notifies lifecycle despite a broken port', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { reconcileCommittedWebsiteAccessOrFailClosed } = await import('../../app/ts/background/accessManagement.js')
 		const revokedTabs: number[] = []
@@ -267,7 +267,7 @@ describe('UI mutation completion', () => {
 		['individual', 'settings read'], ['individual', 'blocking rules'], ['individual', 'tab read'],
 		['bulk', 'settings read'], ['bulk', 'blocking rules'], ['bulk', 'tab read'],
 	] as const)('%s revocation fails closed without a success reply when %s fails', async (mode, failure) => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { allowOrPreventAddressAccessForWebsite } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const address = signedTransaction.from
@@ -329,7 +329,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test.each(['bulk', 'disable', 'remove'] as const)('%s access change fails closed if content-script setup and reconciliation reject after saving permissions', async operation => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const handlers = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const website = { websiteOrigin: 'revoked-before-injection.test' }
@@ -362,7 +362,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test.each(['My Active Addresses', 'My Safes'] as const)('notifies persisted %s removal even if permission reconciliation fails', async addressBookCategory => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const address = 42n
 		await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Removed account', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }])
@@ -384,7 +384,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('address-book save reports permission reconciliation failures before acknowledgement', async () => {
-		const { runtimeMessages } = installBrowserMock()
+		const { runtimeMessages } = installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
 		await modules.changeSimulationMode({ simulationMode: true, activeSimulationAddress: 42n })
@@ -407,7 +407,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test.each([false, true])('access UI failure is awaited and reported only by the synchronous API (deferred=%s)', async deferred => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { reconcileWebsiteApprovalAccesses, startWebsiteAccessUiUpdateInBackground, updateWebsiteApprovalAccesses } = await import('../../app/ts/background/accessManagement.js')
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
@@ -435,7 +435,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('reports follow-up failures after a local command has completed', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { backgroundTaskSupervisor } = await import('../../app/ts/background/backgroundTasks.js')
 		const release = createDeferredSignal()
@@ -452,7 +452,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test.each([false, true])('superseded visualization errors are reported or propagated (throw=%s)', async throwOnUnexpectedError => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const modules = await loadModules()
 		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const { updatePopupVisualisationState, publishPendingPopupVisualisation } = await import('../../app/ts/background/popupVisualisationUpdater.js')
@@ -480,7 +480,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('metadata refresh preserves gas edits made while visualization is pending', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const modules = await loadModules()
 		const { setGasLimitForTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
@@ -509,7 +509,7 @@ describe('UI mutation completion', () => {
 	})
 
 	test('gas edits invalidate approval until matching simulation results arrive', async () => {
-		installBrowserMock()
+		installLegacyBackgroundBrowserMock()
 		const { browserStorageLocalSet2 } = await import('../../app/ts/utils/storageUtils.js')
 		const modules = await loadModules()
 		const { setGasLimitForTransaction, resolvePendingTransactionOrMessage } = await import('../../app/ts/background/windows/confirmTransaction.js')

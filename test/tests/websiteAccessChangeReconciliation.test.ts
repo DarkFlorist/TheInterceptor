@@ -3,13 +3,13 @@ import * as assert from 'assert'
 import { afterEach, describe, mock, spyOn, test } from 'bun:test'
 import * as errors from '../../app/ts/utils/errors.js'
 import * as contentScriptsUpdating from '../../app/ts/utils/contentScriptsUpdating.js'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
+import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installLegacyBackgroundBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
-type SetUpOptions = { readonly browserMockOptions?: Parameters<typeof installBrowserMock>[0], readonly interceptorDisabled?: boolean }
+type SetUpOptions = { readonly browserMockOptions?: Parameters<typeof installLegacyBackgroundBrowserMock>[0], readonly interceptorDisabled?: boolean }
 
 async function setUpApprovedConnectionAndOtherTab({ browserMockOptions = {}, interceptorDisabled = false }: SetUpOptions = {}) {
-	const { reloadedTabIds, runtimeMessages } = installBrowserMock(browserMockOptions)
+	const { reloadedTabIds, runtimeMessages } = installLegacyBackgroundBrowserMock(browserMockOptions)
 	const modules = await loadModules()
 	const websiteOrigin = 'https://example.test'
 	const website = { websiteOrigin, icon: undefined, title: undefined }
