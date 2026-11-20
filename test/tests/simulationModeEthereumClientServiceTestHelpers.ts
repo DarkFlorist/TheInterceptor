@@ -7,7 +7,7 @@
 // Before every test the context restores the mock node's answers and empties its recorders, so no test depends on what an earlier test in the file changed.
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
-import { getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { STORAGE_READER_ABI } from '../../app/ts/simulation/storageReader.js'
 import { type EthSimulateV1BlockTag, type EthSimulateV1CallResult, type EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -292,6 +292,7 @@ export function createSimulationModeTestContext() {
 	}
 	const getBlockNumberFromInput = async (simulationStateInput: SimulationStateInputForTest) => await getSimulatedBlockNumberFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput))
 	const getBlockFromInput = async (simulationStateInput: SimulationStateInputForTest, blockTag: Parameters<typeof getSimulatedBlockFromInput>[3], includeTransactions = false) => await getSimulatedBlockFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockTag, includeTransactions)
+	const getBlockByHashFromInput = async (simulationStateInput: SimulationStateInputForTest, blockHash: bigint, includeTransactions = false) => await getSimulatedBlockByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockHash, includeTransactions)
 	const getTransactionByHashFromInput = async (simulationStateInput: SimulationStateInputForTest, hash: bigint) => await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), hash)
 	const getReceiptFromState = async (simulationState: ExecutionSimulationStateForTest, hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
 	const getLogsFromState = async (simulationState: ExecutionSimulationStateForTest, filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
@@ -302,6 +303,7 @@ export function createSimulationModeTestContext() {
 		createEthereumWithThrowingSimulationPreparation,
 		getBlockNumberFromInput,
 		getBlockFromInput,
+		getBlockByHashFromInput,
 		getTransactionByHashFromInput,
 		getReceiptFromState,
 		getLogsFromState,
