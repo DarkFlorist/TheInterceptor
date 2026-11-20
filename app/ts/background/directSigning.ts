@@ -22,6 +22,8 @@ import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } 
 import { withDirectSigningRecords, type DirectSigningRecordsTransaction } from '../signing/directSigningStore.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getAcceptRefusal } from './reviewedResult.js'
+import { getSettings } from './settings.js'
+import { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } from '../utils/constants.js'
 
 /** Read afresh at each lifecycle boundary; a request can disappear while a device is signing. */
 async function findPendingSigningRequest(record: DirectSigningRecord) {
@@ -170,6 +172,8 @@ async function assertApprovalForReviewedResult(record: DirectSigningRecord, appr
 	if (pending === undefined || pending.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The original signing request is no longer active')
 	const refusal = getAcceptRefusal(pending, approval)
 	if (refusal !== undefined) throw signingOperationError(approvalRefusalMessages[refusal])
+	// Like a browser wallet forward, a direct wallet receives no request created in signing mode once the Interceptor has switched to simulation mode.
+	if ((await getSettings()).simulationMode) throw signingOperationError(ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST.error.message)
 }
 
 async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction, approval: Extract<DirectSigningRequest, { method: 'signing_approve' }>) {

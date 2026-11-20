@@ -54,7 +54,8 @@ beforeEach(async () => {
 	const input = { method: 'eth_sendTransaction' as const, address: account.address, chainId: 1n, data: serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n, to: account.address, value: 0n }) }
 	record = { id: crypto.randomUUID(), request: pendingTransaction.uniqueRequestIdentifier, binding, websiteOrigin: pendingTransaction.website.websiteOrigin, rpcUrl: 'https://rpc.example.test', input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
 	await appendPendingTransactionOrMessage({ ...reviewedTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: binding, signingChainId: 1n })
-	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
+	// The website request was made in signing mode, and the Interceptor is still in it.
+	await browser.storage.local.set({ simulationMode: false, directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
 })
 afterEach(() => { globalThis.fetch = originalFetch })
 
@@ -106,6 +107,14 @@ test('rejects changed wallets, cancellation, and a disappeared originating reque
 	await clearPendingTransactions()
 	await expect(approve(record)).rejects.toThrow()
 	expect(broadcasts).toBe(0)
+})
+
+test('switching into simulation mode after the signing page opened refuses its approval', async () => {
+	await browser.storage.local.set({ simulationMode: true })
+	await expect(approve(record)).rejects.toThrow('switched to simulation mode')
+	expect((await readDirectSigningRecords())[0]?.phase).toBe('review')
+	await browser.storage.local.set({ simulationMode: false })
+	expect((await approve(record)).phase).toBe('approved')
 })
 
 test('delayed offline transactions recheck the live nonce before submission', async () => {
