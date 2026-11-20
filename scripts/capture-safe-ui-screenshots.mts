@@ -7,7 +7,7 @@ import { serialize } from '../app/ts/types/wire-types.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
 import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage } from '../test/benchmarks/safeUiScreenshotHarness.js'
+import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage, SETTINGS_IMPORT_EXPORT_PAGE } from '../test/benchmarks/safeUiScreenshotHarness.js'
 
 const outputDirectory = path.resolve(process.env.SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
 
@@ -501,8 +501,8 @@ try {
 	await stack.close()
 
 	console.info('Opening settings import and export page')
-	const settings = await browser.openPage('managementView')
-	await waitForSelector(settings, '.window-header')
+	const settings = await browser.openPage(SETTINGS_IMPORT_EXPORT_PAGE)
+	await waitForSelector(settings, '.settings-import-export-actions')
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 

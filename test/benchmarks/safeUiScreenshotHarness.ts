@@ -4,8 +4,21 @@ import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker } from './chromeHarness.js'
 import { launchFirefoxSession } from './firefoxHarness.js'
+import { getManagementPageHash } from '../../app/ts/utils/managementPages.js'
 
 export type SafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'managementView'
+export type SafeUiPageTarget = { readonly name: SafeUiPageName, readonly hash?: string }
+
+// The management shell opens its home tab without a hash, so a scenario for one of its tabs must route there with the app's own hash helper.
+export const SETTINGS_IMPORT_EXPORT_PAGE: SafeUiPageTarget = { name: 'managementView', hash: getManagementPageHash('settings') }
+
+const toPageTarget = (page: SafeUiPageName | SafeUiPageTarget): SafeUiPageTarget => typeof page === 'string' ? { name: page } : page
+
+export function getSafeUiExtensionPagePath(page: SafeUiPageName | SafeUiPageTarget, manifestVersion: 2 | 3) {
+	const { name, hash = '' } = toPageTarget(page)
+	const fileName = manifestVersion === 3 ? `${ name }V3.html` : `${ name }.html`
+	return `${ path.posix.join(manifestVersion === 3 ? 'html3' : 'html', fileName) }${ hash }`
+}
 
 export type SafeUiScreenshotPage = {
 	evaluate: <T = unknown>(expression: string) => Promise<T | undefined>
@@ -17,7 +30,7 @@ export type SafeUiScreenshotPage = {
 export type SafeUiScreenshotBrowser = {
 	name: 'Chromium' | 'Firefox'
 	version?: string
-	openPage: (pageName: SafeUiPageName, initializationExpression?: string) => Promise<SafeUiScreenshotPage>
+	openPage: (page: SafeUiPageName | SafeUiPageTarget, initializationExpression?: string) => Promise<SafeUiScreenshotPage>
 	close: () => Promise<void>
 }
 
@@ -30,8 +43,8 @@ async function launchChromiumScreenshotBrowser(extensionDirectory: string | unde
 	const extensionId = new URL(workerTarget.url).host
 	return {
 		name: 'Chromium',
-		openPage: async (pageName, initializationExpression) => {
-			const pageUrl = `chrome-extension://${ extensionId }/html3/${ pageName }V3.html`
+		openPage: async (page, initializationExpression) => {
+			const pageUrl = `chrome-extension://${ extensionId }/${ getSafeUiExtensionPagePath(page, 3) }`
 			const targetId = await createTargetPage(session.browserConnection, pageUrl)
 			const connection = await connectTarget(session.browserDebugPort, targetId)
 			if (initializationExpression !== undefined) await connection.evaluate(initializationExpression)
@@ -82,8 +95,8 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 	return {
 		name: 'Firefox',
 		version: browserVersion,
-		openPage: async (pageName, initializationExpression) => {
-			if (pageName === 'confirmTransaction') {
+		openPage: async (page, initializationExpression) => {
+			if (toPageTarget(page).name === 'confirmTransaction') {
 				await session?.close()
 				session = undefined
 				await staticSession?.close()
@@ -93,16 +106,16 @@ async function launchFirefoxScreenshotBrowser(extensionDirectory: string | undef
 					await bootstrapPage.evaluate(initializationExpression)
 					await bootstrapPage.close()
 				}
-				return await staticSession.openExtensionPage(path.posix.join('html', `${ pageName }.html`))
+				return await staticSession.openExtensionPage(getSafeUiExtensionPagePath(page, 2))
 			}
 			if (session === undefined) {
 				await staticSession?.close()
 				staticSession = undefined
 				session = await launchFirefoxSession(sourceExtensionDirectory)
 			}
-			const page = await session.openExtensionPage(path.posix.join('html', `${ pageName }.html`))
-			if (initializationExpression !== undefined) await page.evaluate(initializationExpression)
-			return page
+			const openedPage = await session.openExtensionPage(getSafeUiExtensionPagePath(page, 2))
+			if (initializationExpression !== undefined) await openedPage.evaluate(initializationExpression)
+			return openedPage
 		},
 		close: async () => {
 			await staticSession?.close()
