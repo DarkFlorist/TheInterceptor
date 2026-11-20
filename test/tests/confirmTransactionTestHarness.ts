@@ -18,6 +18,8 @@ import { getCreatedSafeProposal } from '../../app/ts/safe/safePendingFlow.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../app/ts/utils/requests.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
+
+
 export type RuntimeMessage = {
 	method?: string
 	type?: string
@@ -54,6 +56,7 @@ export function createBrowserMock() {
 	let storageGetHandler: ((keys: StorageKeys, readStoredItems: () => Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
 	let storageSetHandler: ((items: Record<string, unknown>, writeStoredItems: () => void) => Promise<void>) | undefined
 	let tabUpdateHandler: ((tabId: number) => Promise<void>) | undefined
+	let windowGetHandler: ((windowId: number) => Promise<void>) | undefined
 	let windowRemoveHandler: ((windowId: number) => Promise<void>) | undefined
 	let windowCreateHandler: (() => Promise<void>) | undefined
 	let runtimeSendMessageHandler: ((message: RuntimeMessage) => Promise<void>) | undefined
@@ -119,6 +122,7 @@ export function createBrowserMock() {
 		},
 		windows: {
 			async get(windowId: number) {
+				await windowGetHandler?.(windowId)
 				if (!liveWindowIds.has(windowId)) throw new Error(`No window with id: ${ windowId }`)
 				return { id: windowId }
 			},
@@ -165,6 +169,7 @@ export function createBrowserMock() {
 		setStorageSetHandler(handler: typeof storageSetHandler) { storageSetHandler = handler },
 		setTabMessageHandler(handler: ((tabId: number, message: unknown) => unknown | Promise<unknown>) | undefined) { tabMessageHandler = handler },
 		setTabUpdateHandler(handler: typeof tabUpdateHandler) { tabUpdateHandler = handler },
+		setWindowGetHandler(handler: typeof windowGetHandler) { windowGetHandler = handler },
 		setWindowRemoveHandler(handler: typeof windowRemoveHandler) { windowRemoveHandler = handler },
 		setWindowCreateHandler(handler: typeof windowCreateHandler) { windowCreateHandler = handler },
 		setRuntimeSendMessageHandler(handler: typeof runtimeSendMessageHandler) { runtimeSendMessageHandler = handler },
@@ -179,6 +184,7 @@ export function createBrowserMock() {
 			storageGetHandler = undefined
 			storageSetHandler = undefined
 			tabUpdateHandler = undefined
+			windowGetHandler = undefined
 			windowRemoveHandler = undefined
 			windowCreateHandler = undefined
 			runtimeSendMessageHandler = undefined
@@ -242,8 +248,13 @@ export async function loadModules() {
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
 		Multicall3ABI: constants.Multicall3ABI,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
-		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
+		changeSimulationMode: settings.changeSimulationMode,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
+		refreshPopupConfirmTransactionMetadata: popupMessageHandlers.refreshPopupConfirmTransactionMetadata,
+		popupReadyAndListening: popupMessageHandlers.popupReadyAndListening,
+		forceSetGasLimitForTransaction: popupMessageHandlers.forceSetGasLimitForTransaction,
+		removeTransactionOrSignedMessage: popupMessageHandlers.removeTransactionOrSignedMessage,
+		simulateGovernanceContractExecutionOnPass: popupMessageHandlers.simulateGovernanceContractExecutionOnPass,
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
@@ -275,7 +286,14 @@ export async function loadModules() {
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,
 		prunePendingTerminalRepliesForMissingTabs: pendingTerminalReplies.prunePendingTerminalRepliesForMissingTabs,
 		updateInterceptorTransactionStack: storageVariables.updateInterceptorTransactionStack,
-		updatePendingTransactionOrMessage: storageVariables.updatePendingTransactionOrMessage,
+		// Test setup: changes the stored pending request under this id, whatever its approval status.
+		updateStoredPendingRequest: async (uniqueRequestIdentifier: UniqueRequestIdentifier, update: Parameters<typeof storageVariables.updatePendingTransactionOrMessageInstance>[1]) => {
+			const stored = (await storageVariables.getPendingTransactionsAndMessages()).find((pending) => pending.uniqueRequestIdentifier.requestId === uniqueRequestIdentifier.requestId
+				&& pending.uniqueRequestIdentifier.requestSocket.tabId === uniqueRequestIdentifier.requestSocket.tabId
+				&& pending.uniqueRequestIdentifier.requestSocket.connectionName === uniqueRequestIdentifier.requestSocket.connectionName)
+			if (stored === undefined) throw new Error('No stored pending request to update')
+			await storageVariables.updatePendingTransactionOrMessageInstance(stored, update)
+		},
 		updateSafeTransactionStacks: async (update: (previous: Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => Awaited<ReturnType<typeof storageVariables.getSafeTransactionStacks>>) => {
 			const updated = await storageVariables.updateTransactionState((previous) => ({
 				...previous,
@@ -651,6 +669,7 @@ export const pendingTransaction = {
 		simulationMode: true,
 		activeAddress,
 		created,
+		instanceId: 'harness pending transaction',
 		transactionIdentifier: 1n,
 		website: popupVisualisation.data.transactionToSimulate.website,
 		approvalStatus: { status: 'WaitingForUser' },
@@ -782,3 +801,9 @@ export async function waitForPendingTransactionsToClear() {
 }
 
 export { addressString, bytes32String, createSafeTx, EIP712Message, getSafeTxHash, privateKeyToAccount, SAFE_ABI, SAFE_EXECUTION_ABI, safeTxToTypedDataJson, withSilencedConsole }
+
+// Replayed accepts may arrive after cleanup; the resolver must finish or ignore them before inspecting consent.
+export async function createReplayableAcceptConfirmation(requestIdentifier: UniqueRequestIdentifier) {
+	const pending = (await modules.getPendingTransactionsAndMessages()).find((entry) => doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, requestIdentifier))
+	return { method: 'popup_confirmDialog' as const, data: { action: 'accept' as const, uniqueRequestIdentifier: requestIdentifier, reviewedResultId: pending === undefined ? '' : getPopupReviewedResultId(pending), forceSend: true } }
+}

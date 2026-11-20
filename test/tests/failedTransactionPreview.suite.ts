@@ -1,3 +1,4 @@
+import { identifyAddressWith } from '../../app/ts/background/metadataUtils.js'
 import * as assert from 'assert'
 import { setSystemTime, test as testWithDefaultNetwork } from 'bun:test'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
@@ -399,7 +400,7 @@ test('stores the names of a metadata refresh on its run when another field of th
 	// Forgetting the supplier makes the metadata refresh look it up on chain, which is when the stored run changes.
 	await modules.updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.address !== recipientAddress))
 	const ethereumDerivingStoredRunAgainDuringLookup = supersedeDuringAddressLookup(confirmationSimulator.ethereum, recipientAddress, 'resolves', async () => {
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => pending.type === 'Transaction' && 'popupVisualisation' in pending ? { ...pending, popupVisualisation: sameRunDerivedAgain } : pending)
 	})
 
 	await withSilencedConsole(async () => await refreshPopupConfirmTransactionMetadata(ethereumDerivingStoredRunAgainDuringLookup, confirmationSimulator.tokenPriceService, undefined))
@@ -646,7 +647,7 @@ test('keeps a website-chosen calldata address in the address book only as the un
 
 	// getMetadataForSimulation names a successful simulation's addresses this way, with the confirmed transaction appended to the simulated block.
 	await useInvoiceAddressBook()
-	const simulationViewEntries = await getAddressBookEntriesForVisualiserFromTransactions(simulator.ethereum, undefined, [], [await parseInputData(signedTransaction, simulator.ethereum, undefined)], [{
+	const simulationViewEntries = await getAddressBookEntriesForVisualiserFromTransactions(identifyAddressWith(simulator.ethereum, undefined), [], [await parseInputData(signedTransaction, identifyAddressWith(simulator.ethereum, undefined))], [{
 		stateOverrides: {},
 		signedMessages: [],
 		blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
