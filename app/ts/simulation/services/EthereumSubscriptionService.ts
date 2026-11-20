@@ -11,6 +11,7 @@ import { websiteSocketToString } from '../../background/backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../utils/constants.js'
+import type { EthereumBlockHeaderWithTransactionHashes } from '../../types/wire-types.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 
@@ -50,7 +51,8 @@ const filterChangesScope = {}
 const runFilterChangeSerially = createScopedKeyedSerialExecutor<typeof filterChangesScope, string>()
 
 type StoredEthSubscription = Exclude<EthereumSubscriptionsAndFilters[number], { readonly type: 'eth_newFilter' }>
-type LiveBlock = Awaited<ReturnType<EthereumClientService['getBlock']>>
+// newHeads reads getBlock with fullObjects=false; ReturnType would use its last, boolean overload.
+type LiveBlock = EthereumBlockHeaderWithTransactionHashes
 type SimulatedBlock = NonNullable<Awaited<ReturnType<typeof getSimulatedBlockFromInput>>>
 // Each is fetched at most once per block, however many subscribers need it.
 type NewBlockSources = {
