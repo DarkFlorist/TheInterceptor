@@ -371,7 +371,7 @@ test('does not overwrite a request forwarded while its Safe signer refresh is in
 	try {
 		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => ({
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (current) => ({
 			...current,
 			approvalStatus: { status: 'WaitingForSigner' as const },
 		}))
@@ -437,7 +437,7 @@ test('does not overwrite a newer Safe proposal while signer refresh is in flight
 	try {
 		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction' || current.safeFlow.kind !== 'proposal' || current.safeFlow.state !== 'created'
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction' || current.safeFlow.kind !== 'proposal' || current.safeFlow.state !== 'created'
 			? current
 			: {
 				...current,
@@ -506,7 +506,7 @@ test('does not overwrite an edited Safe proposal request while signer refresh is
 	try {
 		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
 		await refreshStarted
-		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction'
+		await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction'
 			|| current.originalRequestParameters.method !== 'eth_sendTransaction'
 			? current
 			: {
