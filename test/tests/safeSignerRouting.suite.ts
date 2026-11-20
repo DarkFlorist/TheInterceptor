@@ -149,6 +149,8 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 })
 
 test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 typed data', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [recipientAddress],
@@ -208,7 +210,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	assert.match(changedOwnersProposal.approvalStatus.message, /owner set changed/u)
 
 	fakeSafeContract.owners = []
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -226,6 +228,8 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 })
 
 test('routes a Safe co-signing request through the wallet-selected owner', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const ownerAccount = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 	const safeSignerAddress = BigInt(ownerAccount.address)
 	const alternateOwnerAccount = privateKeyToAccount('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')
@@ -406,6 +410,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 })
 
 test('returns a Safe signer error when the wallet-selected co-signer is not a current owner', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const safeSignerAddress = recipientAddress
 	const currentOwner = safeTestOwnerAddress
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
@@ -769,6 +774,7 @@ test('signs Safe transaction typed data normally when the active signing address
 })
 
 test('uses the configured Safe simulation signer without changing the active Safe account', async () => {
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	const simulationSignerAddress = 0x4444444444444444444444444444444444444444n
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -1012,6 +1018,31 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
+test('returns an explicit saved-signer error and refreshes the address book after access reconciliation fails', async () => {
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ useAsActiveAddress: true, safeSimulationSignerAddress: recipientAddress })])
+	const socket = { tabId: 1, connectionName: 80n }
+	const connection = { port: createWebsitePort(socket, 0, []), socket, websiteOrigin: 'saved-safe.test', approved: true, wantsToConnect: true }
+	const connections = new Map([[1, { connections: { [modules.websiteSocketToString(socket)]: connection } }]])
+	browserMock.setStorageGetHandler(async (keys, read) => {
+		if (Array.isArray(keys) && keys.includes('openedPageV2')) throw new Error('Cannot read saved signer permissions')
+		return read()
+	})
+	browserMock.sentMessages.length = 0
+	try {
+		const reply = await withSilencedConsole(async () => await modules.setSafeSimulationSigner(
+			createTestSimulationServicesOwner({ ethereum, tokenPriceService: simulator.tokenPriceService }), connections,
+			{ method: 'popup_setSafeSimulationSigner', data: { chainId: fakeRpcNetwork.chainId, safeAddress: activeAddress, safeSimulationSignerAddress: undefined } },
+		))
+		assert.equal(reply.ok, false)
+		assert.match('message' in reply ? reply.message : '', /was saved, but website access could not be refreshed: Cannot read saved signer permissions/u)
+		assert.equal(connection.approved, false)
+		assert.equal(browserMock.sentMessages.some(message => message.method === 'popup_addressBookEntriesChanged'), true)
+	} finally { browserMock.setStorageGetHandler(undefined) }
+	const saved = (await modules.getUserAddressBookEntries())[0]
+	assert.equal(saved?.safeSimulationSignerAddress, undefined)
+	assert.deepEqual(saved?.safeSignerAddresses, fakeSafeContract.owners)
+})
+
 test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
 	const staleSigner = 0x1234567890123456789012345678901234567890n
 	fakeSafeContract.owners = [recipientAddress]
@@ -1044,6 +1075,8 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 })
 
 test('routes a completed active Safe execution through its configured signer and rechecks signer changes', async () => {
+	// Approvals of requests created in signing mode are only forwarded while the Interceptor is still in signing mode.
+	await modules.changeSimulationMode({ simulationMode: false })
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const safeSignerAddress = recipientAddress
 	const existingOwnerAccount = safeTestOwnerAccount
@@ -1243,7 +1276,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.match(staleExecution.approvalStatus.message, /Gnosis Safe execution could not be prepared/u)
 
 	fakeSafeContract.nonce -= 1n
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))
@@ -1262,7 +1295,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.match(changedOwnersExecution.approvalStatus.message, /owner set changed/u)
 
 	fakeSafeContract.owners = [existingOwnerAddress, safeSignerAddress, alternateSignerAddress]
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+	await modules.updateStoredPendingRequest(uniqueRequestIdentifier, async (pending) => ({
 		...pending,
 		approvalStatus: { status: 'WaitingForUser' as const },
 	}))

@@ -1,25 +1,27 @@
+import { waitForBackgroundTasks } from './backgroundTasksTestHarness.js'
 import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
-import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
+
+afterEach(waitForBackgroundTasks)
 
 describe('popup settings changes', () => {
+	const servicesToken = Symbol('test services')
+	const described = (description: string) => ({ servicesToken, description })
+
 	for (const firstSucceeded of [true, false]) test(`keeps overlapping refresh outcomes independent (first=${ firstSucceeded })`, async () => {
 		installBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const first = createDeferredValue<boolean>()
 		const last = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
-		const refresh = createPopupSimulationRefresher(async services => {
-			if (services.revision === 'first') { started.resolve(undefined); return await first.promise }
-			return await last.promise
-		})
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'first' }
-		const result = refresh(services)
+		const { refresh } = createPopupSimulationRefresher<string>()
+		const firstRequest = { target: described('first'), execute: async () => { started.resolve(undefined); return await first.promise } }
+		const result = refresh(firstRequest, false)
 		await started.promise
-		assert.equal(refresh(services), result)
-		const next = refresh({ ...services, revision: 'second' })
+		assert.equal(refresh(firstRequest, false), result)
+		const next = refresh({ target: described('second'), execute: async () => await last.promise }, false)
 		assert.notEqual(next, result)
 		first.resolve(firstSucceeded)
 		assert.deepEqual(await result, { status: 'observed', available: firstSucceeded })
@@ -27,60 +29,105 @@ describe('popup settings changes', () => {
 		assert.deepEqual(await next, { status: 'observed', available: !firstSucceeded })
 	})
 
-	for (const change of ['same', 'revision', 'provider', 'force'] as const) {
-		test(`shares only refresh work that covers the requested revision and invalidation (${ change })`, async () => {
+	for (const change of ['same', 'target', 'services', 'unknown target', 'force'] as const) {
+		test(`shares only refresh work that covers the requested target, services and invalidation (${ change })`, async () => {
 			installBrowserMock()
 			const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 			const release = createDeferredValue<boolean>()
 			const started = createDeferredValue<void>()
 			let calls = 0
-			const refresh = createPopupSimulationRefresher(async () => { calls++; started.resolve(undefined); return await release.promise })
-			const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'one' }
-			const pending = refresh(services)
+			const { refresh, identify } = createPopupSimulationRefresher<string>()
+			const services = createEthereumWithGetBlockCounter({ count: 0 })
+			const execute = async () => { calls++; started.resolve(undefined); return await release.promise }
+			const request = { target: change === 'unknown target' ? undefined : { servicesToken: identify(services), description: 'one' }, execute }
+			const pending = refresh(request, false)
 			await started.promise
-			const next = change === 'provider' ? { ...services, ...createEthereumWithGetBlockCounter({ count: 0 }) }
-				: change === 'revision' ? { ...services, revision: 'two' }
-				: change === 'force' ? { ...services, invalidateOldState: true } : services
-			const nextResult = refresh(next)
+			const next = change === 'target' ? { ...request, target: { servicesToken: identify(services), description: 'two' } }
+				: change === 'services' ? { ...request, target: { servicesToken: identify(createEthereumWithGetBlockCounter({ count: 0 })), description: 'one' } }
+				: request
+			const invalidate = change === 'force'
+			const nextResult = refresh(next, invalidate)
 			assert.equal(nextResult === pending, change === 'same')
-			for (let i = 0; i < 5; i++) assert.equal(refresh(next), nextResult)
+			let latest = nextResult
+			for (let i = 0; i < 5; i++) {
+				const repeated = refresh(next, invalidate)
+				assert.equal(repeated === latest, change !== 'unknown target', 'only a known target can join pending work')
+				latest = repeated
+			}
 			release.resolve(true)
 			assert.deepEqual(await pending, { status: 'observed', available: true })
-			assert.deepEqual(await nextResult, { status: 'observed', available: true })
+			// A request without a known target never joins pending work, so each repeat supersedes the previous one and only the latest runs.
+			assert.deepEqual(await nextResult, change === 'unknown target' ? { status: 'superseded' } : { status: 'observed', available: true })
+			assert.deepEqual(await latest, { status: 'observed', available: true })
 			assert.equal(calls, change === 'same' ? 1 : 2)
-			await refresh(next)
-			assert.equal(calls, change === 'same' ? 2 : 3)
 		})
 	}
+
+	test('identifies each installed service pair with one stable token', async () => {
+		installBrowserMock()
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { identify } = createPopupSimulationRefresher<string>()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const other = createEthereumWithGetBlockCounter({ count: 0 })
+		assert.equal(identify(services), identify(services))
+		assert.notEqual(identify(other), identify(services))
+		assert.notEqual(identify({ ethereum: services.ethereum, tokenPriceService: other.tokenPriceService }), identify(services))
+		assert.notEqual(createPopupSimulationRefresher<string>().identify(services), identify(services), 'each refresher owns its own registry')
+	})
+
+	test('queued requests hold a service token, never the services', async () => {
+		installBrowserMock()
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { identify, toQueued } = createPopupSimulationRefresher<string>()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const execute = async () => true
+		const queued = toQueued(services, { target: 'A', execute })
+		assert.deepEqual(queued, { target: { servicesToken: identify(services), description: 'A' }, execute })
+		assert.deepEqual(toQueued(services, { target: undefined, execute }), { target: undefined, execute }, 'a request without a description needs no service identity')
+	})
+
+	test('the updater describes a prepared refresh as plain data and an execute closure', async () => {
+		installBrowserMock()
+		await loadModules()
+		const { preparePopupVisualisationRefresh } = await import('../../app/ts/background/popupVisualisationUpdater.js')
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		Object.defineProperty(services.ethereum, 'getCachedBlock', { value: () => ({ number: 7n, hash: 0x77n }) })
+		const first = await preparePopupVisualisationRefresh(services, false)
+		const repeated = await preparePopupVisualisationRefresh(services, false)
+		assert.ok(first !== undefined && repeated !== undefined)
+		assert.deepEqual(Object.keys(first).sort(), ['execute', 'target'])
+		assert.ok(first.target !== undefined, 'the test services must expose a cached block, or no target can be described')
+		assert.deepEqual(Object.keys(first.target).sort(), ['activeStackContext', 'blockHash', 'numberOfAddressesMadeRich', 'publicationGeneration', 'visualisationFingerprint'])
+		assert.deepEqual(repeated.target, first.target)
+	})
 
 	test('supersedes queued B with the latest A and carries forward invalidation', async () => {
 		installBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const release = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
-		const calls: RevisionedPopupSimulationRefresh[] = []
-		const refresh = createPopupSimulationRefresher(async services => { calls.push(services); started.resolve(undefined); return await release.promise })
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
-		const first = refresh(services)
+		const calls: { readonly target: string, readonly invalidateOldState: boolean }[] = []
+		const { refresh } = createPopupSimulationRefresher<string>()
+		const request = (target: string) => ({ target: described(target), execute: async (invalidateOldState: boolean) => { calls.push({ target, invalidateOldState }); started.resolve(undefined); return await release.promise } })
+		const first = refresh(request('A'), false)
 		await started.promise
-		const skipped = refresh({ ...services, revision: 'B', invalidateOldState: true })
-		const last = refresh(services)
+		const skipped = refresh(request('B'), true)
+		const last = refresh(request('A'), false)
 		assert.notEqual(first, last)
 		assert.deepEqual(await skipped, { status: 'superseded' })
 		release.resolve(true)
 		assert.deepEqual(await first, { status: 'observed', available: true })
 		assert.deepEqual(await last, { status: 'observed', available: true })
-		assert.deepEqual(calls.map(call => call.revision), ['A', 'A'])
-		assert.equal(calls[1]?.invalidateOldState, true)
+		assert.deepEqual(calls, [{ target: 'A', invalidateOldState: false }, { target: 'A', invalidateOldState: true }])
 	})
 
 	test('merges invalidation for equivalent work before it starts', async () => {
 		installBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
-		const refresh = createPopupSimulationRefresher(async services => services.invalidateOldState === true)
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
-		const result = refresh(services)
-		assert.equal(refresh({ ...services, invalidateOldState: true }), result)
+		const { refresh } = createPopupSimulationRefresher<string>()
+		const request = { target: described('A'), execute: async (invalidateOldState: boolean) => invalidateOldState }
+		const result = refresh(request, false)
+		assert.equal(refresh(request, true), result)
 		assert.deepEqual(await result, { status: 'observed', available: true })
 	})
 
@@ -90,18 +137,18 @@ describe('popup settings changes', () => {
 		const release = createDeferredValue<void>()
 		const started = createDeferredValue<void>()
 		let attempts = 0
-		const refresh = createPopupSimulationRefresher(async () => {
+		const { refresh } = createPopupSimulationRefresher<string>()
+		const execute = async () => {
 			if (++attempts === 1) { started.resolve(undefined); await release.promise; throw new Error('Refresh failed') }
 			return true
-		})
-		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'first' }
-		const failed = assert.rejects(refresh(services), /Refresh failed/)
+		}
+		const failed = assert.rejects(refresh({ target: described('first'), execute }, false), /Refresh failed/)
 		await started.promise
-		const queued = refresh({ ...services, revision: 'second' })
+		const queued = refresh({ target: described('second'), execute }, false)
 		release.resolve(undefined)
 		await failed
 		assert.deepEqual(await queued, { status: 'observed', available: true })
-		assert.deepEqual(await refresh(services), { status: 'observed', available: true })
+		assert.deepEqual(await refresh({ target: described('first'), execute }, false), { status: 'observed', available: true })
 	})
 
 	test('coordinates settings changes across dispatchers without blocking wallet replies or reads', async () => {
@@ -195,7 +242,7 @@ describe('popup settings changes', () => {
 		const currentRpc = (await getSettings()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const editedRpc = { ...currentRpc, name: 'Renamed network', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' }, primary: !currentRpc.primary, minimized: !currentRpc.minimized }
-		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: currentRpc })
 		const reset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw new Error('Metadata edits should not reset services') })
 		assert.deepEqual(await changeActiveRpc(reset, connections, editedRpc, { source: 'dapp', simulationMode: simulationMode, signerTabId: 1 }), { result: null })
 		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
@@ -299,6 +346,83 @@ describe('popup settings changes', () => {
 		assert.equal(announced, true)
 	})
 
+	test('RPC-list preference edits preserve an exact selection among entries sharing an endpoint', async () => {
+		installBrowserMock()
+		const { getSettings, changeSimulationMode } = await loadModules()
+		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+		const initial = (await getSettings()).activeRpcNetwork
+		if (initial.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const selected = { ...initial, name: 'Selected twin', primary: false, currencyTicker: 'SELECTED' }
+		const other = { ...initial, name: 'Other twin', primary: true, currencyTicker: 'OTHER', blockExplorer: { apiUrl: 'https://other.example/api', apiKey: '' } }
+		const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		await setRpcList([other, selected])
+		await changeSimulationMode({ simulationMode: true, rpcNetwork: selected })
+		const owner = createSimulationServicesOwner(selected, async () => undefined, async (_ethereum, error) => { throw error })
+		const captured = owner.getCurrent()
+		try {
+			const edited = { ...selected, minimized: !selected.minimized }
+			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [other, edited] })
+			assert.deepEqual((await getSettings()).activeRpcNetwork, edited)
+			assert.equal(owner.getCurrent(), captured)
+			assert.equal(owner.getCurrent().ethereum.getRpcEntry().currencyTicker, selected.currencyTicker)
+		} finally { owner.getCurrent().ethereum.cleanup() }
+	})
+
+	for (const source of ['list', 'editor'] as const) test(`RPC metadata edits via ${ source } replace installed metadata and refresh without changing captured clients`, async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings, changeActiveAddressAndChain } = await loadModules()
+		const { setNewRpcList } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+		const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+		const settings = await getSettings()
+		if (settings.activeRpcNetwork.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const owner = createSimulationServicesOwner(settings.activeRpcNetwork, async () => undefined, async (_ethereum, error) => { throw error })
+		const captured = owner.getCurrent()
+		const edited = { ...settings.activeRpcNetwork, name: 'Updated chain', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' } }
+		const otherPrimary = { ...settings.activeRpcNetwork, name: 'Existing endpoint alias', primary: true }
+		const { setRpcList } = await import('../../app/ts/background/storageVariables.js')
+		await setRpcList([otherPrimary, settings.activeRpcNetwork])
+		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
+		try {
+			const before = refreshCount()
+			if (source === 'editor') {
+				const { saveRpcEntryAndKeepActiveRpcConsistent } = await import('../../app/ts/components/subcomponents/ConfigureRpcConnection.js')
+				await saveRpcEntryAndKeepActiveRpcConsistent(edited, settings.activeRpcNetwork, [otherPrimary, settings.activeRpcNetwork], settings.activeRpcNetwork,
+					async entries => await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: entries }),
+					async rpcNetwork => await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork }))
+			} else await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, edited] })
+			assert.deepEqual(owner.getCurrent().ethereum.getRpcEntry(), edited)
+			assert.deepEqual((await getSettings()).activeRpcNetwork, edited, 'List updates retain the selected endpoint even when another entry is primary')
+			assert.notEqual(owner.getCurrent(), captured)
+			assert.deepEqual(captured.ethereum.getRpcEntry(), settings.activeRpcNetwork)
+			assert.ok(refreshCount() > before)
+			const installed = owner.getCurrent()
+			const refreshed = refreshCount()
+			await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [otherPrimary, { ...edited, minimized: !edited.minimized }] })
+			assert.equal(owner.getCurrent(), installed, 'List preferences do not reinstall services')
+			assert.equal(refreshCount(), refreshed)
+		} finally { owner.getCurrent().ethereum.cleanup() }
+	})
+
+	test('refreshes when persisted network selection is unchanged but installed services must be replaced', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings, activateAddressSelection } = await loadModules()
+		const network = (await getSettings()).activeRpcNetwork
+		if (network.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const stale = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: { ...network, httpsRpc: 'https://stale.example' } })
+		const selected = createEthereumWithGetBlockCounter({ count: 0 }, { rpcNetwork: network })
+		const owner = createTestSimulationServicesOwner(stale, () => selected)
+		const refreshCount = () => runtimeMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen').length
+		const before = refreshCount()
+		await activateAddressSelection(owner, new Map(), undefined, { simulationMode: true, signerAddress: undefined, rpcNetwork: network })
+		await waitForBackgroundTasks()
+		assert.ok(refreshCount() > before)
+		const afterReplacement = refreshCount()
+		await activateAddressSelection(owner, new Map(), undefined, { simulationMode: true, signerAddress: undefined, rpcNetwork: network })
+		await waitForBackgroundTasks()
+		assert.equal(refreshCount(), afterReplacement)
+	})
+
 	test('rich changes request a visualization refresh immediately and unchanged values skip it', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { getSettings } = await loadModules()
@@ -316,10 +440,37 @@ describe('popup settings changes', () => {
 		const request = { method: 'popup_modifyMakeMeRich' as const, data: { address: 'CurrentAddress' as const, add: true } }
 		const initialCount = refreshRequests()
 		await dispatchPopupMessage(context, request)
+		await waitForBackgroundTasks()
 		assert.ok(refreshRequests() > initialCount)
 		const refreshedCount = refreshRequests()
 		await dispatchPopupMessage(context, request)
 		assert.equal(refreshRequests(), refreshedCount)
+	})
+
+	for (const refreshOutcome of ['unavailable', 'available'] as const) test(`rich changes reply from the awaited refresh outcome (${ refreshOutcome })`, async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const { setPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const { getMakeCurrentAddressRich } = await import('../../app/ts/background/settings.js')
+		const { createPassthroughCompleteVisualizedSimulation } = await import('../../app/ts/types/visualizer-types.js')
+		// No simulation view is open, so the refresh observes the stored visualisation as its outcome.
+		await setPopupVisualisationState(refreshOutcome === 'unavailable'
+			? { ...createPassthroughCompleteVisualizedSimulation(5, 'invalid'), simulationUpdatingState: 'failed' }
+			: createPassthroughCompleteVisualizedSimulation(5, 'done'))
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const context = {
+			...services, settings: await getSettings(), websiteTabConnections: new Map(),
+			publishRpcConnectionStatus: async () => undefined,
+			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(),
+			resetSimulationState: async () => undefined,
+		}
+		const reply = await dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
+		assert.ok(runtimeMessages.some(message => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'), 'the reply must wait for the refresh')
+		assert.deepEqual(reply, refreshOutcome === 'unavailable'
+			? { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
+			: { type: 'PopupSettingsChangeReply', ok: true })
+		assert.equal(await getMakeCurrentAddressRich(), true)
 	})
 
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {

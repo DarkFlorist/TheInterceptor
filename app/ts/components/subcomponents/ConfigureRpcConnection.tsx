@@ -1,11 +1,10 @@
-import { getRpcEntryIdentityKey } from '../../utils/rpcNetworkChange.js'
+import { getRpcEntryIdentityKey, getRpcNetworkChange, resolveRpcNetworkAfterListChange } from '../../utils/rpcNetworkChange.js'
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
 import type { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
-import { sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
@@ -123,7 +122,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
 		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcInfo, rpcEntries.value, activeRpcNetwork,
-			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
+			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}
@@ -131,7 +130,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	const removeRpcEntry = async (entry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
 		await removeRpcEntryAndKeepActiveRpcConsistent(entry, rpcEntries.value, activeRpcNetwork,
-			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
+			async (entries) => await requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}
@@ -158,10 +157,11 @@ export async function saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry: RpcEntry,
 	const previousEntry = rpcEntries[originalIndex]
 	const savedEntry = previousEntry === undefined ? rpcEntry : { ...rpcEntry, primary: previousEntry.primary, minimized: previousEntry.minimized }
 	const updatedRpcEntries = originalIndex === -1 ? [...rpcEntries, savedEntry] : rpcEntries.map((entry, index) => index === originalIndex ? savedEntry : entry)
-	if (originalEntry !== undefined && getRpcEntryIdentityKey(activeRpcNetwork) === getRpcEntryIdentityKey(originalEntry)) {
-		if (activeRpcNetwork.chainId !== savedEntry.chainId) throw new Error('Switch to another RPC before changing the active connection chain ID.')
-		await changeActiveRpc(savedEntry)
-	}
+	const editingActive = originalEntry !== undefined && getRpcEntryIdentityKey(activeRpcNetwork) === getRpcEntryIdentityKey(originalEntry)
+	if (editingActive && activeRpcNetwork.chainId !== savedEntry.chainId) throw new Error('Switch to another RPC before changing the active connection chain ID.')
+	// Endpoint edits require a successful selection change first; same-endpoint metadata edits are reconciled by the list command while the previous selection still identifies its entry.
+	if (editingActive && getRpcNetworkChange(activeRpcNetwork, savedEntry).endpointChanged) await changeActiveRpc(savedEntry)
+
 	await persistRpcEntries(updatedRpcEntries)
 }
 
@@ -169,11 +169,10 @@ export async function removeRpcEntryAndKeepActiveRpcConsistent(removedEntry: Rpc
 	const removedIndex = rpcEntries.findIndex(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(removedEntry))
 	if (removedIndex === -1) throw new Error('This RPC connection changed. Reopen the editor and try again.')
 	const reducedRpcEntries = rpcEntries.filter((_entry, index) => index !== removedIndex)
-	if (getRpcEntryIdentityKey(removedEntry) === getRpcEntryIdentityKey(activeRpcNetwork)) {
-		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === activeRpcNetwork.chainId)
-		if (rpcToSwitchTo === undefined) throw new Error('Switch to another RPC on this chain before removing the active connection.')
-		await changeActiveRpc(rpcToSwitchTo)
-	}
+	const nextActive = resolveRpcNetworkAfterListChange(activeRpcNetwork, rpcEntries, reducedRpcEntries)
+	if (getRpcEntryIdentityKey(removedEntry) === getRpcEntryIdentityKey(activeRpcNetwork) && nextActive === undefined) throw new Error('Switch to another RPC on this chain before removing the active connection.')
+	if (nextActive !== undefined && getRpcEntryIdentityKey(nextActive) !== getRpcEntryIdentityKey(activeRpcNetwork)) await changeActiveRpc(nextActive)
+
 	await persistRpcEntries(reducedRpcEntries)
 }
 

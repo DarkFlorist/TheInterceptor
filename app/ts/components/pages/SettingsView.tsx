@@ -17,6 +17,7 @@ import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
+import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 
 type CheckBoxSettingParam = {
@@ -237,14 +238,15 @@ export function SettingsView() {
 	</main>
 }
 
-const RpcListings = () => {
+export const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
-	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
+	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => requestPopupSettingsChange({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (
-			<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
+			<aside class = 'report' style = { { display: 'grid', minHeight: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
+				{ resetRpcListState.value.state === 'rejected' ? <ErrorComponent text = { resetRpcListState.value.error.message } /> : <></> }
 				<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least one RPC connection. Do you want to restore the bundled default RPC list?</p>
 				<AsyncActionButton
 					class = 'btn btn--outline'

@@ -23,6 +23,8 @@ const IS_REVIEWED_FIELD: Record<PendingRequestField, boolean> = {
 	safeMessageCoSignSnapshot: true,
 	// Identity and signer round-trip bookkeeping, which change without changing what the user reviewed.
 	type: false,
+	// A replacement with identical content still needs its own approval.
+	instanceId: true,
 	uniqueRequestIdentifier: false,
 	popupOrTabId: false,
 	approvalStatus: false,
