@@ -1,4 +1,3 @@
-import { prepareStorageTransactionWrite, prepareDomainStorageTransactionWrite } from '../../../app/ts/background/storageTransactionWrite.js'
 import { browserStorageLocalSet } from '../../../app/ts/utils/storageUtils.js'
 import { type AddressBookStorageWrite, prepareAddressBookWrite, writeAddressBookStorage } from '../../../app/ts/background/addressBookRevision.js'
 import { runSettingsStorageTransaction } from '../../../app/ts/background/settingsStorageTransaction.js'
@@ -13,7 +12,7 @@ export async function verifyExplicitNameWrites() {
 	await runSettingsStorageTransaction(async () => ({ writes: [{ ensNameHashes: [] }], result: undefined })) // expect-type-error
 }
 
-prepareStorageTransactionWrite({ userAddressBookEntriesV3: [] }) // expect-type-error
-prepareStorageTransactionWrite({ ensNameHashes: [] }) // expect-type-error
-prepareStorageTransactionWrite({ ensLabelHashes: [] }) // expect-type-error
-prepareDomainStorageTransactionWrite({ userAddressBookEntriesV3: [] }) // expect-type-error
+prepareAddressBookWrite({ useTabsInsteadOfPopup: true }) // expect-type-error
+prepareAddressBookWrite({ simulationMode: false }) // expect-type-error
+prepareAddressBookWrite({ metamaskCompatibilityMode: true }) // expect-type-error
+prepareAddressBookWrite({ userAddressBookEntriesV3: [] }, async (commit: () => Promise<void>) => await commit()) // expect-type-error

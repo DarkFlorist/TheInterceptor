@@ -1,14 +1,14 @@
-import { prepareAddressBookWrite, prepareAddressIdentificationInsertion, writeAddressBookStorage, persistAddressBookReadRepair, persistEnsNodeHashCache, persistEnsLabelHashCache } from './addressBookRevision.js'
+import { prepareAddressBookWrite, prepareAddressIdentificationInsertion, writeAddressBookStorage, persistAddressBookReadRepair } from './addressBookRevision.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, commitBrowserStorageLocalWrite, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntry, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry as AddressBookEntryCodec, LegacyErc20TokenEntry, type AddressBookEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -305,7 +305,7 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 }
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
-	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
+	const parsedEntry = AddressBookEntryCodec.safeParse(rawEntry)
 	if (parsedEntry.success) return parsedEntry.value
 	const legacyErc20Entry = LegacyErc20TokenEntry.safeParse(rawEntry)
 	if (!legacyErc20Entry.success || isValidErc20Decimals(legacyErc20Entry.value.decimals)) return undefined
@@ -409,37 +409,34 @@ export async function clearInterceptorErrorDiagnostics() {
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []
 
 const ensNodeHashesSemaphore = new Semaphore(1)
-export async function addEnsNodeHash(name: string) {
+async function persistEnsNodeHash(name: string, kind: 'edit' | 'cache') {
 	if (!isValidEnsName(name)) return
 	const entry = { name, nameHash: BigInt(namehash(name)) }
 	await ensNodeHashesSemaphore.execute(async () => {
-		const oldEntries = await getEnsNodeHashes() || []
-		if (oldEntries.find((old) => old.nameHash === entry.nameHash)) return
-		await writeAddressBookStorage({ ensNameHashes: [...oldEntries, entry] })
+		const oldEntries = await getEnsNodeHashes()
+		if (oldEntries.some((old) => old.nameHash === entry.nameHash)) return
+		const write = kind === 'edit' ? writeAddressBookStorage : commitBrowserStorageLocalWrite
+		await write({ ensNameHashes: [...oldEntries, entry] })
 	})
 }
 
-// RPC lookups fill their own cache without announcing a user edit; shared hash locks keep them ordered with explicit name writes.
-export async function cacheEnsNodeHash(name: string) {
-	if (!isValidEnsName(name)) return
-	await ensNodeHashesSemaphore.execute(async () => await persistEnsNodeHashCache(await getEnsNodeHashes(), name))
-}
+export const addEnsNodeHash = async (name: string) => await persistEnsNodeHash(name, 'edit')
+export const cacheEnsNodeHash = async (name: string) => await persistEnsNodeHash(name, 'cache')
 
 export const getEnsLabelHashes = async () => (await browserStorageLocalGet('ensLabelHashes'))?.ensLabelHashes ?? []
-
 const ensLabelHashesSemaphore = new Semaphore(1)
-export async function addEnsLabelHash(label: string) {
+async function persistEnsLabelHash(label: string, kind: 'edit' | 'cache') {
 	const entry = { label, labelHash: BigInt(keccak256(stringToBytes(label))) }
 	await ensLabelHashesSemaphore.execute(async () => {
-		const oldEntries = await getEnsLabelHashes() || []
-		if (oldEntries.find((old) => old.labelHash === entry.labelHash)) return
-		await writeAddressBookStorage({ ensLabelHashes: [...oldEntries, entry] })
+		const oldEntries = await getEnsLabelHashes()
+		if (oldEntries.some((old) => old.labelHash === entry.labelHash)) return
+		const write = kind === 'edit' ? writeAddressBookStorage : commitBrowserStorageLocalWrite
+		await write({ ensLabelHashes: [...oldEntries, entry] })
 	})
 }
 
-export async function cacheEnsLabelHash(label: string) {
-	await ensLabelHashesSemaphore.execute(async () => await persistEnsLabelHashCache(await getEnsLabelHashes(), label))
-}
+export const addEnsLabelHash = async (label: string) => await persistEnsLabelHash(label, 'edit')
+export const cacheEnsLabelHash = async (label: string) => await persistEnsLabelHash(label, 'cache')
 
 const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }

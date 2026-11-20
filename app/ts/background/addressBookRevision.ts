@@ -1,7 +1,4 @@
-import { prepareDomainStorageTransactionWrite, type PreparedStorageWrite } from './storageTransactionWrite.js'
 import { type AddressBookEntries, type AddressBookEntry, doAddressBookChainIdsMatch } from '../types/addressBookTypes.js'
-import type { ENSNameHashes, ENSLabelHashes } from '../types/ens.js'
-import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { commitBrowserStorageLocalWrite } from '../utils/storageUtils.js'
 import type { AddressBookStorageItems } from '../types/addressBookStorage.js'
@@ -23,32 +20,18 @@ export async function recordAddressBookWrite(write: () => Promise<void>) {
 
 export const writeAddressBookStorage = async (items: AddressBookStorageItems) => await recordAddressBookWrite(async () => await commitBrowserStorageLocalWrite(items))
 
-// Only this owner can assign a write's revision policy; callers cannot classify an arbitrary replacement as a cache fill.
+// Only the name-store owner constructs this descriptor. A settings transaction receives data and a revision effect, never an arbitrary callback around unrelated keys.
 const addressBookWriteData: unique symbol = Symbol('address book write')
-export type AddressBookStorageWrite = PreparedStorageWrite & { readonly [addressBookWriteData]: true }
-export const prepareAddressBookWrite = (items: AddressBookStorageItems): AddressBookStorageWrite => ({ ...prepareDomainStorageTransactionWrite(items, recordAddressBookWrite), [addressBookWriteData]: true })
-
-// This explicit domain policy is used only for an insertion the owner proves cannot replace a name.
-const commitIdentificationInsertion = async (commit: () => Promise<void>) => await commit()
+export type AddressBookStorageWrite = { readonly [addressBookWriteData]: { readonly items: AddressBookStorageItems, readonly advancesRevision: boolean } }
+export const prepareAddressBookWrite = (items: AddressBookStorageItems): AddressBookStorageWrite => ({ [addressBookWriteData]: { items, advancesRevision: true } })
+export const isAddressBookStorageWrite = (write: object): write is AddressBookStorageWrite => addressBookWriteData in write
+export const getAddressBookStorageWrite = (write: AddressBookStorageWrite) => write[addressBookWriteData]
 
 // A cache plan can only append one missing identification, never replace a name. The storage owner supplies entries read under the settings transaction lock.
 export function prepareAddressIdentificationInsertion(entries: AddressBookEntries, newEntry: AddressBookEntry): AddressBookStorageWrite | undefined {
 	if (entries.some((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))) return undefined
-	return { ...prepareDomainStorageTransactionWrite({ userAddressBookEntriesV3: entries.concat(newEntry) }, commitIdentificationInsertion), [addressBookWriteData]: true }
+	return { [addressBookWriteData]: { items: { userAddressBookEntriesV3: entries.concat(newEntry) }, advancesRevision: false } }
 }
 
 // Repair-on-read normalizes the values the reader is about to use; it is not a separately published edit made during that reader's run.
 export const persistAddressBookReadRepair = async (entries: AddressBookEntries) => await commitBrowserStorageLocalWrite({ userAddressBookEntriesV3: entries })
-
-// Lookup caches only append a missing hash/name pair. Explicit ENS edits use the revision-bearing writer; these operations cannot replace a cached name.
-export async function persistEnsNodeHashCache(previous: ENSNameHashes, name: string) {
-	const entry = { name, nameHash: BigInt(namehash(name)) }
-	if (previous.some((old) => old.nameHash === entry.nameHash)) return
-	await commitBrowserStorageLocalWrite({ ensNameHashes: [...previous, entry] })
-}
-
-export async function persistEnsLabelHashCache(previous: ENSLabelHashes, label: string) {
-	const entry = { label, labelHash: BigInt(keccak256(stringToBytes(label))) }
-	if (previous.some((old) => old.labelHash === entry.labelHash)) return
-	await commitBrowserStorageLocalWrite({ ensLabelHashes: [...previous, entry] })
-}
