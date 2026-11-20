@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { getWebsiteOriginForDisplay } from '../../utils/websiteOrigin.js'
+import { getHostWithPort } from '../../utils/websiteOrigin.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -13,6 +13,16 @@ import { AddressBookEntryIcon } from './AddressBookEntryIcon.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
 import { type ActionableIconProps, type ActionableTextProps, MultilineCard } from './MultilineCard.js'
+
+const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
+	try {
+		const url = new URL(websiteOrigin)
+		if (url.protocol === 'http:' || url.protocol === 'https:') return getHostWithPort(websiteOrigin)
+		return websiteOrigin
+	} catch {
+		return websiteOrigin
+	}
+}
 
 export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries, chainId: bigint | undefined = undefined): AddressBookEntry {
 	const selectableAddresses = chainId === undefined ? activeAddresses : getAddressBookEntriesForChainIdMorePreciseFirst(activeAddresses, chainId)

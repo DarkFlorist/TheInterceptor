@@ -1,10 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { storedWebsiteOriginCases } from './storedWebsiteOriginCases.js'
-import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getStoredWebsiteHost, getWebsiteOrigin, getWebsiteOriginForDisplay } from '../../app/ts/utils/websiteOrigin.js'
+import { doesStoredWebsiteOriginApplyTo, getHostWithPort, getStoredWebsiteHost, getWebsiteOrigin } from '../../app/ts/utils/websiteOrigin.js'
 
-describe('website origin identity and display', () => {
-	test('keeps authorization origins scheme-scoped while preserving host-style display', () => {
+describe('website origin identity', () => {
+	test('keeps authorization origins scheme-scoped while normalizing hosts and ports', () => {
 		assert.equal(getWebsiteOrigin('http://example.test/path'), 'http://example.test')
 		assert.equal(getWebsiteOrigin('https://example.test/path'), 'https://example.test')
 		assert.notEqual(getWebsiteOrigin('http://example.test/path'), getWebsiteOrigin('https://example.test/path'))
@@ -13,8 +13,6 @@ describe('website origin identity and display', () => {
 		assert.equal(getHostWithPort('https://example.test:443/path'), 'example.test')
 		assert.equal(getHostWithPort('http://example.test:80/path'), 'example.test')
 		assert.equal(getWebsiteOrigin('https://example.test:8443/path'), 'https://example.test:8443')
-		assert.equal(getWebsiteOriginForDisplay('https://example.test:8443'), 'example.test:8443')
-		assert.equal(getWebsiteOriginForDisplay('example.test'), 'example.test')
 	})
 
 	test('scopes file website access to the exact file path', () => {

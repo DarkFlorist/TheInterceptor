@@ -21,7 +21,7 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequest } from '../messageSending.js'
 import { attemptDeliveryAfterManifestV2Reconnect } from '../manifestV2Reconnect.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
-import { EthereumBytes32, EthereumQuantity, serialize, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import { createPendingRequestInstanceId, type PendingTransactionOrSignableMessage, type PopupPendingTransactionOrSignableMessage, type SimulatedPendingTransaction } from '../../types/accessRequest.js'
@@ -41,9 +41,8 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
-import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
 import { getSignerNonce } from '../../utils/signerFacingTransactionRequest.js'
-import { getReviewedTransactionForSigning, getSupportedSendTransactionType, toCanonicalSendTransactionParams } from '../../utils/signerTransactionEnvelope.js'
+import { createSignerTransactionEnvelope, finalizeSignerTransactionEnvelope, getReviewedTransactionForSigning, getSupportedSendTransactionType, toCanonicalSendTransactionParams } from '../../utils/signerTransactionEnvelope.js'
 import { isWebsiteSocketApprovedForAddress } from '../accessManagement.js'
 import { identifyAddress, identifyAddressWith } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
@@ -845,40 +844,12 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		value,
 		input: getInputFieldFromDataOrInput(transactionDetails),
 	}
-	const accessList = transactionDetails.accessList ?? []
-	const desiredGasPrice = paidByExecutor
-		? 0n
-		: transactionDetails.gasPrice ?? getInitialMaxFeePerGas()
-	const transactionWithoutGas = formedType === 'legacy'
-		? { ...transactionWithoutGasBase, type: 'legacy' as const, gasPrice: desiredGasPrice }
-		: formedType === '2930'
-			? { ...transactionWithoutGasBase, type: '2930' as const, gasPrice: desiredGasPrice, accessList }
-			: formedType === '7702'
-				? {
-					...transactionWithoutGasBase,
-					type: '7702' as const,
-					maxFeePerGas: getInitialMaxFeePerGas(),
-					maxPriorityFeePerGas,
-					accessList,
-					authorizationList: await normalizeEip7702AuthorizationList(transactionDetails.authorizationList ?? []),
-				}
-				: {
-					...transactionWithoutGasBase,
-					type: '1559' as const,
-					maxFeePerGas: getInitialMaxFeePerGas(),
-					maxPriorityFeePerGas,
-					accessList,
-				}
-	const finalizeTransaction = async (gas: bigint): Promise<EthereumUnsignedTransaction> => {
-		switch (transactionWithoutGas.type) {
-			case 'legacy':
-			case '2930':
-				return { ...transactionWithoutGas, gas }
-			case '1559':
-			case '7702':
-				return { ...transactionWithoutGas, ...await getFeePerGas(gas), gas }
-		}
-	}
+	const transactionWithoutGas = await createSignerTransactionEnvelope(transactionWithoutGasBase, transactionDetails, {
+		type: formedType,
+		gasPrice: paidByExecutor ? 0n : transactionDetails.gasPrice ?? getInitialMaxFeePerGas(),
+		maxFeePerGas: getInitialMaxFeePerGas(),
+		maxPriorityFeePerGas,
+	})
 	const extraParams = {
 		website,
 		created,
@@ -906,7 +877,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					success: false,
 				}
 			}
-			return { transaction: await finalizeTransaction(estimateGas.gas), ...extraParams, ...simulationOptionsField, success: true }
+			return { transaction: await finalizeSignerTransactionEnvelope(transactionWithoutGas, estimateGas.gas, getFeePerGas), ...extraParams, ...simulationOptionsField, success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
@@ -915,7 +886,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: await finalizeTransaction(transactionDetails.gas), ...extraParams, ...simulationOptionsField, success: true }
+	return { transaction: await finalizeSignerTransactionEnvelope(transactionWithoutGas, transactionDetails.gas, getFeePerGas), ...extraParams, ...simulationOptionsField, success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {

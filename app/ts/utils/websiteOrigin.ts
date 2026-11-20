@@ -1,5 +1,3 @@
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-
 export const getHostWithPort = (urlString: string): string => {
 	const url = new URL(urlString)
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
@@ -17,16 +15,6 @@ export const getSchemeAndHostWithPort = (urlString: string): string => `${ new U
 
 // Both origins of a requesting frame, derived from its URL in one place: `websiteOrigin` is the canonical origin that website access settings are keyed by, and `requestOrigin` is the frame's scheme, host and port that sign-in messages are compared with.
 export const getFrameOrigins = (frameUrl: string) => ({ websiteOrigin: getWebsiteOrigin(frameUrl), requestOrigin: getSchemeAndHostWithPort(frameUrl) })
-
-export const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
-	try {
-		const url = new URL(websiteOrigin)
-		if (url.protocol === 'http:' || url.protocol === 'https:') return getHostWithPort(websiteOrigin)
-		return websiteOrigin
-	} catch {
-		return websiteOrigin
-	}
-}
 
 const isCanonicalWebsiteProtocol = (protocol: string) => {
 	return protocol === 'http:' || protocol === 'https:' || protocol === 'file:'
@@ -97,19 +85,4 @@ export function isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin: string, we
 // Whether a stored website access record stands for a canonical origin: the origin's exact record, or a scheme-ambiguous legacy record for it. The access policy, request blocking and content-script injection all decide whether a record covers a page through this one rule, so they agree on what is the same site.
 export function doesStoredWebsiteOriginApplyTo(storedOrigin: string, websiteOrigin: string): boolean {
 	return storedOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(storedOrigin, websiteOrigin)
-}
-
-export function normalizeWebsiteAccessOrigins(websiteAccess: WebsiteAccessArray): WebsiteAccessArray {
-	let changed = false
-	const normalized = websiteAccess.flatMap((entry) => {
-		const websiteOrigin = normalizeStoredWebsiteOrigin(entry.website.websiteOrigin)
-		if (websiteOrigin === undefined) {
-			changed = true
-			return []
-		}
-		if (websiteOrigin === entry.website.websiteOrigin) return [entry]
-		changed = true
-		return [{ ...entry, website: { ...entry.website, websiteOrigin } }]
-	})
-	return changed ? normalized : websiteAccess
 }

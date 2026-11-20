@@ -1,6 +1,21 @@
 import type { WebsiteAccess, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from './websiteIcons.js'
-import { normalizeWebsiteAccessOrigins } from './websiteOrigin.js'
+import { normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
+
+function normalizeWebsiteAccessOrigins(websiteAccess: WebsiteAccessArray): WebsiteAccessArray {
+	let changed = false
+	const normalized = websiteAccess.flatMap((entry) => {
+		const websiteOrigin = normalizeStoredWebsiteOrigin(entry.website.websiteOrigin)
+		if (websiteOrigin === undefined) {
+			changed = true
+			return []
+		}
+		if (websiteOrigin === entry.website.websiteOrigin) return [entry]
+		changed = true
+		return [{ ...entry, website: { ...entry.website, websiteOrigin } }]
+	})
+	return changed ? normalized : websiteAccess
+}
 
 function mergeAddressAccesses(first: WebsiteAccess['addressAccess'], second: WebsiteAccess['addressAccess']): WebsiteAccess['addressAccess'] {
 	if (first === undefined) return second

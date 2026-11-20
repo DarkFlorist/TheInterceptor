@@ -1,9 +1,9 @@
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { EthereumAccessList, EthereumSendableSignedTransaction, EthereumUnsignedTransaction } from '../types/wire-types.js'
-import { requestsEip7702Envelope } from './eip7702Authorization.js'
+import { normalizeEip7702AuthorizationList, requestsEip7702Envelope } from './eip7702Authorization.js'
 import { areEqualUint8Arrays } from './typed-arrays.js'
-import { assertNever } from './typescript.js'
+import { assertNever, type DistributiveOmit } from './typescript.js'
 
 // The transaction envelope the wallet signs: which envelope a website request describes, the canonical request for a prepared transaction, and the check that the reviewed simulation describes that same transaction. Request preparation, the confirmation popup and every forwarding path read these rules from here.
 
@@ -146,4 +146,39 @@ export function getSupportedSendTransactionType(transactionDetails: SendTransact
 		throw new Error('An authorization list requires an EIP-7702 transaction')
 	}
 	return requestedType
+}
+
+type SignerTransactionWithoutGas = DistributiveOmit<Exclude<EthereumUnsignedTransaction, { readonly type: '4844' }>, 'gas'>
+type SignerTransactionCommonFields = Pick<Extract<EthereumUnsignedTransaction, { readonly type: '1559' }>, 'from' | 'to' | 'chainId' | 'nonce' | 'value' | 'input'>
+type DynamicTransactionFees = Pick<Extract<EthereumUnsignedTransaction, { readonly type: '1559' }>, 'maxFeePerGas' | 'maxPriorityFeePerGas'>
+
+// The caller resolves authorization, nonce and the gas payer; this owner alone maps the selected envelope to its wire fields.
+export async function createSignerTransactionEnvelope(common: SignerTransactionCommonFields, details: SendTransactionParams['params'][0], envelope: { readonly type: SupportedSendTransactionType, readonly gasPrice: bigint } & DynamicTransactionFees): Promise<SignerTransactionWithoutGas> {
+	switch (envelope.type) {
+		case 'legacy': return { ...common, type: 'legacy', gasPrice: envelope.gasPrice }
+		case '2930': return { ...common, type: '2930', gasPrice: envelope.gasPrice, accessList: details.accessList ?? [] }
+		case '1559': return {
+			...common, type: '1559',
+			maxFeePerGas: envelope.maxFeePerGas, maxPriorityFeePerGas: envelope.maxPriorityFeePerGas,
+			accessList: details.accessList ?? [],
+		}
+		case '7702': return {
+			...common, type: '7702',
+			maxFeePerGas: envelope.maxFeePerGas, maxPriorityFeePerGas: envelope.maxPriorityFeePerGas,
+			accessList: details.accessList ?? [],
+			authorizationList: await normalizeEip7702AuthorizationList(details.authorizationList ?? []),
+		}
+		default: return assertNever(envelope.type)
+	}
+}
+
+// Fixed-price envelopes retain their requested price; dynamic-fee envelopes use fees finalized for the resolved gas limit.
+export async function finalizeSignerTransactionEnvelope(transaction: SignerTransactionWithoutGas, gas: bigint, getDynamicFees: (gas: bigint) => Promise<DynamicTransactionFees>): Promise<EthereumUnsignedTransaction> {
+	switch (transaction.type) {
+		case 'legacy':
+		case '2930': return { ...transaction, gas }
+		case '1559':
+		case '7702': return { ...transaction, ...await getDynamicFees(gas), gas }
+		default: return assertNever(transaction)
+	}
 }

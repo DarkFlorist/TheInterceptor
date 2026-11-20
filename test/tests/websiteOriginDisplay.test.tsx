@@ -21,10 +21,10 @@ describe('website origin display', () => {
 		}
 	})
 
-	test('retains the compact host display outside approval UI', () => {
+	test.each(['https://example.test:8443', 'example.test:8443'])('retains the compact host display for %s outside approval UI', (websiteOrigin) => {
 		const dom = installDomMock()
 		try {
-			render(h(WebsiteOriginText, { website }), dom.document.body)
+			render(h(WebsiteOriginText, { website: { ...website, websiteOrigin } }), dom.document.body)
 			assert.doesNotMatch(dom.document.body.textContent, /https:\/\//)
 			assert.match(dom.document.body.textContent, /example\.test:8443/)
 		} finally {
