@@ -78,6 +78,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/richModeSettings.js'),
+		...await import('../../app/ts/background/richModeTokens.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
@@ -774,6 +775,41 @@ describe('requestMakeMeRichList resilience', () => {
 		releaseActiveRefresh()
 		assert.deepEqual(await activeRefresh, { status: 'observed', available: true })
 		await assert.rejects(replacementRefresh, /replacement refresh failed/u)
+	})
+
+	test('treats only ERC-20 entries and watched ERC-1155 token IDs on the chain as eligible rich tokens', async () => {
+		const storageState = installBrowserMock()
+		const { getEligibleAddressBookRichToken } = await loadModules()
+		const erc20Address = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const erc1155Address = 0x4444444444444444444444444444444444444444n
+		storageState.userAddressBookEntriesV3 = [
+			{ type: 'ERC20', address: addressString(erc20Address), name: 'USD Coin', symbol: 'USDC', decimals: '0x6', entrySource: 'User', chainId: '0x1' },
+			{ type: 'ERC1155', address: addressString(erc1155Address), name: 'Game Items', symbol: 'ITEM', entrySource: 'User', chainId: '0x1', watchedTokenIds: ['0x7'] },
+		]
+		assert.equal((await getEligibleAddressBookRichToken(1n, erc20Address, undefined))?.symbol, 'USDC')
+		assert.equal(await getEligibleAddressBookRichToken(10n, erc20Address, undefined), undefined)
+		assert.equal(await getEligibleAddressBookRichToken(1n, erc20Address, 7n), undefined)
+		assert.equal((await getEligibleAddressBookRichToken(1n, erc1155Address, 7n))?.symbol, 'ITEM')
+		assert.equal(await getEligibleAddressBookRichToken(1n, erc1155Address, 8n), undefined)
+		assert.equal(await getEligibleAddressBookRichToken(1n, erc1155Address, undefined), undefined)
+	})
+
+	test('discovers token storage only for an eligible token without a stored layout', async () => {
+		const storageState = installBrowserMock()
+		const { discoverRichTokenStorage, updateRichTokens } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		storageState.userAddressBookEntriesV3 = [{ type: 'ERC20', address: addressString(tokenAddress), name: 'USD Coin', symbol: 'USDC', decimals: '0x6', entrySource: 'User', chainId: '0x1' }]
+		let probeCount = 0
+		const ethereum = { ethSimulateV1: async () => { probeCount += 1; return [] } }
+		const add = { action: 'Add' as const, address: richAccountAddress, tokenAddress }
+		assert.equal(await discoverRichTokenStorage(ethereum, undefined, 1n, { ...add, action: 'Remove' }), undefined)
+		assert.equal(await discoverRichTokenStorage(ethereum, undefined, 1n, { ...add, tokenAddress: 0x5555555555555555555555555555555555555555n }), undefined)
+		assert.equal(probeCount, 0)
+		assert.deepEqual(await discoverRichTokenStorage(ethereum, undefined, 1n, add), { balanceSlot: undefined, erc1155StorageOrder: undefined })
+		assert.equal(probeCount, 1)
+		await updateRichTokens(() => [{ chainId: 1n, tokenAddress, tokenType: 'ERC20', tokenId: undefined, name: 'USD Coin', symbol: 'USDC', decimals: 6n, amount: 1n, balanceSlot: 9n, erc1155StorageOrder: undefined }])
+		assert.equal(await discoverRichTokenStorage(ethereum, undefined, 1n, add), undefined)
+		assert.equal(probeCount, 1)
 	})
 
 	test('requires rich tokens to come from the active-chain address book', async () => {

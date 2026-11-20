@@ -1,7 +1,7 @@
 import { queuePopupSimulationRefresh, type PopupSimulationRefreshOutcome } from './popupSimulationRefreshQueue.js'
-import type { RichToken } from '../types/richMode.js'
+import { applyRichTokenChange, type RichTokenChangeResult } from './richModeTokens.js'
 import { addressesBeingMadeRich, dropTokenBalancesWithoutLayout, getRichModeState, mutateRichMode, profilesForAddresses, richTokensForPresentation, updateAddressBookAndReconcileRichMode, updateFixedMakeMeRichList, updateMakeCurrentAddressRich } from './richModeSettings.js'
-import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenOptions, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
+import { getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT } from '../utils/richTokens.js'
 import { getReviewedResultId } from './reviewedResult.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
@@ -27,7 +27,7 @@ import type { ConfirmationRunId, ConfirmTransactionTransactionSingleVisualizatio
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { authorizesExecutedCall, CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation, toSimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
-import { doAddressBookChainIdsMatch, type AddressBookEntry, type Erc1155Entry, type Erc20TokenEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt } from '../utils/bigint.js'
@@ -298,133 +298,15 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	))
 }
 
-// The background's result before the simulation refresh; the dispatcher adds the refresh outcome to a committed change.
-type ModifyRichTokenResult = { readonly success: true, readonly richToken: RichToken | undefined } | { readonly success: false, readonly error: string }
-
+// Maps a popup rich-token request to its reply; the dispatcher adds the simulation refresh outcome to a committed change.
 export async function modifyRichToken(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	request: ModifyRichTokenRequest,
-): Promise<{ readonly method: 'popup_modifyRichToken', readonly result: ModifyRichTokenResult }> {
+): Promise<{ readonly method: 'popup_modifyRichToken', readonly result: RichTokenChangeResult }> {
 	const chainId = ethereum.getChainId()
-	const identity = { tokenAddress: request.data.tokenAddress, tokenId: request.data.tokenId }
-	const getAddressBookToken = async () => {
-		const entries = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
-			.filter((entry): entry is Erc20TokenEntry | Erc1155Entry => entry.type === 'ERC20' || entry.type === 'ERC1155')
-			.filter((entry) => entry.address === request.data.tokenAddress)
-		const requestedTokenId = request.data.tokenId
-		if (requestedTokenId === undefined) return entries.find((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
-		const metadataEntry = entries.find((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
-		const tokenIdIsWatched = entries.some((entry) => entry.type === 'ERC1155' && entry.watchedTokenIds?.includes(requestedTokenId) === true)
-		return tokenIdIsWatched ? metadataEntry : undefined
-	}
-	const discoverStorage = async () => {
-		if (request.data.action !== 'Add') return undefined
-		const addressBookToken = await getAddressBookToken()
-		if (addressBookToken === undefined || (addressBookToken.type === 'ERC20' && !isSupportedRichTokenDecimals(addressBookToken.decimals))) return undefined
-		const current = richTokensForPresentation(await getRichModeState())
-		if (current.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))) return undefined
-		const getErc1155Storage = async () => {
-			if (addressBookToken.type !== 'ERC1155' || request.data.tokenId === undefined) return undefined
-			const cachedToken = current.find((token) =>
-				token.chainId === chainId
-				&& token.tokenAddress === request.data.tokenAddress
-				&& token.tokenType === 'ERC1155'
-				&& token.erc1155StorageOrder !== undefined
-			)
-			if (
-				cachedToken?.erc1155StorageOrder !== undefined
-				&& await verifyErc1155BalanceStorageSlot(
-					ethereum,
-					requestAbortController,
-					request.data.tokenAddress,
-					request.data.tokenId,
-					cachedToken.balanceSlot,
-					cachedToken.erc1155StorageOrder,
-				)
-			) {
-				return { balanceSlot: cachedToken.balanceSlot, storageOrder: cachedToken.erc1155StorageOrder }
-			}
-			return await discoverErc1155BalanceStorage(ethereum, requestAbortController, request.data.tokenAddress, request.data.tokenId)
-		}
-		const discoveredErc1155Storage = await getErc1155Storage()
-		const discoveredStorage = addressBookToken.type === 'ERC20'
-			? { balanceSlot: await discoverErc20BalanceStorageSlot(ethereum, requestAbortController, request.data.tokenAddress), erc1155StorageOrder: undefined }
-			: discoveredErc1155Storage === undefined
-				? undefined
-				: { balanceSlot: discoveredErc1155Storage.balanceSlot, erc1155StorageOrder: discoveredErc1155Storage.storageOrder }
-		return discoveredStorage
-	}
 	try {
-		// RPC probes must not block address-book edits; eligibility and cached layouts are reread under the mutation lock before commit.
-		const discoveredStorage = await discoverStorage()
-		return await mutateRichMode(async (store) => {
-			if (request.data.action === 'Remove') {
-				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
-					? { ...profile, tokenBalances: profile.tokenBalances.filter((balance) => !sameRichTokenIdentity(balance, identity)) }
-					: profile))
-				return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: undefined } }
-			}
-			if (request.data.action === 'SetAmount') {
-				if (request.data.amount <= 0n) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Token amount must be greater than zero.' } }
-				if (request.data.amount > MAX_RICH_TOKEN_AMOUNT) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Token amount cannot exceed the maximum uint256 value.' } }
-				const amount = request.data.amount
-				const richToken = (await store.getRichTokens()).find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
-				if (richToken === undefined) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Add the token before changing its amount.' } }
-				const profiles = await store.ensureRichAccountBalances(chainId, [request.data.address])
-				const profile = profiles.find((candidate) => candidate.chainId === chainId && candidate.address === request.data.address)
-				if (profile?.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity)) !== true) {
-				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Add the token to this account before changing its amount.' } }
-				}
-				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
-					? { ...profile, tokenBalances: profile.tokenBalances.map((balance) => sameRichTokenIdentity(balance, identity) ? { ...balance, amount } : balance) }
-					: profile))
-				return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken } }
-			}
-
-			const addTokenToAccount = async (richToken: RichToken) => {
-				await store.ensureRichAccountBalances(chainId, [request.data.address])
-				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => {
-					if (profile.chainId !== chainId || profile.address !== request.data.address) return profile
-					if (profile.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity))) return profile
-					return { ...profile, tokenBalances: [...profile.tokenBalances, { ...identity, amount: richToken.amount }] }
-				}))
-			}
-
-			const addressBookToken = await getAddressBookToken()
-			if (addressBookToken === undefined) {
-				await store.updateRichTokens((tokens) => tokens.filter((token) => token.chainId !== chainId || !sameRichTokenIdentity(token, identity)))
-				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' } }
-			}
-			if (addressBookToken.type === 'ERC20' && !isSupportedRichTokenDecimals(addressBookToken.decimals)) {
-				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: `ERC-20 decimals cannot exceed ${ MAX_SUPPORTED_RICH_TOKEN_DECIMALS.toString() } in rich mode.` } }
-			}
-			const current = await store.getRichTokens()
-			const existing = current.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
-			if (existing !== undefined) {
-				await addTokenToAccount(existing)
-				return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: existing } }
-			}
-
-			if (discoveredStorage === undefined || discoveredStorage.balanceSlot === undefined) {
-				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'The token uses an unsupported balance storage layout. No verified balance slot was found in the first 64 storage positions.' } }
-			}
-			const richToken = {
-				chainId,
-				tokenAddress: request.data.tokenAddress,
-				tokenType: addressBookToken.type,
-				tokenId: request.data.tokenId,
-				name: addressBookToken.name,
-				symbol: addressBookToken.symbol,
-				decimals: addressBookToken.type === 'ERC20' ? addressBookToken.decimals : 0n,
-				amount: getDefaultRichTokenAmount(addressBookToken.type === 'ERC20' ? addressBookToken.decimals : 0n),
-				balanceSlot: discoveredStorage.balanceSlot,
-				erc1155StorageOrder: discoveredStorage.erc1155StorageOrder,
-			}
-			await store.updateRichTokens((tokens) => tokens.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity)) ? tokens : [...tokens, richToken])
-			await addTokenToAccount(richToken)
-			return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken } }
-		}, chainId, [request.data.address])
+		return { method: 'popup_modifyRichToken', result: await applyRichTokenChange(ethereum, requestAbortController, chainId, request.data) }
 	} catch (error: unknown) {
 		const errorMessage = formatCaughtErrorMessage(error)
 		if (!isExpectedInfrastructureError(error)) {
