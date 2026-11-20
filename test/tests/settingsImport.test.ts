@@ -127,7 +127,7 @@ const settingsStorageModulePaths = {
 	settingsImport: 'app/ts/background/settingsImport.ts',
 	settingsStorageTransaction: 'app/ts/background/settingsStorageTransaction.ts',
 	addressBookStore: 'app/ts/background/addressBookStore.ts',
-	signingWalletStore: 'app/ts/signing/signingWalletStore.ts',
+	signingWalletStore: 'app/ts/background/signingWalletStore.ts',
 	signingAddressBookCoordinator: 'app/ts/background/signingAddressBookCoordinator.ts',
 }
 

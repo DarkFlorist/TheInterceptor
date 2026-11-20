@@ -1,6 +1,6 @@
 import { browserStorageLocalGet } from '../utils/storageUtils.js'
 import type { SigningWalletBindings, SigningWalletBinding } from '../types/signingWallet.js'
-import type { StorageWrite } from '../background/settingsStorageTransaction.js'
+import type { StorageWrite } from './settingsStorageTransaction.js'
 
 // Bindings change only together with the address book that decides their eligibility, so signingAddressBookCoordinator composes this write into a settings storage transaction.
 export const signingWalletBindingsStorageWrite = (signingWalletBindings: SigningWalletBindings): StorageWrite => ({ signingWalletBindings })

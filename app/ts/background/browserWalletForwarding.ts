@@ -3,7 +3,7 @@ import type { SigningWalletBinding } from '../types/signingWallet.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
-import { getStoredSigningWalletBinding } from '../signing/signingWalletStore.js'
+import { getStoredSigningWalletBinding } from './signingWalletStore.js'
 import { getTabState } from './storageVariables.js'
 import { askForSignerAccountsFromSignerIfNotAvailable } from './windows/interceptorAccess.js'
 

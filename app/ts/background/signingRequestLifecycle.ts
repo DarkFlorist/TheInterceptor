@@ -18,7 +18,7 @@ import { getPendingTransactionsAndMessages, getTabState } from './storageVariabl
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
 import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
-import { readDirectSigningRecords } from '../signing/directSigningStore.js'
+import { readDirectSigningRecords } from './directSigningStore.js'
 import { getPendingRequestReview } from './reviewedResult.js'
 
 type SigningAdmission =

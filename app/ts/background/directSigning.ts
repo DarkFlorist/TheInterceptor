@@ -19,7 +19,7 @@ import { DIRECT_SIGNING_CAPABILITY_ERROR, getSigningMethodError, prepareDirectPa
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
 import { getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
-import { withDirectSigningRecords, type DirectSigningRecordsTransaction } from '../signing/directSigningStore.js'
+import { withDirectSigningRecords, type DirectSigningRecordsTransaction } from './directSigningStore.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getAcceptRefusal } from './reviewedResult.js'
 import { getSettings } from './settings.js'

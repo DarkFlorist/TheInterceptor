@@ -1,5 +1,5 @@
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
-import { getStoredSigningWalletBinding } from '../signing/signingWalletStore.js'
+import { getStoredSigningWalletBinding } from './signingWalletStore.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getSettings } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'

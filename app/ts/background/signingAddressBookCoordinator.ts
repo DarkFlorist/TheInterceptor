@@ -1,5 +1,5 @@
 import { getUserAddressBookEntries, userAddressBookEntriesStorageWrite } from './addressBookStore.js'
-import { readSigningWalletBindings, signingWalletBindingsStorageWrite } from '../signing/signingWalletStore.js'
+import { readSigningWalletBindings, signingWalletBindingsStorageWrite } from './signingWalletStore.js'
 import { SigningWallet, SigningWalletBindings, type SigningWalletBinding } from '../types/signingWallet.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntry, type AddressBookEntries } from '../types/addressBookTypes.js'
 import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'

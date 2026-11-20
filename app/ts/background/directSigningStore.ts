@@ -1,10 +1,10 @@
 import * as funtypes from 'funtypes'
 import { DirectSigningRecords, type DirectSigningRecord } from '../types/directSigning.js'
-import { signingOperationError } from './signingOperationError.js'
+import { signingOperationError } from '../signing/signingOperationError.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { browserStorageLocalGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { getPendingTransactionsAndMessages } from '../background/storageVariables.js'
+import { getPendingTransactionsAndMessages } from './storageVariables.js'
 
 /** Corrupt signing history must remain available for recovery, especially after ambiguous submission. */
 export async function readDirectSigningRecords(): Promise<readonly DirectSigningRecord[]> {

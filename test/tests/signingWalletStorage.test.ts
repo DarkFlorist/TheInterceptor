@@ -197,7 +197,7 @@ test('codecs parse public identity structurally while import and admission verif
 })
 
 test('routing binding reads neither wait for address-book mutations nor load address-book data', async () => {
-	const { getStoredSigningWalletBinding } = await import('../../app/ts/signing/signingWalletStore.js')
+	const { getStoredSigningWalletBinding } = await import('../../app/ts/background/signingWalletStore.js')
 	const saved = await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
 	let release: () => void = () => undefined
 	let entered: () => void = () => undefined

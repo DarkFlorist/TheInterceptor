@@ -311,7 +311,7 @@ test('opens direct (hardware) wallet signing only for the reviewed result and wi
 	const { secp256k1 } = await import('@noble/curves/secp256k1')
 	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
 	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
-	const { readDirectSigningRecords } = await import('../../app/ts/signing/directSigningStore.js')
+	const { readDirectSigningRecords } = await import('../../app/ts/background/directSigningStore.js')
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
 	await saveAddressSigningWallet(safeTestOwnerAddress, { type: 'ledger', label: 'Owner Ledger', address: safeTestOwnerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Ledger owner')
 	const signRequest = { method: 'personal_sign' as const, params: ['0x68656c6c6f', safeTestOwnerAddress] as const }
@@ -340,7 +340,7 @@ test('does not open direct (hardware) wallet signing for a signing-mode request 
 	const { secp256k1 } = await import('@noble/curves/secp256k1')
 	const { bytesFromHex, bytesToHex } = await import('../../app/ts/utils/ethereumBytes.js')
 	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
-	const { readDirectSigningRecords } = await import('../../app/ts/signing/directSigningStore.js')
+	const { readDirectSigningRecords } = await import('../../app/ts/background/directSigningStore.js')
 	const { ERROR_SIMULATION_MODE_ENABLED_AFTER_REQUEST } = await import('../../app/ts/utils/constants.js')
 	const { websiteTabConnections, wasForwardedToSigner } = createSignerConnection()
 	await saveAddressSigningWallet(safeTestOwnerAddress, { type: 'ledger', label: 'Owner Ledger', address: safeTestOwnerAddress, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(safeTestOwnerPrivateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Ledger owner')
