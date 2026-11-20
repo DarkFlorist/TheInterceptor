@@ -34,7 +34,7 @@ export const PROPOSAL_CREATED_SEARCH_MARGIN_BLOCKS = 7200n
 // The largest block range one eth_getLogs request asks for, a limit common to public RPCs. The whole search is at most two such requests.
 export const MAXIMUM_BLOCKS_PER_LOG_QUERY = 10_000n
 
-// EIP-7825 (Osaka) caps a transaction's gas at 2^24. Nodes do not apply the cap to eth_simulateV1, so the preview applies it itself on the chains where Osaka's activation time is known (go-ethereum's chainspecs), and otherwise uses the block's gas limit.
+// EIP-7825 (Osaka) caps a transaction's gas at 2^24. Nodes do not apply the cap to eth_simulateV1, so the preview applies it itself, from Osaka's activation on the chains where that time is known (go-ethereum's chainspecs), and always on the others (getTransactionGasLimit).
 const EIP_7825_MAXIMUM_TRANSACTION_GAS = 16_777_216n
 export const OSAKA_ACTIVATION_TIME_BY_CHAIN_ID = new Map([[1n, 1_764_798_551n], [11_155_111n, 1_760_427_360n], [560_048n, 1_761_677_592n]])
 // A margin for the governor's own work around the timelock calls that the preview does not run: its state checks, marking the proposal queued or executed, and its events.
@@ -43,11 +43,17 @@ const GOVERNOR_OVERHEAD_GAS_PER_ACTION = 30_000n
 // Where the preview moves a governor's own code while GovernorProposalForwarder stands in at the governor's address (contracts/GovernorProposalForwarder.sol): the last 20 bytes of keccak256 of "The Interceptor governance preview: the governor's own code".
 export const GOVERNOR_CODE_ADDRESS = 0x70490ca6dc09ae17c68377a226527984e1b77b55n
 
-// The gas one transaction may use in a block at blockTime, a planned block's own time: a proposal executed after the voting period and the timelock's delay can fall after an activation the parent block had not reached.
+/**
+ * The gas one transaction may use in a block at blockTime, a planned block's own time: a proposal executed after the voting period and the timelock's delay can fall after an activation the parent block had not reached.
+ * On a chain whose Osaka activation time is not known, the preview cannot tell whether the cap holds, so it assumes it does: an execution that fits under the cap fits on the chain either way, and one that runs out of gas under it says the cap was assumed, rather than showing an execution the chain may reject.
+ */
 export const getTransactionGasLimit = (chainId: bigint, blockTime: bigint, blockGasLimit: bigint) => {
 	const osakaActivationTime = OSAKA_ACTIVATION_TIME_BY_CHAIN_ID.get(chainId)
-	const capped = osakaActivationTime !== undefined && blockTime >= osakaActivationTime
-	return capped && EIP_7825_MAXIMUM_TRANSACTION_GAS < blockGasLimit ? { gas: EIP_7825_MAXIMUM_TRANSACTION_GAS, source: 'the EIP-7825 limit of one transaction' } : { gas: blockGasLimit, source: 'the block gas limit' }
+	const blockLimit = { gas: blockGasLimit, source: 'the block gas limit' }
+	if (EIP_7825_MAXIMUM_TRANSACTION_GAS >= blockGasLimit) return blockLimit
+	if (osakaActivationTime === undefined) return { gas: EIP_7825_MAXIMUM_TRANSACTION_GAS, source: `the EIP-7825 limit of one transaction (assumed, as the preview does not know whether chain ${ chainId } has activated it)` }
+	if (blockTime < osakaActivationTime) return blockLimit
+	return { gas: EIP_7825_MAXIMUM_TRANSACTION_GAS, source: 'the EIP-7825 limit of one transaction' }
 }
 
 const governorOverheadGas = (actionCount: number) => GOVERNOR_OVERHEAD_GAS + GOVERNOR_OVERHEAD_GAS_PER_ACTION * BigInt(actionCount)

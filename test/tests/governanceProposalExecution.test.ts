@@ -557,14 +557,20 @@ describe('governance ProposalCreated search', () => {
 })
 
 describe('governance execution gas', () => {
-	test('one transaction is limited to 2^24 gas from Osaka on mainnet, Sepolia and Hoodi, and to the block otherwise', () => {
+	test('one transaction is limited to 2^24 gas from Osaka on mainnet, Sepolia and Hoodi, and to the block before it', () => {
 		for (const [chainId, activationTime] of OSAKA_ACTIVATION_TIME_BY_CHAIN_ID) {
 			assert.deepEqual(getTransactionGasLimit(chainId, activationTime - 1n, 60_000_000n), { gas: 60_000_000n, source: 'the block gas limit' })
 			assert.deepEqual(getTransactionGasLimit(chainId, activationTime, 60_000_000n), { gas: 16_777_216n, source: 'the EIP-7825 limit of one transaction' })
 			assert.deepEqual(getTransactionGasLimit(chainId, activationTime, 10_000_000n), { gas: 10_000_000n, source: 'the block gas limit' })
 		}
 		assert.deepEqual([...OSAKA_ACTIVATION_TIME_BY_CHAIN_ID.keys()], [1n, 11_155_111n, 560_048n])
-		assert.deepEqual(getTransactionGasLimit(8453n, 1_900_000_000n, 60_000_000n), { gas: 60_000_000n, source: 'the block gas limit' })
+	})
+
+	test('a chain whose Osaka activation is not known gets the 2^24 limit at any time, and says it is assumed', () => {
+		const assumedCap = { gas: 16_777_216n, source: 'the EIP-7825 limit of one transaction (assumed, as the preview does not know whether chain 8453 has activated it)' }
+		assert.deepEqual(getTransactionGasLimit(8453n, 0n, 60_000_000n), assumedCap)
+		assert.deepEqual(getTransactionGasLimit(8453n, 1_900_000_000n, 60_000_000n), assumedCap)
+		assert.deepEqual(getTransactionGasLimit(8453n, 1_900_000_000n, 10_000_000n), { gas: 10_000_000n, source: 'the block gas limit' })
 	})
 })
 
