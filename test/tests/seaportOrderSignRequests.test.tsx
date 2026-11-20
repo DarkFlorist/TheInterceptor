@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
+import { identifyAddress } from '../../app/ts/background/metadataUtils.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { SignedMessageTransaction } from '../../app/ts/types/visualizer-types.js'
 import { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
@@ -70,7 +71,7 @@ async function visualizeSeaportOrder(typedDataJson: string) {
 		messageIdentifier: 1n,
 	}
 	const ethereum = new EthereumClientService(new MockRequestHandler(), async () => undefined, async () => undefined, mainnet)
-	const visualized = await craftPersonalSignPopupMessage(ethereum, undefined, signedMessageTransaction, mainnet)
+	const visualized = await craftPersonalSignPopupMessage(async (address) => await identifyAddress(ethereum, undefined, address), signedMessageTransaction, mainnet)
 	// The confirmation window receives the request over extension messaging, so it must survive serialization.
 	return VisualizedPersonalSignRequest.parse(serialize(VisualizedPersonalSignRequest, visualized))
 }
