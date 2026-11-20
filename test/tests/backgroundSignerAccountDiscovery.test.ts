@@ -4,11 +4,11 @@ import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-ty
 import { flushMicrotasks } from '../harness/async.js'
 import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createRestoringBrowserMockInstaller, loadModules, noopPublishRpcConnectionStatus, waitForInternalWindowMessageDelivery } from './backgroundEthAccountsTestHarness.js'
 
-const installBrowserMock = createRestoringBrowserMockInstaller()
+const installBackgroundBrowserMockForTest = createRestoringBrowserMockInstaller()
 
 describe('background signer account discovery and page ownership', () => {
 	test('normalizes signer state before access and keeps unavailable discovery out of provider warnings', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -124,7 +124,7 @@ describe('background signer account discovery and page ownership', () => {
 	})
 
 	test('refreshes accounts after signer identity or page ownership changes', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			handleInterceptedRequest,
 			websiteSocketToString,
@@ -291,7 +291,7 @@ describe('background signer account discovery and page ownership', () => {
 	})
 
 	test('waits for provisional page ownership before reading or requesting signer accounts', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			getTabState,
@@ -379,7 +379,7 @@ describe('background signer account discovery and page ownership', () => {
 	})
 
 	test('finishes the first account request when the signer changes on the same page port', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			handleInterceptedRequest,
@@ -440,7 +440,7 @@ describe('background signer account discovery and page ownership', () => {
 	})
 
 	test('rejects stale account and chain callbacks from an older signer epoch on the current port', async () => {
-		installBrowserMock()
+		installBackgroundBrowserMockForTest()
 		const {
 			changeSimulationMode,
 			createInternalMessageListener,

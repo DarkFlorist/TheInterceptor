@@ -10,7 +10,7 @@ import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visua
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
-import { clickElement, getElement } from './domQueries.js'
+import { getElement } from './domQueries.js'
 
 let runtimeSendMessage = async (_message: unknown) => undefined
 const runtimeMessageListeners: Array<(message: unknown) => unknown> = []

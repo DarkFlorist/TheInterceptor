@@ -392,9 +392,6 @@
 			info: Object.freeze({ uuid: info.uuid, name: info.name, icon: info.icon, rdns: info.rdns }),
 		}
 	}
-	const isRequestAccountsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'eth_requestAccounts' && (replyMethod === 'eth_accounts' || replyMethod === 'eth_requestAccounts')
-	const isRequestPermissionsResolution = (originalRequestMethod: string | undefined, replyMethod: string) => originalRequestMethod === 'wallet_requestPermissions' && replyMethod === 'wallet_requestPermissions'
-	const shouldResolveAfterRequestScopedProviderEvents = (originalRequestMethod: string | undefined, replyMethod: string) => isRequestAccountsResolution(originalRequestMethod, replyMethod) || isRequestPermissionsResolution(originalRequestMethod, replyMethod)
 	const isRequestScopedProviderEventMethod = (method: string) => REQUEST_SCOPED_PROVIDER_EVENT_METHODS.has(method)
 	const canFallbackRequestToRootSigner = (method: string) => method === 'eth_requestAccounts'
 
@@ -557,11 +554,6 @@
 		readonly requestMethod?: string
 	}
 
-	type OutstandingRequest = {
-		readonly reply: Deferred<unknown>
-		readonly method: string
-		requestScopedProviderEventCallbacks?: (() => void)[]
-	}
 
 	type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 	type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Ambire' | 'Brave' | 'CoinbaseWallet' | 'Rabby'
@@ -851,6 +843,10 @@
 
 	// Bridge messaging and request/reply bookkeeping: owns the MessagePort to the content script, allocates request ids, and tracks the requests that wait for a background reply.
 	function createBackgroundBridge(isUsingInterceptorWithoutSigner: () => boolean) {
+		type OutstandingRequest = {
+			readonly reply: Deferred<unknown>
+			requestScopedProviderEventCallbacks?: (() => void)[]
+		}
 		let latestRequestId = 0
 		let extensionMessagePort: MessagePort | undefined
 		const outstandingRequests = new Map<number, OutstandingRequest>()
@@ -880,7 +876,6 @@
 			const reply = createDeferred<unknown>()
 			outstandingRequests.set(requestId, {
 				reply,
-				method: messageMethodAndParams.method,
 				requestScopedProviderEventCallbacks: [],
 			})
 			try {
@@ -922,10 +917,9 @@
 			}
 		}
 
-		const drainRequestScopedProviderEventCallbacks = (requestId: number) => {
-			const outstandingRequest = outstandingRequests.get(requestId)
-			const providerEventCallbacks = outstandingRequest?.requestScopedProviderEventCallbacks ?? []
-			if (outstandingRequest !== undefined) delete outstandingRequest.requestScopedProviderEventCallbacks
+		const drainRequestScopedProviderEventCallbacks = (outstandingRequest: OutstandingRequest) => {
+			const providerEventCallbacks = outstandingRequest.requestScopedProviderEventCallbacks ?? []
+			delete outstandingRequest.requestScopedProviderEventCallbacks
 			let firstCallbackError: unknown
 			for (const callback of providerEventCallbacks) {
 				try {
@@ -949,15 +943,25 @@
 			notifyInternal,
 			sendSignerReply,
 			reportInterceptorError,
-			getOutstandingRequest: (requestId: number) => outstandingRequests.get(requestId),
+			hasOutstandingRequest: (requestId: number) => outstandingRequests.has(requestId),
 			// Events the background replays for one request are delivered just before that request resolves, and dropped once it has settled.
 			queueRequestScopedProviderEvent: (requestId: number, notifyProviderEvent: () => void) => {
 				outstandingRequests.get(requestId)?.requestScopedProviderEventCallbacks?.push(notifyProviderEvent)
 			},
-			resolveWithRequestScopedProviderEvents: (requestId: number, value: unknown) => {
-				const callbackError = drainRequestScopedProviderEventCallbacks(requestId)
-				outstandingRequests.get(requestId)?.reply.resolve(value)
+			// Settlement belongs to the request table: retire the entry before running page callbacks so a late or reentrant reply cannot settle it twice.
+			resolveRequest: (requestId: number, value: unknown) => {
+				const pending = outstandingRequests.get(requestId)
+				if (pending === undefined) return
+				outstandingRequests.delete(requestId)
+				const callbackError = drainRequestScopedProviderEventCallbacks(pending)
+				pending.reply.resolve(value)
 				if (callbackError !== undefined) throw callbackError
+			},
+			rejectRequest: (requestId: number, error: Error) => {
+				const pending = outstandingRequests.get(requestId)
+				if (pending === undefined) return
+				outstandingRequests.delete(requestId)
+				pending.reply.reject(error)
 			},
 		}
 	}
@@ -1643,9 +1647,9 @@
 		}
 
 		// Signing and watch-asset requests are settled by the background, which never answers their signer_reply. Any other forwarded method is answered on the signer_reply request, and that answer settles the page request.
-		const sendForwardedSignerReply = async (signerReply: ForwardedSignerReply, forwardedRequest: OutstandingRequest) => {
+		const sendForwardedSignerReply = async (signerReply: ForwardedSignerReply, requestId: number) => {
 			const delivery = await bridge.sendSignerReply(signerReply)
-			if (!delivery.settledByBackground) forwardedRequest.reply.resolve(delivery.backgroundReply)
+			if (!delivery.settledByBackground) bridge.resolveRequest(requestId, delivery.backgroundReply)
 		}
 
 		return { requestChangeChainFromSigner, requestWatchAssetFromSigner, requestForwardedSignerReply, sendForwardedSignerReply }
@@ -1898,13 +1902,7 @@
 		const settleRequestWithReply = (replyRequest: InterceptedRequestForwardWithResult) => {
 			if (replyRequest.requestId === undefined) return
 			if (isRequestScopedProviderEventMethod(replyRequest.method)) return
-			const pending = bridge.getOutstandingRequest(replyRequest.requestId)
-			if (pending === undefined) return
-			if (shouldResolveAfterRequestScopedProviderEvents(pending.method, replyRequest.method)) {
-				bridge.resolveWithRequestScopedProviderEvents(replyRequest.requestId, replyRequest.result)
-				return
-			}
-			pending.reply.resolve(replyRequest.result)
+			bridge.resolveRequest(replyRequest.requestId, replyRequest.result)
 		}
 
 		// The reply settles its request even when applying it fails; the failure itself still reaches the caller's error handling.
@@ -1918,8 +1916,7 @@
 
 		const handleForwardToSigner = async (forwardRequest: InterceptedRequestForwardToSigner) => {
 			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
-			const pendingRequest = bridge.getOutstandingRequest(forwardRequest.requestId)
-			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+			if (!bridge.hasOutstandingRequest(forwardRequest.requestId)) throw new Error('Request did not exist anymore')
 			if (!selection.hasSigner()) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 			const signerReply = await signerRequests.requestForwardedSignerReply(forwardRequest)
 			try {
@@ -1934,12 +1931,12 @@
 						})
 						return
 					}
-					pendingRequest.reply.reject(parseRpcError(signerReply.error))
+					bridge.rejectRequest(forwardRequest.requestId, parseRpcError(signerReply.error))
 					return
 				}
-				await signerRequests.sendForwardedSignerReply(signerReply, pendingRequest)
+				await signerRequests.sendForwardedSignerReply(signerReply, forwardRequest.requestId)
 			} catch (error: unknown) {
-				pendingRequest.reply.reject(error instanceof Error ? error : parseRpcError(error))
+				bridge.rejectRequest(forwardRequest.requestId, error instanceof Error ? error : parseRpcError(error))
 			}
 		}
 
@@ -1956,12 +1953,11 @@
 				const forwardRequest = parseInterceptorApprovedMessage(messageEvent.data)
 				if (forwardRequest === undefined) throw new Error('Malformed message from content script')
 				if (!('type' in messageEvent)) throw new Error('missing type field')
-				if (forwardRequest.type === 'result' && forwardRequest.requestId !== undefined && bridge.getOutstandingRequest(forwardRequest.requestId) === undefined) return
+				if (forwardRequest.type === 'result' && forwardRequest.requestId !== undefined && !bridge.hasOutstandingRequest(forwardRequest.requestId)) return
 				if (forwardRequest.type === 'result' && 'error' in forwardRequest) {
 					if (forwardRequest.requestId === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
-					const pending = bridge.getOutstandingRequest(forwardRequest.requestId)
-					if (pending === undefined) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
-					return pending.reply.reject(new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
+					if (!bridge.hasOutstandingRequest(forwardRequest.requestId)) throw new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data)
+					return bridge.rejectRequest(forwardRequest.requestId, new EthereumJsonRpcError(forwardRequest.error.code, forwardRequest.error.message, forwardRequest.error.data))
 				}
 				if (forwardRequest.type === 'result' && 'result' in forwardRequest) {
 					applyCompatibilityReply(forwardRequest)
@@ -1976,9 +1972,7 @@
 				bridge.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 				const requestId = 'requestId' in messageEvent.data && typeof messageEvent.data.requestId === 'number' ? messageEvent.data.requestId : undefined
 				if (requestId === undefined) return
-				const pendingRequest = bridge.getOutstandingRequest(requestId)
-				if (pendingRequest === undefined) return
-				pendingRequest.reply.reject(error instanceof Error ? error : parseRpcError(error))
+				bridge.rejectRequest(requestId, error instanceof Error ? error : parseRpcError(error))
 			}
 		}
 
