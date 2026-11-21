@@ -1,4 +1,5 @@
 import { resolveSigningRequest } from './signingRequestResolver.js'
+import { getSafeEntry, resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
 import { captureSimulationModeGuard } from '../utils/simulationModeGuard.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
@@ -510,7 +511,7 @@ async function routeRequest(simulationServicesOwner: SimulationServicesOwner, we
 	const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
 	// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
 	const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
-	const walletSelectedSafeSigner = safeSigningMode ? activeAddress.type === 'safe' ? activeAddress.safeSigningSignerAddress ?? selectedWalletAccount : selectedWalletAccount : undefined
+	const walletSelectedSafeSigner = safeSigningMode ? resolveSafeSigningPlan(getSafeEntry(activeAddress), selectedWalletAccount).signingOwner : undefined
 	const { reply: resolved, afterReplyDelivered } = await handleRPCRequest(simulationServicesOwner, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, rpcContext, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
 	return { kind: 'resolved', resolved, afterReplyDelivered }
 }

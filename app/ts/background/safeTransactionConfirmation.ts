@@ -9,6 +9,8 @@ import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPO
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages } from './storageVariables.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
+import { getConfiguredSafeEntry } from './safeSigningAccount.js'
+import { resolveSafeSigningPlan } from '../safe/safeSigningPlan.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeContractValidationFailure, createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, getSafeUnsupportedFormedTransactionReason, getSafeUnsupportedRequestReason, isSafeExecutableRequestFromActiveAddress, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute, SAFE_UNSUPPORTED_TRANSACTION_MESSAGES } from '../safe/safeExecutionRouting.js'
@@ -69,14 +71,12 @@ export async function prepareSafeTransactionConfirmation(
 	confirmation: TransactionConfirmationRequest,
 	simulationMode: boolean,
 	activeAddress: bigint,
-	walletSignerAddress: bigint | undefined,
+	walletSelectedAccount: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const transactionParams = confirmation.parameters
-	const activeEntry = simulationMode
-		? undefined
-		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
-			.find((entry) => entry.address === activeAddress)
-	const configuredSafeEntry = activeEntry?.type === 'safe' ? activeEntry : undefined
+	const configuredSafeEntry = simulationMode ? undefined : await getConfiguredSafeEntry(activeAddress, ethereum.getChainId())
+	// The Safe entry is read once here and the signing owner and executor follow from it with the shared rule.
+	const { signingOwner: walletSignerAddress, executor } = resolveSafeSigningPlan(configuredSafeEntry, walletSelectedAccount)
 	if (configuredSafeEntry !== undefined) {
 		// A contract creation is not rejected here: its flow kind is 'unsupportedSafeRequest', whose preparation message shows the rejection in the window.
 		const unsupportedReason = getSafeUnsupportedRequestReason(transactionParams)
@@ -86,7 +86,7 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const basicExecutionRoute = transactionParams.method === 'eth_sendTransaction'
-		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, configuredSafeEntry?.safeExecutionAddress ?? walletSignerAddress)
+		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, executor)
 		: undefined
 	const isDirectSafeExecution = transactionParams.method === 'eth_sendTransaction'
 		&& isSafeExecutionRequestForActiveSafe(transactionParams, configuredSafeEntry)
@@ -98,7 +98,7 @@ export async function prepareSafeTransactionConfirmation(
 			if (basicExecutionRoute === undefined) {
 				safeExecutionReviewedState = await getSafeExecutionReviewedState(ethereum, transactionParams, configuredSafeEntry)
 			} else {
-				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, configuredSafeEntry?.safeExecutionAddress ?? walletSignerAddress)
+				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, executor)
 				safeExecutionReviewedState = safeExecutionSignerRoute?.safeState
 			}
 			} catch (error) {

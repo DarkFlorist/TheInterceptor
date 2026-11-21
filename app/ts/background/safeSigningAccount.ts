@@ -1,12 +1,16 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
+import { getSafeEntry } from '../safe/safeSigningPlan.js'
 
 /** Owner approval and the separate outer transaction payer remain distinct from the Safe address. */
+// The saved Safe entry of an active address on a chain, the one input resolveSafeSigningPlan reads from the address book. Chain precedence is resolved before checking classification, so a shadowed Safe supplies nothing.
+export async function getConfiguredSafeEntry(address: bigint | undefined, chainId: bigint) {
+	if (address === undefined) return undefined
+	return getSafeEntry((await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((item) => item.address === address))
+}
+
 export async function getSavedSafeSigningAccount(safeAddress: bigint | undefined, chainId: bigint) {
-	if (safeAddress === undefined) return undefined
-	// Resolve chain precedence before checking classification; a shadowed Safe cannot supply an owner.
-	const entry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((item) => item.address === safeAddress)
-	return entry?.type === 'safe' ? entry.safeSigningSignerAddress : undefined
+	return (await getConfiguredSafeEntry(safeAddress, chainId))?.safeSigningSignerAddress
 }
 
 /** Reads saved Safe ownership on the caller’s chain snapshot; saved selections do not follow browser-wallet account changes. */

@@ -1,5 +1,5 @@
 import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
-import { getSavedSafeSigningAccount } from '../safeSigningAccount.js'
+import { getSafeEntry, resolveSafeSigningPlan } from '../../safe/safeSigningPlan.js'
 import { getSigningWalletBinding } from '../signingWalletStore.js'
 import { getUnsimulatedGasLimitEdit } from '../../utils/pendingTransactionSimulation.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
@@ -905,8 +905,10 @@ async function createConfirmationForMessage(
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+	// Signing mode signs a Safe's messages with the shared plan's signing owner, from the entry read once above.
+	const signingPlan = resolveSafeSigningPlan(getSafeEntry(activeAddressEntry), getWalletSelectedAccount(signerTabState))
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
-		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : activeAddressEntry.safeSigningSignerAddress ?? getWalletSelectedAccount(signerTabState)
+		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : signingPlan.signingOwner
 		: activeAddress
 	if (simulationSignerAddress === undefined) {
 		return formRejectMessage(SAFE_SIGNER_SELECTION_ERROR_CODE, simulationMode
@@ -932,7 +934,7 @@ async function createConfirmationForMessage(
 	}
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(identifyAddressWith(ethereumClientService, undefined), signedMessageTransaction, ethereumClientService.getRpcEntry())
-		const walletSignerAddress = !simulationMode ? await getSavedSafeSigningAccount(activeAddress, ethereumClientService.getChainId()) ?? getWalletSelectedAccount(signerTabState) : getWalletSelectedAccount(signerTabState)
+		const walletSignerAddress = !simulationMode ? signingPlan.signingOwner : getWalletSelectedAccount(signerTabState)
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
 			let safeMessageValidationDetails: SafeSignerErrorDetails | undefined
@@ -1066,13 +1068,13 @@ async function createConfirmationForTransaction(
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-	const walletSignerAddress = !simulationMode ? await getSavedSafeSigningAccount(activeAddress, ethereumClientService.getChainId()) ?? getWalletSelectedAccount(signerTabState) : getWalletSelectedAccount(signerTabState)
+	// The preparation reads the Safe entry and applies the shared signing plan to the wallet's selected account.
 	const safePreparation = await prepareSafeTransactionConfirmation(
 		ethereumClientService,
 		confirmation,
 		simulationMode,
 		activeAddress,
-		walletSignerAddress,
+		getWalletSelectedAccount(signerTabState),
 	)
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)
